@@ -1,8 +1,8 @@
 import express from 'express';
 import Database from 'better-sqlite3';
 import cors from 'cors';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import dotenv from 'dotenv';
 import Anthropic from '@anthropic-ai/sdk';
 
@@ -178,7 +178,7 @@ app.post('/api/slots/move', (req, res) => {
   
   // Get wine from source slot
   const sourceSlot = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(from_location);
-  if (!sourceSlot || !sourceSlot.wine_id) {
+  if (!sourceSlot?.wine_id) {
     return res.status(400).json({ error: 'Source slot is empty' });
   }
   
@@ -204,7 +204,7 @@ app.post('/api/slots/:location/drink', (req, res) => {
   const { occasion, pairing_dish, rating, notes } = req.body;
   
   const slot = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(location);
-  if (!slot || !slot.wine_id) {
+  if (!slot?.wine_id) {
     return res.status(400).json({ error: 'Slot is empty' });
   }
   
