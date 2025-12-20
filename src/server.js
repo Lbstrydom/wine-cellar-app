@@ -3,15 +3,14 @@
  * @module server
  */
 
+// Load environment variables BEFORE any other imports
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import dotenv from 'dotenv';
 import routes from './routes/index.js';
-
-// Load environment variables from .env file
-dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
