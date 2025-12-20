@@ -1,0 +1,198 @@
+/**
+ * @fileoverview Claude API integration for sommelier feature.
+ * @module services/claude
+ */
+
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
+
+/**
+ * Get sommelier wine recommendation for a dish.
+ * @param {Database} db - Database connection
+ * @param {string} dish - Dish description
+ * @param {string} source - 'all' or 'reduce_now'
+ * @param {string} colour - 'any', 'red', 'white', or 'rose'
+ * @returns {Promise<Object>} Sommelier recommendations
+ */
+export async function getSommelierRecommendation(db, dish, source, colour) {
+  // Build wine query based on filters
+  let wineQuery;
+  let params = [];
+
+  if (source === 'reduce_now') {
+    wineQuery = `
+      SELECT
+        w.id, w.wine_name, w.vintage, w.style, w.colour,
+        COUNT(s.id) as bottle_count,
+        GROUP_CONCAT(DISTINCT s.location_code) as locations,
+        rn.priority, rn.reduce_reason
+      FROM reduce_now rn
+      JOIN wines w ON w.id = rn.wine_id
+      LEFT JOIN slots s ON s.wine_id = w.id
+      WHERE 1=1
+    `;
+    if (colour !== 'any') {
+      wineQuery += ` AND w.colour = ?`;
+      params.push(colour);
+    }
+    wineQuery += ` GROUP BY w.id HAVING bottle_count > 0 ORDER BY rn.priority, w.wine_name`;
+  } else {
+    wineQuery = `
+      SELECT
+        w.id, w.wine_name, w.vintage, w.style, w.colour,
+        COUNT(s.id) as bottle_count,
+        GROUP_CONCAT(DISTINCT s.location_code) as locations
+      FROM wines w
+      LEFT JOIN slots s ON s.wine_id = w.id
+      WHERE 1=1
+    `;
+    if (colour !== 'any') {
+      wineQuery += ` AND w.colour = ?`;
+      params.push(colour);
+    }
+    wineQuery += ` GROUP BY w.id HAVING bottle_count > 0 ORDER BY w.colour, w.style`;
+  }
+
+  const wines = db.prepare(wineQuery).all(...params);
+
+  if (wines.length === 0) {
+    return {
+      dish_analysis: "No wines match your filters.",
+      recommendations: [],
+      no_match_reason: `No ${colour !== 'any' ? colour + ' ' : ''}wines found${source === 'reduce_now' ? ' in reduce-now list' : ''}.`
+    };
+  }
+
+  // Format wines for prompt
+  const winesList = wines.map(w =>
+    `- ${w.wine_name} ${w.vintage || 'NV'} (${w.style}, ${w.colour}) - ${w.bottle_count} bottle(s) at ${w.locations}`
+  ).join('\n');
+
+  // Get priority wines if source is 'all'
+  let prioritySection = '';
+  if (source === 'all') {
+    const priorityWines = db.prepare(`
+      SELECT w.wine_name, w.vintage, rn.reduce_reason
+      FROM reduce_now rn
+      JOIN wines w ON w.id = rn.wine_id
+      JOIN slots s ON s.wine_id = w.id
+      ${colour !== 'any' ? 'WHERE w.colour = ?' : ''}
+      GROUP BY w.id
+      ORDER BY rn.priority
+    `).all(colour !== 'any' ? [colour] : []);
+
+    if (priorityWines.length > 0) {
+      prioritySection = `\nPRIORITY WINES (these should be drunk soon - prefer if suitable):\n` +
+        priorityWines.map(w => `- ${w.wine_name} ${w.vintage || 'NV'}: ${w.reduce_reason}`).join('\n');
+    }
+  }
+
+  const sourceDesc = source === 'reduce_now'
+    ? 'Choosing only from priority wines that should be drunk soon'
+    : 'Choosing from full cellar inventory';
+
+  const colourDesc = {
+    'any': 'No colour preference - suggest what works best',
+    'red': 'Red wines only',
+    'white': 'White wines only',
+    'rose': 'Rosé wines only'
+  }[colour];
+
+  const prompt = buildSommelierPrompt(dish, sourceDesc, colourDesc, winesList, prioritySection);
+
+  // Call Claude API
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 1500,
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  // Parse response
+  const responseText = message.content[0].text;
+  let parsed;
+
+  try {
+    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      responseText.match(/```\s*([\s\S]*?)\s*```/);
+    const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+    parsed = JSON.parse(jsonStr.trim());
+  } catch (parseError) {
+    console.error('Failed to parse Claude response:', responseText);
+    throw new Error('Could not parse sommelier response');
+  }
+
+  // Enrich recommendations with locations
+  if (parsed.recommendations) {
+    parsed.recommendations = parsed.recommendations.map(rec => {
+      const wine = wines.find(w =>
+        w.wine_name === rec.wine_name &&
+        (w.vintage === rec.vintage || (!w.vintage && !rec.vintage))
+      );
+      return {
+        ...rec,
+        location: wine?.locations || 'Unknown',
+        bottle_count: wine?.bottle_count || 0
+      };
+    });
+  }
+
+  return parsed;
+}
+
+/**
+ * Build the sommelier prompt.
+ * @private
+ */
+function buildSommelierPrompt(dish, sourceDesc, colourDesc, winesList, prioritySection) {
+  return `You are a sommelier with 20 years in fine dining, now helping a home cook get the most from their personal wine cellar. Your style is warm and educational - you love sharing the "why" behind pairings, not just the "what".
+
+Your approach:
+- Match wine weight to dish weight (light with light, rich with rich)
+- Balance acid: high-acid foods need high-acid wines
+- Use tannins strategically: they cut through fat and protein
+- Respect regional wisdom: "what grows together, goes together"
+- Consider the full plate: sauces, sides, and seasonings matter
+- Work with what's available, prioritising wines that need drinking soon
+
+TASK:
+Analyse this dish and extract food signals for wine pairing, then provide your recommendations.
+
+DISH: ${dish}
+
+AVAILABLE SIGNALS (use only these): chicken, pork, beef, lamb, fish, cheese, garlic_onion, roasted, sweet, acid, herbal, umami, creamy
+
+USER CONSTRAINTS:
+- Wine source: ${sourceDesc}
+- Colour preference: ${colourDesc}
+
+AVAILABLE WINES:
+${winesList}
+${prioritySection}
+
+Respond in this JSON format only, with no other text:
+{
+  "signals": ["array", "of", "matching", "signals"],
+  "dish_analysis": "Brief description of the dish's character and what to consider for pairing",
+  "colour_suggestion": "If user selected 'any', indicate whether red or white would generally suit this dish better and why. If they specified a colour, either null or a diplomatic note if the dish would pair better with another colour.",
+  "recommendations": [
+    {
+      "rank": 1,
+      "wine_name": "Exact wine name from available list",
+      "vintage": 2020,
+      "why": "Detailed explanation of why this pairing works - discuss specific flavour interactions",
+      "food_tip": "Optional suggestion to elevate the pairing (or null if none needed)",
+      "is_priority": true
+    }
+  ],
+  "no_match_reason": null
+}
+
+RULES:
+- Only recommend wines from the AVAILABLE WINES list
+- If source is "reduce_now only", all wines shown are priority - mention this is a great time to open them
+- If fewer than 3 wines are suitable, return fewer recommendations and explain in no_match_reason
+- Keep wine_name exactly as shown in the available list`;
+}
