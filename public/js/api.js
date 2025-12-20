@@ -128,3 +128,85 @@ export async function getPairingSuggestions(signals) {
   });
   return res.json();
 }
+
+/**
+ * Get wine styles for autocomplete.
+ * @returns {Promise<string[]>}
+ */
+export async function fetchWineStyles() {
+  const res = await fetch(`${API_BASE}/api/wines/styles`);
+  return res.json();
+}
+
+/**
+ * Create new wine.
+ * @param {Object} wineData - Wine details
+ * @returns {Promise<{id: number, message: string}>}
+ */
+export async function createWine(wineData) {
+  const res = await fetch(`${API_BASE}/api/wines`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(wineData)
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to create wine');
+  }
+  return res.json();
+}
+
+/**
+ * Update existing wine.
+ * @param {number} id - Wine ID
+ * @param {Object} wineData - Wine details
+ * @returns {Promise<{message: string}>}
+ */
+export async function updateWine(id, wineData) {
+  const res = await fetch(`${API_BASE}/api/wines/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(wineData)
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to update wine');
+  }
+  return res.json();
+}
+
+/**
+ * Add bottles to slots.
+ * @param {number} wineId - Wine ID
+ * @param {string} startLocation - Starting slot
+ * @param {number} quantity - Number of bottles
+ * @returns {Promise<{message: string, locations: string[]}>}
+ */
+export async function addBottles(wineId, startLocation, quantity) {
+  const res = await fetch(`${API_BASE}/api/bottles/add`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wine_id: wineId, start_location: startLocation, quantity })
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to add bottles');
+  }
+  return res.json();
+}
+
+/**
+ * Remove bottle from slot (no consumption log).
+ * @param {string} location - Slot location
+ * @returns {Promise<{message: string}>}
+ */
+export async function removeBottle(location) {
+  const res = await fetch(`${API_BASE}/api/slots/${location}/remove`, {
+    method: 'DELETE'
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to remove bottle');
+  }
+  return res.json();
+}

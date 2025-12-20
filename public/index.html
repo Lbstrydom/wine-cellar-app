@@ -150,6 +150,94 @@
     </div>
   </div>
 
+  <!-- Add/Edit Bottle Modal -->
+  <div class="modal-overlay" id="bottle-modal-overlay">
+    <div class="modal" id="bottle-modal" style="max-width: 500px;">
+      <h2 id="bottle-modal-title">Add New Bottle</h2>
+      <div class="modal-subtitle" id="bottle-modal-subtitle">Adding to slot: R1C1</div>
+
+      <form id="bottle-form">
+        <!-- Search existing wines or add new -->
+        <div class="form-section">
+          <div class="form-toggle">
+            <button type="button" class="toggle-btn active" data-mode="existing">Existing Wine</button>
+            <button type="button" class="toggle-btn" data-mode="new">New Wine</button>
+          </div>
+        </div>
+
+        <!-- Existing wine search -->
+        <div class="form-section" id="existing-wine-section">
+          <label class="form-label">Search your wines:</label>
+          <input type="text" id="wine-search" placeholder="Type to search..." autocomplete="off" />
+          <div id="wine-search-results" class="search-results"></div>
+          <input type="hidden" id="selected-wine-id" />
+        </div>
+
+        <!-- New wine form -->
+        <div class="form-section" id="new-wine-section" style="display: none;">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Wine Name *</label>
+              <input type="text" id="wine-name" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Vintage</label>
+              <input type="number" id="wine-vintage" min="1900" max="2030" placeholder="e.g., 2023" />
+            </div>
+            <div class="form-field">
+              <label>Colour *</label>
+              <select id="wine-colour">
+                <option value="red">Red</option>
+                <option value="white" selected>White</option>
+                <option value="rose">Rosé</option>
+                <option value="sparkling">Sparkling</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Style</label>
+              <input type="text" id="wine-style" placeholder="e.g., Sauvignon Blanc" list="style-list" />
+              <datalist id="style-list"></datalist>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label>Rating</label>
+              <input type="number" id="wine-rating" min="1" max="5" step="0.1" placeholder="e.g., 4.2" />
+            </div>
+            <div class="form-field">
+              <label>Price (€)</label>
+              <input type="number" id="wine-price" min="0" step="0.01" placeholder="e.g., 12.99" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Quantity (for adding) -->
+        <div class="form-section" id="quantity-section">
+          <div class="form-row">
+            <div class="form-field">
+              <label>Quantity</label>
+              <input type="number" id="bottle-quantity" min="1" max="20" value="1" />
+              <span class="form-hint">Will fill consecutive slots from selected position</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="modal-actions">
+          <button type="submit" class="btn btn-primary" id="bottle-save-btn">Add Bottle</button>
+          <button type="button" class="btn btn-secondary" id="bottle-cancel-btn">Cancel</button>
+          <button type="button" class="btn btn-danger" id="bottle-delete-btn" style="display: none; margin-left: auto;">Remove</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 

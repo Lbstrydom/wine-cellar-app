@@ -5,8 +5,9 @@
 
 import { fetchLayout, fetchStats, fetchReduceNow, fetchWines } from './api.js';
 import { renderFridge, renderCellar } from './grid.js';
-import { initModals, showWineModal } from './modals.js';
+import { initModals } from './modals.js';
 import { initSommelier } from './sommelier.js';
+import { initBottles } from './bottles.js';
 
 /**
  * Application state.
@@ -24,7 +25,6 @@ export async function loadLayout() {
   state.layout = await fetchLayout();
   renderFridge();
   renderCellar();
-  setupSlotClickHandlers();
 }
 
 /**
@@ -108,28 +108,6 @@ function renderWineList(wines) {
 }
 
 /**
- * Setup slot click handlers.
- */
-function setupSlotClickHandlers() {
-  document.querySelectorAll('.slot').forEach(slot => {
-    slot.addEventListener('click', (e) => {
-      const slotEl = e.currentTarget;
-      const wineId = slotEl.dataset.wineId;
-
-      if (wineId) {
-        // Find slot data from layout
-        const allSlots = [
-          ...state.layout.fridge.rows.flatMap(r => r.slots),
-          ...state.layout.cellar.rows.flatMap(r => r.slots)
-        ];
-        const slotData = allSlots.find(s => s.location_code === slotEl.dataset.location);
-        if (slotData) showWineModal(slotData);
-      }
-    });
-  });
-}
-
-/**
  * Switch view.
  * @param {string} viewName - View to switch to
  */
@@ -158,6 +136,7 @@ async function init() {
   // Initialise modules
   initModals();
   initSommelier();
+  await initBottles();
 
   // Load initial data
   await loadLayout();

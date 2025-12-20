@@ -5,12 +5,16 @@
 
 import { shortenWineName } from './utils.js';
 import { state } from './app.js';
+import { setupDragAndDrop } from './dragdrop.js';
+import { handleSlotClick } from './bottles.js';
 
 /**
  * Render the fridge grid.
  */
 export function renderFridge() {
   const grid = document.getElementById('fridge-grid');
+  if (!grid || !state.layout) return;
+
   grid.innerHTML = '';
 
   state.layout.fridge.rows.forEach((row) => {
@@ -23,6 +27,8 @@ export function renderFridge() {
 
     grid.appendChild(rowEl);
   });
+
+  setupInteractions();
 }
 
 /**
@@ -30,6 +36,8 @@ export function renderFridge() {
  */
 export function renderCellar() {
   const grid = document.getElementById('cellar-grid');
+  if (!grid || !state.layout) return;
+
   grid.innerHTML = '';
 
   state.layout.cellar.rows.forEach((row) => {
@@ -46,6 +54,21 @@ export function renderCellar() {
     });
 
     grid.appendChild(rowEl);
+  });
+
+  setupInteractions();
+}
+
+/**
+ * Setup click handlers and drag-drop after rendering.
+ */
+function setupInteractions() {
+  // Setup drag and drop
+  setupDragAndDrop();
+
+  // Setup click handlers
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.addEventListener('click', () => handleSlotClick(slot));
   });
 }
 
