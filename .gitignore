@@ -4,3 +4,5 @@ data/cellar.db-wal
 data/cellar.db-shm
 .DS_Store
 *.log
+.claude/
+.env
