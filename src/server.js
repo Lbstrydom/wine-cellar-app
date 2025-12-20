@@ -3,6 +3,11 @@ import Database from 'better-sqlite3';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
+import Anthropic from '@anthropic-ai/sdk';
+
+// Load environment variables from .env file
+dotenv.config();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, '..', 'data', 'cellar.db');
@@ -15,6 +20,11 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Database connection
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+
+// Initialize Claude API client with .env key
+const client = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY
+});
 
 // ============================================================
 // CELLAR LAYOUT API
