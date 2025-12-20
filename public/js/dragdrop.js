@@ -50,9 +50,8 @@ function handleDragStart(e) {
 
 /**
  * Handle drag end.
- * @param {DragEvent} e
  */
-function handleDragEnd(e) {
+function handleDragEnd() {
   this.classList.remove('dragging');
   draggedSlot = null;
 
@@ -86,9 +85,8 @@ function handleDragOver(e) {
 
 /**
  * Handle drag leave.
- * @param {DragEvent} e
  */
-function handleDragLeave(e) {
+function handleDragLeave() {
   this.classList.remove('drag-over', 'drag-over-invalid');
 }
 

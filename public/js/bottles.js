@@ -99,6 +99,7 @@ export function handleSlotClick(slotEl) {
  * @returns {Object|null}
  */
 function findSlotData(location) {
+  if (!state.layout) return null;
   const allSlots = [
     ...state.layout.fridge.rows.flatMap(r => r.slots),
     ...state.layout.cellar.rows.flatMap(r => r.slots)
