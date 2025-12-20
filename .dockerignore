@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+*.md
+data/cellar.db
+data/cellar.db-wal
+data/cellar.db-shm
+.github

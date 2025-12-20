@@ -9,8 +9,8 @@ WORKDIR /app
 # Copy package files
 COPY package*.json ./
 
-# Install dependencies
-RUN npm install --production
+# Install dependencies (ci for reproducible builds)
+RUN npm ci --only=production
 
 # Copy application code
 COPY src/ ./src/
@@ -24,7 +24,7 @@ RUN mkdir -p /app/data
 EXPOSE 3000
 
 # Health check
-HEALTHCHECK --interval=30s --timeout=3s \
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/stats || exit 1
 
 # Start the application
