@@ -1,0 +1,6 @@
+node_modules/
+data/cellar.db
+data/cellar.db-wal
+data/cellar.db-shm
+.DS_Store
+*.log

@@ -1,0 +1,27 @@
+# Wine Cellar App - Docker Compose
+# 
+# Deployment on Synology DS223:
+# 1. Copy this entire wine-cellar-app folder to your Synology
+# 2. SSH into Synology or use Container Manager
+# 3. Run: docker-compose up -d
+#
+# The database persists in the ./data volume
+
+services:
+  wine-cellar:
+    build: .
+    container_name: wine-cellar
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist database outside container
+      - ./data:/app/data
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

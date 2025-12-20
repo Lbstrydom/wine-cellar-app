@@ -1,0 +1,16 @@
+{
+  "name": "wine-cellar-app",
+  "version": "1.0.0",
+  "description": "Personal wine cellar management with visual grid and AI pairing",
+  "main": "src/server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.0.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

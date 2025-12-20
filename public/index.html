@@ -1,0 +1,1016 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wine Cellar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-dark: #1a1a1a;
+      --bg-card: #252525;
+      --bg-slot: #2d2d2d;
+      --bg-slot-hover: #363636;
+      --border: #3a3a3a;
+      --text: #e8e8e8;
+      --text-muted: #888;
+      --red-wine: #722F37;
+      --white-wine: #F5E6C8;
+      --rose-wine: #E8A0A0;
+      --sparkling: #D4AF37;
+      --priority-1: #ff4444;
+      --priority-2: #ff8844;
+      --priority-3: #ffbb44;
+      --accent: #8B7355;
+      --fridge-bg: #1e2a35;
+    }
+    
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    
+    body {
+      font-family: 'DM Sans', sans-serif;
+      background: var(--bg-dark);
+      color: var(--text);
+      min-height: 100vh;
+      padding: 1rem;
+    }
+    
+    h1, h2, h3 {
+      font-family: 'Cormorant Garamond', serif;
+      font-weight: 600;
+    }
+    
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 0 1.5rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+    
+    header h1 {
+      font-size: 2rem;
+      letter-spacing: 0.05em;
+    }
+    
+    .stats {
+      display: flex;
+      gap: 2rem;
+      font-size: 0.9rem;
+    }
+    
+    .stat {
+      text-align: center;
+    }
+    
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+    }
+    
+    .stat-label {
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    
+    /* Navigation tabs */
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .tab {
+      padding: 0.6rem 1.2rem;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+    
+    .tab:hover { background: var(--bg-slot-hover); }
+    .tab.active { background: var(--accent); border-color: var(--accent); }
+    
+    /* Views */
+    .view { display: none; }
+    .view.active { display: block; }
+    
+    /* Zone sections */
+    .zone {
+      margin-bottom: 2rem;
+    }
+    
+    .zone-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1rem;
+    }
+    
+    .zone-title {
+      font-size: 1.1rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.15em;
+    }
+    
+    /* Cellar grid */
+    .cellar-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    
+    .cellar-row {
+      display: flex;
+      gap: 3px;
+      align-items: center;
+    }
+    
+    .row-label {
+      width: 36px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-align: right;
+      padding-right: 8px;
+    }
+    
+    /* Fridge grid */
+    .fridge-section {
+      background: var(--fridge-bg);
+      border-radius: 12px;
+      padding: 1rem;
+      margin-bottom: 1.5rem;
+    }
+    
+    .fridge-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    
+    .fridge-row {
+      display: flex;
+      gap: 3px;
+    }
+    
+    /* Slots */
+    .slot {
+      width: 90px;
+      height: 52px;
+      background: var(--bg-slot);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 4px;
+      transition: all 0.15s;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .slot:hover {
+      background: var(--bg-slot-hover);
+      transform: scale(1.02);
+      z-index: 10;
+    }
+    
+    .slot.empty {
+      opacity: 0.4;
+    }
+    
+    .slot.empty:hover {
+      opacity: 0.7;
+    }
+    
+    /* Wine colour indicators */
+    .slot.red { border-left: 3px solid var(--red-wine); }
+    .slot.white { border-left: 3px solid var(--white-wine); }
+    .slot.rose { border-left: 3px solid var(--rose-wine); }
+    .slot.sparkling { border-left: 3px solid var(--sparkling); }
+    
+    /* Reduce-now priority badges */
+    .slot.priority-1::after,
+    .slot.priority-2::after,
+    .slot.priority-3::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      right: 0;
+      width: 0;
+      height: 0;
+      border-style: solid;
+      border-width: 0 12px 12px 0;
+    }
+    
+    .slot.priority-1::after { border-color: transparent var(--priority-1) transparent transparent; }
+    .slot.priority-2::after { border-color: transparent var(--priority-2) transparent transparent; }
+    .slot.priority-3::after { border-color: transparent var(--priority-3) transparent transparent; }
+    
+    .slot-name {
+      font-size: 0.65rem;
+      font-weight: 500;
+      text-align: center;
+      line-height: 1.2;
+      max-height: 2.4em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    
+    .slot-vintage {
+      font-size: 0.6rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    
+    .slot-loc {
+      position: absolute;
+      bottom: 2px;
+      right: 3px;
+      font-size: 0.5rem;
+      color: var(--text-muted);
+      opacity: 0.6;
+    }
+    
+    /* Modal */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.8);
+      z-index: 100;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    .modal-overlay.active {
+      display: flex;
+    }
+    
+    .modal {
+      background: var(--bg-card);
+      border-radius: 12px;
+      padding: 1.5rem;
+      max-width: 400px;
+      width: 90%;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    
+    .modal h2 {
+      margin-bottom: 0.5rem;
+      font-size: 1.4rem;
+    }
+    
+    .modal-subtitle {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      margin-bottom: 1rem;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    
+    .modal-field {
+      margin-bottom: 1rem;
+    }
+    
+    .modal-field label {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.3rem;
+    }
+    
+    .modal-field span {
+      font-size: 0.95rem;
+    }
+    
+    .modal-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: 1.5rem;
+      padding-top: 1rem;
+      border-top: 1px solid var(--border);
+    }
+    
+    .btn {
+      padding: 0.6rem 1rem;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    
+    .btn-primary:hover {
+      filter: brightness(1.1);
+    }
+    
+    .btn-danger {
+      background: var(--red-wine);
+      color: white;
+    }
+    
+    .btn-danger:hover {
+      filter: brightness(1.2);
+    }
+    
+    .btn-secondary {
+      background: var(--bg-slot);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    
+    .btn-secondary:hover {
+      background: var(--bg-slot-hover);
+    }
+    
+    /* Reduce Now list view */
+    .reduce-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+    
+    .reduce-item {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.8rem 1rem;
+      background: var(--bg-card);
+      border-radius: 8px;
+      border-left: 4px solid var(--priority-3);
+    }
+    
+    .reduce-item.p1 { border-left-color: var(--priority-1); }
+    .reduce-item.p2 { border-left-color: var(--priority-2); }
+    
+    .reduce-priority {
+      font-size: 1.2rem;
+      font-weight: 600;
+      width: 30px;
+      text-align: center;
+    }
+    
+    .reduce-info {
+      flex: 1;
+    }
+    
+    .reduce-name {
+      font-weight: 500;
+      margin-bottom: 0.2rem;
+    }
+    
+    .reduce-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    
+    .reduce-locations {
+      font-size: 0.75rem;
+      color: var(--accent);
+    }
+    
+    /* Wine list view */
+    .wine-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 0.75rem;
+    }
+    
+    .wine-card {
+      display: flex;
+      gap: 1rem;
+      padding: 1rem;
+      background: var(--bg-card);
+      border-radius: 8px;
+      border-left: 4px solid var(--border);
+    }
+    
+    .wine-card.red { border-left-color: var(--red-wine); }
+    .wine-card.white { border-left-color: var(--white-wine); }
+    .wine-card.rose { border-left-color: var(--rose-wine); }
+    .wine-card.sparkling { border-left-color: var(--sparkling); }
+    
+    .wine-count {
+      font-size: 1.5rem;
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 30px;
+    }
+    
+    .wine-details {
+      flex: 1;
+    }
+    
+    .wine-name {
+      font-weight: 500;
+      margin-bottom: 0.2rem;
+    }
+    
+    .wine-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+    
+    /* Pairing view */
+    .pairing-form {
+      background: var(--bg-card);
+      padding: 1.5rem;
+      border-radius: 12px;
+      margin-bottom: 1.5rem;
+    }
+    
+    .signal-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    
+    .signal-btn {
+      padding: 0.5rem 1rem;
+      background: var(--bg-slot);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      transition: all 0.2s;
+    }
+    
+    .signal-btn:hover {
+      background: var(--bg-slot-hover);
+    }
+    
+    .signal-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    
+    .pairing-results {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+    
+    .pairing-suggestion {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 1rem;
+      background: var(--bg-card);
+      border-radius: 8px;
+      border-left: 4px solid var(--accent);
+    }
+    
+    .pairing-score {
+      font-size: 1.2rem;
+      font-weight: 600;
+      color: var(--accent);
+      min-width: 40px;
+      text-align: center;
+    }
+    
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: var(--bg-card);
+      border: 1px solid var(--accent);
+      padding: 1rem 1.5rem;
+      border-radius: 8px;
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 200;
+    }
+    
+    .toast.show {
+      transform: translateX(-50%) translateY(0);
+      opacity: 1;
+    }
+    
+    /* Responsive */
+    @media (max-width: 768px) {
+      .slot {
+        width: 70px;
+        height: 44px;
+      }
+      
+      .slot-name {
+        font-size: 0.55rem;
+      }
+      
+      .stats {
+        gap: 1rem;
+      }
+      
+      header {
+        flex-direction: column;
+        gap: 1rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Wine Cellar</h1>
+    <div class="stats" id="stats">
+      <div class="stat">
+        <div class="stat-value" id="stat-total">-</div>
+        <div class="stat-label">Bottles</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-reduce">-</div>
+        <div class="stat-label">Reduce Now</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="stat-empty">-</div>
+        <div class="stat-label">Empty Slots</div>
+      </div>
+    </div>
+  </header>
+  
+  <nav class="tabs">
+    <div class="tab active" data-view="grid">Cellar Grid</div>
+    <div class="tab" data-view="reduce">Reduce Now</div>
+    <div class="tab" data-view="wines">All Wines</div>
+    <div class="tab" data-view="pairing">Find Pairing</div>
+  </nav>
+  
+  <!-- Grid View -->
+  <div class="view active" id="view-grid">
+    <div class="fridge-section zone">
+      <div class="zone-header">
+        <span class="zone-title">Fridge</span>
+      </div>
+      <div class="fridge-grid" id="fridge-grid"></div>
+    </div>
+    
+    <div class="zone">
+      <div class="zone-header">
+        <span class="zone-title">Cellar</span>
+      </div>
+      <div class="cellar-grid" id="cellar-grid"></div>
+    </div>
+  </div>
+  
+  <!-- Reduce Now View -->
+  <div class="view" id="view-reduce">
+    <h2 style="margin-bottom: 1rem;">Drink These Next</h2>
+    <div class="reduce-list" id="reduce-list"></div>
+  </div>
+  
+  <!-- All Wines View -->
+  <div class="view" id="view-wines">
+    <h2 style="margin-bottom: 1rem;">All Wines</h2>
+    <div class="wine-list" id="wine-list"></div>
+  </div>
+  
+  <!-- Pairing View -->
+  <div class="view" id="view-pairing">
+    <div class="pairing-form">
+      <h2 style="margin-bottom: 1rem;">What are you eating?</h2>
+      <p style="color: var(--text-muted); margin-bottom: 1rem; font-size: 0.9rem;">Select the dish characteristics:</p>
+      
+      <h3 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">PROTEIN</h3>
+      <div class="signal-grid">
+        <button class="signal-btn" data-signal="chicken">Chicken</button>
+        <button class="signal-btn" data-signal="pork">Pork</button>
+        <button class="signal-btn" data-signal="beef">Beef</button>
+        <button class="signal-btn" data-signal="lamb">Lamb</button>
+        <button class="signal-btn" data-signal="fish">Fish</button>
+        <button class="signal-btn" data-signal="cheese">Cheese</button>
+      </div>
+      
+      <h3 style="font-size: 0.8rem; color: var(--text-muted); margin: 1rem 0 0.5rem;">FLAVOURS</h3>
+      <div class="signal-grid">
+        <button class="signal-btn" data-signal="garlic_onion">Garlic/Onion</button>
+        <button class="signal-btn" data-signal="herbal">Herbal</button>
+        <button class="signal-btn" data-signal="roasted">Roasted</button>
+        <button class="signal-btn" data-signal="acid">Acidic/Citrus</button>
+        <button class="signal-btn" data-signal="sweet">Sweet</button>
+        <button class="signal-btn" data-signal="umami">Umami</button>
+        <button class="signal-btn" data-signal="creamy">Creamy</button>
+      </div>
+      
+      <button class="btn btn-primary" style="margin-top: 1.5rem;" id="get-pairing">Find Pairing</button>
+      <button class="btn btn-secondary" style="margin-top: 1.5rem;" id="clear-signals">Clear</button>
+    </div>
+    
+    <h3 style="margin-bottom: 1rem;">Suggestions</h3>
+    <div class="pairing-results" id="pairing-results">
+      <p style="color: var(--text-muted);">Select dish characteristics above</p>
+    </div>
+  </div>
+  
+  <!-- Wine Detail Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="wine-modal">
+      <h2 id="modal-wine-name">Wine Name</h2>
+      <div class="modal-subtitle" id="modal-wine-style">Style • Vintage</div>
+      
+      <div class="modal-field">
+        <label>Location</label>
+        <span id="modal-location">-</span>
+      </div>
+      
+      <div class="modal-field">
+        <label>Rating</label>
+        <span id="modal-rating">-</span>
+      </div>
+      
+      <div class="modal-field">
+        <label>Price</label>
+        <span id="modal-price">-</span>
+      </div>
+      
+      <div class="modal-field" id="modal-reduce-field" style="display: none;">
+        <label>Reduce Reason</label>
+        <span id="modal-reduce-reason">-</span>
+      </div>
+      
+      <div class="modal-actions">
+        <button class="btn btn-danger" id="btn-drink">🍷 Drink This</button>
+        <button class="btn btn-secondary" id="btn-close">Close</button>
+      </div>
+    </div>
+  </div>
+  
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+  
+  <script>
+    const API = '';  // Same origin
+    
+    let currentSlot = null;
+    let layout = null;
+    
+    // ============================================================
+    // DATA LOADING
+    // ============================================================
+    
+    async function loadLayout() {
+      const res = await fetch(`${API}/api/layout`);
+      layout = await res.json();
+      renderFridge();
+      renderCellar();
+    }
+    
+    async function loadStats() {
+      const res = await fetch(`${API}/api/stats`);
+      const stats = await res.json();
+      document.getElementById('stat-total').textContent = stats.total_bottles;
+      document.getElementById('stat-reduce').textContent = stats.reduce_now_count;
+      document.getElementById('stat-empty').textContent = stats.empty_slots;
+    }
+    
+    async function loadReduceNow() {
+      const res = await fetch(`${API}/api/reduce-now`);
+      const list = await res.json();
+      renderReduceList(list);
+    }
+    
+    async function loadWines() {
+      const res = await fetch(`${API}/api/wines`);
+      const wines = await res.json();
+      renderWineList(wines);
+    }
+    
+    // ============================================================
+    // RENDERING
+    // ============================================================
+    
+    function renderFridge() {
+      const grid = document.getElementById('fridge-grid');
+      grid.innerHTML = '';
+      
+      layout.fridge.rows.forEach((row, rowIdx) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'fridge-row';
+        
+        row.slots.forEach(slot => {
+          rowEl.appendChild(createSlotElement(slot));
+        });
+        
+        grid.appendChild(rowEl);
+      });
+    }
+    
+    function renderCellar() {
+      const grid = document.getElementById('cellar-grid');
+      grid.innerHTML = '';
+      
+      layout.cellar.rows.forEach((row, rowIdx) => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'cellar-row';
+        
+        // Row label
+        const label = document.createElement('div');
+        label.className = 'row-label';
+        label.textContent = `R${row.row}`;
+        rowEl.appendChild(label);
+        
+        row.slots.forEach(slot => {
+          rowEl.appendChild(createSlotElement(slot));
+        });
+        
+        grid.appendChild(rowEl);
+      });
+    }
+    
+    function createSlotElement(slot) {
+      const el = document.createElement('div');
+      el.className = 'slot';
+      el.dataset.location = slot.location_code;
+      
+      if (slot.wine_id) {
+        el.classList.add(slot.colour || 'white');
+        
+        if (slot.reduce_priority) {
+          el.classList.add(`priority-${Math.min(slot.reduce_priority, 3)}`);
+        }
+        
+        const shortName = shortenWineName(slot.wine_name);
+        
+        el.innerHTML = `
+          <div class="slot-name">${shortName}</div>
+          <div class="slot-vintage">${slot.vintage || 'NV'}</div>
+          <div class="slot-loc">${slot.location_code}</div>
+        `;
+        
+        el.addEventListener('click', () => showWineModal(slot));
+      } else {
+        el.classList.add('empty');
+        el.innerHTML = `<div class="slot-loc">${slot.location_code}</div>`;
+        el.addEventListener('click', () => showEmptySlotModal(slot));
+      }
+      
+      return el;
+    }
+    
+    function shortenWineName(name) {
+      if (!name) return '';
+      // Remove common words to fit in slot
+      return name
+        .replace(/\b(Vineyard|Selection|Reserva?|Gran|Superior[e]?)\b/gi, '')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .substring(0, 30);
+    }
+    
+    function renderReduceList(list) {
+      const container = document.getElementById('reduce-list');
+      
+      if (list.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No wines in reduce-now list</p>';
+        return;
+      }
+      
+      container.innerHTML = list.map(item => `
+        <div class="reduce-item p${item.priority}">
+          <div class="reduce-priority">${item.priority}</div>
+          <div class="reduce-info">
+            <div class="reduce-name">${item.wine_name} ${item.vintage || 'NV'}</div>
+            <div class="reduce-meta">${item.style} • ${item.bottle_count} bottle${item.bottle_count > 1 ? 's' : ''}</div>
+            <div class="reduce-meta">${item.reduce_reason || ''}</div>
+            <div class="reduce-locations">${item.locations || ''}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function renderWineList(wines) {
+      const container = document.getElementById('wine-list');
+      
+      const withBottles = wines.filter(w => w.bottle_count > 0);
+      
+      container.innerHTML = withBottles.map(wine => `
+        <div class="wine-card ${wine.colour}">
+          <div class="wine-count">${wine.bottle_count}</div>
+          <div class="wine-details">
+            <div class="wine-name">${wine.wine_name}</div>
+            <div class="wine-meta">${wine.style} • ${wine.vintage || 'NV'}</div>
+            <div class="wine-meta" style="color: var(--accent);">${wine.locations || ''}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    // ============================================================
+    // MODALS
+    // ============================================================
+    
+    function showWineModal(slot) {
+      currentSlot = slot;
+      
+      document.getElementById('modal-wine-name').textContent = slot.wine_name;
+      document.getElementById('modal-wine-style').textContent = 
+        `${slot.style} • ${slot.vintage || 'NV'} • ${slot.colour}`;
+      document.getElementById('modal-location').textContent = slot.location_code;
+      document.getElementById('modal-rating').textContent = slot.rating ? `${slot.rating}/5` : '-';
+      document.getElementById('modal-price').textContent = slot.price ? `€${slot.price.toFixed(2)}` : '-';
+      
+      const reduceField = document.getElementById('modal-reduce-field');
+      if (slot.reduce_priority) {
+        reduceField.style.display = 'block';
+        document.getElementById('modal-reduce-reason').textContent = 
+          `Priority ${slot.reduce_priority}: ${slot.reduce_reason || 'No reason specified'}`;
+      } else {
+        reduceField.style.display = 'none';
+      }
+      
+      document.getElementById('modal-overlay').classList.add('active');
+    }
+    
+    function showEmptySlotModal(slot) {
+      showToast(`Empty slot: ${slot.location_code}`);
+    }
+    
+    function closeModal() {
+      document.getElementById('modal-overlay').classList.remove('active');
+      currentSlot = null;
+    }
+    
+    // ============================================================
+    // ACTIONS
+    // ============================================================
+    
+    async function drinkBottle() {
+      if (!currentSlot) return;
+      
+      const location = currentSlot.location_code;
+      
+      try {
+        const res = await fetch(`${API}/api/slots/${location}/drink`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
+        });
+        
+        const data = await res.json();
+        
+        closeModal();
+        showToast(`🍷 Enjoyed! ${data.remaining_bottles} bottles remaining`);
+        
+        // Refresh data
+        await loadLayout();
+        await loadStats();
+        await loadReduceNow();
+        
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      }
+    }
+    
+    // ============================================================
+    // PAIRING
+    // ============================================================
+    
+    let selectedSignals = new Set();
+    
+    function toggleSignal(btn) {
+      const signal = btn.dataset.signal;
+      
+      if (selectedSignals.has(signal)) {
+        selectedSignals.delete(signal);
+        btn.classList.remove('active');
+      } else {
+        selectedSignals.add(signal);
+        btn.classList.add('active');
+      }
+    }
+    
+    async function getPairing() {
+      if (selectedSignals.size === 0) {
+        showToast('Select at least one characteristic');
+        return;
+      }
+      
+      const res = await fetch(`${API}/api/pairing/suggest`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signals: Array.from(selectedSignals),
+          prefer_reduce_now: true,
+          limit: 5
+        })
+      });
+      
+      const data = await res.json();
+      renderPairingResults(data);
+    }
+    
+    function renderPairingResults(data) {
+      const container = document.getElementById('pairing-results');
+      
+      if (!data.suggestions || data.suggestions.length === 0) {
+        container.innerHTML = '<p style="color: var(--text-muted);">No matching wines found. Try different characteristics.</p>';
+        return;
+      }
+      
+      container.innerHTML = data.suggestions.map((wine, idx) => `
+        <div class="pairing-suggestion">
+          <div class="pairing-score">#${idx + 1}</div>
+          <div style="flex: 1;">
+            <div style="font-weight: 500;">${wine.wine_name} ${wine.vintage || 'NV'}</div>
+            <div style="font-size: 0.85rem; color: var(--text-muted);">
+              ${wine.style} • ${wine.bottle_count} bottle${wine.bottle_count > 1 ? 's' : ''}
+              ${wine.reduce_priority ? `• <span style="color: var(--priority-${Math.min(wine.reduce_priority, 3)});">Priority ${wine.reduce_priority}</span>` : ''}
+            </div>
+            <div style="font-size: 0.8rem; color: var(--accent); margin-top: 0.3rem;">${wine.locations}</div>
+          </div>
+        </div>
+      `).join('');
+    }
+    
+    function clearSignals() {
+      selectedSignals.clear();
+      document.querySelectorAll('.signal-btn').forEach(btn => btn.classList.remove('active'));
+      document.getElementById('pairing-results').innerHTML = '<p style="color: var(--text-muted);">Select dish characteristics above</p>';
+    }
+    
+    // ============================================================
+    // UI HELPERS
+    // ============================================================
+    
+    function showToast(message) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+    
+    function switchView(viewName) {
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      
+      document.getElementById(`view-${viewName}`).classList.add('active');
+      document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
+      
+      // Load data for view
+      if (viewName === 'reduce') loadReduceNow();
+      if (viewName === 'wines') loadWines();
+    }
+    
+    // ============================================================
+    // EVENT LISTENERS
+    // ============================================================
+    
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => switchView(tab.dataset.view));
+    });
+    
+    document.getElementById('btn-drink').addEventListener('click', drinkBottle);
+    document.getElementById('btn-close').addEventListener('click', closeModal);
+    document.getElementById('modal-overlay').addEventListener('click', (e) => {
+      if (e.target.id === 'modal-overlay') closeModal();
+    });
+    
+    document.querySelectorAll('.signal-btn').forEach(btn => {
+      btn.addEventListener('click', () => toggleSignal(btn));
+    });
+    
+    document.getElementById('get-pairing').addEventListener('click', getPairing);
+    document.getElementById('clear-signals').addEventListener('click', clearSignals);
+    
+    // ============================================================
+    // INIT
+    // ============================================================
+    
+    async function init() {
+      await loadLayout();
+      await loadStats();
+    }
+    
+    init();
+  </script>
+</body>
+</html>
