@@ -322,6 +322,153 @@ RULES:
 }
 
 /**
+ * Fetch wine ratings from various sources using Claude web search.
+ * Uses two-step approach: search first, then format as JSON.
+ * @param {Object} wine - Wine object with name, vintage, country, style
+ * @returns {Promise<Object>} Fetched ratings
+ */
+export async function fetchWineRatings(wine) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('Claude API key not configured');
+  }
+
+  // Build source-specific hints based on wine origin
+  const saHints = wine.country === 'South Africa'
+    ? '- Veritas Awards\n- Old Mutual Trophy Wine Show\n- Platter\'s Wine Guide\n- Tim Atkin SA Report'
+    : '';
+  const styleHints = [];
+  if (wine.style?.toLowerCase().includes('chardonnay')) {
+    styleHints.push('- Chardonnay du Monde');
+  }
+  if (wine.style?.toLowerCase().includes('syrah') || wine.style?.toLowerCase().includes('shiraz')) {
+    styleHints.push('- Syrah du Monde');
+  }
+
+  const searchPrompt = `Search for professional wine ratings and competition results for:
+
+Wine: ${wine.wine_name}
+Vintage: ${wine.vintage || 'NV'}
+Style/Grape: ${wine.style || 'Unknown'}
+Country: ${wine.country || 'Unknown'}
+
+Search for ratings from these sources:
+- Decanter World Wine Awards (DWWA)
+- International Wine Challenge (IWC)
+- International Wine & Spirit Competition (IWSC)
+- Concours Mondial de Bruxelles
+- Mundus Vini
+${saHints}
+${styleHints.join('\n')}
+- Vivino (include the star rating and number of ratings)
+
+Please search and tell me what ratings you find for this specific wine and vintage.`;
+
+  // Step 1: Search and gather information
+  const searchResponse = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 2000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: searchPrompt }]
+  });
+
+  // Extract the text response from search
+  const searchText = searchResponse.content
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join('\n');
+
+  if (!searchText || searchText.length < 50) {
+    return { ratings: [], search_notes: 'No search results found' };
+  }
+
+  // Step 2: Ask for structured JSON format
+  const formatPrompt = `Based on the ratings you just found, format them as JSON.
+
+For EACH rating found, include:
+- source: source identifier (e.g., "decanter", "iwc", "veritas", "vivino", "platters", "tim_atkin")
+- lens: "competition" for competitions, "critics" for critics/guides, "community" for Vivino
+- score_type: "medal" for medals, "points" for numeric scores, "stars" for star ratings
+- raw_score: the actual score (e.g., "Gold", "Double Gold", "92", "4.1")
+- competition_year: year of the competition/review (if known)
+- award_name: any special award like "Trophy" or "Best in Show" (or null)
+- rating_count: number of ratings (for Vivino only)
+- source_url: URL where you found this (if available)
+- vintage_match: "exact" if vintage matches, "non_vintage" if rating is for the wine generally
+- match_confidence: "high" if certain, "medium" if likely, "low" if uncertain
+
+Respond with ONLY this JSON structure, no other text:
+{
+  "ratings": [
+    {
+      "source": "veritas",
+      "lens": "competition",
+      "score_type": "medal",
+      "raw_score": "Double Gold",
+      "competition_year": 2023,
+      "award_name": null,
+      "rating_count": null,
+      "source_url": "https://...",
+      "vintage_match": "exact",
+      "match_confidence": "high"
+    }
+  ],
+  "search_notes": "Brief summary of what was found"
+}
+
+If no ratings were found, return: {"ratings": [], "search_notes": "No ratings found for this wine"}`;
+
+  const formatResponse = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 1500,
+    messages: [
+      { role: 'user', content: searchPrompt },
+      { role: 'assistant', content: searchText },
+      { role: 'user', content: formatPrompt }
+    ]
+  });
+
+  // Extract JSON from format response
+  const formatText = formatResponse.content
+    .filter(c => c.type === 'text')
+    .map(c => c.text)
+    .join('\n');
+
+  // Try to parse JSON - be flexible about format
+  try {
+    // Try direct parse first
+    return JSON.parse(formatText.trim());
+  } catch (_e1) {
+    // Try to find JSON in code blocks
+    const jsonMatch = formatText.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      formatText.match(/```\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      try {
+        return JSON.parse(jsonMatch[1].trim());
+      } catch (_e2) {
+        // Continue to next attempt
+      }
+    }
+
+    // Try to find JSON object anywhere in text
+    const objectMatch = formatText.match(/\{[\s\S]*"ratings"[\s\S]*\}/);
+    if (objectMatch) {
+      try {
+        return JSON.parse(objectMatch[0]);
+      } catch (_e3) {
+        // Continue to fallback
+      }
+    }
+
+    // Fallback: return empty with notes
+    console.error('Failed to parse rating response:', formatText);
+    return {
+      ratings: [],
+      search_notes: 'Found information but could not parse structured ratings. Raw response available in logs.'
+    };
+  }
+}
+
+/**
  * Build the sommelier prompt.
  * @private
  */

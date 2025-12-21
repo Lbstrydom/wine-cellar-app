@@ -3,9 +3,10 @@
  * @module modals
  */
 
-import { drinkBottle } from './api.js';
+import { drinkBottle, getWineRatings } from './api.js';
 import { showToast } from './utils.js';
 import { refreshData } from './app.js';
+import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 
 let currentSlot = null;
 
@@ -13,7 +14,7 @@ let currentSlot = null;
  * Show wine detail modal.
  * @param {Object} slot - Slot data
  */
-export function showWineModal(slot) {
+export async function showWineModal(slot) {
   currentSlot = slot;
 
   document.getElementById('modal-wine-name').textContent = slot.wine_name;
@@ -30,6 +31,19 @@ export function showWineModal(slot) {
       `Priority ${slot.reduce_priority}: ${slot.reduce_reason || 'No reason specified'}`;
   } else {
     reduceField.style.display = 'none';
+  }
+
+  // Load and display ratings
+  const ratingsContainer = document.getElementById('modal-ratings-container');
+  if (ratingsContainer && slot.wine_id) {
+    ratingsContainer.innerHTML = '<div class="ratings-loading">Loading ratings...</div>';
+    try {
+      const ratingsData = await getWineRatings(slot.wine_id);
+      ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
+      initRatingsPanel(slot.wine_id);
+    } catch (_err) {
+      ratingsContainer.innerHTML = '<div class="ratings-error">Could not load ratings</div>';
+    }
   }
 
   document.getElementById('modal-overlay').classList.add('active');

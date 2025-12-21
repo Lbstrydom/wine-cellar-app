@@ -1063,6 +1063,218 @@ header h1 {
   min-height: 60px;
 }
 
+/* ============================================================
+   RATINGS
+   ============================================================ */
+
+/* Star display */
+.stars-display {
+  color: var(--accent);
+  letter-spacing: 2px;
+}
+
+.stars-display.small {
+  font-size: 0.9rem;
+}
+
+.stars-display.large {
+  font-size: 1.4rem;
+}
+
+.stars-unrated {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Confidence badge */
+.confidence-badge {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-left: 0.5rem;
+}
+
+.confidence-high {
+  background: rgba(76, 175, 80, 0.2);
+  color: #4caf50;
+}
+
+.confidence-medium {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffc107;
+}
+
+.confidence-low {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+}
+
+.confidence-unrated {
+  background: var(--bg-slot);
+  color: var(--text-muted);
+}
+
+/* Compact rating on wine cards */
+.wine-rating-compact {
+  display: flex;
+  align-items: center;
+  margin-top: 0.25rem;
+}
+
+/* Ratings panel in modal */
+.ratings-panel {
+  background: var(--bg-slot);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.ratings-panel.unrated {
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.ratings-loading,
+.ratings-error {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 1rem;
+  font-size: 0.9rem;
+}
+
+.ratings-summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.purchase-score {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.score-value {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.lens-indices {
+  display: flex;
+  gap: 1rem;
+}
+
+.lens-index {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: 0.8rem;
+}
+
+.lens-icon {
+  font-size: 1rem;
+}
+
+.lens-name {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+}
+
+.lens-value {
+  font-weight: 600;
+}
+
+.ratings-detail-toggle {
+  margin-top: 0.75rem;
+  text-align: center;
+}
+
+.btn-text {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.btn-text:hover {
+  text-decoration: underline;
+}
+
+.ratings-detail {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+}
+
+.rating-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rating-item:last-child {
+  border-bottom: none;
+}
+
+.rating-source {
+  font-size: 0.9rem;
+}
+
+.rating-score {
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.award-badge {
+  font-size: 0.7rem;
+  background: var(--accent);
+  color: white;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.rating-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.vintage-warning {
+  color: var(--priority-2);
+}
+
+.ratings-actions {
+  margin-top: 1rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Settings slider */
+.preference-slider {
+  margin: 1rem 0;
+}
+
+.preference-slider input[type="range"] {
+  width: 100%;
+}
+
+.preference-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .slot {

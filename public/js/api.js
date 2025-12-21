@@ -247,3 +247,72 @@ export async function parseWineImage(base64Image, mediaType) {
   }
   return res.json();
 }
+
+/**
+ * Get ratings for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getWineRatings(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings`);
+  return res.json();
+}
+
+/**
+ * Fetch ratings from web using Claude.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function fetchWineRatingsFromApi(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings/fetch`, {
+    method: 'POST'
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to fetch ratings');
+  }
+  return res.json();
+}
+
+/**
+ * Add manual rating.
+ * @param {number} wineId - Wine ID
+ * @param {Object} rating - Rating details
+ * @returns {Promise<Object>}
+ */
+export async function addManualRating(wineId, rating) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(rating)
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to add rating');
+  }
+  return res.json();
+}
+
+/**
+ * Get user settings.
+ * @returns {Promise<Object>}
+ */
+export async function getSettings() {
+  const res = await fetch(`${API_BASE}/api/settings`);
+  return res.json();
+}
+
+/**
+ * Update a setting.
+ * @param {string} key - Setting key
+ * @param {string} value - Setting value
+ * @returns {Promise<Object>}
+ */
+export async function updateSetting(key, value) {
+  const res = await fetch(`${API_BASE}/api/settings/${key}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ value })
+  });
+  return res.json();
+}
