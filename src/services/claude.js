@@ -20,7 +20,7 @@ const anthropic = new Anthropic({
 export async function getSommelierRecommendation(db, dish, source, colour) {
   // Build wine query based on filters
   let wineQuery;
-  let params = [];
+  const params = [];
 
   if (source === 'reduce_now') {
     wineQuery = `
@@ -119,7 +119,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
                       responseText.match(/```\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
     parsed = JSON.parse(jsonStr.trim());
-  } catch (parseError) {
+  } catch (_parseError) {
     console.error('Failed to parse Claude response:', responseText);
     throw new Error('Could not parse sommelier response');
   }
@@ -212,7 +212,7 @@ RULES:
                       responseText.match(/```\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
     return JSON.parse(jsonStr.trim());
-  } catch (parseError) {
+  } catch (_parseError) {
     console.error('Failed to parse Claude response:', responseText);
     throw new Error('Could not parse wine details from response');
   }
@@ -315,7 +315,7 @@ RULES:
                       responseText.match(/```\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
     return JSON.parse(jsonStr.trim());
-  } catch (parseError) {
+  } catch (_parseError) {
     console.error('Failed to parse Claude Vision response:', responseText);
     throw new Error('Could not parse wine details from image');
   }

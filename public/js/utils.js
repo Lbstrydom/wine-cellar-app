@@ -30,3 +30,18 @@ export function shortenWineName(name) {
     .trim()
     .substring(0, 30);
 }
+
+/**
+ * Escape HTML special characters to prevent XSS.
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string
+ */
+export function escapeHtml(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}

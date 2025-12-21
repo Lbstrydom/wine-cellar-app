@@ -14,7 +14,7 @@ import {
   parseWineText,
   parseWineImage
 } from './api.js';
-import { showToast } from './utils.js';
+import { showToast, escapeHtml } from './utils.js';
 import { refreshData, state } from './app.js';
 import { showWineModal } from './modals.js';
 import { isDragging } from './dragdrop.js';
@@ -37,7 +37,7 @@ export async function initBottles() {
     wineStyles = await fetchWineStyles();
     const datalist = document.getElementById('style-list');
     if (datalist) {
-      datalist.innerHTML = wineStyles.map(s => `<option value="${s}">`).join('');
+      datalist.innerHTML = wineStyles.map(s => `<option value="${escapeHtml(s)}">`).join('');
     }
   } catch (err) {
     console.error('Failed to load wine styles:', err);
@@ -198,7 +198,7 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
     document.getElementById('selected-wine-id').value = wineId;
-  } catch (err) {
+  } catch (_err) {
     showToast('Failed to load wine details');
     return;
   }
@@ -257,9 +257,9 @@ async function handleWineSearch(query) {
       resultsContainer.innerHTML = '<div class="search-result-item">No wines found. Try "New Wine" tab.</div>';
     } else {
       resultsContainer.innerHTML = wines.map(wine => `
-        <div class="search-result-item" data-wine-id="${wine.id}">
-          <div class="search-result-name">${wine.wine_name} ${wine.vintage || 'NV'}</div>
-          <div class="search-result-meta">${wine.style || ''} - ${wine.colour}</div>
+        <div class="search-result-item" data-wine-id="${escapeHtml(wine.id)}">
+          <div class="search-result-name">${escapeHtml(wine.wine_name)} ${escapeHtml(wine.vintage) || 'NV'}</div>
+          <div class="search-result-meta">${escapeHtml(wine.style) || ''} - ${escapeHtml(wine.colour)}</div>
         </div>
       `).join('');
 
@@ -428,8 +428,8 @@ function renderParsedWines(result) {
   }[result.confidence] || 'var(--text-muted)';
 
   html += `<div class="parse-confidence" style="color: ${confidenceColor}; margin-bottom: 0.5rem;">
-    Confidence: ${result.confidence || 'unknown'}
-    ${result.parse_notes ? `<br><small>${result.parse_notes}</small>` : ''}
+    Confidence: ${escapeHtml(result.confidence) || 'unknown'}
+    ${result.parse_notes ? `<br><small>${escapeHtml(result.parse_notes)}</small>` : ''}
   </div>`;
 
   // Wine list (if multiple)
@@ -438,8 +438,8 @@ function renderParsedWines(result) {
     parsedWines.forEach((wine, idx) => {
       html += `
         <div class="parsed-wine-item ${idx === selectedParsedIndex ? 'selected' : ''}" data-index="${idx}">
-          <strong>${wine.wine_name || 'Unknown'}</strong> ${wine.vintage || 'NV'}
-          <br><small>${wine.style || ''} - ${wine.colour || ''}</small>
+          <strong>${escapeHtml(wine.wine_name) || 'Unknown'}</strong> ${escapeHtml(wine.vintage) || 'NV'}
+          <br><small>${escapeHtml(wine.style) || ''} - ${escapeHtml(wine.colour) || ''}</small>
         </div>
       `;
     });
@@ -452,16 +452,16 @@ function renderParsedWines(result) {
     <div class="parsed-wine-preview">
       <h4>Extracted Details</h4>
       <div class="preview-grid">
-        <div><label>Name:</label> ${wine.wine_name || '-'}</div>
-        <div><label>Vintage:</label> ${wine.vintage || 'NV'}</div>
-        <div><label>Colour:</label> ${wine.colour || '-'}</div>
-        <div><label>Style:</label> ${wine.style || '-'}</div>
-        <div><label>Price:</label> ${wine.price_eur ? '\u20AC' + wine.price_eur : '-'}</div>
-        <div><label>Rating:</label> ${wine.vivino_rating || '-'}</div>
-        <div><label>Country:</label> ${wine.country || '-'}</div>
-        <div><label>Alcohol:</label> ${wine.alcohol_pct ? wine.alcohol_pct + '%' : '-'}</div>
+        <div><label>Name:</label> ${escapeHtml(wine.wine_name) || '-'}</div>
+        <div><label>Vintage:</label> ${escapeHtml(wine.vintage) || 'NV'}</div>
+        <div><label>Colour:</label> ${escapeHtml(wine.colour) || '-'}</div>
+        <div><label>Style:</label> ${escapeHtml(wine.style) || '-'}</div>
+        <div><label>Price:</label> ${wine.price_eur ? '\u20AC' + escapeHtml(wine.price_eur) : '-'}</div>
+        <div><label>Rating:</label> ${escapeHtml(wine.vivino_rating) || '-'}</div>
+        <div><label>Country:</label> ${escapeHtml(wine.country) || '-'}</div>
+        <div><label>Alcohol:</label> ${wine.alcohol_pct ? escapeHtml(wine.alcohol_pct) + '%' : '-'}</div>
       </div>
-      ${wine.notes ? `<div class="preview-notes"><label>Notes:</label> ${wine.notes}</div>` : ''}
+      ${wine.notes ? `<div class="preview-notes"><label>Notes:</label> ${escapeHtml(wine.notes)}</div>` : ''}
       <button type="button" class="btn btn-primary" id="use-parsed-btn" style="margin-top: 1rem;">
         Use These Details
       </button>
@@ -538,6 +538,9 @@ async function handleImageFile(file) {
 
     showImagePreview(dataUrl);
   };
+  reader.onerror = () => {
+    showToast('Failed to read image file');
+  };
   reader.readAsDataURL(file);
 }
 
@@ -549,10 +552,20 @@ function showImagePreview(dataUrl) {
   const previewDiv = document.getElementById('image-preview');
   const uploadArea = document.getElementById('image-upload-area');
 
-  previewDiv.innerHTML = `
-    <img src="${dataUrl}" alt="Wine image preview" />
-    <button type="button" class="btn btn-small btn-secondary" id="clear-image-btn">Clear</button>
-  `;
+  // Create elements safely to avoid XSS
+  previewDiv.innerHTML = '';
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Wine image preview';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.className = 'btn btn-small btn-secondary';
+  clearBtn.id = 'clear-image-btn';
+  clearBtn.textContent = 'Clear';
+
+  previewDiv.appendChild(img);
+  previewDiv.appendChild(clearBtn);
   previewDiv.style.display = 'block';
   uploadArea.classList.add('has-image');
 
@@ -560,7 +573,7 @@ function showImagePreview(dataUrl) {
   document.getElementById('parse-image-btn').style.display = 'inline-flex';
 
   // Add clear handler
-  document.getElementById('clear-image-btn').addEventListener('click', (e) => {
+  clearBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     clearUploadedImage();
   });

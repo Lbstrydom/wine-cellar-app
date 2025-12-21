@@ -27,7 +27,7 @@ router.post('/add', (req, res) => {
 
   // Parse start location and find consecutive slots
   const isFridge = start_location.startsWith('F');
-  let slots = [];
+  const slots = [];
 
   if (isFridge) {
     const startNum = parseInt(start_location.substring(1));

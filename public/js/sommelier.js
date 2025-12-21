@@ -6,7 +6,7 @@
 import { askSommelier, getPairingSuggestions } from './api.js';
 import { showToast } from './utils.js';
 
-let selectedSignals = new Set();
+const selectedSignals = new Set();
 
 /**
  * Handle Ask Sommelier button click.
