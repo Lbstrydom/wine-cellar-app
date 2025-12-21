@@ -96,6 +96,49 @@ router.post('/parse', async (req, res) => {
 });
 
 /**
+ * Parse wine details from image using Claude Vision.
+ * @route POST /api/wines/parse-image
+ */
+router.post('/parse-image', async (req, res) => {
+  const { image, mediaType } = req.body;
+
+  if (!image) {
+    return res.status(400).json({ error: 'No image provided' });
+  }
+
+  if (!mediaType) {
+    return res.status(400).json({ error: 'No media type provided' });
+  }
+
+  // Check image size (base64 adds ~33% overhead, so 10MB image ≈ 13MB base64)
+  // Limit to ~5MB original image
+  if (image.length > 7000000) {
+    return res.status(400).json({ error: 'Image too large (max 5MB)' });
+  }
+
+  try {
+    const { parseWineFromImage } = await import('../services/claude.js');
+    const result = await parseWineFromImage(image, mediaType);
+    res.json(result);
+  } catch (error) {
+    console.error('Image parsing error:', error);
+
+    if (error.message.includes('API key')) {
+      return res.status(503).json({ error: 'AI parsing not configured' });
+    }
+
+    if (error.message.includes('Invalid image type')) {
+      return res.status(400).json({ error: error.message });
+    }
+
+    res.status(500).json({
+      error: 'Failed to parse wine from image',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Get single wine by ID.
  * @route GET /api/wines/:id
  */

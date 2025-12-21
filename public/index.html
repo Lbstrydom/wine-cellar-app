@@ -174,15 +174,35 @@
           <input type="hidden" id="selected-wine-id" />
         </div>
 
-        <!-- Parse text section -->
+        <!-- Parse text/image section -->
         <div class="form-section" id="parse-wine-section" style="display: none;">
-          <label class="form-label">Paste or type wine details:</label>
-          <textarea id="wine-text-input" rows="4" placeholder="e.g., 2022 Kleine Zalze Chenin Blanc, South Africa, €8.99
 
-Or paste an order confirmation, wine list, or any text containing wine information..."></textarea>
-          <button type="button" class="btn btn-secondary" id="parse-text-btn" style="margin-top: 0.5rem;">
-            Parse with AI
+          <!-- Image upload area -->
+          <div class="image-upload-area" id="image-upload-area">
+            <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+            <div class="upload-prompt">
+              <span class="upload-icon">📷</span>
+              <span>Click to upload, drag & drop, or paste screenshot</span>
+              <small>JPEG, PNG, WebP, GIF (max 5MB)</small>
+            </div>
+            <div id="image-preview"></div>
+          </div>
+
+          <button type="button" class="btn btn-secondary" id="parse-image-btn" style="display: none; margin-top: 0.5rem;">
+            Parse Image with AI
           </button>
+
+          <div class="parse-divider">
+            <span>or paste/type text</span>
+          </div>
+
+          <!-- Text input area -->
+          <textarea id="wine-text-input" rows="3" placeholder="Paste wine description, order confirmation, or any text containing wine info..."></textarea>
+
+          <button type="button" class="btn btn-secondary" id="parse-text-btn" style="margin-top: 0.5rem;">
+            Parse Text with AI
+          </button>
+
           <div id="parse-results" style="margin-top: 1rem;"></div>
         </div>
 

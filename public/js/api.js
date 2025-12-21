@@ -228,3 +228,22 @@ export async function parseWineText(text) {
   }
   return res.json();
 }
+
+/**
+ * Parse wine details from image using Claude Vision.
+ * @param {string} base64Image - Base64 encoded image (without data URL prefix)
+ * @param {string} mediaType - MIME type (image/jpeg, image/png, etc.)
+ * @returns {Promise<{wines: Array, confidence: string, parse_notes: string}>}
+ */
+export async function parseWineImage(base64Image, mediaType) {
+  const res = await fetch(`${API_BASE}/api/wines/parse-image`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ image: base64Image, mediaType })
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to parse image');
+  }
+  return res.json();
+}

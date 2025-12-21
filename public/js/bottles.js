@@ -11,7 +11,8 @@ import {
   updateWine,
   addBottles,
   removeBottle,
-  parseWineText
+  parseWineText,
+  parseWineImage
 } from './api.js';
 import { showToast } from './utils.js';
 import { refreshData, state } from './app.js';
@@ -25,6 +26,7 @@ let wineStyles = [];
 let searchTimeout = null;
 let parsedWines = [];
 let selectedParsedIndex = 0;
+let uploadedImage = null; // { base64: string, mediaType: string, preview: string }
 
 /**
  * Initialise bottle management.
@@ -74,6 +76,30 @@ export async function initBottles() {
 
   // Parse text button
   document.getElementById('parse-text-btn')?.addEventListener('click', handleParseText);
+
+  // Image upload handlers
+  const uploadArea = document.getElementById('image-upload-area');
+  const fileInput = document.getElementById('image-file-input');
+
+  if (uploadArea) {
+    uploadArea.addEventListener('click', () => fileInput?.click());
+    uploadArea.addEventListener('dragover', handleImageDragOver);
+    uploadArea.addEventListener('dragleave', handleImageDragLeave);
+    uploadArea.addEventListener('drop', handleImageDrop);
+  }
+
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files?.[0];
+      if (file) handleImageFile(file);
+    });
+  }
+
+  // Parse image button
+  document.getElementById('parse-image-btn')?.addEventListener('click', handleParseImage);
+
+  // Paste handler for screenshots (on the modal)
+  document.getElementById('bottle-modal')?.addEventListener('paste', handlePaste);
 }
 
 /**
@@ -132,6 +158,13 @@ export function showAddBottleModal(location) {
   document.getElementById('bottle-form').reset();
   document.getElementById('selected-wine-id').value = '';
   document.getElementById('wine-search-results').classList.remove('active');
+
+  // Reset image upload
+  clearUploadedImage();
+
+  // Clear parse results
+  const parseResults = document.getElementById('parse-results');
+  if (parseResults) parseResults.innerHTML = '';
 
   // Default to existing wine mode
   setBottleFormMode('existing');
@@ -471,4 +504,176 @@ function useParsedWine(wine) {
   document.getElementById('selected-wine-id').value = '';
 
   showToast('Details loaded - review and save');
+}
+
+/**
+ * Handle image file selection.
+ * @param {File} file - Selected image file
+ */
+async function handleImageFile(file) {
+  // Validate file type
+  const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+  if (!validTypes.includes(file.type)) {
+    showToast('Invalid image type. Use JPEG, PNG, WebP, or GIF.');
+    return;
+  }
+
+  // Validate file size (5MB max)
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Image too large (max 5MB)');
+    return;
+  }
+
+  // Read file as base64
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    const dataUrl = e.target.result;
+    const base64 = dataUrl.split(',')[1];
+
+    uploadedImage = {
+      base64: base64,
+      mediaType: file.type,
+      preview: dataUrl
+    };
+
+    showImagePreview(dataUrl);
+  };
+  reader.readAsDataURL(file);
+}
+
+/**
+ * Show image preview in the upload area.
+ * @param {string} dataUrl - Image data URL for preview
+ */
+function showImagePreview(dataUrl) {
+  const previewDiv = document.getElementById('image-preview');
+  const uploadArea = document.getElementById('image-upload-area');
+
+  previewDiv.innerHTML = `
+    <img src="${dataUrl}" alt="Wine image preview" />
+    <button type="button" class="btn btn-small btn-secondary" id="clear-image-btn">Clear</button>
+  `;
+  previewDiv.style.display = 'block';
+  uploadArea.classList.add('has-image');
+
+  // Show the parse image button
+  document.getElementById('parse-image-btn').style.display = 'inline-flex';
+
+  // Add clear handler
+  document.getElementById('clear-image-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    clearUploadedImage();
+  });
+}
+
+/**
+ * Clear the uploaded image.
+ */
+function clearUploadedImage() {
+  uploadedImage = null;
+
+  const previewDiv = document.getElementById('image-preview');
+  const uploadArea = document.getElementById('image-upload-area');
+  const fileInput = document.getElementById('image-file-input');
+
+  if (previewDiv) {
+    previewDiv.innerHTML = '';
+    previewDiv.style.display = 'none';
+  }
+  if (uploadArea) uploadArea.classList.remove('has-image');
+  if (fileInput) fileInput.value = '';
+
+  // Hide the parse image button
+  const parseImageBtn = document.getElementById('parse-image-btn');
+  if (parseImageBtn) parseImageBtn.style.display = 'none';
+}
+
+/**
+ * Handle parse image button click.
+ */
+async function handleParseImage() {
+  if (!uploadedImage) {
+    showToast('Please upload an image first');
+    return;
+  }
+
+  const btn = document.getElementById('parse-image-btn');
+  const resultsDiv = document.getElementById('parse-results');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Analyzing...';
+  resultsDiv.innerHTML = '<p style="color: var(--text-muted);">Analyzing image...</p>';
+
+  try {
+    const result = await parseWineImage(uploadedImage.base64, uploadedImage.mediaType);
+    parsedWines = result.wines || [];
+    selectedParsedIndex = 0;
+
+    if (parsedWines.length === 0) {
+      resultsDiv.innerHTML = '<p style="color: var(--text-muted);">No wines found in image.</p>';
+      return;
+    }
+
+    renderParsedWines(result);
+
+  } catch (err) {
+    resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Parse Image with AI';
+  }
+}
+
+/**
+ * Handle paste event for screenshots.
+ * @param {ClipboardEvent} e - Paste event
+ */
+function handlePaste(e) {
+  const items = e.clipboardData?.items;
+  if (!items) return;
+
+  for (const item of items) {
+    if (item.type.startsWith('image/')) {
+      e.preventDefault();
+      const file = item.getAsFile();
+      if (file) handleImageFile(file);
+      return;
+    }
+  }
+}
+
+/**
+ * Handle drag over for image drop.
+ * @param {DragEvent} e
+ */
+function handleImageDragOver(e) {
+  e.preventDefault();
+  e.currentTarget.classList.add('drag-over');
+}
+
+/**
+ * Handle drag leave for image drop.
+ * @param {DragEvent} e
+ */
+function handleImageDragLeave(e) {
+  e.currentTarget.classList.remove('drag-over');
+}
+
+/**
+ * Handle image drop.
+ * @param {DragEvent} e
+ */
+function handleImageDrop(e) {
+  e.preventDefault();
+  e.currentTarget.classList.remove('drag-over');
+
+  const files = e.dataTransfer?.files;
+  if (files && files.length > 0) {
+    const file = files[0];
+    if (file.type.startsWith('image/')) {
+      handleImageFile(file);
+    } else {
+      showToast('Please drop an image file');
+    }
+  }
 }
