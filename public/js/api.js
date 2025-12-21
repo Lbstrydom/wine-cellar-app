@@ -210,3 +210,21 @@ export async function removeBottle(location) {
   }
   return res.json();
 }
+
+/**
+ * Parse wine details from text using Claude.
+ * @param {string} text - Raw text to parse
+ * @returns {Promise<{wines: Array, confidence: string, parse_notes: string}>}
+ */
+export async function parseWineText(text) {
+  const res = await fetch(`${API_BASE}/api/wines/parse`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text })
+  });
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data.error || 'Failed to parse wine');
+  }
+  return res.json();
+}

@@ -162,6 +162,7 @@
           <div class="form-toggle">
             <button type="button" class="toggle-btn active" data-mode="existing">Existing Wine</button>
             <button type="button" class="toggle-btn" data-mode="new">New Wine</button>
+            <button type="button" class="toggle-btn" data-mode="parse">Parse Text</button>
           </div>
         </div>
 
@@ -171,6 +172,18 @@
           <input type="text" id="wine-search" placeholder="Type to search..." autocomplete="off" />
           <div id="wine-search-results" class="search-results"></div>
           <input type="hidden" id="selected-wine-id" />
+        </div>
+
+        <!-- Parse text section -->
+        <div class="form-section" id="parse-wine-section" style="display: none;">
+          <label class="form-label">Paste or type wine details:</label>
+          <textarea id="wine-text-input" rows="4" placeholder="e.g., 2022 Kleine Zalze Chenin Blanc, South Africa, €8.99
+
+Or paste an order confirmation, wine list, or any text containing wine information..."></textarea>
+          <button type="button" class="btn btn-secondary" id="parse-text-btn" style="margin-top: 0.5rem;">
+            Parse with AI
+          </button>
+          <div id="parse-results" style="margin-top: 1rem;"></div>
         </div>
 
         <!-- New wine form -->

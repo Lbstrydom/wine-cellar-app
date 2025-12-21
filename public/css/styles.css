@@ -834,6 +834,132 @@ header h1 {
   flex-wrap: wrap;
 }
 
+/* ============================================================
+   PARSE TEXT SECTION
+   ============================================================ */
+
+#wine-text-input {
+  width: 100%;
+  padding: 0.8rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 100px;
+}
+
+#wine-text-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+#wine-text-input::placeholder {
+  color: var(--text-muted);
+}
+
+.parse-confidence {
+  font-size: 0.85rem;
+  padding: 0.5rem;
+  background: var(--bg-slot);
+  border-radius: 4px;
+}
+
+.parse-confidence small {
+  opacity: 0.8;
+}
+
+.parsed-wine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.parsed-wine-item {
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.parsed-wine-item:hover {
+  background: var(--bg-slot-hover);
+}
+
+.parsed-wine-item.selected {
+  border-color: var(--accent);
+  background: rgba(139, 115, 85, 0.2);
+}
+
+.parsed-wine-item strong {
+  color: var(--text);
+}
+
+.parsed-wine-item small {
+  color: var(--text-muted);
+}
+
+.parsed-wine-preview {
+  background: var(--bg-slot);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.parsed-wine-preview h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.preview-grid label {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.preview-grid > div {
+  display: flex;
+  flex-direction: column;
+}
+
+.preview-notes {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+  font-size: 0.9rem;
+}
+
+.preview-notes label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  margin-bottom: 0.25rem;
+}
+
+/* Three-tab toggle adjustment */
+.form-toggle .toggle-btn {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .slot {

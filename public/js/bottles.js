@@ -10,7 +10,8 @@ import {
   createWine,
   updateWine,
   addBottles,
-  removeBottle
+  removeBottle,
+  parseWineText
 } from './api.js';
 import { showToast } from './utils.js';
 import { refreshData, state } from './app.js';
@@ -22,6 +23,8 @@ let editingLocation = null;
 let editingWineId = null;
 let wineStyles = [];
 let searchTimeout = null;
+let parsedWines = [];
+let selectedParsedIndex = 0;
 
 /**
  * Initialise bottle management.
@@ -68,6 +71,9 @@ export async function initBottles() {
   document.getElementById('bottle-modal-overlay')?.addEventListener('click', (e) => {
     if (e.target.id === 'bottle-modal-overlay') closeBottleModal();
   });
+
+  // Parse text button
+  document.getElementById('parse-text-btn')?.addEventListener('click', handleParseText);
 }
 
 /**
@@ -180,26 +186,23 @@ export function closeBottleModal() {
 }
 
 /**
- * Set bottle form mode (existing wine search vs new wine entry).
- * @param {string} mode - 'existing' or 'new'
+ * Set bottle form mode (existing wine search, new wine entry, or parse text).
+ * @param {string} mode - 'existing', 'new', or 'parse'
  */
 function setBottleFormMode(mode) {
-  const existingBtn = document.querySelector('.toggle-btn[data-mode="existing"]');
-  const newBtn = document.querySelector('.toggle-btn[data-mode="new"]');
+  // Update toggle buttons
+  document.querySelectorAll('.toggle-btn').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.mode === mode);
+  });
+
+  // Show/hide sections
   const existingSection = document.getElementById('existing-wine-section');
   const newSection = document.getElementById('new-wine-section');
+  const parseSection = document.getElementById('parse-wine-section');
 
-  if (mode === 'existing') {
-    existingBtn?.classList.add('active');
-    newBtn?.classList.remove('active');
-    if (existingSection) existingSection.style.display = 'block';
-    if (newSection) newSection.style.display = 'none';
-  } else {
-    existingBtn?.classList.remove('active');
-    newBtn?.classList.add('active');
-    if (existingSection) existingSection.style.display = 'none';
-    if (newSection) newSection.style.display = 'block';
-  }
+  if (existingSection) existingSection.style.display = mode === 'existing' ? 'block' : 'none';
+  if (newSection) newSection.style.display = mode === 'new' ? 'block' : 'none';
+  if (parseSection) parseSection.style.display = mode === 'parse' ? 'block' : 'none';
 }
 
 /**
@@ -335,4 +338,137 @@ async function handleDeleteBottle() {
   } catch (err) {
     showToast('Error: ' + err.message);
   }
+}
+
+/**
+ * Handle parse text button click.
+ */
+async function handleParseText() {
+  const textInput = document.getElementById('wine-text-input');
+  const text = textInput.value.trim();
+
+  if (!text) {
+    showToast('Please enter or paste wine text');
+    return;
+  }
+
+  const btn = document.getElementById('parse-text-btn');
+  const resultsDiv = document.getElementById('parse-results');
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loading-spinner"></span> Parsing...';
+  resultsDiv.innerHTML = '<p style="color: var(--text-muted);">Analyzing text...</p>';
+
+  try {
+    const result = await parseWineText(text);
+    parsedWines = result.wines || [];
+
+    if (parsedWines.length === 0) {
+      resultsDiv.innerHTML = '<p style="color: var(--text-muted);">No wines found in text.</p>';
+      return;
+    }
+
+    renderParsedWines(result);
+
+  } catch (err) {
+    resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Parse with AI';
+  }
+}
+
+/**
+ * Render parsed wines for selection.
+ * @param {Object} result - Parse result with wines array
+ */
+function renderParsedWines(result) {
+  const resultsDiv = document.getElementById('parse-results');
+
+  let html = '';
+
+  // Confidence indicator
+  const confidenceColor = {
+    'high': 'var(--accent)',
+    'medium': 'var(--priority-2)',
+    'low': 'var(--priority-1)'
+  }[result.confidence] || 'var(--text-muted)';
+
+  html += `<div class="parse-confidence" style="color: ${confidenceColor}; margin-bottom: 0.5rem;">
+    Confidence: ${result.confidence || 'unknown'}
+    ${result.parse_notes ? `<br><small>${result.parse_notes}</small>` : ''}
+  </div>`;
+
+  // Wine list (if multiple)
+  if (parsedWines.length > 1) {
+    html += '<div class="parsed-wine-list">';
+    parsedWines.forEach((wine, idx) => {
+      html += `
+        <div class="parsed-wine-item ${idx === selectedParsedIndex ? 'selected' : ''}" data-index="${idx}">
+          <strong>${wine.wine_name || 'Unknown'}</strong> ${wine.vintage || 'NV'}
+          <br><small>${wine.style || ''} - ${wine.colour || ''}</small>
+        </div>
+      `;
+    });
+    html += '</div>';
+  }
+
+  // Selected wine preview
+  const wine = parsedWines[selectedParsedIndex];
+  html += `
+    <div class="parsed-wine-preview">
+      <h4>Extracted Details</h4>
+      <div class="preview-grid">
+        <div><label>Name:</label> ${wine.wine_name || '-'}</div>
+        <div><label>Vintage:</label> ${wine.vintage || 'NV'}</div>
+        <div><label>Colour:</label> ${wine.colour || '-'}</div>
+        <div><label>Style:</label> ${wine.style || '-'}</div>
+        <div><label>Price:</label> ${wine.price_eur ? '\u20AC' + wine.price_eur : '-'}</div>
+        <div><label>Rating:</label> ${wine.vivino_rating || '-'}</div>
+        <div><label>Country:</label> ${wine.country || '-'}</div>
+        <div><label>Alcohol:</label> ${wine.alcohol_pct ? wine.alcohol_pct + '%' : '-'}</div>
+      </div>
+      ${wine.notes ? `<div class="preview-notes"><label>Notes:</label> ${wine.notes}</div>` : ''}
+      <button type="button" class="btn btn-primary" id="use-parsed-btn" style="margin-top: 1rem;">
+        Use These Details
+      </button>
+    </div>
+  `;
+
+  resultsDiv.innerHTML = html;
+
+  // Add click handlers for wine selection
+  resultsDiv.querySelectorAll('.parsed-wine-item').forEach(item => {
+    item.addEventListener('click', () => {
+      selectedParsedIndex = parseInt(item.dataset.index);
+      renderParsedWines(result);
+    });
+  });
+
+  // Add handler for "Use These Details" button
+  document.getElementById('use-parsed-btn')?.addEventListener('click', () => {
+    useParsedWine(parsedWines[selectedParsedIndex]);
+  });
+}
+
+/**
+ * Populate form with parsed wine details.
+ * @param {Object} wine - Parsed wine object
+ */
+function useParsedWine(wine) {
+  // Switch to "New Wine" tab
+  setBottleFormMode('new');
+
+  // Populate fields
+  document.getElementById('wine-name').value = wine.wine_name || '';
+  document.getElementById('wine-vintage').value = wine.vintage || '';
+  document.getElementById('wine-colour').value = wine.colour || 'white';
+  document.getElementById('wine-style').value = wine.style || '';
+  document.getElementById('wine-rating').value = wine.vivino_rating || '';
+  document.getElementById('wine-price').value = wine.price_eur || '';
+
+  // Clear the selected wine ID since we're creating new
+  document.getElementById('selected-wine-id').value = '';
+
+  showToast('Details loaded - review and save');
 }

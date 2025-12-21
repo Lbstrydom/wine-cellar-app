@@ -143,6 +143,82 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
 }
 
 /**
+ * Parse wine details from text using Claude.
+ * @param {string} text - Raw text containing wine information
+ * @returns {Promise<Object>} Parsed wine details
+ */
+export async function parseWineFromText(text) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('Claude API key not configured');
+  }
+
+  const prompt = `You are a wine data extraction assistant. Extract wine details from the following text.
+
+TEXT:
+${text}
+
+Extract the following fields (use null if not found):
+- wine_name: Full name of the wine (producer + wine name, exclude vintage)
+- vintage: Year as integer (null if NV or not specified)
+- colour: One of "red", "white", "rose", "sparkling" (infer from grape/style if not explicit)
+- style: Grape variety or wine style (e.g., "Sauvignon Blanc", "Chianti", "Champagne")
+- price_eur: Price as decimal number (convert to EUR if another currency, use approximate rate)
+- vivino_rating: Rating as decimal if mentioned (null if not)
+- country: Country of origin
+- region: Specific region if mentioned
+- alcohol_pct: Alcohol percentage as decimal if mentioned
+- notes: Any tasting notes or descriptions
+
+If multiple wines are present, return an array. If single wine, still return an array with one element.
+
+Respond ONLY with valid JSON, no other text:
+{
+  "wines": [
+    {
+      "wine_name": "Producer Wine Name",
+      "vintage": 2022,
+      "colour": "white",
+      "style": "Sauvignon Blanc",
+      "price_eur": 12.99,
+      "vivino_rating": null,
+      "country": "France",
+      "region": "Loire Valley",
+      "alcohol_pct": 13.0,
+      "notes": "Crisp and citrusy"
+    }
+  ],
+  "confidence": "high",
+  "parse_notes": "Any notes about assumptions made"
+}
+
+RULES:
+- Infer colour from grape variety if not stated (e.g., Merlot → red, Chardonnay → white)
+- For blends, use the dominant grape as style
+- If price is in another currency, convert to EUR (USD: ×0.92, GBP: ×1.17, ZAR: ×0.05)
+- Set confidence to "high", "medium", or "low" based on how much you had to infer
+- Be conservative - only include what you can reasonably determine`;
+
+  const message = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 1500,
+    messages: [{ role: 'user', content: prompt }]
+  });
+
+  const responseText = message.content[0].text;
+
+  try {
+    // Handle potential markdown code blocks
+    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      responseText.match(/```\s*([\s\S]*?)\s*```/);
+    const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+    return JSON.parse(jsonStr.trim());
+  } catch (parseError) {
+    console.error('Failed to parse Claude response:', responseText);
+    throw new Error('Could not parse wine details from response');
+  }
+}
+
+/**
  * Build the sommelier prompt.
  * @private
  */

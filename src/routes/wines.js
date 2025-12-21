@@ -63,6 +63,39 @@ router.get('/', (req, res) => {
 });
 
 /**
+ * Parse wine details from text using Claude.
+ * @route POST /api/wines/parse
+ */
+router.post('/parse', async (req, res) => {
+  const { text } = req.body;
+
+  if (!text || text.trim().length === 0) {
+    return res.status(400).json({ error: 'No text provided' });
+  }
+
+  if (text.length > 5000) {
+    return res.status(400).json({ error: 'Text too long (max 5000 characters)' });
+  }
+
+  try {
+    const { parseWineFromText } = await import('../services/claude.js');
+    const result = await parseWineFromText(text);
+    res.json(result);
+  } catch (error) {
+    console.error('Wine parsing error:', error);
+
+    if (error.message.includes('API key')) {
+      return res.status(503).json({ error: 'AI parsing not configured' });
+    }
+
+    res.status(500).json({
+      error: 'Failed to parse wine details',
+      message: error.message
+    });
+  }
+});
+
+/**
  * Get single wine by ID.
  * @route GET /api/wines/:id
  */
