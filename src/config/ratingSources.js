@@ -220,6 +220,46 @@ export const RATING_SOURCES = {
     score_type: 'points',
     points_scale: { min: 0, max: 100 }
   },
+  wine_enthusiast: {
+    name: 'Wine Enthusiast',
+    short_name: 'Wine Enthusiast',
+    lens: 'critics',
+    credibility: 0.70,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
+  natalie_maclean: {
+    name: 'Natalie MacLean',
+    short_name: 'N. MacLean',
+    lens: 'critics',
+    credibility: 0.60,
+    scope: 'global',
+    home_regions: ['Canada'],
+    score_type: 'points',
+    points_scale: { min: 0, max: 100 }
+  },
+  cellar_tracker: {
+    name: 'CellarTracker',
+    short_name: 'CellarTracker',
+    lens: 'community',
+    credibility: 0.55,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
+  wine_align: {
+    name: 'WineAlign',
+    short_name: 'WineAlign',
+    lens: 'community',
+    credibility: 0.60,
+    scope: 'global',
+    home_regions: ['Canada'],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
 
   // COMMUNITY (lens: community)
   vivino: {

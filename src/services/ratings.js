@@ -17,7 +17,15 @@ export function normalizeScore(source, scoreType, rawScore) {
   if (!config) throw new Error(`Unknown source: ${source}`);
 
   if (scoreType === 'points') {
-    const points = parseFloat(rawScore);
+    // Handle formats like "91/100", "91 points", "91"
+    let scoreStr = String(rawScore).trim();
+    scoreStr = scoreStr.replace(/\/\d+$/, '').replace(/\s*points?$/i, '').trim();
+    const points = parseFloat(scoreStr);
+
+    if (isNaN(points)) {
+      // Fallback for unparseable scores
+      return { min: 85, max: 90, mid: 87.5 };
+    }
 
     // Handle Jancis Robinson's 20-point scale
     if (source === 'jancis_robinson' && points <= 20) {
@@ -277,10 +285,10 @@ function calculatePurchaseScore(lensIndices, preferenceSlider = 40) {
  * @returns {Object} Aggregated rating data
  */
 export function calculateWineRatings(ratings, wine, preferenceSlider = 40) {
-  // Group by lens
+  // Group by lens (handle both 'critic'/'critics' and 'panel_guide' variants)
   const byLens = {
     competition: ratings.filter(r => r.source_lens === 'competition'),
-    critics: ratings.filter(r => r.source_lens === 'critics'),
+    critics: ratings.filter(r => r.source_lens === 'critics' || r.source_lens === 'critic' || r.source_lens === 'panel_guide'),
     community: ratings.filter(r => r.source_lens === 'community')
   };
 

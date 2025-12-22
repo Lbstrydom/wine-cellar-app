@@ -1,9 +1,12 @@
 /**
- * @fileoverview Claude API integration for sommelier feature.
+ * @fileoverview Claude API integration for sommelier feature and rating extraction.
  * @module services/claude
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { searchWineRatings, fetchPageContent } from './searchProviders.js';
+import { LENS_CREDIBILITY, getSourceConfig } from '../config/sourceRegistry.js';
+import logger from '../utils/logger.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -322,9 +325,8 @@ RULES:
 }
 
 /**
- * Fetch wine ratings from various sources using Claude web search.
- * Performs parallel searches: Vivino + Competitions + Critics.
- * @param {Object} wine - Wine object with name, vintage, country, style
+ * Fetch wine ratings using multi-provider search + Claude parse.
+ * @param {Object} wine - Wine object
  * @returns {Promise<Object>} Fetched ratings
  */
 export async function fetchWineRatings(wine) {
@@ -336,300 +338,255 @@ export async function fetchWineRatings(wine) {
   const vintage = wine.vintage || '';
   const country = wine.country || '';
 
-  console.log(`[Ratings] Searching for: ${wineName} ${vintage}`);
+  logger.separator();
+  logger.info('Ratings', `Starting search for: ${wineName} ${vintage}`);
+  logger.info('Ratings', `API Keys: Google=${process.env.GOOGLE_SEARCH_API_KEY ? 'Set' : 'MISSING'}, Engine=${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set' : 'MISSING'}, Brave=${process.env.BRAVE_SEARCH_API_KEY ? 'Set' : 'MISSING'}`);
 
-  // Run searches in parallel
-  const [vivinoResult, competitionResult, criticResult] = await Promise.all([
-    searchVivino(wineName, vintage),
-    searchCompetitions(wineName, vintage, country),
-    searchCritics(wineName, vintage, country)
-  ]);
+  // Step 1: Search for relevant pages
+  const searchResults = await searchWineRatings(wineName, vintage, country);
 
-  console.log(`[Ratings] Vivino found: ${vivinoResult.ratings.length} ratings`);
-  console.log(`[Ratings] Competitions found: ${competitionResult.ratings.length} ratings`);
-  console.log(`[Ratings] Critics found: ${criticResult.ratings.length} ratings`);
+  if (searchResults.results.length === 0) {
+    logger.warn('Ratings', 'No search results found');
+    return {
+      ratings: [],
+      search_notes: 'No search results found'
+    };
+  }
 
-  // Combine and deduplicate
-  const allRatings = deduplicateRatings([
-    ...vivinoResult.ratings,
-    ...competitionResult.ratings,
-    ...criticResult.ratings
-  ]);
+  logger.info('Ratings', `Found ${searchResults.results.length} potential pages`);
 
-  console.log(`[Ratings] After dedup: ${allRatings.length} ratings`);
+  // Step 2: Fetch top pages (prioritize high credibility sources)
+  // Increased from 5 to 8 to catch more diverse sources
+  const pagesToFetch = searchResults.results.slice(0, 8);
+  const fetchPromises = pagesToFetch.map(async (result) => {
+    const fetched = await fetchPageContent(result.url, 8000);
+    return {
+      ...result,
+      content: fetched.content,
+      fetchSuccess: fetched.success,
+      fetchError: fetched.error
+    };
+  });
 
-  const searchNotes = [
-    vivinoResult.search_notes,
-    competitionResult.search_notes,
-    criticResult.search_notes
-  ].filter(Boolean).join(' | ');
+  const pages = await Promise.all(fetchPromises);
+  const validPages = pages.filter(p => p.fetchSuccess && p.content.length > 200);
 
-  // Get tasting notes from critic search if available
-  const tastingNotes = criticResult.tasting_notes || null;
+  logger.info('Ratings', `Successfully fetched ${validPages.length}/${pagesToFetch.length} pages`);
 
-  return {
-    ratings: allRatings,
-    tasting_notes: tastingNotes,
-    search_notes: searchNotes || 'Search completed'
-  };
-}
+  // If no pages could be fetched, try extracting from search snippets
+  // This is especially useful for sites like Vivino that block direct fetches
+  if (validPages.length === 0) {
+    logger.info('Ratings', 'No pages fetched, attempting snippet extraction...');
 
-/**
- * Deduplicate ratings by source.
- * If same source appears multiple times, keep the one with higher confidence.
- * @param {Array} ratings - Array of rating objects
- * @returns {Array} Deduplicated ratings
- */
-function deduplicateRatings(ratings) {
-  const seen = new Map();
+    // Build snippet-based extraction for blocked pages
+    const snippetPages = pagesToFetch
+      .filter(p => p.snippet && p.snippet.length > 20)
+      .map(p => ({
+        ...p,
+        content: `Title: ${p.title}\nSnippet: ${p.snippet}`,
+        fetchSuccess: true
+      }));
 
-  for (const rating of ratings) {
-    const key = `${rating.source}-${rating.competition_year || 'any'}`;
-    const existing = seen.get(key);
+    if (snippetPages.length > 0) {
+      logger.info('Ratings', `Trying extraction from ${snippetPages.length} search snippets`);
+      const snippetPrompt = buildSnippetExtractionPrompt(wineName, vintage, snippetPages);
 
-    if (!existing) {
-      seen.set(key, rating);
-    } else {
-      // Keep the one with higher confidence
-      const confidenceOrder = { high: 3, medium: 2, low: 1 };
-      const existingConf = confidenceOrder[existing.match_confidence] || 0;
-      const newConf = confidenceOrder[rating.match_confidence] || 0;
+      const snippetResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 2000,
+        messages: [{ role: 'user', content: snippetPrompt }]
+      });
 
-      if (newConf > existingConf) {
-        seen.set(key, rating);
+      const snippetParsed = parseRatingResponse(snippetResponse.content[0].text, 'Snippet');
+
+      if (snippetParsed.ratings && snippetParsed.ratings.length > 0) {
+        logger.info('Ratings', `Extracted ${snippetParsed.ratings.length} ratings from snippets`);
+
+        // Enrich with source metadata
+        snippetParsed.ratings = snippetParsed.ratings.map(r => {
+          const config = getSourceConfig(r.source);
+          return {
+            ...r,
+            lens: config?.lens || r.lens,
+            credibility: LENS_CREDIBILITY[config?.lens] || 1.0
+          };
+        });
+
+        return snippetParsed;
       }
     }
+
+    // Final fallback - return search results for manual review
+    return {
+      ratings: [],
+      search_notes: `Found ${searchResults.results.length} results but could not fetch page contents`,
+      search_results: searchResults.results.map(r => ({
+        source: r.sourceId,
+        url: r.url,
+        title: r.title
+      }))
+    };
   }
 
-  return Array.from(seen.values());
-}
+  // Step 3: Ask Claude to extract ratings from page contents
+  const parsePrompt = buildExtractionPrompt(wineName, vintage, validPages);
 
-/**
- * Extract text content from Claude response.
- * @param {Object} response - Claude API response
- * @returns {string} Extracted text
- */
-function extractTextFromResponse(response) {
-  return response.content
-    .filter(c => c.type === 'text')
-    .map(c => c.text)
-    .join('\n');
-}
+  logger.info('Ratings', 'Sending to Claude for extraction...');
 
-/**
- * Search specifically for Vivino rating.
- * @param {string} wineName
- * @param {string|number} vintage
- * @returns {Promise<Object>}
- */
-async function searchVivino(wineName, vintage) {
-  const searchPrompt = `Find the Vivino rating for: ${wineName} ${vintage}
+  const parseResponse = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 2000,
+    messages: [{ role: 'user', content: parsePrompt }]
+  });
 
-I need the star rating (out of 5) and number of user ratings.
-Search Vivino for this wine.`;
+  const responseText = parseResponse.content[0].text;
+  const parsed = parseRatingResponse(responseText, 'Extraction');
 
-  try {
-    const searchResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1000,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: [{ role: 'user', content: searchPrompt }]
+  // Enrich ratings with source metadata
+  if (parsed.ratings) {
+    parsed.ratings = parsed.ratings.map(r => {
+      const config = getSourceConfig(r.source);
+      return {
+        ...r,
+        lens: config?.lens || r.lens,
+        credibility: LENS_CREDIBILITY[config?.lens] || 1.0
+      };
     });
+  }
 
-    const searchText = extractTextFromResponse(searchResponse);
-    console.log(`[Vivino] Raw response length: ${searchText.length}`);
+  logger.info('Ratings', `Extracted ${parsed.ratings?.length || 0} ratings`);
+  logger.separator();
 
-    if (!searchText || searchText.length < 20) {
-      return { ratings: [], search_notes: 'Vivino: No results' };
-    }
+  return parsed;
+}
 
-    const formatPrompt = `Extract the Vivino rating as JSON.
+/**
+ * Build extraction prompt for Claude.
+ * @param {string} wineName - Wine name
+ * @param {string|number} vintage - Vintage year
+ * @param {Object[]} pages - Fetched page data
+ * @returns {string} Extraction prompt
+ */
+function buildExtractionPrompt(wineName, vintage, pages) {
+  const pageTexts = pages.map((p, i) =>
+    `--- PAGE ${i + 1}: ${p.sourceId} (${p.url}) ---
+Title: ${p.title}
+Content:
+${p.content.substring(0, 4000)}
+`
+  ).join('\n\n');
+
+  return `Extract wine ratings for "${wineName}" ${vintage} from these pages.
+
+${pageTexts}
+
+---
+
+TASK: Extract any ratings found for this specific wine.
+
+For each rating, provide:
+- source: Use these identifiers ONLY:
+  Competitions: decanter, iwc, iwsc, concours_mondial, mundus_vini, veritas, old_mutual
+  Panel Guides: platters, halliday, guia_penin, gambero_rosso
+  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, descorchados, decanter_magazine
+  Community: vivino
+
+- lens: "competition", "panel_guide", "critic", or "community"
+- score_type: "medal", "points", or "stars"
+- raw_score: The actual score (e.g., "Gold", "92", "4.2", "91/100")
+- competition_year: Year of the rating if mentioned
+- rating_count: Number of ratings (Vivino only)
+- source_url: The page URL where you found this
+- evidence_excerpt: A SHORT quote (max 50 chars) proving the rating
+- vintage_match: "exact" if vintage matches, "inferred" if close vintage, "non_vintage" if NV rating
+- match_confidence: "high" if clearly this wine, "medium" if probably, "low" if uncertain
 
 Return ONLY valid JSON:
 {
-  "ratings": [{
-    "source": "vivino",
-    "lens": "community",
-    "score_type": "stars",
-    "raw_score": "4.2",
-    "competition_year": null,
-    "rating_count": 163,
-    "match_confidence": "high"
-  }],
-  "search_notes": "Found on Vivino"
+  "ratings": [
+    {
+      "source": "tim_atkin",
+      "lens": "critic",
+      "score_type": "points",
+      "raw_score": "91",
+      "competition_year": 2024,
+      "rating_count": null,
+      "source_url": "https://timatkin.com/...",
+      "evidence_excerpt": "Springfield Special Cuvee 91/100",
+      "vintage_match": "exact",
+      "match_confidence": "high"
+    }
+  ],
+  "tasting_notes": "Any tasting notes found (combine from multiple sources)",
+  "search_notes": "Summary: found X ratings from Y sources"
 }
 
-If not found: {"ratings": [], "search_notes": "No Vivino rating found"}`;
-
-    const formatResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 500,
-      messages: [
-        { role: 'user', content: searchPrompt },
-        { role: 'assistant', content: searchText },
-        { role: 'user', content: formatPrompt }
-      ]
-    });
-
-    return parseRatingResponse(extractTextFromResponse(formatResponse), 'Vivino');
-
-  } catch (error) {
-    console.error('[Vivino] Search error:', error.message);
-    return { ratings: [], search_notes: 'Vivino search failed' };
-  }
+RULES:
+- ONLY include ratings that clearly match "${wineName}"
+- Check vintage carefully - only "exact" if vintage matches exactly
+- Do NOT fabricate ratings - only extract what's in the text
+- Include evidence_excerpt to prove the rating exists
+- For Platter's, convert stars to "stars" score_type (e.g., "4.5")
+- For Jancis Robinson, scores are out of 20 (e.g., "17" means 17/20)
+- If no ratings found for this wine: {"ratings": [], "search_notes": "No ratings found"}`;
 }
 
 /**
- * Search for competition medals.
- * @param {string} wineName
- * @param {string|number} vintage
- * @param {string} country
- * @returns {Promise<Object>}
+ * Build extraction prompt for search snippets (fallback when pages can't be fetched).
+ * @param {string} wineName - Wine name
+ * @param {string|number} vintage - Vintage year
+ * @param {Object[]} snippets - Search result snippets
+ * @returns {string} Extraction prompt
  */
-async function searchCompetitions(wineName, vintage, country) {
-  const searchPrompt = `Find wine competition medals and awards for: ${wineName} ${vintage}
-${country ? `Country: ${country}` : ''}
+function buildSnippetExtractionPrompt(wineName, vintage, snippets) {
+  const snippetTexts = snippets.map((s, i) =>
+    `--- RESULT ${i + 1}: ${s.source} ---
+URL: ${s.url}
+Title: ${s.title}
+Snippet: ${s.snippet}
+`
+  ).join('\n');
 
-Search for medals from:
-- Decanter World Wine Awards (DWWA)
-- International Wine Challenge (IWC)
-- International Wine & Spirit Competition (IWSC)
-- Concours Mondial de Bruxelles
-- Mundus Vini
-- Veritas Awards (if South African)
-- Any other major wine competition
+  return `Extract wine ratings for "${wineName}" ${vintage} from these SEARCH SNIPPETS.
 
-Report any Gold, Silver, Bronze medals or awards found.`;
+Note: These are search result snippets, not full pages. Extract any ratings visible in the snippets.
 
-  try {
-    const searchResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1500,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: [{ role: 'user', content: searchPrompt }]
-    });
+${snippetTexts}
 
-    const searchText = extractTextFromResponse(searchResponse);
-    console.log(`[Competitions] Raw response length: ${searchText.length}`);
+---
 
-    if (!searchText || searchText.length < 30) {
-      return { ratings: [], search_notes: 'Competitions: No results' };
-    }
+TASK: Extract any ratings visible in the snippets above.
 
-    const formatPrompt = `Extract competition medals as JSON.
+Common patterns to look for:
+- Vivino: "3.8" or "4.2 stars" or "Rated 3.9"
+- Critics: "92 points" or "91/100"
+- Medals: "Gold Medal" or "Silver"
 
-Source identifiers: decanter, iwc, iwsc, concours_mondial, mundus_vini, veritas, old_mutual
+For each rating found, provide:
+- source: Use these identifiers:
+  Community: vivino
+  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling
+  Competitions: decanter, iwc, iwsc
+
+- lens: "community" for Vivino, "critic" for critics, "competition" for medals
+- score_type: "stars" for Vivino, "points" for critics, "medal" for competitions
+- raw_score: The actual score (e.g., "3.8", "92", "Gold")
+- source_url: The URL from the search result
+- evidence_excerpt: Quote from the snippet showing the rating
+- match_confidence: "medium" (snippets have less context than full pages)
 
 Return ONLY valid JSON:
 {
-  "ratings": [{
-    "source": "decanter",
-    "lens": "competition",
-    "score_type": "medal",
-    "raw_score": "Gold",
-    "competition_year": 2024,
-    "rating_count": null,
-    "match_confidence": "high"
-  }],
-  "search_notes": "Found X medals"
+  "ratings": [...],
+  "search_notes": "Extracted from search snippets (pages blocked)"
 }
 
-If not found: {"ratings": [], "search_notes": "No competition medals found"}`;
-
-    const formatResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1000,
-      messages: [
-        { role: 'user', content: searchPrompt },
-        { role: 'assistant', content: searchText },
-        { role: 'user', content: formatPrompt }
-      ]
-    });
-
-    return parseRatingResponse(extractTextFromResponse(formatResponse), 'Competitions');
-
-  } catch (error) {
-    console.error('[Competitions] Search error:', error.message);
-    return { ratings: [], search_notes: 'Competition search failed' };
-  }
-}
-
-/**
- * Search for critic scores - more targeted search.
- * @param {string} wineName
- * @param {string|number} vintage
- * @param {string} country
- * @returns {Promise<Object>}
- */
-async function searchCritics(wineName, vintage, _country) {
-  const searchPrompt = `Find professional wine critic scores for: ${wineName} ${vintage}
-
-Search specifically for reviews from:
-- Tim Atkin (timatkin.com) - especially for South African wines
-- Platter's Wine Guide - for South African wines
-- Wine Advocate / Robert Parker
-- Wine Spectator
-- James Suckling
-- Jancis Robinson
-- Decanter magazine reviews
-
-Search for "${wineName}" combined with each critic name.
-Report any scores found (usually out of 100, or out of 20 for Jancis Robinson).`;
-
-  try {
-    const searchResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1500,
-      tools: [{ type: 'web_search_20250305', name: 'web_search' }],
-      messages: [{ role: 'user', content: searchPrompt }]
-    });
-
-    const searchText = extractTextFromResponse(searchResponse);
-    console.log(`[Critics] Raw response length: ${searchText.length}`);
-    console.log(`[Critics] Raw response preview: ${searchText.substring(0, 500)}`);
-
-    if (!searchText || searchText.length < 30) {
-      return { ratings: [], search_notes: 'Critics: No results' };
-    }
-
-    const formatPrompt = `Extract critic scores as JSON.
-
-Source identifiers: tim_atkin, platters, wine_advocate, wine_spectator, james_suckling, jancis_robinson, decanter_magazine
-
-Return ONLY valid JSON:
-{
-  "ratings": [{
-    "source": "tim_atkin",
-    "lens": "critics",
-    "score_type": "points",
-    "raw_score": "91",
-    "competition_year": 2024,
-    "rating_count": null,
-    "match_confidence": "high"
-  }],
-  "tasting_notes": "Any tasting notes found from critics",
-  "search_notes": "Found Tim Atkin 91 points"
-}
-
-If not found: {"ratings": [], "tasting_notes": null, "search_notes": "No critic scores found"}
-Do NOT include Vivino - that's handled separately.`;
-
-    const formatResponse = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: 1000,
-      messages: [
-        { role: 'user', content: searchPrompt },
-        { role: 'assistant', content: searchText },
-        { role: 'user', content: formatPrompt }
-      ]
-    });
-
-    return parseRatingResponse(extractTextFromResponse(formatResponse), 'Critics');
-
-  } catch (error) {
-    console.error('[Critics] Search error:', error.message);
-    return { ratings: [], search_notes: 'Critic search failed' };
-  }
+RULES:
+- ONLY extract ratings clearly visible in the snippets
+- For Vivino, look for star ratings like "3.8" or "4.1"
+- Do NOT fabricate - only extract what you can see
+- If rating_count is visible (e.g., "1234 ratings"), include it
+- If no ratings visible: {"ratings": [], "search_notes": "No ratings visible in snippets"}`;
 }
 
 /**
