@@ -3,7 +3,7 @@
  * @module services/searchProviders
  */
 
-import { getDomainsForCountry, getSourcesForCountry } from '../config/sourceRegistry.js';
+import { getSourcesForCountry } from '../config/sourceRegistry.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -458,7 +458,7 @@ function calculateResultRelevance(result, wineName, vintage) {
  * @param {string|number} vintage - Vintage
  * @returns {boolean} True if relevant
  */
-function isResultRelevant(result, wineName, vintage) {
+function _isResultRelevant(result, wineName, vintage) {
   return calculateResultRelevance(result, wineName, vintage).relevant;
 }
 
@@ -527,7 +527,7 @@ export async function searchWineRatings(wineName, vintage, country) {
   logger.info('Search', `Brave found: ${braveResults.length} results`);
 
   // Strategy 3: Try name variations if we still have few results
-  let variationResults = [];
+  const variationResults = [];
   if (targetedResults.length + broadResults.length + braveResults.length < 5 && wineNameVariations.length > 1) {
     logger.info('Search', 'Trying wine name variations...');
     for (const variation of wineNameVariations.slice(1)) { // Skip first (original)

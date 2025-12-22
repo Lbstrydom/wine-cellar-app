@@ -230,19 +230,30 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
  */
 router.post('/:wineId/ratings', (req, res) => {
   const { wineId } = req.params;
-  const { source, score_type, raw_score, competition_year, award_name, source_url, notes } = req.body;
+  const { source, score_type, raw_score, competition_year, award_name, source_url, notes, custom_source_name } = req.body;
 
   const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
   if (!wine) {
     return res.status(404).json({ error: 'Wine not found' });
   }
 
+  // Get source config, or use defaults for "other" custom sources
   const sourceConfig = RATING_SOURCES[source];
-  if (!sourceConfig) {
+  let sourceLens = 'critics'; // Default lens for unknown sources
+  let normalized;
+
+  if (sourceConfig) {
+    sourceLens = sourceConfig.lens;
+    normalized = normalizeScore(source, score_type, raw_score);
+  } else if (source === 'other') {
+    // Handle custom "other" source - use generic normalization
+    normalized = normalizeScore('other', score_type, raw_score);
+  } else {
     return res.status(400).json({ error: 'Unknown rating source' });
   }
 
-  const normalized = normalizeScore(source, score_type, raw_score);
+  // Use custom source name if provided, otherwise use source ID
+  const sourceToStore = source === 'other' && custom_source_name ? custom_source_name : source;
 
   const result = db.prepare(`
     INSERT INTO wine_ratings (
@@ -252,7 +263,7 @@ router.post('/:wineId/ratings', (req, res) => {
       is_user_override, override_note
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
   `).run(
-    wineId, wine.vintage, source, sourceConfig.lens, score_type, raw_score,
+    wineId, wine.vintage, sourceToStore, sourceLens, score_type, raw_score,
     normalized.min, normalized.max, normalized.mid,
     award_name || null, competition_year || null, source_url || null,
     notes || null

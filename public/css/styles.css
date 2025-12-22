@@ -1045,6 +1045,29 @@ header h1 {
   font-size: 0.75rem;
 }
 
+/* Image upload buttons row */
+.image-upload-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.image-upload-buttons .btn {
+  flex: 1;
+  padding: 0.5rem;
+  font-size: 0.85rem;
+}
+
+/* Hide take photo button on non-mobile by default, show on mobile */
+@media (min-width: 769px) {
+  #take-photo-btn {
+    display: none;
+  }
+  .image-upload-buttons {
+    display: none;
+  }
+}
+
 /* Parse divider */
 .parse-divider {
   display: flex;
@@ -1265,6 +1288,66 @@ header h1 {
   margin-top: 1rem;
   display: flex;
   gap: 0.5rem;
+}
+
+/* Manual rating form */
+.manual-rating-form {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.manual-rating-form h4 {
+  margin: 0 0 1rem 0;
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.manual-rating-form .form-row {
+  margin-bottom: 0.75rem;
+}
+
+.manual-rating-form .form-field {
+  flex: 1;
+}
+
+.manual-rating-form label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.manual-rating-form select,
+.manual-rating-form input {
+  width: 100%;
+  padding: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
+.manual-rating-form select:focus,
+.manual-rating-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.manual-rating-form .form-hint {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.manual-rating-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
 }
 
 /* Settings slider */

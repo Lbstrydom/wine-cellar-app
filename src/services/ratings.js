@@ -14,7 +14,11 @@ import { RATING_SOURCES } from '../config/ratingSources.js';
  */
 export function normalizeScore(source, scoreType, rawScore) {
   const config = RATING_SOURCES[source];
-  if (!config) throw new Error(`Unknown source: ${source}`);
+
+  // Handle "other" custom sources with generic normalization
+  if (!config && source !== 'other') {
+    throw new Error(`Unknown source: ${source}`);
+  }
 
   if (scoreType === 'points') {
     // Handle formats like "91/100", "91 points", "91"
@@ -54,7 +58,14 @@ export function normalizeScore(source, scoreType, rawScore) {
 
   if (scoreType === 'stars') {
     const stars = parseFloat(rawScore);
-    const conversion = config.stars_conversion;
+    const conversion = config?.stars_conversion;
+
+    // For "other" sources or sources without conversion, use generic mapping
+    if (!conversion) {
+      // Generic: 5 stars = 95, 4 stars = 85, 3 stars = 75, etc.
+      const normalized = 55 + (stars * 8);
+      return { min: normalized, max: normalized, mid: normalized };
+    }
 
     // Find closest star bracket
     const brackets = Object.keys(conversion).map(Number).sort((a, b) => b - a);

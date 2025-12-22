@@ -221,12 +221,17 @@
           <!-- Image upload area -->
           <div class="image-upload-area" id="image-upload-area">
             <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+            <input type="file" id="camera-file-input" accept="image/*" capture="environment" hidden />
             <div class="upload-prompt">
               <span class="upload-icon">📷</span>
               <span>Click to upload, drag & drop, or paste screenshot</span>
-              <small>JPEG, PNG, WebP, GIF (max 5MB)</small>
+              <small>JPEG, PNG, WebP, GIF (auto-resizes large images)</small>
             </div>
             <div id="image-preview"></div>
+          </div>
+          <div class="image-upload-buttons">
+            <button type="button" class="btn btn-secondary" id="browse-files-btn">Browse Files</button>
+            <button type="button" class="btn btn-secondary" id="take-photo-btn">Take Photo</button>
           </div>
 
           <button type="button" class="btn btn-secondary" id="parse-image-btn" style="display: none; margin-top: 0.5rem;">
