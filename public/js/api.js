@@ -316,3 +316,30 @@ export async function updateSetting(key, value) {
   });
   return res.json();
 }
+
+/**
+ * Update personal rating for a wine.
+ * @param {number} wineId - Wine ID
+ * @param {number|string} rating - Rating value (0-5)
+ * @param {string} notes - Tasting notes
+ * @returns {Promise<Object>}
+ */
+export async function updatePersonalRating(wineId, rating, notes) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/personal-rating`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating, notes })
+  });
+  return res.json();
+}
+
+/**
+ * Fetch consumption history.
+ * @param {number} limit - Max items to fetch
+ * @param {number} offset - Offset for pagination
+ * @returns {Promise<{items: Array, total: number}>}
+ */
+export async function fetchConsumptionHistory(limit = 50, offset = 0) {
+  const res = await fetch(`${API_BASE}/api/stats/consumption?limit=${limit}&offset=${offset}`);
+  return res.json();
+}

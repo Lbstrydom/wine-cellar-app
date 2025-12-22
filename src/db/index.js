@@ -74,7 +74,8 @@ function runMigrations() {
     { name: 'purchase_score', type: 'REAL' },
     { name: 'purchase_stars', type: 'REAL' },
     { name: 'confidence_level', type: 'TEXT' },
-    { name: 'ratings_updated_at', type: 'DATETIME' }
+    { name: 'ratings_updated_at', type: 'DATETIME' },
+    { name: 'tasting_notes', type: 'TEXT' }
   ];
 
   for (const col of newColumns) {

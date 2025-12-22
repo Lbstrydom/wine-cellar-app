@@ -3,11 +3,12 @@
  * @module app
  */
 
-import { fetchLayout, fetchStats, fetchReduceNow, fetchWines } from './api.js';
+import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
 import { renderFridge, renderCellar } from './grid.js';
 import { initModals } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
+import { escapeHtml } from './utils.js';
 
 /**
  * Application state.
@@ -55,6 +56,14 @@ export async function loadWines() {
 }
 
 /**
+ * Load consumption history.
+ */
+export async function loadHistory() {
+  const data = await fetchConsumptionHistory();
+  renderHistoryList(data.items);
+}
+
+/**
  * Refresh all data.
  */
 export async function refreshData() {
@@ -96,15 +105,58 @@ function renderWineList(wines) {
   const withBottles = wines.filter(w => w.bottle_count > 0);
 
   container.innerHTML = withBottles.map(wine => `
-    <div class="wine-card ${wine.colour}">
+    <div class="wine-card ${escapeHtml(wine.colour)}">
       <div class="wine-count">${wine.bottle_count}</div>
       <div class="wine-details">
-        <div class="wine-name">${wine.wine_name}</div>
-        <div class="wine-meta">${wine.style} • ${wine.vintage || 'NV'}</div>
-        <div class="wine-meta" style="color: var(--accent);">${wine.locations || ''}</div>
+        <div class="wine-name">${escapeHtml(wine.wine_name)}</div>
+        <div class="wine-meta">${escapeHtml(wine.style || '')} • ${escapeHtml(wine.vintage) || 'NV'}</div>
+        <div class="wine-meta" style="color: var(--accent);">${escapeHtml(wine.locations || '')}</div>
       </div>
     </div>
   `).join('');
+}
+
+/**
+ * Render history list.
+ * @param {Array} items - Consumption log items
+ */
+function renderHistoryList(items) {
+  const container = document.getElementById('history-list');
+  if (!container) return;
+
+  if (items.length === 0) {
+    container.innerHTML = '<p style="color: var(--text-muted);">No wines consumed yet</p>';
+    return;
+  }
+
+  container.innerHTML = items.map(item => {
+    const date = new Date(item.consumed_at).toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric'
+    });
+
+    const stars = item.consumption_rating
+      ? '\u2605'.repeat(Math.floor(item.consumption_rating)) + '\u2606'.repeat(5 - Math.floor(item.consumption_rating))
+      : '';
+
+    return `
+      <div class="history-item ${escapeHtml(item.colour || '')}">
+        <div class="history-date">${escapeHtml(date)}</div>
+        <div class="history-details">
+          <div class="history-wine">${escapeHtml(item.wine_name)} ${escapeHtml(item.vintage) || 'NV'}</div>
+          <div class="history-meta">${escapeHtml(item.style || '')} • ${escapeHtml(item.country || '')}</div>
+          ${item.occasion ? `<div class="history-occasion">${escapeHtml(item.occasion)}</div>` : ''}
+          ${item.pairing_dish ? `<div class="history-pairing">${escapeHtml(item.pairing_dish)}</div>` : ''}
+          ${item.consumption_notes ? `<div class="history-notes">${escapeHtml(item.consumption_notes)}</div>` : ''}
+        </div>
+        <div class="history-rating">
+          ${stars ? `<span class="history-stars">${stars}</span>` : ''}
+          ${item.purchase_stars ? `<span class="history-external">Pro: ${item.purchase_stars}</span>` : ''}
+        </div>
+      </div>
+    `;
+  }).join('');
 }
 
 /**
@@ -122,6 +174,7 @@ function switchView(viewName) {
 
   if (viewName === 'reduce') loadReduceNow();
   if (viewName === 'wines') loadWines();
+  if (viewName === 'history') loadHistory();
 }
 
 /**

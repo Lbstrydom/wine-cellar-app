@@ -176,19 +176,66 @@ router.post('/', (req, res) => {
 });
 
 /**
- * Update wine.
+ * Update wine including drink window.
  * @route PUT /api/wines/:id
  */
 router.put('/:id', (req, res) => {
-  const { style, colour, wine_name, vintage, vivino_rating, price_eur } = req.body;
+  const {
+    style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+    drink_from, drink_peak, drink_until
+  } = req.body;
 
   db.prepare(`
     UPDATE wines
-    SET style = ?, colour = ?, wine_name = ?, vintage = ?, vivino_rating = ?, price_eur = ?, updated_at = CURRENT_TIMESTAMP
+    SET style = ?, colour = ?, wine_name = ?, vintage = ?,
+        vivino_rating = ?, price_eur = ?, country = ?,
+        drink_from = ?, drink_peak = ?, drink_until = ?,
+        updated_at = CURRENT_TIMESTAMP
     WHERE id = ?
-  `).run(style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null, req.params.id);
+  `).run(
+    style, colour, wine_name, vintage || null,
+    vivino_rating || null, price_eur || null, country || null,
+    drink_from || null, drink_peak || null, drink_until || null,
+    req.params.id
+  );
 
   res.json({ message: 'Wine updated' });
+});
+
+/**
+ * Update personal rating for a wine.
+ * @route PUT /api/wines/:id/personal-rating
+ */
+router.put('/:id/personal-rating', (req, res) => {
+  const { id } = req.params;
+  const { rating, notes } = req.body;
+
+  db.prepare(`
+    UPDATE wines
+    SET personal_rating = ?, personal_notes = ?, personal_rated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+  `).run(rating || null, notes || null, id);
+
+  res.json({ message: 'Personal rating saved' });
+});
+
+/**
+ * Get personal rating for a wine.
+ * @route GET /api/wines/:id/personal-rating
+ */
+router.get('/:id/personal-rating', (req, res) => {
+  const { id } = req.params;
+
+  const wine = db.prepare(`
+    SELECT personal_rating, personal_notes, personal_rated_at
+    FROM wines WHERE id = ?
+  `).get(id);
+
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  res.json(wine);
 });
 
 export default router;

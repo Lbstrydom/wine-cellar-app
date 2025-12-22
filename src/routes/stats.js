@@ -55,6 +55,10 @@ router.get('/layout', (req, res) => {
       w.vintage,
       w.vivino_rating,
       w.price_eur,
+      w.drink_from,
+      w.drink_peak,
+      w.drink_until,
+      w.tasting_notes,
       (SELECT rn.priority FROM reduce_now rn WHERE rn.wine_id = w.id) as reduce_priority,
       (SELECT rn.reduce_reason FROM reduce_now rn WHERE rn.wine_id = w.id) as reduce_reason
     FROM slots s
@@ -83,6 +87,10 @@ router.get('/layout', (req, res) => {
       style: slot.style,
       rating: slot.vivino_rating,
       price: slot.price_eur,
+      drink_from: slot.drink_from,
+      drink_peak: slot.drink_peak,
+      drink_until: slot.drink_until,
+      tasting_notes: slot.tasting_notes,
       reduce_priority: slot.reduce_priority,
       reduce_reason: slot.reduce_reason
     };
@@ -99,23 +107,45 @@ router.get('/layout', (req, res) => {
 });
 
 /**
- * Get consumption log.
+ * Get consumption history with wine details and ratings.
  * @route GET /api/stats/consumption
  */
 router.get('/consumption', (req, res) => {
+  const { limit = 50, offset = 0 } = req.query;
+
   const log = db.prepare(`
     SELECT
-      cl.*,
+      cl.id,
+      cl.wine_id,
+      cl.slot_location,
+      cl.consumed_at,
+      cl.occasion,
+      cl.pairing_dish,
+      cl.rating as consumption_rating,
+      cl.notes as consumption_notes,
       w.wine_name,
       w.vintage,
       w.style,
-      w.colour
+      w.colour,
+      w.country,
+      w.personal_rating,
+      w.personal_notes,
+      w.purchase_score,
+      w.purchase_stars
     FROM consumption_log cl
     JOIN wines w ON w.id = cl.wine_id
     ORDER BY cl.consumed_at DESC
-    LIMIT 50
-  `).all();
-  res.json(log);
+    LIMIT ? OFFSET ?
+  `).all(limit, offset);
+
+  const total = db.prepare('SELECT COUNT(*) as count FROM consumption_log').get();
+
+  res.json({
+    items: log,
+    total: total.count,
+    limit: parseInt(limit),
+    offset: parseInt(offset)
+  });
 });
 
 export default router;

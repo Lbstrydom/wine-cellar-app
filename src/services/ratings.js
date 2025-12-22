@@ -18,6 +18,15 @@ export function normalizeScore(source, scoreType, rawScore) {
 
   if (scoreType === 'points') {
     const points = parseFloat(rawScore);
+
+    // Handle Jancis Robinson's 20-point scale
+    if (source === 'jancis_robinson' && points <= 20) {
+      // Convert 20-point scale to 100-point scale
+      // 20 = 100, 18 = 90, 16 = 80, etc.
+      const normalized = (points / 20) * 100;
+      return { min: normalized, max: normalized, mid: normalized };
+    }
+
     return { min: points, max: points, mid: points };
   }
 

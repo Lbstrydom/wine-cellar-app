@@ -73,6 +73,26 @@ function setupInteractions() {
 }
 
 /**
+ * Get drink window CSS class based on current year.
+ * @param {Object} slot - Slot data with drink_from, drink_peak, drink_until
+ * @returns {string|null} CSS class name or null
+ */
+function getDrinkWindowClass(slot) {
+  if (!slot.drink_until && !slot.drink_peak && !slot.drink_from) {
+    return null;
+  }
+
+  const currentYear = new Date().getFullYear();
+
+  if (slot.drink_until && currentYear > slot.drink_until) return 'past-peak';
+  if (slot.drink_peak && currentYear >= slot.drink_peak) return 'at-peak';
+  if (slot.drink_from && currentYear >= slot.drink_from) return 'ready';
+  if (slot.drink_from && currentYear < slot.drink_from) return 'too-young';
+
+  return null;
+}
+
+/**
  * Create a slot DOM element.
  * @param {Object} slot - Slot data
  * @returns {HTMLElement}
@@ -89,6 +109,11 @@ export function createSlotElement(slot) {
 
     if (slot.reduce_priority) {
       el.classList.add(`priority-${Math.min(slot.reduce_priority, 3)}`);
+    }
+
+    const drinkClass = getDrinkWindowClass(slot);
+    if (drinkClass) {
+      el.classList.add(drinkClass);
     }
 
     const shortName = shortenWineName(slot.wine_name);

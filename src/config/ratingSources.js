@@ -170,6 +170,56 @@ export const RATING_SOURCES = {
       3: { min: 75, max: 79, label: '3 Stars' }
     }
   },
+  wine_advocate: {
+    name: 'Wine Advocate / Robert Parker',
+    short_name: 'Wine Advocate',
+    lens: 'critics',
+    credibility: 0.75,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
+  wine_spectator: {
+    name: 'Wine Spectator',
+    short_name: 'Wine Spectator',
+    lens: 'critics',
+    credibility: 0.70,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
+  james_suckling: {
+    name: 'James Suckling',
+    short_name: 'Suckling',
+    lens: 'critics',
+    credibility: 0.65,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 50, max: 100 }
+  },
+  jancis_robinson: {
+    name: 'Jancis Robinson',
+    short_name: 'Jancis Robinson',
+    lens: 'critics',
+    credibility: 0.80,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 12, max: 20 }  // Uses 20-point scale
+  },
+  decanter_magazine: {
+    name: 'Decanter Magazine',
+    short_name: 'Decanter Mag',
+    lens: 'critics',
+    credibility: 0.75,
+    scope: 'global',
+    home_regions: [],
+    score_type: 'points',
+    points_scale: { min: 0, max: 100 }
+  },
 
   // COMMUNITY (lens: community)
   vivino: {

@@ -107,6 +107,12 @@ export async function initBottles() {
  * @param {HTMLElement} slotEl - Slot element
  */
 export function handleSlotClick(slotEl) {
+  // Check if in slot picker mode first
+  if (document.body.classList.contains('slot-picker-mode')) {
+    handleSlotPickerClick(slotEl);
+    return;
+  }
+
   // Don't trigger if dragging
   if (isDragging()) return;
 
@@ -182,11 +188,15 @@ export async function showEditBottleModal(location, wineId) {
   editingLocation = location;
   editingWineId = wineId;
 
-  document.getElementById('bottle-modal-title').textContent = 'Edit Bottle';
+  document.getElementById('bottle-modal-title').textContent = 'Edit Wine';
   document.getElementById('bottle-modal-subtitle').textContent = `Location: ${location}`;
   document.getElementById('bottle-save-btn').textContent = 'Save Changes';
   document.getElementById('bottle-delete-btn').style.display = 'block';
   document.getElementById('quantity-section').style.display = 'none';
+
+  // Hide toggle buttons - go straight to form
+  const formToggle = document.querySelector('.form-toggle');
+  if (formToggle) formToggle.style.display = 'none';
 
   // Load wine details
   try {
@@ -197,6 +207,10 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-style').value = wine.style || '';
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
+    document.getElementById('wine-country').value = wine.country || '';
+    document.getElementById('wine-drink-from').value = wine.drink_from || '';
+    document.getElementById('wine-drink-peak').value = wine.drink_peak || '';
+    document.getElementById('wine-drink-until').value = wine.drink_until || '';
     document.getElementById('selected-wine-id').value = wineId;
   } catch (_err) {
     showToast('Failed to load wine details');
@@ -216,6 +230,10 @@ export function closeBottleModal() {
   document.getElementById('bottle-modal-overlay').classList.remove('active');
   editingLocation = null;
   editingWineId = null;
+
+  // Reset form toggle visibility
+  const formToggle = document.querySelector('.form-toggle');
+  if (formToggle) formToggle.style.display = 'flex';
 }
 
 /**
@@ -299,7 +317,7 @@ async function handleBottleFormSubmit(e) {
   e.preventDefault();
 
   const mode = document.querySelector('.toggle-btn.active')?.dataset.mode || 'new';
-  const quantity = parseInt(document.getElementById('bottle-quantity')?.value) || 1;
+  const quantity = Number.parseInt(document.getElementById('bottle-quantity')?.value, 10) || 1;
 
   try {
     let wineId;
@@ -312,7 +330,11 @@ async function handleBottleFormSubmit(e) {
         colour: document.getElementById('wine-colour').value,
         style: document.getElementById('wine-style').value.trim() || null,
         vivino_rating: document.getElementById('wine-rating').value || null,
-        price_eur: document.getElementById('wine-price').value || null
+        price_eur: document.getElementById('wine-price').value || null,
+        country: document.getElementById('wine-country')?.value.trim() || null,
+        drink_from: document.getElementById('wine-drink-from')?.value || null,
+        drink_peak: document.getElementById('wine-drink-peak')?.value || null,
+        drink_until: document.getElementById('wine-drink-until')?.value || null
       };
 
       if (!wineData.wine_name) {
@@ -689,4 +711,73 @@ function handleImageDrop(e) {
       showToast('Please drop an image file');
     }
   }
+}
+
+// ============================================================
+// SLOT PICKER MODE
+// ============================================================
+
+let pendingAddWineId = null;
+
+/**
+ * Show modal to pick empty slot for adding a wine.
+ * @param {number} wineId - Wine to add
+ * @param {string} wineName - Wine name for display
+ */
+export function showSlotPickerModal(wineId, wineName) {
+  pendingAddWineId = wineId;
+
+  // Update modal content
+  document.getElementById('slot-picker-title').textContent = `Add: ${wineName}`;
+  document.getElementById('slot-picker-instruction').textContent = 'Click an empty slot to add the bottle';
+
+  // Enable slot picker mode
+  document.body.classList.add('slot-picker-mode');
+
+  // Show overlay
+  document.getElementById('slot-picker-overlay').classList.add('active');
+
+  // Highlight empty slots
+  document.querySelectorAll('.slot.empty').forEach(slot => {
+    slot.classList.add('picker-target');
+  });
+
+  // Add cancel handler
+  document.getElementById('cancel-slot-picker')?.addEventListener('click', closeSlotPickerModal);
+}
+
+/**
+ * Handle slot click in picker mode.
+ * @param {HTMLElement} slotEl - Clicked slot
+ */
+async function handleSlotPickerClick(slotEl) {
+  if (!document.body.classList.contains('slot-picker-mode')) return;
+
+  const location = slotEl.dataset.location;
+
+  if (!slotEl.classList.contains('empty')) {
+    showToast('Please select an empty slot');
+    return;
+  }
+
+  try {
+    await addBottles(pendingAddWineId, location, 1);
+    showToast(`Added to ${location}`);
+    closeSlotPickerModal();
+    await refreshData();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+}
+
+/**
+ * Close slot picker modal.
+ */
+export function closeSlotPickerModal() {
+  document.body.classList.remove('slot-picker-mode');
+  document.getElementById('slot-picker-overlay').classList.remove('active');
+  document.querySelectorAll('.slot.picker-target').forEach(slot => {
+    slot.classList.remove('picker-target');
+  });
+  pendingAddWineId = null;
 }

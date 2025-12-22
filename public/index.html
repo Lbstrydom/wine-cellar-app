@@ -31,6 +31,7 @@
     <div class="tab active" data-view="grid">Cellar Grid</div>
     <div class="tab" data-view="reduce">Reduce Now</div>
     <div class="tab" data-view="wines">All Wines</div>
+    <div class="tab" data-view="history">History</div>
     <div class="tab" data-view="pairing">Find Pairing</div>
   </nav>
 
@@ -61,6 +62,12 @@
   <div class="view" id="view-wines">
     <h2 style="margin-bottom: 1rem;">All Wines</h2>
     <div class="wine-list" id="wine-list"></div>
+  </div>
+
+  <!-- History View -->
+  <div class="view" id="view-history">
+    <h2 style="margin-bottom: 1rem;">Consumption History</h2>
+    <div class="history-list" id="history-list"></div>
   </div>
 
   <!-- Pairing View -->
@@ -143,11 +150,44 @@
         <label>Reduce Reason</label>
         <span id="modal-reduce-reason">-</span>
       </div>
+      <div class="modal-field" id="modal-tasting-notes-field" style="display: none;">
+        <label>Tasting Notes</label>
+        <p id="modal-tasting-notes" class="tasting-notes-text">-</p>
+      </div>
       <div id="modal-ratings-container"></div>
+      <div class="modal-field personal-rating-section">
+        <label>My Rating</label>
+        <div class="personal-rating-input">
+          <select id="modal-personal-rating">
+            <option value="">Not rated</option>
+            <option value="5">5 - Exceptional</option>
+            <option value="4.5">4.5 - Excellent</option>
+            <option value="4">4 - Very Good</option>
+            <option value="3.5">3.5 - Good</option>
+            <option value="3">3 - Acceptable</option>
+            <option value="2.5">2.5 - Below Average</option>
+            <option value="2">2 - Poor</option>
+            <option value="1">1 - Avoid</option>
+          </select>
+          <button class="btn btn-small btn-secondary" id="save-personal-rating">Save</button>
+        </div>
+        <textarea id="modal-personal-notes" placeholder="My tasting notes..." rows="2"></textarea>
+      </div>
       <div class="modal-actions">
         <button class="btn btn-danger" id="btn-drink">Drink This</button>
+        <button class="btn btn-secondary" id="btn-add-another">+ Add Another</button>
+        <button class="btn btn-secondary" id="btn-edit-wine">Edit</button>
         <button class="btn btn-secondary" id="btn-close">Close</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Slot Picker Overlay -->
+  <div class="slot-picker-overlay" id="slot-picker-overlay">
+    <div class="slot-picker-header">
+      <h3 id="slot-picker-title">Add Bottle</h3>
+      <p id="slot-picker-instruction">Click an empty slot</p>
+      <button class="btn btn-secondary" id="cancel-slot-picker">Cancel</button>
     </div>
   </div>
 
@@ -242,12 +282,34 @@
 
           <div class="form-row">
             <div class="form-field">
-              <label>Rating</label>
+              <label for="wine-rating">Rating</label>
               <input type="number" id="wine-rating" min="1" max="5" step="0.1" placeholder="e.g., 4.2" />
             </div>
             <div class="form-field">
-              <label>Price (€)</label>
+              <label for="wine-price">Price (EUR)</label>
               <input type="number" id="wine-price" min="0" step="0.01" placeholder="e.g., 12.99" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="wine-country">Country</label>
+              <input type="text" id="wine-country" placeholder="e.g., South Africa" />
+            </div>
+          </div>
+
+          <div class="form-row drink-window-row">
+            <div class="form-field">
+              <label for="wine-drink-from">Drink From</label>
+              <input type="number" id="wine-drink-from" min="2000" max="2100" placeholder="e.g., 2025" />
+            </div>
+            <div class="form-field">
+              <label for="wine-drink-peak">Peak</label>
+              <input type="number" id="wine-drink-peak" min="2000" max="2100" placeholder="e.g., 2028" />
+            </div>
+            <div class="form-field">
+              <label for="wine-drink-until">Until</label>
+              <input type="number" id="wine-drink-until" min="2000" max="2100" placeholder="e.g., 2032" />
             </div>
           </div>
         </div>

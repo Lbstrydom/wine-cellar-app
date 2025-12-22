@@ -111,16 +111,20 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       );
     }
 
-    // Update wine's cached aggregates
+    // Update wine's cached aggregates and tasting notes
     const ratings = db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
     const prefSetting = db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
     const preference = parseInt(prefSetting?.value || '40');
     const aggregates = calculateWineRatings(ratings, wine, preference);
 
+    // Save tasting notes if we got them
+    const tastingNotes = result.tasting_notes || null;
+
     db.prepare(`
       UPDATE wines SET
         competition_index = ?, critics_index = ?, community_index = ?,
         purchase_score = ?, purchase_stars = ?, confidence_level = ?,
+        tasting_notes = COALESCE(?, tasting_notes),
         ratings_updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `).run(
@@ -130,12 +134,14 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       aggregates.purchase_score,
       aggregates.purchase_stars,
       aggregates.confidence_level,
+      tastingNotes,
       wineId
     );
 
     res.json({
       message: `Found ${result.ratings?.length || 0} ratings`,
       search_notes: result.search_notes,
+      tasting_notes: tastingNotes,
       ...aggregates
     });
 

@@ -294,6 +294,14 @@ header h1 {
   font-size: 0.95rem;
 }
 
+.tasting-notes-text {
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--text);
+  line-height: 1.5;
+  margin: 0;
+}
+
 .modal-actions {
   display: flex;
   gap: 0.5rem;
@@ -1273,6 +1281,227 @@ header h1 {
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--text-muted);
+}
+
+/* ============================================================
+   SLOT PICKER MODE
+   ============================================================ */
+
+.slot-picker-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 1rem;
+  background: var(--bg-dark);
+  border-bottom: 2px solid var(--accent);
+  z-index: 100;
+  text-align: center;
+}
+
+.slot-picker-overlay.active {
+  display: block;
+}
+
+.slot-picker-header h3 {
+  margin: 0 0 0.25rem 0;
+  color: var(--accent);
+}
+
+.slot-picker-header p {
+  margin: 0 0 0.5rem 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+body.slot-picker-mode .slot.empty.picker-target {
+  border: 2px dashed var(--accent);
+  background: rgba(139, 115, 85, 0.2);
+  cursor: pointer;
+  opacity: 1;
+}
+
+body.slot-picker-mode .slot.empty.picker-target:hover {
+  background: rgba(139, 115, 85, 0.4);
+  transform: scale(1.05);
+}
+
+body.slot-picker-mode .slot:not(.empty) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+/* ============================================================
+   PERSONAL RATING
+   ============================================================ */
+
+.personal-rating-section {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.personal-rating-input {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.personal-rating-input select {
+  flex: 1;
+  padding: 0.5rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+
+#modal-personal-notes {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-family: inherit;
+  font-size: 0.9rem;
+  resize: vertical;
+}
+
+/* ============================================================
+   HISTORY VIEW
+   ============================================================ */
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.history-item {
+  display: flex;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+  border-left: 4px solid var(--text-muted);
+}
+
+.history-item.red {
+  border-left-color: var(--red-wine);
+}
+
+.history-item.white {
+  border-left-color: var(--white-wine);
+}
+
+.history-item.rose {
+  border-left-color: var(--rose-wine);
+}
+
+.history-item.sparkling {
+  border-left-color: var(--sparkling);
+}
+
+.history-date {
+  min-width: 80px;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.history-details {
+  flex: 1;
+}
+
+.history-wine {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.history-meta {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.history-occasion,
+.history-pairing {
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.history-notes {
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--text-muted);
+  margin-top: 0.5rem;
+}
+
+.history-rating {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.history-stars {
+  color: var(--accent);
+}
+
+.history-external {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+/* ============================================================
+   DRINK WINDOW INDICATORS
+   ============================================================ */
+
+.slot.at-peak::before {
+  content: '\2605';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.6rem;
+  color: var(--sparkling);
+}
+
+.slot.past-peak::before {
+  content: '!';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.6rem;
+  font-weight: bold;
+  color: var(--priority-1);
+}
+
+.slot.too-young {
+  opacity: 0.7;
+}
+
+.slot.too-young::before {
+  content: 'z';
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  font-size: 0.5rem;
+  color: var(--text-muted);
+}
+
+/* Drink window form row */
+.drink-window-row {
+  border-top: 1px solid var(--border);
+  padding-top: 1rem;
+  margin-top: 0.5rem;
+}
+
+.drink-window-row .form-field {
+  flex: 1;
+}
+
+.drink-window-row label {
+  font-size: 0.7rem;
 }
 
 /* Responsive */
