@@ -336,6 +336,59 @@ function generateWineNameVariations(wineName) {
 }
 
 /**
+ * Check if a URL appears to be the producer/winery's own website.
+ * @param {string} url - URL to check
+ * @param {string} wineNameLower - Lowercase wine name
+ * @param {string[]} keyWords - Key words from wine name
+ * @returns {boolean} True if likely a producer site
+ */
+function checkIfProducerSite(url, wineNameLower, keyWords) {
+  // Known retailer/aggregator domains to exclude
+  const knownRetailers = [
+    'vivino.com', 'wine-searcher.com', 'cellartracker.com', 'totalwine.com',
+    'wine.com', 'winespectator.com', 'decanter.com', 'jancisrobinson.com',
+    'jamessuckling.com', 'robertparker.com', 'winemag.com', 'nataliemaclean.com',
+    'winealign.com', 'internationalwinechallenge.com', 'iwsc.net', 'amazon.com',
+    'wikipedia.org', 'facebook.com', 'instagram.com', 'twitter.com'
+  ];
+
+  // Check if it's a known retailer
+  if (knownRetailers.some(r => url.includes(r))) {
+    return false;
+  }
+
+  // Extract domain from URL
+  let domain = '';
+  try {
+    domain = new URL(url).hostname.replace('www.', '').toLowerCase();
+  } catch {
+    return false;
+  }
+
+  // Check if domain contains any key words from wine name (producer name)
+  // This catches things like "springfieldestate.com" for "Springfield Estate"
+  const domainWithoutTld = domain.replace(/\.(com|co\.za|wine|fr|it|es|de|cl|ar|au|nz)$/, '');
+
+  for (const word of keyWords) {
+    if (word.length >= 4 && domainWithoutTld.includes(word.replace(/[^a-z0-9]/g, ''))) {
+      return true;
+    }
+  }
+
+  // Check for common winery URL patterns
+  const wineryPatterns = ['/product/', '/wines/', '/our-wines/', '/wine/', '/shop/'];
+  if (wineryPatterns.some(p => url.includes(p))) {
+    // Could be a winery site with product pages
+    // Extra check: domain should look like a winery name (not generic)
+    if (domainWithoutTld.length > 5 && !domainWithoutTld.includes('wine-shop')) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Calculate relevance score for a search result.
  * Higher score = more specifically about this wine.
  * @param {Object} result - Search result with title and snippet
@@ -376,6 +429,13 @@ function calculateResultRelevance(result, wineName, vintage) {
     score += 3;
   }
 
+  // Bonus for producer/winery websites - they often have awards, tech specs, tasting notes
+  const url = (result.url || '').toLowerCase();
+  const isProducerSite = checkIfProducerSite(url, wineNameLower, keyWords);
+  if (isProducerSite) {
+    score += 5; // Producer sites are very valuable
+  }
+
   // Penalty for generic competition/award list pages
   const isGenericAwardPage =
     (title.includes('results') || title.includes('winners') || title.includes('champion')) &&
@@ -388,7 +448,7 @@ function calculateResultRelevance(result, wineName, vintage) {
   const totalMatches = titleMatchCount + snippetMatchCount;
   const relevant = totalMatches >= 2 || (totalMatches >= 1 && (hasVintageInTitle || hasVintageInSnippet));
 
-  return { relevant, score };
+  return { relevant, score, isProducerSite };
 }
 
 /**
@@ -490,10 +550,16 @@ export async function searchWineRatings(wineName, vintage, country) {
   // Filter and score results by relevance
   const scoredResults = uniqueResults
     .map(r => {
-      const { relevant, score } = calculateResultRelevance(r, wineName, vintage);
-      return { ...r, relevant, relevanceScore: score };
+      const { relevant, score, isProducerSite } = calculateResultRelevance(r, wineName, vintage);
+      return { ...r, relevant, relevanceScore: score, isProducerSite };
     })
     .filter(r => r.relevant);
+
+  // Log producer sites found
+  const producerSites = scoredResults.filter(r => r.isProducerSite);
+  if (producerSites.length > 0) {
+    logger.info('Search', `Found ${producerSites.length} producer website(s): ${producerSites.map(r => r.source).join(', ')}`);
+  }
 
   logger.info('Search', `Filtered to ${scoredResults.length} relevant results (from ${uniqueResults.length})`);
 
