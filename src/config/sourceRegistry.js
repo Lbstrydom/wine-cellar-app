@@ -25,18 +25,58 @@ export const LENS_CREDIBILITY = {
 };
 
 /**
+ * Region to source priority mapping.
+ * Lists preferred sources in priority order for each wine-producing region.
+ */
+export const REGION_SOURCE_PRIORITY = {
+  'Australia': ['halliday', 'huon_hooke', 'gourmet_traveller_wine', 'decanter', 'vivino'],
+  'New Zealand': ['bob_campbell', 'wine_orbit', 'decanter', 'vivino'],
+  'Spain': ['guia_penin', 'guia_proensa', 'decanter', 'tim_atkin', 'vivino'],
+  'Chile': ['descorchados', 'vinomanos', 'tim_atkin', 'decanter', 'vivino'],
+  'Argentina': ['descorchados', 'tim_atkin', 'decanter', 'vivino'],
+  'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'decanter', 'vivino'],
+  'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'decanter', 'vivino'],
+  'South Africa': ['platters', 'tim_atkin', 'veritas', 'vivino'],
+  'USA': ['wine_enthusiast', 'wine_spectator', 'vinous', 'decanter', 'vivino'],
+  'Germany': ['falstaff', 'decanter', 'vivino'],
+  'Portugal': ['decanter', 'vivino'],
+  '_default': ['decanter', 'wine_enthusiast', 'vivino', 'cellar_tracker']
+};
+
+/**
  * Master source registry.
  * Each source has metadata for search planning and result weighting.
+ *
+ * Schema fields:
+ * - id: unique identifier (object key)
+ * - name: full display name
+ * - short_name: abbreviated name for UI
+ * - lens: 'competition' | 'panel_guide' | 'critic' | 'community'
+ * - domain: primary website domain
+ * - alt_domains: alternative domains (optional)
+ * - home_regions: countries where this source is authoritative (empty = global)
+ * - language: primary language ('en' | 'es' | 'it' | 'fr' | 'de')
+ * - grape_affinity: grape varieties this source specializes in (null = all)
+ * - score_type: 'points' | 'stars' | 'medal' | 'symbol'
+ * - score_format: regex pattern for extracting scores (optional)
+ * - query_template: search query template
  */
 export const SOURCE_REGISTRY = {
+  // ============================================
   // COMPETITIONS (lens: competition, credibility: 3.0)
+  // ============================================
+
+  // Global competitions
   decanter: {
     name: 'Decanter World Wine Awards',
     short_name: 'DWWA',
     lens: LENS.COMPETITION,
     domain: 'decanter.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Platinum|Gold|Silver|Bronze|Commended',
     query_template: '{wine} {vintage} site:decanter.com award medal',
     medal_bands: {
       platinum: { min: 97, max: 100 },
@@ -53,7 +93,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'internationalwinechallenge.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Trophy|Gold|Silver|Bronze|Commended',
     query_template: '{wine} {vintage} site:internationalwinechallenge.com',
     medal_bands: {
       trophy: { min: 97, max: 100 },
@@ -69,7 +112,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'iwsc.net',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Gold Outstanding|Gold|Silver|Bronze',
     query_template: '{wine} {vintage} site:iwsc.net',
     medal_bands: {
       gold_outstanding: { min: 98, max: 100 },
@@ -85,7 +131,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'concoursmondial.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Grand Gold|Gold|Silver',
     query_template: '{wine} {vintage} site:concoursmondial.com',
     medal_bands: {
       grand_gold: { min: 92, max: 100 },
@@ -100,13 +149,56 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'mundusvini.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Grand Gold|Gold|Silver',
     query_template: '{wine} {vintage} site:mundusvini.com',
     medal_bands: {
       grand_gold: { min: 95, max: 100 },
       gold: { min: 90, max: 94 },
       silver: { min: 85, max: 89 }
     }
+  },
+
+  // Grape-specific competitions
+  chardonnay_du_monde: {
+    name: 'Chardonnay du Monde',
+    short_name: 'Chardonnay du Monde',
+    lens: LENS.COMPETITION,
+    domain: 'chardonnay-du-monde.com',
+    home_regions: [],
+    language: 'fr',
+    grape_affinity: ['chardonnay'],
+    score_type: 'medal',
+    score_format: 'Grand Gold|Gold|Silver|Bronze',
+    query_template: '{wine} {vintage} Chardonnay du Monde'
+  },
+
+  syrah_du_monde: {
+    name: 'Syrah du Monde',
+    short_name: 'Syrah du Monde',
+    lens: LENS.COMPETITION,
+    domain: 'syrahdumonde.com',
+    home_regions: [],
+    language: 'fr',
+    grape_affinity: ['syrah', 'shiraz'],
+    score_type: 'medal',
+    score_format: 'Grand Gold|Gold|Silver|Bronze',
+    query_template: '{wine} {vintage} Syrah du Monde'
+  },
+
+  grenaches_du_monde: {
+    name: 'Grenaches du Monde',
+    short_name: 'Grenaches du Monde',
+    lens: LENS.COMPETITION,
+    domain: 'grenachesdumonde.com',
+    home_regions: [],
+    language: 'fr',
+    grape_affinity: ['grenache', 'garnacha'],
+    score_type: 'medal',
+    score_format: 'Grand Gold|Gold|Silver|Bronze',
+    query_template: '{wine} {vintage} Grenaches du Monde'
   },
 
   // Regional competitions
@@ -116,7 +208,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'veritas.co.za',
     home_regions: ['South Africa'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Double Gold|Gold|Silver|Bronze',
     query_template: '{wine} {vintage} Veritas award',
     medal_bands: {
       double_gold: { min: 95, max: 100 },
@@ -132,7 +227,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMPETITION,
     domain: 'trophywineshow.co.za',
     home_regions: ['South Africa'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'medal',
+    score_format: 'Trophy|Gold|Silver|Bronze',
     query_template: '{wine} {vintage} Old Mutual Trophy',
     medal_bands: {
       trophy: { min: 95, max: 100 },
@@ -142,7 +240,11 @@ export const SOURCE_REGISTRY = {
     }
   },
 
+  // ============================================
   // PANEL GUIDES (lens: panel_guide, credibility: 2.5)
+  // ============================================
+
+  // South Africa
   platters: {
     name: "Platter's Wine Guide",
     short_name: "Platter's",
@@ -150,51 +252,231 @@ export const SOURCE_REGISTRY = {
     domain: 'wineonaplatter.com',
     alt_domains: ['platterwineguide.com'],
     home_regions: ['South Africa'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'stars',
+    score_format: '\\d(\\.5)?\\s*stars?',
     query_template: "{wine} {vintage} Platter's stars rating",
     stars_to_points: {
       5: 95, 4.5: 90, 4: 85, 3.5: 80, 3: 75
     }
   },
 
+  // Australia
   halliday: {
     name: 'Halliday Wine Companion',
     short_name: 'Halliday',
-    lens: LENS.PANEL_GUIDE,
+    lens: LENS.CRITIC,
     domain: 'winecompanion.com.au',
-    home_regions: ['Australia', 'New Zealand'],
+    home_regions: ['Australia'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}\\s*points?',
     query_template: '{wine} {vintage} site:winecompanion.com.au'
   },
 
+  huon_hooke: {
+    name: 'Huon Hooke',
+    short_name: 'Huon Hooke',
+    lens: LENS.CRITIC,
+    domain: 'huonhooke.com',
+    home_regions: ['Australia'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2}(\\.\\d)?/100',
+    query_template: '{wine} {vintage} site:huonhooke.com'
+  },
+
+  gourmet_traveller_wine: {
+    name: 'Gourmet Traveller Wine',
+    short_name: 'GT Wine',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'gourmettravellerwine.com.au',
+    home_regions: ['Australia'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:gourmettravellerwine.com.au'
+  },
+
+  // New Zealand
+  bob_campbell: {
+    name: 'Bob Campbell MW',
+    short_name: 'Bob Campbell',
+    lens: LENS.CRITIC,
+    domain: 'bobcampbell.nz',
+    home_regions: ['New Zealand'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:bobcampbell.nz'
+  },
+
+  wine_orbit: {
+    name: 'Wine Orbit',
+    short_name: 'Wine Orbit',
+    lens: LENS.CRITIC,
+    domain: 'wineorbit.co.nz',
+    home_regions: ['New Zealand'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:wineorbit.co.nz'
+  },
+
+  // Spain
   guia_penin: {
     name: 'Guía Peñín',
     short_name: 'Peñín',
     lens: LENS.PANEL_GUIDE,
     domain: 'guiapenin.com',
     home_regions: ['Spain'],
+    language: 'es',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}\\s*(puntos)?',
     query_template: '{wine} {vintage} Guía Peñín puntos'
   },
 
+  guia_proensa: {
+    name: 'Guía Proensa',
+    short_name: 'Proensa',
+    lens: LENS.CRITIC,
+    domain: 'guiaproensa.com',
+    home_regions: ['Spain'],
+    language: 'es',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} Guía Proensa'
+  },
+
+  // Italy
   gambero_rosso: {
     name: 'Gambero Rosso',
     short_name: 'Gambero Rosso',
     lens: LENS.PANEL_GUIDE,
     domain: 'gamberorosso.it',
     home_regions: ['Italy'],
-    score_type: 'glasses',
+    language: 'it',
+    grape_affinity: null,
+    score_type: 'symbol',
+    score_format: 'Tre Bicchieri|Due Bicchieri Rossi|Due Bicchieri|Un Bicchiere',
     query_template: '{wine} {vintage} Gambero Rosso bicchieri'
   },
 
+  doctor_wine: {
+    name: 'Doctor Wine',
+    short_name: 'Doctor Wine',
+    lens: LENS.CRITIC,
+    domain: 'doctorwine.it',
+    home_regions: ['Italy'],
+    language: 'it',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:doctorwine.it'
+  },
+
+  bibenda: {
+    name: 'Bibenda',
+    short_name: 'Bibenda',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'bibenda.it',
+    home_regions: ['Italy'],
+    language: 'it',
+    grape_affinity: null,
+    score_type: 'symbol',
+    score_format: '[1-5]\\s*grappoli|cinque grappoli|quattro grappoli',
+    query_template: '{wine} {vintage} Bibenda grappoli'
+  },
+
+  vinous: {
+    name: 'Vinous',
+    short_name: 'Vinous',
+    lens: LENS.CRITIC,
+    domain: 'vinous.com',
+    home_regions: ['Italy', 'USA', 'France'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}\\+?',
+    query_template: '{wine} {vintage} site:vinous.com'
+  },
+
+  // France
+  guide_hachette: {
+    name: 'Guide Hachette',
+    short_name: 'Hachette',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'hachette-vins.com',
+    home_regions: ['France'],
+    language: 'fr',
+    grape_affinity: null,
+    score_type: 'symbol',
+    score_format: '★{1,3}|Coup de C[oœ]ur',
+    query_template: '{wine} {vintage} Guide Hachette'
+  },
+
+  rvf: {
+    name: 'Revue du Vin de France',
+    short_name: 'RVF',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'larvf.com',
+    home_regions: ['France'],
+    language: 'fr',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{1,2}/20|\\d{2,3}/100',
+    query_template: '{wine} {vintage} Revue du Vin de France'
+  },
+
+  bettane_desseauve: {
+    name: 'Bettane+Desseauve',
+    short_name: 'B+D',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'mybettanedesseauve.fr',
+    home_regions: ['France'],
+    language: 'fr',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{1,2}/20|\\d{2,3}',
+    query_template: '{wine} {vintage} Bettane Desseauve'
+  },
+
+  // Germany
+  falstaff: {
+    name: 'Falstaff',
+    short_name: 'Falstaff',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'falstaff.com',
+    home_regions: ['Germany', 'Austria'],
+    language: 'de',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:falstaff.com'
+  },
+
+  // ============================================
   // CRITICS (lens: critic, credibility: 1.5)
+  // ============================================
+
   tim_atkin: {
     name: 'Tim Atkin MW',
     short_name: 'Tim Atkin',
     lens: LENS.CRITIC,
     domain: 'timatkin.com',
     home_regions: ['South Africa', 'Argentina'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:timatkin.com'
   },
 
@@ -204,7 +486,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'jancisrobinson.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{1,2}(\\.\\d)?/20',
     points_scale: 20,
     query_template: '{wine} {vintage} site:jancisrobinson.com'
   },
@@ -215,7 +500,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'robertparker.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}\\+?',
     query_template: '{wine} {vintage} Wine Advocate OR Robert Parker points'
   },
 
@@ -225,7 +513,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'winespectator.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:winespectator.com'
   },
 
@@ -235,7 +526,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'jamessuckling.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:jamessuckling.com'
   },
 
@@ -245,8 +539,24 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'descorchados.com',
     home_regions: ['Chile', 'Argentina'],
+    language: 'es',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} Descorchados puntos'
+  },
+
+  vinomanos: {
+    name: 'Vinómanos',
+    short_name: 'Vinómanos',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'vinomanos.com',
+    home_regions: ['Chile', 'Argentina'],
+    language: 'es',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} Vinómanos'
   },
 
   decanter_magazine: {
@@ -255,7 +565,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'decanter.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:decanter.com review'
   },
 
@@ -265,7 +578,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'winemag.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:winemag.com'
   },
 
@@ -275,18 +591,27 @@ export const SOURCE_REGISTRY = {
     lens: LENS.CRITIC,
     domain: 'nataliemaclean.com',
     home_regions: ['Canada'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:nataliemaclean.com'
   },
 
+  // ============================================
   // COMMUNITY (lens: community, credibility: 1.0)
+  // ============================================
+
   cellar_tracker: {
     name: 'CellarTracker',
     short_name: 'CellarTracker',
     lens: LENS.COMMUNITY,
     domain: 'cellartracker.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:cellartracker.com'
   },
 
@@ -296,7 +621,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMMUNITY,
     domain: 'winealign.com',
     home_regions: ['Canada'],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'points',
+    score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:winealign.com'
   },
 
@@ -306,7 +634,10 @@ export const SOURCE_REGISTRY = {
     lens: LENS.COMMUNITY,
     domain: 'vivino.com',
     home_regions: [],
+    language: 'en',
+    grape_affinity: null,
     score_type: 'stars',
+    score_format: '\\d(\\.\\d)?\\s*stars?',
     query_template: '{wine} {vintage} site:vivino.com',
     min_ratings_for_confidence: 100,
     stars_to_points: {

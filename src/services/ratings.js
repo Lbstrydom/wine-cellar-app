@@ -89,7 +89,10 @@ export function normalizeScore(source, scoreType, rawScore) {
  */
 export function getRelevance(sourceId, wine) {
   const config = RATING_SOURCES[sourceId];
-  if (!config) return 0;
+
+  // For unknown/custom sources (manual entries), give a reasonable default weight
+  // This ensures manual ratings are included in aggregations
+  if (!config) return 0.7;
 
   if (config.scope === 'global') return 1.0;
 
@@ -184,7 +187,8 @@ function calculateLensIndex(ratings, wine) {
   const weighted = ratings.map(r => {
     const source = RATING_SOURCES[r.source];
     const relevance = getRelevance(r.source, wine);
-    const credibility = source?.credibility || 0.5;
+    // For unknown sources (manual entries), use a reasonable default credibility
+    const credibility = source?.credibility || 0.65;
     const effectiveWeight = credibility * relevance;
 
     // Use override if present, otherwise midpoint

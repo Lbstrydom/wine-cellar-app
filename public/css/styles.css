@@ -1635,3 +1635,356 @@ body.slot-picker-mode .slot:not(.empty) {
     margin-bottom: 1rem;
   }
 }
+
+/* ============================================
+   Settings Page Styles
+   ============================================ */
+
+.settings-section {
+  background: var(--bg-card);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  border: 1px solid var(--border);
+}
+
+.settings-section-title {
+  font-size: 1.2rem;
+  margin-bottom: 0.5rem;
+}
+
+.settings-section-desc {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin-bottom: 1.25rem;
+}
+
+/* Rating Preference Slider - Settings Page */
+.preference-slider-container {
+  max-width: 400px;
+}
+
+.preference-slider-container .preference-labels {
+  margin-bottom: 0.5rem;
+  font-size: 0.8rem;
+}
+
+#view-settings .preference-slider {
+  width: 100%;
+  height: 8px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: linear-gradient(to right, var(--rose-wine), var(--bg-slot), var(--sparkling));
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+  margin: 0;
+}
+
+#view-settings .preference-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+#view-settings .preference-slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: 2px solid var(--text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+}
+
+.preference-value {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 1rem;
+  gap: 0.25rem;
+}
+
+.preference-value span:first-child {
+  font-size: 1.5rem;
+  font-weight: 600;
+  font-family: 'Cormorant Garamond', serif;
+}
+
+.preference-value span:last-child {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Toggle Switch */
+.settings-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.toggle-switch {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 26px;
+}
+
+.toggle-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.toggle-slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-slot);
+  border-radius: 26px;
+  transition: 0.3s;
+  border: 1px solid var(--border);
+}
+
+.toggle-slider::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: 0.3s;
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.toggle-switch input:checked + .toggle-slider::before {
+  transform: translateX(22px);
+  background: var(--text);
+}
+
+.toggle-label {
+  font-size: 0.95rem;
+}
+
+/* Settings Rules */
+.settings-rules {
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  transition: opacity 0.2s;
+}
+
+.settings-rule {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-rule:last-of-type {
+  border-bottom: none;
+}
+
+.settings-rule label {
+  font-size: 0.9rem;
+}
+
+.rule-input-group {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rule-input-group input {
+  width: 70px;
+  padding: 0.4rem 0.6rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.rule-input-group input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.rule-input-group span {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.settings-rules button {
+  margin-top: 1rem;
+  width: 100%;
+}
+
+/* Reduce Candidates */
+.reduce-candidates-actions {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.reduce-candidate {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.reduce-candidate .candidate-checkbox {
+  width: 18px;
+  height: 18px;
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.candidate-info {
+  flex: 1;
+}
+
+.candidate-name {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.candidate-reason {
+  font-size: 0.85rem;
+  color: var(--accent);
+  margin-bottom: 0.25rem;
+}
+
+.candidate-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+/* Credential Forms */
+.credential-form {
+  background: var(--bg-slot);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.credential-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.credential-source {
+  font-weight: 500;
+  font-size: 1rem;
+}
+
+.credential-status {
+  font-size: 0.8rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 12px;
+  background: var(--bg-card);
+  color: var(--text-muted);
+}
+
+.credential-status.status-valid {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.credential-status.status-failed {
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
+.credential-status.status-pending {
+  background: rgba(255, 193, 7, 0.2);
+  color: #ffd54f;
+}
+
+.credential-inputs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.credential-inputs input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.credential-inputs input:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+
+.credential-inputs input::placeholder {
+  color: var(--text-muted);
+}
+
+.credential-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Settings Warning */
+.settings-warning {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  color: #ffd54f;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+/* Settings About */
+.settings-about {
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+/* Responsive Settings */
+@media (max-width: 600px) {
+  .settings-rule {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .credential-inputs {
+    flex-direction: column;
+  }
+
+  .preference-labels span:nth-child(2) {
+    display: none;
+  }
+}

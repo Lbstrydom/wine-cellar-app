@@ -52,10 +52,15 @@ export function scorePairing(db, signals, preferReduceNow, limit) {
   // Match wines to scored styles
   const suggestions = [];
   for (const wine of wines) {
-    const styleMatch = styleScores.find(ss =>
-      wine.style.toLowerCase().includes(ss.wine_style_bucket.toLowerCase().split('/')[0]) ||
-      ss.wine_style_bucket.toLowerCase().includes(wine.style.toLowerCase().split(' ')[0])
-    );
+    // Skip wines without style - can't match to food pairings
+    if (!wine.style) continue;
+
+    const wineStyleLower = wine.style.toLowerCase();
+    const styleMatch = styleScores.find(ss => {
+      const bucketLower = ss.wine_style_bucket.toLowerCase();
+      return wineStyleLower.includes(bucketLower.split('/')[0]) ||
+        bucketLower.includes(wineStyleLower.split(' ')[0]);
+    });
 
     if (styleMatch) {
       suggestions.push({

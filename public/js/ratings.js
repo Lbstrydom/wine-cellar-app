@@ -268,7 +268,8 @@ async function handleFetchRatings(wineId) {
 
   try {
     const result = await fetchWineRatingsFromApi(wineId);
-    showToast(`Found ${result.ratings?.length || 0} ratings`);
+    // Use the message from backend which includes accurate counts
+    showToast(result.message || 'Ratings updated');
 
     // Refresh the ratings display
     const ratingsData = await getWineRatings(wineId);

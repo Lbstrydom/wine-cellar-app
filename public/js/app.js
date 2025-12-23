@@ -8,6 +8,7 @@ import { renderFridge, renderCellar } from './grid.js';
 import { initModals } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
+import { initSettings, loadSettings } from './settings.js';
 import { escapeHtml } from './utils.js';
 
 /**
@@ -87,10 +88,10 @@ function renderReduceList(list) {
     <div class="reduce-item p${item.priority}">
       <div class="reduce-priority">${item.priority}</div>
       <div class="reduce-info">
-        <div class="reduce-name">${item.wine_name} ${item.vintage || 'NV'}</div>
-        <div class="reduce-meta">${item.style} • ${item.bottle_count} bottle${item.bottle_count > 1 ? 's' : ''}</div>
-        <div class="reduce-meta">${item.reduce_reason || ''}</div>
-        <div class="reduce-locations">${item.locations || ''}</div>
+        <div class="reduce-name">${escapeHtml(item.wine_name)} ${escapeHtml(item.vintage) || 'NV'}</div>
+        <div class="reduce-meta">${escapeHtml(item.style || '')} • ${item.bottle_count} bottle${item.bottle_count > 1 ? 's' : ''}</div>
+        <div class="reduce-meta">${escapeHtml(item.reduce_reason || '')}</div>
+        <div class="reduce-locations">${escapeHtml(item.locations || '')}</div>
       </div>
     </div>
   `).join('');
@@ -175,6 +176,7 @@ function switchView(viewName) {
   if (viewName === 'reduce') loadReduceNow();
   if (viewName === 'wines') loadWines();
   if (viewName === 'history') loadHistory();
+  if (viewName === 'settings') loadSettings();
 }
 
 /**
@@ -189,6 +191,7 @@ async function init() {
   // Initialise modules
   initModals();
   initSommelier();
+  initSettings();
   await initBottles();
 
   // Load initial data

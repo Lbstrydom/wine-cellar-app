@@ -4,7 +4,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import { searchWineRatings, fetchPageContent } from './searchProviders.js';
+import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from './searchProviders.js';
 import { LENS_CREDIBILITY, getSourceConfig } from '../config/sourceRegistry.js';
 import logger from '../utils/logger.js';
 
@@ -326,6 +326,8 @@ RULES:
 
 /**
  * Fetch wine ratings using multi-provider search + Claude parse.
+ * Tries authenticated sources first (Vivino, CellarTracker) if credentials are configured,
+ * then falls back to web search + Claude extraction.
  * @param {Object} wine - Wine object
  * @returns {Promise<Object>} Fetched ratings
  */
@@ -342,11 +344,24 @@ export async function fetchWineRatings(wine) {
   logger.info('Ratings', `Starting search for: ${wineName} ${vintage}`);
   logger.info('Ratings', `API Keys: Google=${process.env.GOOGLE_SEARCH_API_KEY ? 'Set' : 'MISSING'}, Engine=${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set' : 'MISSING'}, Brave=${process.env.BRAVE_SEARCH_API_KEY ? 'Set' : 'MISSING'}`);
 
+  // Step 0: Try authenticated sources first (faster and more reliable if configured)
+  const authenticatedRatings = await fetchAuthenticatedRatings(wineName, vintage);
+  if (authenticatedRatings.length > 0) {
+    logger.info('Ratings', `Got ${authenticatedRatings.length} ratings from authenticated sources`);
+  }
+
   // Step 1: Search for relevant pages
   const searchResults = await searchWineRatings(wineName, vintage, country);
 
   if (searchResults.results.length === 0) {
     logger.warn('Ratings', 'No search results found');
+    // Still return authenticated ratings if we got any
+    if (authenticatedRatings.length > 0) {
+      return {
+        ratings: authenticatedRatings,
+        search_notes: `No search results, but found ${authenticatedRatings.length} from authenticated sources`
+      };
+    }
     return {
       ratings: [],
       search_notes: 'No search results found'
@@ -412,14 +427,24 @@ export async function fetchWineRatings(wine) {
           };
         });
 
+        // Merge with authenticated ratings
+        const allRatings = [...authenticatedRatings];
+        const authenticatedSources = new Set(authenticatedRatings.map(r => r.source));
+        for (const rating of snippetParsed.ratings) {
+          if (!authenticatedSources.has(rating.source)) {
+            allRatings.push(rating);
+          }
+        }
+        snippetParsed.ratings = allRatings;
+
         return snippetParsed;
       }
     }
 
-    // Final fallback - return search results for manual review
+    // Final fallback - return authenticated ratings + search results for manual review
     return {
-      ratings: [],
-      search_notes: `Found ${searchResults.results.length} results but could not fetch page contents`,
+      ratings: authenticatedRatings,
+      search_notes: `Found ${searchResults.results.length} results but could not fetch page contents${authenticatedRatings.length > 0 ? `, got ${authenticatedRatings.length} from authenticated sources` : ''}`,
       search_results: searchResults.results.map(r => ({
         source: r.sourceId,
         url: r.url,
@@ -454,7 +479,21 @@ export async function fetchWineRatings(wine) {
     });
   }
 
-  logger.info('Ratings', `Extracted ${parsed.ratings?.length || 0} ratings`);
+  // Merge authenticated ratings with scraped ratings
+  // Authenticated ratings take precedence (they're more reliable)
+  const allRatings = [...authenticatedRatings];
+  const authenticatedSources = new Set(authenticatedRatings.map(r => r.source));
+
+  // Add scraped ratings that aren't already covered by authenticated sources
+  for (const rating of (parsed.ratings || [])) {
+    if (!authenticatedSources.has(rating.source)) {
+      allRatings.push(rating);
+    }
+  }
+
+  parsed.ratings = allRatings;
+
+  logger.info('Ratings', `Total ratings: ${parsed.ratings?.length || 0} (${authenticatedRatings.length} authenticated)`);
   logger.separator();
 
   return parsed;
@@ -486,16 +525,32 @@ TASK: Extract any ratings found for this specific wine.
 
 For each rating, provide:
 - source: Use these identifiers ONLY:
-  Competitions: decanter, iwc, iwsc, concours_mondial, mundus_vini, veritas, old_mutual
-  Panel Guides: platters, halliday, guia_penin, gambero_rosso
-  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, descorchados, decanter_magazine
-  Community: vivino
+  Global Competitions: decanter, iwc, iwsc, concours_mondial, mundus_vini
+  Grape Competitions: chardonnay_du_monde, syrah_du_monde, grenaches_du_monde
+  Regional Competitions: veritas, old_mutual
+  Australia/NZ: halliday, huon_hooke, gourmet_traveller_wine, bob_campbell, wine_orbit
+  Spain: guia_penin, guia_proensa
+  Italy: gambero_rosso, doctor_wine, bibenda, vinous
+  France: guide_hachette, rvf, bettane_desseauve
+  South Africa: platters
+  South America: descorchados, vinomanos
+  Germany: falstaff
+  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, decanter_magazine, wine_enthusiast, natalie_maclean
+  Community: vivino, cellar_tracker, wine_align
 
 - lens: "competition", "panel_guide", "critic", or "community"
-- score_type: "medal", "points", or "stars"
-- raw_score: The actual score (e.g., "Gold", "92", "4.2", "91/100")
+- score_type: "medal", "points", "stars", or "symbol"
+- raw_score: The EXACT score as shown (e.g., "Gold", "92", "4.2", "Tre Bicchieri", "★★★", "17/20")
+- normalised_score: Convert to 100-point scale if possible:
+  - Medals: Grand Gold/Trophy=98, Gold=94, Silver=88, Bronze=82, Commended=78
+  - Tre Bicchieri=95, Due Bicchieri Rossi=90, Due Bicchieri=87
+  - 5 grappoli=95, 4 grappoli=90, 3 grappoli=85
+  - Stars (out of 5): multiply by 20
+  - French /20 scores: multiply by 5
+  - For 100-point scores: use as-is
+  - If unable to convert: null
 - competition_year: Year of the rating if mentioned
-- rating_count: Number of ratings (Vivino only)
+- rating_count: Number of ratings (community sources only)
 - source_url: The page URL where you found this
 - evidence_excerpt: A SHORT quote (max 50 chars) proving the rating
 - vintage_match: "exact" if vintage matches, "inferred" if close vintage, "non_vintage" if NV rating
@@ -505,14 +560,15 @@ Return ONLY valid JSON:
 {
   "ratings": [
     {
-      "source": "tim_atkin",
-      "lens": "critic",
-      "score_type": "points",
-      "raw_score": "91",
+      "source": "gambero_rosso",
+      "lens": "panel_guide",
+      "score_type": "symbol",
+      "raw_score": "Tre Bicchieri",
+      "normalised_score": 95,
       "competition_year": 2024,
       "rating_count": null,
-      "source_url": "https://timatkin.com/...",
-      "evidence_excerpt": "Springfield Special Cuvee 91/100",
+      "source_url": "https://gamberorosso.it/...",
+      "evidence_excerpt": "Tre Bicchieri 2024",
       "vintage_match": "exact",
       "match_confidence": "high"
     }
@@ -526,8 +582,10 @@ RULES:
 - Check vintage carefully - only "exact" if vintage matches exactly
 - Do NOT fabricate ratings - only extract what's in the text
 - Include evidence_excerpt to prove the rating exists
-- For Platter's, convert stars to "stars" score_type (e.g., "4.5")
-- For Jancis Robinson, scores are out of 20 (e.g., "17" means 17/20)
+- For symbol scores (Tre Bicchieri, grappoli, stars, Coup de Coeur), use score_type: "symbol"
+- For French /20 scores: normalise by multiplying by 5
+- For Jancis Robinson, scores are out of 20 (e.g., "17" means 17/20, normalised_score=85)
+- For Platter's, use stars (e.g., "4.5") and normalise by multiplying by 20
 - If no ratings found for this wine: {"ratings": [], "search_notes": "No ratings found"}`;
 }
 
@@ -558,19 +616,35 @@ ${snippetTexts}
 TASK: Extract any ratings visible in the snippets above.
 
 Common patterns to look for:
-- Vivino: "3.8" or "4.2 stars" or "Rated 3.9"
-- Critics: "92 points" or "91/100"
-- Medals: "Gold Medal" or "Silver"
+- Vivino/Community: "3.8" or "4.2 stars" or "Rated 3.9"
+- Critics/Guides: "92 points" or "91/100" or "17/20"
+- Medals: "Gold Medal", "Silver", "Grand Gold", "Trophy"
+- Italian symbols: "Tre Bicchieri", "Due Bicchieri", "5 grappoli"
+- French symbols: "★★★", "Coup de Coeur"
 
 For each rating found, provide:
 - source: Use these identifiers:
-  Community: vivino
-  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling
-  Competitions: decanter, iwc, iwsc
+  Global Competitions: decanter, iwc, iwsc, concours_mondial, mundus_vini
+  Grape Competitions: chardonnay_du_monde, syrah_du_monde, grenaches_du_monde
+  Australia/NZ: halliday, bob_campbell, wine_orbit
+  Italy: gambero_rosso, bibenda, vinous
+  France: guide_hachette, rvf
+  Spain: guia_penin
+  South Africa: platters
+  South America: descorchados
+  Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, wine_enthusiast
+  Community: vivino, cellar_tracker
 
-- lens: "community" for Vivino, "critic" for critics, "competition" for medals
-- score_type: "stars" for Vivino, "points" for critics, "medal" for competitions
-- raw_score: The actual score (e.g., "3.8", "92", "Gold")
+- lens: "community", "critic", "panel_guide", or "competition"
+- score_type: "stars", "points", "medal", or "symbol"
+- raw_score: The exact score (e.g., "3.8", "92", "Gold", "Tre Bicchieri")
+- normalised_score: Convert to 100-point scale:
+  - Medals: Grand Gold/Trophy=98, Gold=94, Silver=88, Bronze=82
+  - Tre Bicchieri=95, 5 grappoli=95
+  - Stars (out of 5): multiply by 20
+  - French /20 scores: multiply by 5
+  - 100-point scores: use as-is
+  - If unable to convert: null
 - source_url: The URL from the search result
 - evidence_excerpt: Quote from the snippet showing the rating
 - match_confidence: "medium" (snippets have less context than full pages)
@@ -583,7 +657,7 @@ Return ONLY valid JSON:
 
 RULES:
 - ONLY extract ratings clearly visible in the snippets
-- For Vivino, look for star ratings like "3.8" or "4.1"
+- For symbol scores (Tre Bicchieri, grappoli, stars, Coup de Coeur), use score_type: "symbol"
 - Do NOT fabricate - only extract what you can see
 - If rating_count is visible (e.g., "1234 ratings"), include it
 - If no ratings visible: {"ratings": [], "search_notes": "No ratings visible in snippets"}`;

@@ -6,12 +6,36 @@
 const API_BASE = '';
 
 /**
+ * Handle API response with error checking.
+ * @param {Response} res - Fetch response
+ * @param {string} defaultError - Default error message
+ * @returns {Promise<Object>}
+ * @throws {Error} If response is not ok
+ */
+async function handleResponse(res, defaultError = 'Request failed') {
+  if (!res.ok) {
+    try {
+      const data = await res.json();
+      throw new Error(data.error || defaultError);
+    } catch (e) {
+      // If it's already our error, rethrow it
+      if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
+        throw e;
+      }
+      // If JSON parsing fails, use status text
+      throw new Error(res.statusText || defaultError);
+    }
+  }
+  return res.json();
+}
+
+/**
  * Fetch cellar layout.
  * @returns {Promise<Object>}
  */
 export async function fetchLayout() {
   const res = await fetch(`${API_BASE}/api/stats/layout`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch layout');
 }
 
 /**
@@ -20,7 +44,7 @@ export async function fetchLayout() {
  */
 export async function fetchStats() {
   const res = await fetch(`${API_BASE}/api/stats`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch stats');
 }
 
 /**
@@ -29,7 +53,7 @@ export async function fetchStats() {
  */
 export async function fetchReduceNow() {
   const res = await fetch(`${API_BASE}/api/reduce-now`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch reduce-now list');
 }
 
 /**
@@ -38,7 +62,7 @@ export async function fetchReduceNow() {
  */
 export async function fetchWines() {
   const res = await fetch(`${API_BASE}/api/wines`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch wines');
 }
 
 /**
@@ -48,7 +72,7 @@ export async function fetchWines() {
  */
 export async function fetchWine(id) {
   const res = await fetch(`${API_BASE}/api/wines/${id}`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch wine');
 }
 
 /**
@@ -58,7 +82,7 @@ export async function fetchWine(id) {
  */
 export async function searchWines(query) {
   const res = await fetch(`${API_BASE}/api/wines/search?q=${encodeURIComponent(query)}`);
-  return res.json();
+  return handleResponse(res, 'Failed to search wines');
 }
 
 /**
@@ -73,11 +97,7 @@ export async function moveBottle(from, to) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ from_location: from, to_location: to })
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Move failed');
-  }
-  return res.json();
+  return handleResponse(res, 'Move failed');
 }
 
 /**
@@ -92,7 +112,7 @@ export async function drinkBottle(location, details = {}) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(details)
   });
-  return res.json();
+  return handleResponse(res, 'Failed to record drink');
 }
 
 /**
@@ -108,11 +128,7 @@ export async function askSommelier(dish, source, colour) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dish, source, colour })
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Request failed');
-  }
-  return res.json();
+  return handleResponse(res, 'Sommelier request failed');
 }
 
 /**
@@ -126,7 +142,7 @@ export async function getPairingSuggestions(signals) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ signals, prefer_reduce_now: true, limit: 5 })
   });
-  return res.json();
+  return handleResponse(res, 'Failed to get pairing suggestions');
 }
 
 /**
@@ -135,7 +151,7 @@ export async function getPairingSuggestions(signals) {
  */
 export async function fetchWineStyles() {
   const res = await fetch(`${API_BASE}/api/wines/styles`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch wine styles');
 }
 
 /**
@@ -149,11 +165,7 @@ export async function createWine(wineData) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wineData)
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to create wine');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to create wine');
 }
 
 /**
@@ -168,11 +180,7 @@ export async function updateWine(id, wineData) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(wineData)
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to update wine');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to update wine');
 }
 
 /**
@@ -188,11 +196,7 @@ export async function addBottles(wineId, startLocation, quantity) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wine_id: wineId, start_location: startLocation, quantity })
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to add bottles');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to add bottles');
 }
 
 /**
@@ -204,11 +208,7 @@ export async function removeBottle(location) {
   const res = await fetch(`${API_BASE}/api/slots/${location}/remove`, {
     method: 'DELETE'
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to remove bottle');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to remove bottle');
 }
 
 /**
@@ -222,11 +222,7 @@ export async function parseWineText(text) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ text })
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to parse wine');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to parse wine');
 }
 
 /**
@@ -241,11 +237,7 @@ export async function parseWineImage(base64Image, mediaType) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ image: base64Image, mediaType })
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to parse image');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to parse image');
 }
 
 /**
@@ -255,7 +247,7 @@ export async function parseWineImage(base64Image, mediaType) {
  */
 export async function getWineRatings(wineId) {
   const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings`);
-  return res.json();
+  return handleResponse(res, 'Failed to get wine ratings');
 }
 
 /**
@@ -267,11 +259,7 @@ export async function fetchWineRatingsFromApi(wineId) {
   const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings/fetch`, {
     method: 'POST'
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to fetch ratings');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to fetch ratings');
 }
 
 /**
@@ -286,11 +274,7 @@ export async function addManualRating(wineId, rating) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(rating)
   });
-  if (!res.ok) {
-    const data = await res.json();
-    throw new Error(data.error || 'Failed to add rating');
-  }
-  return res.json();
+  return handleResponse(res, 'Failed to add rating');
 }
 
 /**
@@ -299,7 +283,7 @@ export async function addManualRating(wineId, rating) {
  */
 export async function getSettings() {
   const res = await fetch(`${API_BASE}/api/settings`);
-  return res.json();
+  return handleResponse(res, 'Failed to get settings');
 }
 
 /**
@@ -314,7 +298,7 @@ export async function updateSetting(key, value) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ value })
   });
-  return res.json();
+  return handleResponse(res, 'Failed to update setting');
 }
 
 /**
@@ -330,7 +314,7 @@ export async function updatePersonalRating(wineId, rating, notes) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rating, notes })
   });
-  return res.json();
+  return handleResponse(res, 'Failed to update personal rating');
 }
 
 /**
@@ -341,5 +325,89 @@ export async function updatePersonalRating(wineId, rating, notes) {
  */
 export async function fetchConsumptionHistory(limit = 50, offset = 0) {
   const res = await fetch(`${API_BASE}/api/stats/consumption?limit=${limit}&offset=${offset}`);
-  return res.json();
+  return handleResponse(res, 'Failed to fetch consumption history');
+}
+
+// ============================================
+// Credential Management API
+// ============================================
+
+/**
+ * Get configured credentials (status only, no secrets).
+ * @returns {Promise<{encryption_configured: boolean, credentials: Array}>}
+ */
+export async function getCredentials() {
+  const res = await fetch(`${API_BASE}/api/settings/credentials`);
+  return handleResponse(res, 'Failed to get credentials');
+}
+
+/**
+ * Save credentials for a source.
+ * @param {string} source - Source ID (vivino, decanter, cellartracker)
+ * @param {string} username - Username/email
+ * @param {string} password - Password
+ * @returns {Promise<Object>}
+ */
+export async function saveCredentials(source, username, password) {
+  const res = await fetch(`${API_BASE}/api/settings/credentials/${source}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ username, password })
+  });
+  return handleResponse(res, 'Failed to save credentials');
+}
+
+/**
+ * Delete credentials for a source.
+ * @param {string} source - Source ID
+ * @returns {Promise<Object>}
+ */
+export async function deleteCredentials(source) {
+  const res = await fetch(`${API_BASE}/api/settings/credentials/${source}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to delete credentials');
+}
+
+/**
+ * Test credentials for a source.
+ * @param {string} source - Source ID
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+export async function testCredentials(source) {
+  const res = await fetch(`${API_BASE}/api/settings/credentials/${source}/test`, {
+    method: 'POST'
+  });
+  return handleResponse(res, 'Failed to test credentials');
+}
+
+// ============================================
+// Reduce-Now Auto Rules API
+// ============================================
+
+/**
+ * Evaluate wines against auto-rules.
+ * @returns {Promise<{enabled: boolean, rules: Object, candidates: Array}>}
+ */
+export async function evaluateReduceRules() {
+  const res = await fetch(`${API_BASE}/api/reduce-now/evaluate`, {
+    method: 'POST'
+  });
+  return handleResponse(res, 'Failed to evaluate rules');
+}
+
+/**
+ * Batch add wines to reduce-now.
+ * @param {number[]} wineIds - Wine IDs to add
+ * @param {number} priority - Priority level (1-5)
+ * @param {string} reasonPrefix - Reason prefix text
+ * @returns {Promise<{message: string, added: number}>}
+ */
+export async function batchAddReduceNow(wineIds, priority = 3, reasonPrefix = '') {
+  const res = await fetch(`${API_BASE}/api/reduce-now/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wine_ids: wineIds, priority, reason_prefix: reasonPrefix })
+  });
+  return handleResponse(res, 'Failed to add wines');
 }

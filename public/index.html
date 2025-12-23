@@ -33,6 +33,7 @@
     <div class="tab" data-view="wines">All Wines</div>
     <div class="tab" data-view="history">History</div>
     <div class="tab" data-view="pairing">Find Pairing</div>
+    <div class="tab" data-view="settings">Settings</div>
   </nav>
 
   <!-- Grid View -->
@@ -126,6 +127,146 @@
     <h3 style="margin: 1.5rem 0 1rem;">Suggestions</h3>
     <div class="pairing-results" id="pairing-results">
       <p style="color: var(--text-muted);">Select dish characteristics above</p>
+    </div>
+  </div>
+
+  <!-- Settings View -->
+  <div class="view" id="view-settings">
+    <h2 style="margin-bottom: 1.5rem;">Settings</h2>
+
+    <!-- Rating Preferences Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Rating Preferences</h3>
+      <p class="settings-section-desc">Adjust how professional ratings are weighted when calculating purchase scores.</p>
+
+      <div class="preference-slider-container">
+        <div class="preference-labels">
+          <span>Community</span>
+          <span>Balanced</span>
+          <span>Competition</span>
+        </div>
+        <input type="range" id="rating-preference-slider" min="-100" max="100" value="40" class="preference-slider" />
+        <div class="preference-value">
+          <span id="preference-value-display">+40</span>
+          <span id="preference-description">Slightly favors competition awards</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Reduce-Now Auto Rules Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Reduce-Now Auto Rules</h3>
+      <p class="settings-section-desc">Automatically suggest wines to add to your reduce-now list based on criteria.</p>
+
+      <div class="settings-toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="reduce-auto-rules-enabled" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-label">Enable automatic suggestions</span>
+      </div>
+
+      <div class="settings-rules" id="reduce-rules-container">
+        <div class="settings-rule">
+          <label>Suggest wines when vintage is older than</label>
+          <div class="rule-input-group">
+            <input type="number" id="reduce-age-threshold" min="1" max="50" value="10" />
+            <span>years</span>
+          </div>
+        </div>
+
+        <div class="settings-rule">
+          <label>Suggest wines when rating is below</label>
+          <div class="rule-input-group">
+            <input type="number" id="reduce-rating-minimum" min="1" max="5" step="0.5" value="3.0" />
+            <span>stars</span>
+          </div>
+        </div>
+
+        <button class="btn btn-secondary" id="evaluate-rules-btn">
+          Evaluate Now
+        </button>
+      </div>
+
+      <!-- Evaluation Results -->
+      <div id="reduce-candidates-container" style="display: none;">
+        <h4 style="margin: 1rem 0 0.5rem;">Matching Wines</h4>
+        <div id="reduce-candidates-list"></div>
+        <div class="reduce-candidates-actions">
+          <button class="btn btn-primary btn-small" id="add-all-candidates-btn">Add All to Reduce-Now</button>
+          <button class="btn btn-secondary btn-small" id="clear-candidates-btn">Dismiss</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Account Credentials Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Account Credentials</h3>
+      <p class="settings-section-desc">Connect your accounts for enhanced rating data. Credentials are encrypted.</p>
+
+      <div id="encryption-warning" class="settings-warning" style="display: none;">
+        No encryption key configured. Add CREDENTIAL_ENCRYPTION_KEY to your .env file for persistent storage.
+      </div>
+
+      <!-- Vivino -->
+      <div class="credential-form">
+        <div class="credential-header">
+          <span class="credential-source">Vivino</span>
+          <span class="credential-status" id="vivino-status">Not configured</span>
+        </div>
+        <div class="credential-inputs">
+          <input type="email" id="vivino-username" placeholder="Email" autocomplete="off" />
+          <input type="password" id="vivino-password" placeholder="Password" autocomplete="off" />
+        </div>
+        <div class="credential-actions">
+          <button class="btn btn-small btn-secondary" id="vivino-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary" id="vivino-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger" id="vivino-delete-btn" style="display: none;">Remove</button>
+        </div>
+      </div>
+
+      <!-- Decanter -->
+      <div class="credential-form">
+        <div class="credential-header">
+          <span class="credential-source">Decanter</span>
+          <span class="credential-status" id="decanter-status">Not configured</span>
+        </div>
+        <div class="credential-inputs">
+          <input type="email" id="decanter-username" placeholder="Email" autocomplete="off" />
+          <input type="password" id="decanter-password" placeholder="Password" autocomplete="off" />
+        </div>
+        <div class="credential-actions">
+          <button class="btn btn-small btn-secondary" id="decanter-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary" id="decanter-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger" id="decanter-delete-btn" style="display: none;">Remove</button>
+        </div>
+      </div>
+
+      <!-- CellarTracker -->
+      <div class="credential-form">
+        <div class="credential-header">
+          <span class="credential-source">CellarTracker</span>
+          <span class="credential-status" id="cellartracker-status">Not configured</span>
+        </div>
+        <div class="credential-inputs">
+          <input type="text" id="cellartracker-username" placeholder="Username" autocomplete="off" />
+          <input type="password" id="cellartracker-password" placeholder="Password" autocomplete="off" />
+        </div>
+        <div class="credential-actions">
+          <button class="btn btn-small btn-secondary" id="cellartracker-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary" id="cellartracker-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger" id="cellartracker-delete-btn" style="display: none;">Remove</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- About Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">About</h3>
+      <p class="settings-about">
+        Wine Cellar App v1.0<br>
+        <span style="color: var(--text-muted);">Manage your wine collection with AI-powered features</span>
+      </p>
     </div>
   </div>
 

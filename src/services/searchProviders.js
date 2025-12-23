@@ -3,8 +3,219 @@
  * @module services/searchProviders
  */
 
-import { getSourcesForCountry } from '../config/sourceRegistry.js';
+import { getSourcesForCountry, SOURCE_REGISTRY, REGION_SOURCE_PRIORITY, LENS } from '../config/sourceRegistry.js';
 import logger from '../utils/logger.js';
+import db from '../db/index.js';
+import { decrypt } from './encryption.js';
+
+// ============================================
+// Grape Detection
+// ============================================
+
+/**
+ * Grape variety patterns for detection from wine names.
+ */
+const GRAPE_PATTERNS = {
+  chardonnay: /chardonnay/i,
+  syrah: /syrah|shiraz/i,
+  grenache: /grenache|garnacha/i,
+  cabernet_sauvignon: /cabernet\s*sauvignon/i,
+  merlot: /merlot/i,
+  pinot_noir: /pinot\s*noir/i,
+  sauvignon_blanc: /sauvignon\s*blanc/i,
+  riesling: /riesling/i,
+  malbec: /malbec/i,
+  tempranillo: /tempranillo/i,
+  nebbiolo: /nebbiolo|barolo|barbaresco/i,
+  sangiovese: /sangiovese|chianti|brunello/i,
+  pinotage: /pinotage/i,
+  chenin_blanc: /chenin\s*blanc/i,
+  viognier: /viognier/i,
+  mourvedre: /mourv[eè]dre|monastrell/i,
+  cabernet_franc: /cabernet\s*franc/i,
+  gewurztraminer: /gew[uü]rztraminer/i,
+  pinot_grigio: /pinot\s*gri[gs]io/i,
+  zinfandel: /zinfandel|primitivo/i
+};
+
+/**
+ * Detect grape variety from wine name.
+ * @param {string} wineName - Wine name to analyze
+ * @returns {string|null} Detected grape variety or null
+ */
+export function detectGrape(wineName) {
+  if (!wineName) return null;
+
+  for (const [grape, pattern] of Object.entries(GRAPE_PATTERNS)) {
+    if (pattern.test(wineName)) {
+      return grape;
+    }
+  }
+  return null;
+}
+
+// ============================================
+// Score Normalisation
+// ============================================
+
+/**
+ * Score normalisation map for non-numeric scores.
+ * Converts medals, symbols, and other formats to 0-100 scale.
+ */
+const SCORE_NORMALISATION = {
+  // Medal awards
+  'Grand Gold': 98,
+  'Platinum': 98,
+  'Trophy': 98,
+  'Double Gold': 96,
+  'Gold Outstanding': 96,
+  'Gold': 94,
+  'Silver': 88,
+  'Bronze': 82,
+  'Commended': 78,
+
+  // Gambero Rosso (Italian)
+  'Tre Bicchieri': 95,
+  'Due Bicchieri Rossi': 90,
+  'Due Bicchieri': 87,
+  'Un Bicchiere': 82,
+
+  // Bibenda grappoli (Italian)
+  '5 grappoli': 95,
+  'cinque grappoli': 95,
+  '4 grappoli': 90,
+  'quattro grappoli': 90,
+  '3 grappoli': 85,
+  'tre grappoli': 85,
+  '2 grappoli': 80,
+  'due grappoli': 80,
+
+  // Hachette (French)
+  '★★★': 94,
+  '★★': 88,
+  '★': 82,
+  'Coup de Coeur': 96,
+  'Coup de Cœur': 96
+};
+
+/**
+ * Normalise a raw score to 0-100 scale.
+ * @param {string} rawScore - Raw score string
+ * @param {string} _scoreType - Type of score ('points', 'stars', 'medal', 'symbol') - reserved for future use
+ * @returns {number|null} Normalised score or null if unable to convert
+ */
+export function normaliseScore(rawScore, _scoreType) {
+  if (!rawScore) return null;
+
+  const rawStr = String(rawScore).trim();
+
+  // Direct lookup for symbols/medals
+  if (SCORE_NORMALISATION[rawStr]) {
+    return SCORE_NORMALISATION[rawStr];
+  }
+
+  // Check for partial matches in normalisation map
+  for (const [key, value] of Object.entries(SCORE_NORMALISATION)) {
+    if (rawStr.toLowerCase().includes(key.toLowerCase())) {
+      return value;
+    }
+  }
+
+  // Handle numeric scores
+  const numericMatch = rawStr.match(/(\d+(?:\.\d+)?)/);
+  if (numericMatch) {
+    const value = parseFloat(numericMatch[1]);
+
+    // Already on 100-point scale (50-100 range is typical for wine)
+    if (value >= 50 && value <= 100) {
+      return Math.round(value);
+    }
+
+    // 20-point scale (French system)
+    if (value <= 20) {
+      return Math.round((value / 20) * 100);
+    }
+
+    // 5-star scale
+    if (value <= 5) {
+      return Math.round((value / 5) * 100);
+    }
+  }
+
+  return null; // Unable to normalise
+}
+
+// ============================================
+// Enhanced Source Selection
+// ============================================
+
+/**
+ * Get sources for a wine based on country and detected grape.
+ * Prioritizes region-specific sources and adds grape-specific competitions.
+ * @param {string} country - Wine's country of origin
+ * @param {string|null} grape - Detected grape variety
+ * @returns {Object[]} Array of source configs sorted by priority
+ */
+export function getSourcesForWine(country, grape = null) {
+  // Get base sources using region priority mapping
+  const countryKey = country && REGION_SOURCE_PRIORITY[country] ? country : '_default';
+  const prioritySourceIds = REGION_SOURCE_PRIORITY[countryKey] || REGION_SOURCE_PRIORITY['_default'];
+
+  // Build source list from priority IDs
+  let sources = prioritySourceIds
+    .map(id => {
+      const config = SOURCE_REGISTRY[id];
+      if (!config) return null;
+      return { id, ...config, relevance: 1.0 };
+    })
+    .filter(Boolean);
+
+  // Add grape-specific competitions if grape is known
+  if (grape) {
+    const grapeNormalised = grape.toLowerCase();
+    const grapeCompetitions = [];
+
+    for (const [id, config] of Object.entries(SOURCE_REGISTRY)) {
+      if (
+        config.lens === LENS.COMPETITION &&
+        config.grape_affinity &&
+        config.grape_affinity.some(g =>
+          grapeNormalised.includes(g) || g.includes(grapeNormalised)
+        )
+      ) {
+        // Don't add if already in sources
+        if (!sources.some(s => s.id === id)) {
+          grapeCompetitions.push({ id, ...config, relevance: 1.0 });
+        }
+      }
+    }
+
+    // Prepend grape competitions (highest priority)
+    sources = [...grapeCompetitions, ...sources];
+  }
+
+  // Add global competitions that aren't already included
+  for (const [id, config] of Object.entries(SOURCE_REGISTRY)) {
+    if (
+      config.lens === LENS.COMPETITION &&
+      config.grape_affinity === null &&
+      config.home_regions.length === 0 &&
+      !sources.some(s => s.id === id)
+    ) {
+      sources.push({ id, ...config, relevance: 0.8 });
+    }
+  }
+
+  // Fill in remaining sources from getSourcesForCountry for completeness
+  const countrySources = getSourcesForCountry(country);
+  for (const source of countrySources) {
+    if (!sources.some(s => s.id === source.id)) {
+      sources.push(source);
+    }
+  }
+
+  return sources;
+}
 
 /**
  * Search using Google Programmable Search API.
@@ -465,49 +676,64 @@ function _isResultRelevant(result, wineName, vintage) {
 /**
  * Multi-tier search for wine ratings.
  * Runs Google and Brave searches in parallel for better coverage.
+ * Uses grape detection for grape-specific competition sources.
  * @param {string} wineName - Wine name
  * @param {string|number} vintage - Vintage year
  * @param {string} country - Country of origin
  * @returns {Promise<Object>} Search results
  */
 export async function searchWineRatings(wineName, vintage, country) {
-  const sources = getSourcesForCountry(country);
-  const topSources = sources.slice(0, 8); // Top 8 by credibility × relevance
+  // Detect grape variety from wine name
+  const detectedGrape = detectGrape(wineName);
+
+  // Get sources using enhanced selection (includes grape-specific competitions)
+  const sources = getSourcesForWine(country, detectedGrape);
+  const topSources = sources.slice(0, 10); // Top 10 by priority (increased from 8)
   const wineNameVariations = generateWineNameVariations(wineName);
 
   logger.separator();
   logger.info('Search', `Wine: "${wineName}" ${vintage}`);
   logger.info('Search', `Country: ${country || 'Unknown'}`);
+  if (detectedGrape) {
+    logger.info('Search', `Detected grape: ${detectedGrape}`);
+  }
   logger.info('Search', `Name variations: ${wineNameVariations.join(', ')}`);
   logger.info('Search', `Top sources: ${topSources.map(s => s.id).join(', ')}`);
 
   // Strategy 1: Targeted searches for diverse sources
-  // Include top competitions AND top critics for balanced coverage
+  // Include grape-specific competitions, top competitions, AND top critics for balanced coverage
   const targetedResults = [];
 
-  // Get top 3 competitions
-  const topCompetitions = topSources.filter(s => s.lens === 'competition').slice(0, 3);
-  // Get top 2 critics (James Suckling, Wine Spectator, etc.) - lens is 'critic' not 'critics'
+  // Get grape-specific competitions first (if grape detected)
+  const grapeCompetitions = detectedGrape
+    ? topSources.filter(s => s.lens === 'competition' && s.grape_affinity).slice(0, 2)
+    : [];
+  // Get top 3 global competitions
+  const topCompetitions = topSources.filter(s => s.lens === 'competition' && !s.grape_affinity).slice(0, 3);
+  // Get top 2 critics/guides (James Suckling, Wine Spectator, regional guides)
   const topCritics = topSources.filter(s => s.lens === 'critic' || s.lens === 'panel_guide').slice(0, 2);
 
-  const prioritySources = [...topCompetitions, ...topCritics].slice(0, 5);
+  const prioritySources = [...grapeCompetitions, ...topCompetitions, ...topCritics].slice(0, 6);
   logger.info('Search', `Targeted sources: ${prioritySources.map(s => s.id).join(', ')}`);
 
-  for (const source of prioritySources) {
+  // Run all targeted searches in parallel for better performance
+  const targetedSearchPromises = prioritySources.map(source => {
     const query = buildSourceQuery(source, wineName, vintage);
     logger.info('Search', `Targeted search for ${source.id}: "${query}"`);
 
-    const results = await searchGoogle(query, [source.domain]);
-    if (results.length > 0) {
-      targetedResults.push(...results.map(r => ({
+    return searchGoogle(query, [source.domain]).then(results =>
+      results.map(r => ({
         ...r,
         sourceId: source.id,
         lens: source.lens,
         credibility: source.credibility,
         relevance: source.relevance
-      })));
-    }
-  }
+      }))
+    );
+  });
+
+  const targetedResultsArrays = await Promise.all(targetedSearchPromises);
+  targetedResultsArrays.forEach(results => targetedResults.push(...results));
 
   logger.info('Search', `Targeted searches found: ${targetedResults.length} results`);
 
@@ -600,6 +826,7 @@ export async function searchWineRatings(wineName, vintage, country) {
   return {
     query: broadQuery,
     country: country || 'Unknown',
+    detected_grape: detectedGrape,
     results: enrichedResults.slice(0, 10),
     sources_searched: topSources.length,
     targeted_hits: targetedResults.length,
@@ -607,4 +834,442 @@ export async function searchWineRatings(wineName, vintage, country) {
     brave_hits: braveResults.length,
     variation_hits: variationResults.length
   };
+}
+
+// ============================================
+// Authenticated Scraping Functions
+// ============================================
+
+/**
+ * Get decrypted credentials for a source.
+ * @param {string} sourceId - Source ID (vivino, decanter, cellartracker)
+ * @returns {Object|null} { username, password } or null if not configured
+ */
+export function getCredentials(sourceId) {
+  try {
+    const cred = db.prepare(
+      'SELECT username_encrypted, password_encrypted, auth_status FROM source_credentials WHERE source_id = ?'
+    ).get(sourceId);
+
+    if (!cred || !cred.username_encrypted || !cred.password_encrypted) {
+      return null;
+    }
+
+    const username = decrypt(cred.username_encrypted);
+    const password = decrypt(cred.password_encrypted);
+
+    if (!username || !password) {
+      return null;
+    }
+
+    return { username, password, authStatus: cred.auth_status };
+  } catch (err) {
+    logger.error('Credentials', `Failed to get credentials for ${sourceId}: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Update credential auth status.
+ * @param {string} sourceId - Source ID
+ * @param {string} status - 'valid', 'failed', or 'none'
+ */
+export function updateCredentialStatus(sourceId, status) {
+  try {
+    db.prepare(
+      'UPDATE source_credentials SET auth_status = ?, last_used_at = CURRENT_TIMESTAMP WHERE source_id = ?'
+    ).run(status, sourceId);
+  } catch (err) {
+    logger.error('Credentials', `Failed to update status for ${sourceId}: ${err.message}`);
+  }
+}
+
+/**
+ * Authenticate with Vivino and fetch wine data using their API.
+ * Uses stored credentials to establish a session before searching.
+ * @param {string} wineName - Wine name to search
+ * @param {string|number} vintage - Vintage year
+ * @returns {Promise<Object|null>} Wine data or null
+ */
+export async function fetchVivinoAuthenticated(wineName, vintage) {
+  const creds = getCredentials('vivino');
+  if (!creds) {
+    logger.info('Vivino', 'No credentials configured, skipping authenticated fetch');
+    return null;
+  }
+
+  logger.info('Vivino', `Attempting authenticated search for: ${wineName} ${vintage}`);
+
+  try {
+    // Step 1: Authenticate with Vivino to get session token
+    const loginResponse = await fetch('https://www.vivino.com/api/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        email: creds.username,
+        password: creds.password
+      })
+    });
+
+    if (!loginResponse.ok) {
+      if (loginResponse.status === 401 || loginResponse.status === 403) {
+        updateCredentialStatus('vivino', 'failed');
+        logger.info('Vivino', 'Authentication failed - invalid credentials');
+      } else {
+        logger.info('Vivino', `Login API returned ${loginResponse.status}`);
+      }
+      return null;
+    }
+
+    // Extract session cookies from login response
+    const loginCookies = loginResponse.headers.getSetCookie?.() ||
+      [loginResponse.headers.get('set-cookie')].filter(Boolean);
+
+    if (!loginCookies || loginCookies.length === 0) {
+      logger.info('Vivino', 'No session cookies received from login');
+      // Still try the search - some data may be available
+    }
+
+    // Parse cookies into a single Cookie header string
+    const cookieString = loginCookies
+      .map(cookie => cookie.split(';')[0])
+      .join('; ');
+
+    // Step 2: Search with authenticated session
+    const searchUrl = new URL('https://www.vivino.com/api/explore/explore');
+    searchUrl.searchParams.set('q', `${wineName} ${vintage}`.trim());
+    searchUrl.searchParams.set('limit', '5');
+
+    const searchHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      'Accept': 'application/json',
+      'Accept-Language': 'en-US,en;q=0.9',
+    };
+
+    // Include session cookies if we got them
+    if (cookieString) {
+      searchHeaders['Cookie'] = cookieString;
+    }
+
+    const response = await fetch(searchUrl.toString(), {
+      headers: searchHeaders
+    });
+
+    if (!response.ok) {
+      logger.info('Vivino', `Search API returned ${response.status}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const matches = data.explore_vintage?.matches || [];
+
+    if (matches.length === 0) {
+      logger.info('Vivino', 'No matches found in API response');
+      return null;
+    }
+
+    // Find best match
+    const bestMatch = matches.find(m => {
+      const wName = m.vintage?.wine?.name?.toLowerCase() || '';
+      const wVintage = m.vintage?.year;
+      return wName.includes(wineName.toLowerCase().split(' ')[0]) &&
+             (!vintage || wVintage === parseInt(vintage, 10));
+    }) || matches[0];
+
+    const wine = bestMatch.vintage?.wine;
+    const stats = bestMatch.vintage?.statistics || wine?.statistics;
+
+    if (!stats?.ratings_average) {
+      logger.info('Vivino', 'Match found but no rating data');
+      return null;
+    }
+
+    updateCredentialStatus('vivino', 'valid');
+
+    const result = {
+      source: 'vivino',
+      lens: 'community',
+      score_type: 'stars',
+      raw_score: stats.ratings_average.toFixed(1),
+      rating_count: stats.ratings_count || null,
+      wine_name: wine?.name,
+      vintage_found: bestMatch.vintage?.year,
+      source_url: `https://www.vivino.com/w/${wine?.id}`,
+      match_confidence: 'high'
+    };
+
+    logger.info('Vivino', `Found: ${result.raw_score} stars (${result.rating_count} ratings)`);
+    return result;
+
+  } catch (err) {
+    logger.error('Vivino', `Authenticated fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch wine data from CellarTracker using credentials.
+ * @param {string} wineName - Wine name to search
+ * @param {string|number} vintage - Vintage year
+ * @returns {Promise<Object|null>} Wine data or null
+ */
+export async function fetchCellarTrackerAuthenticated(wineName, vintage) {
+  const creds = getCredentials('cellartracker');
+  if (!creds) {
+    logger.info('CellarTracker', 'No credentials configured, skipping authenticated fetch');
+    return null;
+  }
+
+  logger.info('CellarTracker', `Attempting authenticated search for: ${wineName} ${vintage}`);
+
+  try {
+    // CellarTracker requires basic auth for their API
+    const authHeader = 'Basic ' + Buffer.from(`${creds.username}:${creds.password}`).toString('base64');
+
+    // Search wines
+    const searchUrl = new URL('https://www.cellartracker.com/xlquery.asp');
+    searchUrl.searchParams.set('User', creds.username);
+    searchUrl.searchParams.set('Password', creds.password);
+    searchUrl.searchParams.set('Format', 'json');
+    searchUrl.searchParams.set('Table', 'Wines');
+    searchUrl.searchParams.set('Wine', wineName);
+    if (vintage) {
+      searchUrl.searchParams.set('Vintage', vintage);
+    }
+
+    const response = await fetch(searchUrl.toString(), {
+      headers: {
+        'Authorization': authHeader,
+        'Accept': 'application/json',
+      }
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        updateCredentialStatus('cellartracker', 'failed');
+        logger.info('CellarTracker', 'Authentication failed');
+      }
+      return null;
+    }
+
+    const data = await response.json();
+
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      logger.info('CellarTracker', 'No matches found');
+      return null;
+    }
+
+    // Find the best match with community score
+    const matchWithScore = data.find(w => w.CT && parseFloat(w.CT) > 0);
+    if (!matchWithScore) {
+      logger.info('CellarTracker', 'No matches with ratings found');
+      return null;
+    }
+
+    updateCredentialStatus('cellartracker', 'valid');
+
+    const result = {
+      source: 'cellartracker',
+      lens: 'community',
+      score_type: 'points',
+      raw_score: parseFloat(matchWithScore.CT).toFixed(1),
+      rating_count: matchWithScore.CNotes || null,
+      wine_name: matchWithScore.Wine,
+      vintage_found: matchWithScore.Vintage,
+      source_url: `https://www.cellartracker.com/wine.asp?iWine=${matchWithScore.iWine}`,
+      match_confidence: 'high'
+    };
+
+    logger.info('CellarTracker', `Found: ${result.raw_score} points`);
+    return result;
+
+  } catch (err) {
+    logger.error('CellarTracker', `Authenticated fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch wine data from Decanter using credentials.
+ * Note: Decanter doesn't have a public API, but logged-in users can access more content.
+ * @param {string} wineName - Wine name to search
+ * @param {string|number} vintage - Vintage year
+ * @returns {Promise<Object|null>} Wine data or null
+ */
+export async function fetchDecanterAuthenticated(wineName, vintage) {
+  const creds = getCredentials('decanter');
+  if (!creds) {
+    logger.info('Decanter', 'No credentials configured, skipping authenticated fetch');
+    return null;
+  }
+
+  logger.info('Decanter', `Attempting authenticated search for: ${wineName} ${vintage}`);
+
+  try {
+    // First, authenticate to get session cookies
+    const loginResponse = await fetch('https://www.decanter.com/wp-login.php', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      },
+      body: new URLSearchParams({
+        'log': creds.username,
+        'pwd': creds.password,
+        'wp-submit': 'Log In',
+        'redirect_to': 'https://www.decanter.com/'
+      }),
+      redirect: 'manual'
+    });
+
+    // Check if login was successful (redirect)
+    if (loginResponse.status !== 302) {
+      updateCredentialStatus('decanter', 'failed');
+      logger.info('Decanter', 'Authentication failed');
+      return null;
+    }
+
+    // Get ALL cookies from login response (WordPress sets multiple cookies)
+    // Use getSetCookie() for modern Node.js, fallback to getAll() or manual parsing
+    let allCookies = [];
+
+    if (typeof loginResponse.headers.getSetCookie === 'function') {
+      // Node.js 18.14.1+ / undici
+      allCookies = loginResponse.headers.getSetCookie();
+    } else if (typeof loginResponse.headers.raw === 'function') {
+      // node-fetch style
+      const rawHeaders = loginResponse.headers.raw();
+      allCookies = rawHeaders['set-cookie'] || [];
+    } else {
+      // Fallback: try to get the single combined header (may lose some cookies)
+      const singleCookie = loginResponse.headers.get('set-cookie');
+      if (singleCookie) {
+        allCookies = [singleCookie];
+      }
+    }
+
+    if (!allCookies || allCookies.length === 0) {
+      logger.info('Decanter', 'No session cookies received');
+      return null;
+    }
+
+    logger.info('Decanter', `Received ${allCookies.length} cookie(s) from login`);
+
+    // Parse cookies into a single Cookie header string (extract name=value parts)
+    const cookieString = allCookies
+      .map(cookie => cookie.split(';')[0]) // Get just the name=value part
+      .join('; ');
+
+    updateCredentialStatus('decanter', 'valid');
+
+    // Search Decanter with authenticated session
+    const searchQuery = encodeURIComponent(`${wineName} ${vintage}`.trim());
+    const searchUrl = `https://www.decanter.com/?s=${searchQuery}&post_type=wine`;
+
+    const searchResponse = await fetch(searchUrl, {
+      headers: {
+        'Cookie': cookieString,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html'
+      }
+    });
+
+    if (!searchResponse.ok) {
+      logger.info('Decanter', `Search returned ${searchResponse.status}`);
+      return null;
+    }
+
+    const html = await searchResponse.text();
+
+    // Look for rating in search results (Decanter uses points out of 100)
+    // Pattern: "XX points" or "Score: XX"
+    const ratingMatch = html.match(/(\d{2,3})\s*points/i) ||
+                        html.match(/score[:\s]+(\d{2,3})/i);
+
+    if (!ratingMatch) {
+      logger.info('Decanter', 'No rating found in search results');
+      return null;
+    }
+
+    const score = parseInt(ratingMatch[1], 10);
+    if (score < 50 || score > 100) {
+      logger.info('Decanter', `Invalid score found: ${score}`);
+      return null;
+    }
+
+    const result = {
+      source: 'decanter',
+      lens: 'panel_guide',
+      score_type: 'points',
+      raw_score: String(score),
+      rating_count: null,
+      wine_name: wineName,
+      vintage_found: vintage,
+      source_url: searchUrl,
+      match_confidence: 'medium' // Lower confidence since we're parsing HTML
+    };
+
+    logger.info('Decanter', `Found: ${result.raw_score} points`);
+    return result;
+
+  } catch (err) {
+    logger.error('Decanter', `Authenticated fetch failed: ${err.message}`);
+    return null;
+  }
+}
+
+/**
+ * Fetch page content with authentication cookies if available.
+ * Enhanced version that uses stored credentials for better access.
+ * @param {string} url - URL to fetch
+ * @param {string} sourceId - Source ID for credential lookup
+ * @param {number} maxLength - Maximum content length
+ * @returns {Promise<Object>} Fetch result with content
+ */
+export async function fetchPageAuthenticated(url, sourceId, maxLength = 8000) {
+  // For now, authenticated page fetching is complex (requires session management)
+  // Fall back to standard fetch but log that auth could help
+  const creds = getCredentials(sourceId);
+  if (creds && creds.authStatus !== 'valid') {
+    logger.info('Fetch', `Credentials exist for ${sourceId} but session auth not implemented`);
+  }
+
+  // Use standard fetch
+  return fetchPageContent(url, maxLength);
+}
+
+/**
+ * Try authenticated fetches for wine ratings.
+ * Returns ratings from sources where we have valid credentials.
+ * @param {string} wineName - Wine name
+ * @param {string|number} vintage - Vintage year
+ * @returns {Promise<Object[]>} Array of ratings from authenticated sources
+ */
+export async function fetchAuthenticatedRatings(wineName, vintage) {
+  const ratings = [];
+
+  // Try all authenticated sources in parallel
+  const [vivinoResult, cellarTrackerResult, decanterResult] = await Promise.all([
+    fetchVivinoAuthenticated(wineName, vintage),
+    fetchCellarTrackerAuthenticated(wineName, vintage),
+    fetchDecanterAuthenticated(wineName, vintage)
+  ]);
+
+  if (vivinoResult) {
+    ratings.push(vivinoResult);
+  }
+
+  if (cellarTrackerResult) {
+    ratings.push(cellarTrackerResult);
+  }
+
+  if (decanterResult) {
+    ratings.push(decanterResult);
+  }
+
+  return ratings;
 }
