@@ -5,6 +5,7 @@
 
 import { fetchWineRatings, saveExtractedWindows } from '../services/claude.js';
 import { calculateWineRatings, saveRatings } from '../services/ratings.js';
+import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
@@ -38,10 +39,18 @@ async function handleRatingFetch(payload, context) {
   await updateProgress(70, 'Processing results');
 
   // Check if we got any ratings
-  const ratings = result.ratings || [];
+  const rawRatings = result.ratings || [];
   const existingCount = db.prepare(
     'SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0'
   ).get(wineId)?.count || 0;
+
+  // Filter ratings by vintage sensitivity
+  const sensitivity = getVintageSensitivity(wine);
+  const ratings = filterRatingsByVintageSensitivity(wine, rawRatings);
+
+  if (rawRatings.length > ratings.length) {
+    logger.info('RatingFetchJob', `Filtered ${rawRatings.length - ratings.length} ratings due to vintage mismatch (sensitivity: ${sensitivity})`);
+  }
 
   await updateProgress(80, 'Saving ratings');
 

@@ -9,6 +9,7 @@ import { RATING_SOURCES } from '../config/ratingSources.js';
 import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
 import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
 import { fetchWineRatings } from '../services/claude.js';
+import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import jobQueue from '../services/jobQueue.js';
 import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
 import logger from '../utils/logger.js';
@@ -81,7 +82,15 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       'SELECT * FROM wine_ratings WHERE wine_id = ? AND (is_user_override != 1 OR is_user_override IS NULL)'
     ).all(wineId);
 
-    const newRatings = result.ratings || [];
+    const rawRatings = result.ratings || [];
+
+    // Filter ratings by vintage sensitivity
+    const sensitivity = getVintageSensitivity(wine);
+    const newRatings = filterRatingsByVintageSensitivity(wine, rawRatings);
+
+    if (rawRatings.length > newRatings.length) {
+      logger.info('Ratings', `Filtered ${rawRatings.length - newRatings.length} ratings due to vintage mismatch (sensitivity: ${sensitivity})`);
+    }
 
     // ONLY delete if we have valid replacements
     // This prevents losing data when search/extraction fails
