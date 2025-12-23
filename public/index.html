@@ -167,8 +167,33 @@
       </div>
 
       <div class="settings-rules" id="reduce-rules-container">
+        <h4 class="settings-subsection-title">Drinking Window Rules</h4>
+
         <div class="settings-rule">
-          <label>Suggest wines when vintage is older than</label>
+          <label for="reduce-urgency-months">Flag wines closing within</label>
+          <div class="rule-input-group">
+            <select id="reduce-urgency-months">
+              <option value="6">6 months</option>
+              <option value="12" selected>12 months</option>
+              <option value="18">18 months</option>
+              <option value="24">24 months</option>
+              <option value="36">36 months</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="settings-toggle-row settings-rule">
+          <label class="toggle-switch">
+            <input type="checkbox" id="reduce-include-no-window" checked />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">Include wines without drinking window data (uses age fallback)</span>
+        </div>
+
+        <h4 class="settings-subsection-title">Fallback Rules (for wines without window data)</h4>
+
+        <div class="settings-rule">
+          <label for="reduce-age-threshold">Suggest wines when vintage is older than</label>
           <div class="rule-input-group">
             <input type="number" id="reduce-age-threshold" min="1" max="50" value="10" />
             <span>years</span>
@@ -176,7 +201,7 @@
         </div>
 
         <div class="settings-rule">
-          <label>Suggest wines when rating is below</label>
+          <label for="reduce-rating-minimum">Suggest wines when rating is below</label>
           <div class="rule-input-group">
             <input type="number" id="reduce-rating-minimum" min="1" max="5" step="0.5" value="3.0" />
             <span>stars</span>
@@ -296,6 +321,26 @@
         <p id="modal-tasting-notes" class="tasting-notes-text">-</p>
       </div>
       <div id="modal-ratings-container"></div>
+
+      <!-- Drinking Window Section -->
+      <div class="drinking-window-section" id="drinking-window-section">
+        <div class="section-header">
+          <h4>Drinking Window</h4>
+        </div>
+        <div id="drinking-window-display">
+          <p class="no-data">No drinking window data</p>
+        </div>
+        <div class="manual-window-entry" id="manual-window-entry">
+          <span class="entry-label">Set window:</span>
+          <div class="window-inputs">
+            <input type="number" id="manual-drink-from" placeholder="From" min="1900" max="2100" />
+            <span class="window-separator">to</span>
+            <input type="number" id="manual-drink-by" placeholder="By" min="1900" max="2100" />
+            <button type="button" class="btn btn-small btn-secondary" id="save-manual-window">Save</button>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-field personal-rating-section">
         <label>My Rating</label>
         <div class="personal-rating-input">

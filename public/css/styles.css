@@ -1972,6 +1972,234 @@ body.slot-picker-mode .slot:not(.empty) {
   line-height: 1.6;
 }
 
+/* Settings Subsection Titles */
+.settings-subsection-title {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 1rem 0 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.settings-subsection-title:first-child {
+  margin-top: 0;
+}
+
+/* ==========================================
+   DRINKING WINDOW STYLES
+   ========================================== */
+
+.drinking-window-section {
+  margin: 1rem 0;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+  border: 1px solid var(--border);
+}
+
+.drinking-window-section .section-header h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text);
+}
+
+#drinking-window-display {
+  margin-bottom: 0.75rem;
+}
+
+#drinking-window-display .no-data {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* Individual window entry */
+.window-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  margin: 0.25rem 0;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  background: var(--bg-card);
+}
+
+.window-range {
+  font-weight: 600;
+  min-width: 120px;
+}
+
+.window-source {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.window-status {
+  margin-left: auto;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.window-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0 0.25rem;
+  opacity: 0.6;
+}
+
+.window-delete-btn:hover {
+  opacity: 1;
+  color: var(--priority-1);
+}
+
+/* Window status colors */
+.status-critical {
+  background: rgba(255, 68, 68, 0.15);
+}
+.status-critical .window-status {
+  background: var(--priority-1);
+  color: white;
+}
+
+.status-urgent,
+.status-high {
+  background: rgba(255, 136, 68, 0.15);
+}
+.status-urgent .window-status,
+.status-high .window-status {
+  background: var(--priority-2);
+  color: white;
+}
+
+.status-soon,
+.status-medium {
+  background: rgba(255, 187, 68, 0.15);
+}
+.status-soon .window-status,
+.status-medium .window-status {
+  background: var(--priority-3);
+  color: #333;
+}
+
+.status-peak {
+  background: rgba(212, 175, 55, 0.15);
+}
+.status-peak .window-status {
+  background: var(--sparkling);
+  color: #333;
+}
+
+.status-hold {
+  background: rgba(100, 149, 237, 0.15);
+}
+.status-hold .window-status {
+  background: #4169E1;
+  color: #fff;
+}
+
+.status-ok {
+  background: rgba(76, 175, 80, 0.15);
+}
+.status-ok .window-status {
+  background: #2E7D32;
+  color: #fff;
+}
+
+.status-unknown {
+  background: rgba(136, 136, 136, 0.15);
+}
+.status-unknown .window-status {
+  background: var(--text-muted);
+  color: white;
+}
+
+/* Manual window entry form */
+.manual-window-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px dashed var(--border);
+  flex-wrap: wrap;
+}
+
+.manual-window-entry .entry-label {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.manual-window-entry .window-inputs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.manual-window-entry input[type="number"] {
+  width: 80px;
+  padding: 0.35rem 0.5rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.manual-window-entry input[type="number"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.manual-window-entry .window-separator {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Reduce candidate urgency badges in settings */
+.reduce-candidate .urgency-badge {
+  display: inline-block;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.urgency-badge.critical {
+  background: var(--priority-1);
+  color: white;
+}
+
+.urgency-badge.high {
+  background: var(--priority-2);
+  color: white;
+}
+
+.urgency-badge.medium {
+  background: var(--priority-3);
+  color: #333;
+}
+
+.urgency-badge.peak {
+  background: var(--sparkling);
+  color: #333;
+}
+
+.urgency-badge.unknown,
+.urgency-badge.low {
+  background: var(--text-muted);
+  color: white;
+}
+
 /* Responsive Settings */
 @media (max-width: 600px) {
   .settings-rule {
@@ -1986,5 +2214,19 @@ body.slot-picker-mode .slot:not(.empty) {
 
   .preference-labels span:nth-child(2) {
     display: none;
+  }
+
+  .manual-window-entry {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .window-entry {
+    flex-wrap: wrap;
+  }
+
+  .window-status {
+    margin-left: 0;
+    margin-top: 0.25rem;
   }
 }

@@ -46,6 +46,17 @@ export async function loadSettings() {
       ratingMinimum.value = settings.reduce_rating_minimum;
     }
 
+    // Drinking window settings
+    const urgencyMonths = document.getElementById('reduce-urgency-months');
+    if (urgencyMonths && settings.reduce_window_urgency_months) {
+      urgencyMonths.value = settings.reduce_window_urgency_months;
+    }
+
+    const includeNoWindow = document.getElementById('reduce-include-no-window');
+    if (includeNoWindow) {
+      includeNoWindow.checked = settings.reduce_include_no_window !== 'false';
+    }
+
     // Load credentials status
     await loadCredentialsStatus();
 
@@ -264,12 +275,15 @@ async function handleEvaluateRules() {
       return;
     }
 
-    // Render candidates
+    // Render candidates with urgency badges
     list.innerHTML = result.candidates.map(wine => `
       <div class="reduce-candidate" data-wine-id="${wine.wine_id}">
         <input type="checkbox" class="candidate-checkbox" checked />
         <div class="candidate-info">
-          <div class="candidate-name">${escapeHtml(wine.wine_name)} ${escapeHtml(String(wine.vintage || 'NV'))}</div>
+          <div class="candidate-name">
+            ${escapeHtml(wine.wine_name)} ${escapeHtml(String(wine.vintage || 'NV'))}
+            ${wine.urgency ? `<span class="urgency-badge ${wine.urgency}">${escapeHtml(wine.urgency)}</span>` : ''}
+          </div>
           <div class="candidate-reason">${escapeHtml(wine.suggested_reason)}</div>
           <div class="candidate-meta">${wine.bottle_count} bottle${wine.bottle_count > 1 ? 's' : ''} • ${escapeHtml(wine.locations || '')}</div>
         </div>
@@ -365,6 +379,30 @@ export function initSettings() {
     ratingMinimum.addEventListener('change', async () => {
       try {
         await updateSetting('reduce_rating_minimum', ratingMinimum.value);
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+
+  // Urgency months (drinking window setting)
+  const urgencyMonths = document.getElementById('reduce-urgency-months');
+  if (urgencyMonths) {
+    urgencyMonths.addEventListener('change', async () => {
+      try {
+        await updateSetting('reduce_window_urgency_months', urgencyMonths.value);
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+
+  // Include wines without window data
+  const includeNoWindow = document.getElementById('reduce-include-no-window');
+  if (includeNoWindow) {
+    includeNoWindow.addEventListener('change', async () => {
+      try {
+        await updateSetting('reduce_include_no_window', includeNoWindow.checked ? 'true' : 'false');
       } catch (_err) {
         showToast('Error saving setting');
       }

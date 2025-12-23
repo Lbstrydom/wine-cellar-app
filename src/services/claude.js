@@ -7,6 +7,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from './searchProviders.js';
 import { LENS_CREDIBILITY, getSourceConfig } from '../config/sourceRegistry.js';
 import logger from '../utils/logger.js';
+import db from '../db/index.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -549,12 +550,27 @@ For each rating, provide:
   - French /20 scores: multiply by 5
   - For 100-point scores: use as-is
   - If unable to convert: null
+- drinking_window: object or null, containing:
+  - drink_from_year: year (integer) when wine becomes ready, or null
+  - drink_by_year: year (integer) when wine should be consumed by, or null
+  - peak_year: year (integer) when wine is at optimum, or null
+  - raw_text: original text describing the window (e.g., "Drink 2024-2030")
 - competition_year: Year of the rating if mentioned
 - rating_count: Number of ratings (community sources only)
 - source_url: The page URL where you found this
 - evidence_excerpt: A SHORT quote (max 50 chars) proving the rating
 - vintage_match: "exact" if vintage matches, "inferred" if close vintage, "non_vintage" if NV rating
 - match_confidence: "high" if clearly this wine, "medium" if probably, "low" if uncertain
+
+Common drinking window formats to look for:
+- "Drink 2024-2030" or "Drink 2024 to 2030"
+- "Best now through 2028"
+- "Drink after 2026" or "Hold until 2025"
+- "Ready now" or "Drink now"
+- "Peak 2027"
+- "Past its peak" or "Drink up"
+- Italian: "Bere entro il 2030" (drink by 2030)
+- French: "À boire jusqu'en 2028" (drink until 2028)
 
 Return ONLY valid JSON:
 {
@@ -565,6 +581,12 @@ Return ONLY valid JSON:
       "score_type": "symbol",
       "raw_score": "Tre Bicchieri",
       "normalised_score": 95,
+      "drinking_window": {
+        "drink_from_year": 2024,
+        "drink_by_year": 2030,
+        "peak_year": 2027,
+        "raw_text": "Drink 2024-2030, peak 2027"
+      },
       "competition_year": 2024,
       "rating_count": null,
       "source_url": "https://gamberorosso.it/...",
@@ -586,6 +608,7 @@ RULES:
 - For French /20 scores: normalise by multiplying by 5
 - For Jancis Robinson, scores are out of 20 (e.g., "17" means 17/20, normalised_score=85)
 - For Platter's, use stars (e.g., "4.5") and normalise by multiplying by 20
+- Extract drinking_window whenever window/maturity text is present
 - If no ratings found for this wine: {"ratings": [], "search_notes": "No ratings found"}`;
 }
 
@@ -645,9 +668,18 @@ For each rating found, provide:
   - French /20 scores: multiply by 5
   - 100-point scores: use as-is
   - If unable to convert: null
+- drinking_window: object or null if visible, containing:
+  - drink_from_year: year (integer) or null
+  - drink_by_year: year (integer) or null
+  - peak_year: year (integer) or null
+  - raw_text: original text (e.g., "Drink 2024-2030")
 - source_url: The URL from the search result
 - evidence_excerpt: Quote from the snippet showing the rating
 - match_confidence: "medium" (snippets have less context than full pages)
+
+Drinking window patterns to look for:
+- "Drink 2024-2030", "Best now through 2028", "Drink after 2026"
+- "Ready now", "Peak 2027", "Past its peak"
 
 Return ONLY valid JSON:
 {
@@ -660,6 +692,7 @@ RULES:
 - For symbol scores (Tre Bicchieri, grappoli, stars, Coup de Coeur), use score_type: "symbol"
 - Do NOT fabricate - only extract what you can see
 - If rating_count is visible (e.g., "1234 ratings"), include it
+- Extract drinking_window if maturity/window text is visible
 - If no ratings visible: {"ratings": [], "search_notes": "No ratings visible in snippets"}`;
 }
 
@@ -767,4 +800,47 @@ RULES:
 - If source is "reduce_now only", all wines shown are priority - mention this is a great time to open them
 - If fewer than 3 wines are suitable, return fewer recommendations and explain in no_match_reason
 - Keep wine_name exactly as shown in the available list`;
+}
+
+/**
+ * Save extracted drinking windows to the database.
+ * @param {number} wineId - Wine ID
+ * @param {Object[]} ratings - Array of ratings with potential drinking_window data
+ * @returns {Promise<number>} Number of windows saved
+ */
+export async function saveExtractedWindows(wineId, ratings) {
+  if (!ratings || !Array.isArray(ratings)) return 0;
+
+  let saved = 0;
+
+  for (const rating of ratings) {
+    if (rating.drinking_window && (rating.drinking_window.drink_from_year || rating.drinking_window.drink_by_year || rating.drinking_window.peak_year)) {
+      try {
+        db.prepare(`
+          INSERT INTO drinking_windows (wine_id, source, drink_from_year, drink_by_year, peak_year, confidence, raw_text, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          ON CONFLICT(wine_id, source) DO UPDATE SET
+            drink_from_year = excluded.drink_from_year,
+            drink_by_year = excluded.drink_by_year,
+            peak_year = excluded.peak_year,
+            raw_text = excluded.raw_text,
+            updated_at = CURRENT_TIMESTAMP
+        `).run(
+          wineId,
+          rating.source,
+          rating.drinking_window.drink_from_year || null,
+          rating.drinking_window.drink_by_year || null,
+          rating.drinking_window.peak_year || null,
+          rating.match_confidence || 'medium',
+          rating.drinking_window.raw_text || null
+        );
+        saved++;
+        logger.info('DrinkingWindows', `Saved window for wine ${wineId} from ${rating.source}`);
+      } catch (err) {
+        logger.error('DrinkingWindows', `Failed to save window from ${rating.source}: ${err.message}`);
+      }
+    }
+  }
+
+  return saved;
 }

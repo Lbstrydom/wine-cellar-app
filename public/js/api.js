@@ -411,3 +411,65 @@ export async function batchAddReduceNow(wineIds, priority = 3, reasonPrefix = ''
   });
   return handleResponse(res, 'Failed to add wines');
 }
+
+// ============================================
+// Drinking Windows API
+// ============================================
+
+/**
+ * Get all drinking windows for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Array>} Array of drinking window objects
+ */
+export async function getDrinkingWindows(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/drinking-windows`);
+  return handleResponse(res, 'Failed to fetch drinking windows');
+}
+
+/**
+ * Save a drinking window for a wine.
+ * @param {number} wineId - Wine ID
+ * @param {Object} windowData - Window data (source, drink_from_year, drink_by_year, peak_year, confidence, raw_text)
+ * @returns {Promise<{success: boolean}>}
+ */
+export async function saveDrinkingWindow(wineId, windowData) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/drinking-windows`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(windowData)
+  });
+  return handleResponse(res, 'Failed to save drinking window');
+}
+
+/**
+ * Delete a drinking window for a wine.
+ * @param {number} wineId - Wine ID
+ * @param {string} source - Source identifier
+ * @returns {Promise<{success: boolean}>}
+ */
+export async function deleteDrinkingWindow(wineId, source) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/drinking-windows/${source}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to delete drinking window');
+}
+
+/**
+ * Get the best/primary drinking window for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object|null>} Best drinking window or null
+ */
+export async function getBestDrinkingWindow(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/drinking-window/best`);
+  return handleResponse(res, 'Failed to fetch best drinking window');
+}
+
+/**
+ * Get wines with urgent drinking windows.
+ * @param {number} months - Urgency threshold in months (default: 12)
+ * @returns {Promise<Array>} Array of urgent wine objects
+ */
+export async function getUrgentWines(months = 12) {
+  const res = await fetch(`${API_BASE}/api/drinking-windows/urgent?months=${months}`);
+  return handleResponse(res, 'Failed to fetch urgent wines');
+}

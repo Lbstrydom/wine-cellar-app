@@ -3,8 +3,8 @@
  * @module modals
  */
 
-import { drinkBottle, getWineRatings, updatePersonalRating } from './api.js';
-import { showToast } from './utils.js';
+import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow } from './api.js';
+import { showToast, escapeHtml } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
@@ -58,6 +58,9 @@ export async function showWineModal(slot) {
 
   // Load personal rating
   await loadPersonalRating(slot.wine_id);
+
+  // Load drinking windows
+  await loadDrinkingWindows(slot.wine_id);
 
   document.getElementById('modal-overlay').classList.add('active');
 }
@@ -149,6 +152,133 @@ export async function handleDrinkBottle() {
 }
 
 /**
+ * Load drinking windows for a wine.
+ * @param {number} wineId - Wine ID
+ */
+async function loadDrinkingWindows(wineId) {
+  if (!wineId) return;
+
+  const container = document.getElementById('drinking-window-display');
+  if (!container) return;
+
+  try {
+    const windows = await getDrinkingWindows(wineId);
+
+    if (windows.length === 0) {
+      container.innerHTML = '<p class="no-data">No drinking window data. Fetch ratings or enter manually.</p>';
+      return;
+    }
+
+    const currentYear = new Date().getFullYear();
+
+    const html = windows.map(w => {
+      const status = getWindowStatus(w, currentYear);
+      return `
+        <div class="window-entry ${status.statusClass}">
+          <span class="window-range">
+            ${w.drink_from_year || '?'} – ${w.drink_by_year || '?'}
+            ${w.peak_year ? `(peak ${w.peak_year})` : ''}
+          </span>
+          <span class="window-source">via ${escapeHtml(w.source)}</span>
+          <span class="window-status">${escapeHtml(status.text)}</span>
+          ${w.source === 'manual' ? `<button class="window-delete-btn" data-source="manual" title="Remove">×</button>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    container.innerHTML = html;
+
+    // Add delete event listeners
+    container.querySelectorAll('.window-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => handleDeleteWindow(wineId, btn.dataset.source));
+    });
+
+  } catch (_err) {
+    container.innerHTML = '<p class="no-data">Could not load drinking window data</p>';
+  }
+}
+
+/**
+ * Get window status text and class based on current year.
+ * @param {Object} window - Drinking window object
+ * @param {number} currentYear - Current year
+ * @returns {{statusClass: string, text: string}}
+ */
+function getWindowStatus(window, currentYear) {
+  const { drink_from_year, drink_by_year, peak_year } = window;
+
+  if (drink_by_year && drink_by_year < currentYear) {
+    return { statusClass: 'status-critical', text: 'Past window' };
+  }
+  if (drink_by_year && drink_by_year === currentYear) {
+    return { statusClass: 'status-urgent', text: 'Final year' };
+  }
+  if (drink_by_year && drink_by_year <= currentYear + 1) {
+    return { statusClass: 'status-soon', text: `${drink_by_year - currentYear} year left` };
+  }
+  if (peak_year && peak_year === currentYear) {
+    return { statusClass: 'status-peak', text: 'At peak' };
+  }
+  if (drink_from_year && drink_from_year > currentYear) {
+    return { statusClass: 'status-hold', text: `Hold until ${drink_from_year}` };
+  }
+  if (drink_by_year) {
+    return { statusClass: 'status-ok', text: `${drink_by_year - currentYear} years left` };
+  }
+  return { statusClass: 'status-unknown', text: 'Open window' };
+}
+
+/**
+ * Handle saving manual drinking window.
+ */
+async function handleSaveManualWindow() {
+  if (!currentSlot?.wine_id) return;
+
+  const drinkFrom = document.getElementById('manual-drink-from').value;
+  const drinkBy = document.getElementById('manual-drink-by').value;
+
+  if (!drinkFrom && !drinkBy) {
+    showToast('Enter at least one year');
+    return;
+  }
+
+  try {
+    await saveDrinkingWindow(currentSlot.wine_id, {
+      source: 'manual',
+      drink_from_year: drinkFrom ? parseInt(drinkFrom, 10) : null,
+      drink_by_year: drinkBy ? parseInt(drinkBy, 10) : null,
+      confidence: 'high'
+    });
+
+    showToast('Drinking window saved');
+
+    // Clear inputs
+    document.getElementById('manual-drink-from').value = '';
+    document.getElementById('manual-drink-by').value = '';
+
+    // Reload windows
+    await loadDrinkingWindows(currentSlot.wine_id);
+  } catch (_err) {
+    showToast('Error saving drinking window');
+  }
+}
+
+/**
+ * Handle deleting a drinking window.
+ * @param {number} wineId - Wine ID
+ * @param {string} source - Source to delete
+ */
+async function handleDeleteWindow(wineId, source) {
+  try {
+    await deleteDrinkingWindow(wineId, source);
+    showToast('Window removed');
+    await loadDrinkingWindows(wineId);
+  } catch (_err) {
+    showToast('Error removing window');
+  }
+}
+
+/**
  * Initialise modal event listeners.
  */
 export function initModals() {
@@ -157,6 +287,7 @@ export function initModals() {
   document.getElementById('btn-add-another')?.addEventListener('click', handleAddAnother);
   document.getElementById('btn-edit-wine')?.addEventListener('click', handleEditWine);
   document.getElementById('save-personal-rating')?.addEventListener('click', savePersonalRating);
+  document.getElementById('save-manual-window')?.addEventListener('click', handleSaveManualWindow);
   document.getElementById('modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-overlay') closeWineModal();
   });

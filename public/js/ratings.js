@@ -83,23 +83,6 @@ export function renderConfidenceBadge(level) {
   return `<span class="confidence-badge ${config.className}">${config.text}</span>`;
 }
 
-/**
- * Render compact rating display for wine cards.
- * @param {Object} wine - Wine object with rating fields
- * @returns {string} HTML string
- */
-export function renderCompactRating(wine) {
-  if (!wine.purchase_stars) {
-    return '';
-  }
-
-  return `
-    <div class="wine-rating-compact">
-      ${renderStars(wine.purchase_stars, 'small')}
-      ${renderConfidenceBadge(wine.confidence_level)}
-    </div>
-  `;
-}
 
 /**
  * Render full ratings panel for wine modal.
