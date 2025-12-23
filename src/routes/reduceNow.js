@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
 
 const router = Router();
 
@@ -191,12 +192,13 @@ router.post('/evaluate', (_req, res) => {
     });
   }
 
-  // Priority 4: No window data but old vintage (fallback)
+  // Priority 4: No critic window data - try default matrix estimates
   if (includeNoWindow) {
-    const noWindowOld = db.prepare(`
+    const noWindowWines = db.prepare(`
       SELECT
         w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-        w.purchase_stars, w.vivino_rating,
+        w.purchase_stars, w.vivino_rating, w.purchase_price,
+        w.country, w.grape,
         (? - w.vintage) as wine_age,
         COUNT(s.id) as bottle_count,
         GROUP_CONCAT(DISTINCT s.location_code) as locations
@@ -207,27 +209,83 @@ router.post('/evaluate', (_req, res) => {
       WHERE rn.id IS NULL
         AND dw.id IS NULL
         AND w.vintage IS NOT NULL
-        AND (? - w.vintage) >= ?
       GROUP BY w.id
       HAVING bottle_count > 0
       ORDER BY wine_age DESC
-    `).all(currentYear, currentYear, ageThreshold);
+    `).all(currentYear);
 
-    for (const wine of noWindowOld) {
+    for (const wine of noWindowWines) {
       if (seenWineIds.has(wine.wine_id)) continue;
-      seenWineIds.add(wine.wine_id);
-      candidates.push({
-        ...wine,
-        priority: 4,
-        suggested_reason: `No drinking window data; vintage ${wine.vintage} is ${wine.wine_age} years old`,
-        suggested_priority: 3,
-        needs_window_data: true,
-        urgency: 'unknown'
-      });
+
+      // Try to get a default window estimate
+      const defaultWindow = getDefaultDrinkingWindow(wine, wine.vintage);
+
+      if (defaultWindow && defaultWindow.source !== 'colour_fallback') {
+        // We have a specific match from the default matrix
+        const yearsRemaining = defaultWindow.drink_by - currentYear;
+
+        if (yearsRemaining <= 0) {
+          // Past estimated window - critical
+          seenWineIds.add(wine.wine_id);
+          candidates.push({
+            ...wine,
+            priority: 4,
+            suggested_reason: `Estimated past drinking window (ended ${defaultWindow.drink_by}) - ${defaultWindow.notes}`,
+            suggested_priority: 2,
+            drink_by_year: defaultWindow.drink_by,
+            peak_year: defaultWindow.peak,
+            window_source: defaultWindow.source,
+            urgency: 'estimated_critical',
+            confidence: defaultWindow.confidence
+          });
+        } else if (yearsRemaining <= Math.ceil(urgencyMonths / 12)) {
+          // Closing estimated window
+          seenWineIds.add(wine.wine_id);
+          candidates.push({
+            ...wine,
+            priority: 5,
+            suggested_reason: `Estimated window closes ${defaultWindow.drink_by} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left) - ${defaultWindow.notes}`,
+            suggested_priority: 3,
+            drink_by_year: defaultWindow.drink_by,
+            peak_year: defaultWindow.peak,
+            window_source: defaultWindow.source,
+            urgency: 'estimated_medium',
+            confidence: defaultWindow.confidence
+          });
+        } else if (defaultWindow.peak && defaultWindow.peak === currentYear) {
+          // At estimated peak
+          seenWineIds.add(wine.wine_id);
+          candidates.push({
+            ...wine,
+            priority: 5,
+            suggested_reason: `Estimated peak year (${defaultWindow.peak}) - ${defaultWindow.notes}`,
+            suggested_priority: 3,
+            drink_by_year: defaultWindow.drink_by,
+            peak_year: defaultWindow.peak,
+            window_source: defaultWindow.source,
+            urgency: 'estimated_peak',
+            confidence: defaultWindow.confidence
+          });
+        }
+        // If window is still open and not at peak, skip (no action needed)
+      } else {
+        // No specific match or only colour fallback - use age threshold
+        if (wine.wine_age >= ageThreshold) {
+          seenWineIds.add(wine.wine_id);
+          candidates.push({
+            ...wine,
+            priority: 6,
+            suggested_reason: `Unknown wine type; vintage ${wine.vintage} is ${wine.wine_age} years old`,
+            suggested_priority: 4,
+            needs_window_data: true,
+            urgency: 'unknown'
+          });
+        }
+      }
     }
   }
 
-  // Priority 5: Low rating (original logic, kept as fallback)
+  // Priority 7: Low rating (original logic, kept as fallback)
   const lowRated = db.prepare(`
     SELECT
       w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
@@ -249,9 +307,9 @@ router.post('/evaluate', (_req, res) => {
     const rating = wine.purchase_stars || wine.vivino_rating;
     candidates.push({
       ...wine,
-      priority: 5,
+      priority: 7,
       suggested_reason: `Low rating (${rating?.toFixed(1)} stars) - consider drinking soon`,
-      suggested_priority: 3,
+      suggested_priority: 4,
       urgency: 'low'
     });
   }
@@ -271,6 +329,9 @@ router.post('/evaluate', (_req, res) => {
       high: candidates.filter(c => c.urgency === 'high').length,
       medium: candidates.filter(c => c.urgency === 'medium').length,
       peak: candidates.filter(c => c.urgency === 'peak').length,
+      estimated_critical: candidates.filter(c => c.urgency === 'estimated_critical').length,
+      estimated_medium: candidates.filter(c => c.urgency === 'estimated_medium').length,
+      estimated_peak: candidates.filter(c => c.urgency === 'estimated_peak').length,
       unknown: candidates.filter(c => c.urgency === 'unknown').length,
       low: candidates.filter(c => c.urgency === 'low').length
     }

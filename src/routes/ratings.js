@@ -9,6 +9,8 @@ import { RATING_SOURCES } from '../config/ratingSources.js';
 import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
 import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
 import { fetchWineRatings } from '../services/claude.js';
+import jobQueue from '../services/jobQueue.js';
+import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -369,6 +371,180 @@ router.get('/logs', async (_req, res) => {
       logs: recentLines
     });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// ASYNC JOB ENDPOINTS
+// =============================================================================
+
+/**
+ * Queue async rating fetch (returns job ID immediately).
+ * @route POST /api/wines/:wineId/ratings/fetch-async
+ */
+router.post('/:wineId/ratings/fetch-async', async (req, res) => {
+  const { wineId } = req.params;
+  const { forceRefresh = false } = req.body;
+
+  const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  try {
+    const jobId = await jobQueue.enqueue('rating_fetch', {
+      wineId: parseInt(wineId),
+      forceRefresh
+    }, { priority: 3 });
+
+    res.status(202).json({
+      message: 'Rating fetch queued',
+      jobId,
+      statusUrl: `/api/jobs/${jobId}/status`
+    });
+  } catch (error) {
+    logger.error('Ratings', `Failed to queue job: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Queue batch rating fetch for multiple wines.
+ * @route POST /api/ratings/batch-fetch
+ */
+router.post('/batch-fetch', async (req, res) => {
+  const { wineIds, forceRefresh = false } = req.body;
+
+  if (!wineIds || !Array.isArray(wineIds)) {
+    return res.status(400).json({ error: 'wineIds array required' });
+  }
+
+  if (wineIds.length === 0) {
+    return res.status(400).json({ error: 'wineIds array is empty' });
+  }
+
+  if (wineIds.length > 100) {
+    return res.status(400).json({ error: 'Maximum 100 wines per batch' });
+  }
+
+  try {
+    const jobId = await jobQueue.enqueue('batch_fetch', {
+      wineIds: wineIds.map(id => parseInt(id)),
+      options: { forceRefresh }
+    }, { priority: 5 });
+
+    res.status(202).json({
+      message: `Batch fetch queued for ${wineIds.length} wines`,
+      jobId,
+      statusUrl: `/api/jobs/${jobId}/status`
+    });
+  } catch (error) {
+    logger.error('Ratings', `Failed to queue batch job: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get job status.
+ * @route GET /api/jobs/:jobId/status
+ */
+router.get('/jobs/:jobId/status', async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const status = await jobQueue.getJobStatus(parseInt(jobId));
+
+    if (!status) {
+      return res.status(404).json({ error: 'Job not found' });
+    }
+
+    // Parse result if it's a JSON string
+    let result = status.result;
+    if (result && typeof result === 'string') {
+      try {
+        result = JSON.parse(result);
+      } catch {
+        // Keep as string if not valid JSON
+      }
+    }
+
+    res.json({
+      ...status,
+      result
+    });
+  } catch (error) {
+    logger.error('Jobs', `Failed to get job status: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Cancel a pending job.
+ * @route DELETE /api/jobs/:jobId
+ */
+router.delete('/jobs/:jobId', async (req, res) => {
+  const { jobId } = req.params;
+
+  try {
+    const cancelled = await jobQueue.cancelJob(parseInt(jobId));
+
+    if (!cancelled) {
+      return res.status(404).json({ error: 'Job not found or already completed' });
+    }
+
+    res.json({ message: 'Job cancelled' });
+  } catch (error) {
+    logger.error('Jobs', `Failed to cancel job: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get job queue statistics.
+ * @route GET /api/jobs/stats
+ */
+router.get('/jobs/stats', async (_req, res) => {
+  try {
+    const stats = await jobQueue.getStats();
+    res.json(stats);
+  } catch (error) {
+    logger.error('Jobs', `Failed to get stats: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// CACHE ENDPOINTS
+// =============================================================================
+
+/**
+ * Get cache statistics.
+ * @route GET /api/cache/stats
+ */
+router.get('/cache/stats', async (_req, res) => {
+  try {
+    const stats = getCacheStats();
+    res.json(stats);
+  } catch (error) {
+    logger.error('Cache', `Failed to get stats: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Purge expired cache entries.
+ * @route POST /api/cache/purge
+ */
+router.post('/cache/purge', async (_req, res) => {
+  try {
+    const result = purgeExpiredCache();
+    res.json({
+      message: 'Cache purged',
+      purged: result
+    });
+  } catch (error) {
+    logger.error('Cache', `Failed to purge cache: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 });

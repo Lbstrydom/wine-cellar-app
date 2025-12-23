@@ -120,7 +120,8 @@ async function loadCredentialsStatus() {
     }
 
     // Update each credential source status
-    const sources = ['vivino', 'decanter', 'cellartracker'];
+    // Note: CellarTracker removed - their API only searches user's personal cellar
+    const sources = ['vivino', 'decanter'];
     for (const source of sources) {
       const cred = data.credentials.find(c => c.source_id === source);
       updateCredentialUI(source, cred);
@@ -421,7 +422,8 @@ export function initSettings() {
   });
 
   // Credential forms
-  const sources = ['vivino', 'decanter', 'cellartracker'];
+  // Note: CellarTracker removed - their API only searches user's personal cellar
+  const sources = ['vivino', 'decanter'];
   for (const source of sources) {
     document.getElementById(`${source}-save-btn`)?.addEventListener('click', () => handleSaveCredentials(source));
     document.getElementById(`${source}-test-btn`)?.addEventListener('click', () => handleTestCredentials(source));

@@ -389,8 +389,15 @@ export async function fetchWineRatings(wine) {
 
   logger.info('Ratings', `Successfully fetched ${validPages.length}/${pagesToFetch.length} pages`);
 
-  // If no pages could be fetched, try extracting from search snippets
-  // This is especially useful for sites like Vivino that block direct fetches
+  // Collect failed pages for snippet extraction (especially Vivino, blocked sites)
+  const failedPages = pages.filter(p => !p.fetchSuccess && p.snippet && p.snippet.length > 20);
+
+  // Also include results beyond the top 8 that have snippets (for broader coverage)
+  const additionalSnippets = searchResults.results.slice(8)
+    .filter(r => r.snippet && r.snippet.length > 20)
+    .slice(0, 5); // Limit to 5 more
+
+  // If no pages could be fetched at all, use pure snippet extraction
   if (validPages.length === 0) {
     logger.info('Ratings', 'No pages fetched, attempting snippet extraction...');
 
@@ -454,6 +461,12 @@ export async function fetchWineRatings(wine) {
     };
   }
 
+  // Also extract from snippets of failed fetches (like Vivino) in parallel with page extraction
+  const snippetsForExtraction = [...failedPages, ...additionalSnippets];
+  if (snippetsForExtraction.length > 0) {
+    logger.info('Ratings', `Will also extract from ${snippetsForExtraction.length} snippets (failed fetches + extras)`);
+  }
+
   // Step 3: Ask Claude to extract ratings from page contents
   const parsePrompt = buildExtractionPrompt(wineName, vintage, validPages);
 
@@ -478,6 +491,43 @@ export async function fetchWineRatings(wine) {
         credibility: LENS_CREDIBILITY[config?.lens] || 1.0
       };
     });
+  }
+
+  // Step 4: Also extract from snippets of failed fetches (Vivino, blocked sites, extras)
+  if (snippetsForExtraction.length > 0) {
+    logger.info('Ratings', `Extracting from ${snippetsForExtraction.length} snippets...`);
+    const snippetPrompt = buildSnippetExtractionPrompt(wineName, vintage, snippetsForExtraction);
+
+    try {
+      const snippetResponse = await anthropic.messages.create({
+        model: 'claude-sonnet-4-5-20250929',
+        max_tokens: 1500,
+        messages: [{ role: 'user', content: snippetPrompt }]
+      });
+
+      const snippetParsed = parseRatingResponse(snippetResponse.content[0].text, 'Snippet');
+
+      if (snippetParsed.ratings && snippetParsed.ratings.length > 0) {
+        logger.info('Ratings', `Got ${snippetParsed.ratings.length} additional ratings from snippets`);
+
+        // Enrich and add snippet ratings
+        const existingSources = new Set((parsed.ratings || []).map(r => r.source));
+        for (const rating of snippetParsed.ratings) {
+          if (!existingSources.has(rating.source)) {
+            const config = getSourceConfig(rating.source);
+            parsed.ratings = parsed.ratings || [];
+            parsed.ratings.push({
+              ...rating,
+              lens: config?.lens || rating.lens,
+              credibility: LENS_CREDIBILITY[config?.lens] || 1.0
+            });
+            existingSources.add(rating.source);
+          }
+        }
+      }
+    } catch (snippetErr) {
+      logger.warn('Ratings', `Snippet extraction failed: ${snippetErr.message}`);
+    }
   }
 
   // Merge authenticated ratings with scraped ratings

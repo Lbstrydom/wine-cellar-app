@@ -101,7 +101,8 @@ router.put('/credentials/:source', (req, res) => {
     return res.status(400).json({ error: 'Username and password required' });
   }
 
-  const validSources = ['vivino', 'decanter', 'cellartracker'];
+  // CellarTracker removed - their API only searches user's personal cellar, not useful for ratings
+  const validSources = ['vivino', 'decanter'];
   if (!validSources.includes(source)) {
     return res.status(400).json({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` });
   }
@@ -167,9 +168,8 @@ router.post('/credentials/:source/test', async (req, res) => {
       testResult = await testVivinoCredentials(username, password);
     } else if (source === 'decanter') {
       testResult = await testDecanterCredentials(username, password);
-    } else if (source === 'cellartracker') {
-      testResult = await testCellarTrackerCredentials(username, password);
     }
+    // Note: CellarTracker removed - their API only searches user's personal cellar
 
     // Update auth status
     db.prepare(`
@@ -286,36 +286,9 @@ async function testDecanterCredentials(username, password) {
   }
 }
 
-/**
- * Test CellarTracker credentials.
- * @param {string} username
- * @param {string} password
- * @returns {Promise<{success: boolean, message: string}>}
- */
-async function testCellarTrackerCredentials(username, password) {
-  try {
-    const response = await fetch('https://www.cellartracker.com/login.asp', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: new URLSearchParams({
-        'szUser': username,
-        'szPassword': password
-      }),
-      redirect: 'manual'
-    });
-
-    if (response.status === 302) {
-      return { success: true, message: 'CellarTracker login successful' };
-    }
-
-    return { success: false, message: 'Invalid credentials' };
-
-  } catch (error) {
-    return { success: false, message: `Connection error: ${error.message}` };
-  }
-}
+// NOTE: CellarTracker credential testing removed.
+// Their xlquery.asp API only searches the user's personal cellar, not global wine database.
+// This made it useless for discovering ratings on wines not already in the user's CT account.
+// CellarTracker ratings are still found via web search snippets.
 
 export default router;

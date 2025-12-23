@@ -239,6 +239,9 @@
           <span class="credential-source">Vivino</span>
           <span class="credential-status" id="vivino-status">Not configured</span>
         </div>
+        <div class="credential-note">
+          Note: Vivino blocks server-side API access. Ratings are found via search snippets instead.
+        </div>
         <div class="credential-inputs">
           <input type="email" id="vivino-username" placeholder="Email" autocomplete="off" />
           <input type="password" id="vivino-password" placeholder="Password" autocomplete="off" />
@@ -256,6 +259,9 @@
           <span class="credential-source">Decanter</span>
           <span class="credential-status" id="decanter-status">Not configured</span>
         </div>
+        <div class="credential-note">
+          Decanter credentials enable access to full review pages with scores and drinking windows.
+        </div>
         <div class="credential-inputs">
           <input type="email" id="decanter-username" placeholder="Email" autocomplete="off" />
           <input type="password" id="decanter-password" placeholder="Password" autocomplete="off" />
@@ -267,21 +273,16 @@
         </div>
       </div>
 
-      <!-- CellarTracker -->
-      <div class="credential-form">
-        <div class="credential-header">
-          <span class="credential-source">CellarTracker</span>
-          <span class="credential-status" id="cellartracker-status">Not configured</span>
-        </div>
-        <div class="credential-inputs">
-          <input type="text" id="cellartracker-username" placeholder="Username" autocomplete="off" />
-          <input type="password" id="cellartracker-password" placeholder="Password" autocomplete="off" />
-        </div>
-        <div class="credential-actions">
-          <button class="btn btn-small btn-secondary" id="cellartracker-save-btn">Save</button>
-          <button class="btn btn-small btn-secondary" id="cellartracker-test-btn" style="display: none;">Test</button>
-          <button class="btn btn-small btn-danger" id="cellartracker-delete-btn" style="display: none;">Remove</button>
-        </div>
+      <!-- Source Info -->
+      <div class="source-info">
+        <h4>Other Rating Sources</h4>
+        <p>Ratings from these sources are found via web search (no login required):</p>
+        <ul>
+          <li><strong>James Suckling, Wine Spectator, Wine Advocate</strong> - Critic scores</li>
+          <li><strong>IWC, DWWA, Platters</strong> - Competition awards</li>
+          <li><strong>CellarTracker</strong> - Community ratings (via search)</li>
+          <li><strong>Jancis Robinson</strong> - Expert ratings</li>
+        </ul>
       </div>
     </div>
 

@@ -4,6 +4,8 @@
  */
 
 import { RATING_SOURCES } from '../config/ratingSources.js';
+import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
+import db from '../db/index.js';
 
 /**
  * Normalize a raw score to the 0-100 scale.
@@ -79,6 +81,81 @@ export function normalizeScore(source, scoreType, rawScore) {
   }
 
   throw new Error(`Unknown score type: ${scoreType}`);
+}
+
+/**
+ * Save ratings to the database.
+ * @param {number} wineId - Wine ID
+ * @param {string|number} vintage - Wine vintage
+ * @param {Array} ratings - Array of rating objects
+ * @returns {number} Number of ratings saved
+ */
+export function saveRatings(wineId, vintage, ratings) {
+  if (!ratings || ratings.length === 0) return 0;
+
+  const insertStmt = db.prepare(`
+    INSERT INTO wine_ratings (
+      wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
+      normalized_min, normalized_max, normalized_mid,
+      award_name, competition_year, rating_count,
+      source_url, evidence_excerpt, matched_wine_label,
+      vintage_match, match_confidence, fetched_at, is_user_override
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+  `);
+
+  let insertedCount = 0;
+
+  for (const rating of ratings) {
+    const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
+    if (!sourceConfig) {
+      console.warn(`[Ratings] Unknown source: ${rating.source}, skipping`);
+      continue;
+    }
+
+    // Skip ratings without valid scores
+    if (!rating.raw_score || rating.raw_score === 'null' || rating.raw_score === '') {
+      console.warn(`[Ratings] No score found for ${rating.source}, skipping`);
+      continue;
+    }
+
+    try {
+      const normalized = normalizeScore(rating.source, rating.score_type, rating.raw_score);
+
+      // Validate normalized values
+      if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
+        console.warn(`[Ratings] Invalid normalized score for ${rating.source}: ${rating.raw_score}, skipping`);
+        continue;
+      }
+
+      const numericScore = parseFloat(String(rating.raw_score).replace(/\/\d+$/, '')) || null;
+
+      insertStmt.run(
+        wineId,
+        vintage,
+        rating.source,
+        rating.lens || sourceConfig.lens,
+        rating.score_type,
+        rating.raw_score,
+        numericScore,
+        normalized.min,
+        normalized.max,
+        normalized.mid,
+        rating.award_name || null,
+        rating.competition_year || null,
+        rating.rating_count || null,
+        rating.source_url || null,
+        rating.evidence_excerpt || null,
+        rating.matched_wine_label || null,
+        rating.vintage_match || 'inferred',
+        rating.match_confidence || 'medium'
+      );
+      insertedCount++;
+    } catch (err) {
+      console.error(`[Ratings] Failed to insert rating from ${rating.source}: ${err.message}`);
+    }
+  }
+
+  return insertedCount;
 }
 
 /**

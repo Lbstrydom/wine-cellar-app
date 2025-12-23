@@ -7,6 +7,18 @@ import { getSourcesForCountry, SOURCE_REGISTRY, REGION_SOURCE_PRIORITY, LENS } f
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
 import { decrypt } from './encryption.js';
+import {
+  getCachedSerpResults, cacheSerpResults,
+  getCachedPage, cachePage
+} from './cacheService.js';
+import { classifyFetchResult, getDomainIssue, CLASSIFICATION } from './fetchClassifier.js';
+
+// Domains known to block standard scrapers - use Bright Data for these
+// Note: CellarTracker removed - their public pages work fine, and their API only searches personal cellars
+const BLOCKED_DOMAINS = ['vivino.com', 'decanter.com'];
+
+// Bright Data API endpoint
+const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
 
 // ============================================
 // Grape Detection
@@ -357,19 +369,107 @@ export function getSourcesForWine(country, grape = null) {
 }
 
 /**
- * Search using Google Programmable Search API.
+ * Search using Bright Data SERP API or Google Programmable Search API.
+ * Prefers Bright Data if configured, falls back to Google Custom Search.
+ * Uses caching to avoid redundant API calls.
+ * @param {string} query - Search query
+ * @param {string[]} domains - Domains to restrict search to
+ * @param {string} queryType - Type of query for cache categorization
+ * @returns {Promise<Object[]>} Search results
+ */
+export async function searchGoogle(query, domains = [], queryType = 'serp_broad') {
+  // Build cache key parameters
+  const queryParams = { query, domains: domains.sort() };
+
+  // Check cache first
+  try {
+    const cached = getCachedSerpResults(queryParams);
+    if (cached) {
+      logger.info('Cache', `SERP HIT: ${query.substring(0, 50)}...`);
+      return cached.results;
+    }
+  } catch (err) {
+    logger.warn('Cache', `SERP lookup failed: ${err.message}`);
+  }
+
+  // Prefer Bright Data SERP API if configured
+  const brightDataApiKey = process.env.BRIGHTDATA_API_KEY;
+  const serpZone = process.env.BRIGHTDATA_SERP_ZONE;
+
+  let results = [];
+
+  if (brightDataApiKey && serpZone) {
+    results = await searchBrightDataSerp(query, domains);
+  } else {
+    // Fallback to Google Custom Search API
+    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+    const engineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+
+    if (!apiKey || !engineId) {
+      logger.warn('Search', 'No search API configured (need BRIGHTDATA_SERP_ZONE or GOOGLE_SEARCH_API_KEY)');
+      return [];
+    }
+
+    let fullQuery = query;
+    if (domains.length > 0 && domains.length <= 10) {
+      const siteRestriction = domains.map(d => `site:${d}`).join(' OR ');
+      fullQuery = `${query} (${siteRestriction})`;
+    }
+
+    const url = new URL('https://www.googleapis.com/customsearch/v1');
+    url.searchParams.set('key', apiKey);
+    url.searchParams.set('cx', engineId);
+    url.searchParams.set('q', fullQuery);
+    url.searchParams.set('num', '10');
+
+    logger.info('Google', `Searching: "${query}" across ${domains.length} domains`);
+
+    try {
+      const response = await fetch(url.toString());
+      const data = await response.json();
+
+      if (data.error) {
+        logger.error('Google', `API error: ${data.error.message}`);
+        return [];
+      }
+
+      results = (data.items || []).map(item => ({
+        title: item.title,
+        url: item.link,
+        snippet: item.snippet,
+        source: extractDomain(item.link)
+      }));
+
+      logger.info('Google', `Found ${results.length} results`);
+
+    } catch (error) {
+      logger.error('Google', `Search failed: ${error.message}`);
+      return [];
+    }
+  }
+
+  // Cache results
+  try {
+    if (results.length > 0) {
+      cacheSerpResults(queryParams, queryType, results);
+    }
+  } catch (err) {
+    logger.warn('Cache', `SERP cache write failed: ${err.message}`);
+  }
+
+  return results;
+}
+
+/**
+ * Search using Bright Data SERP API.
+ * Returns structured Google search results via Bright Data's proxy infrastructure.
  * @param {string} query - Search query
  * @param {string[]} domains - Domains to restrict search to
  * @returns {Promise<Object[]>} Search results
  */
-export async function searchGoogle(query, domains = []) {
-  const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-  const engineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-
-  if (!apiKey || !engineId) {
-    logger.warn('Google', 'API not configured, skipping');
-    return [];
-  }
+async function searchBrightDataSerp(query, domains = []) {
+  const apiKey = process.env.BRIGHTDATA_API_KEY;
+  const zone = process.env.BRIGHTDATA_SERP_ZONE;
 
   let fullQuery = query;
   if (domains.length > 0 && domains.length <= 10) {
@@ -377,113 +477,140 @@ export async function searchGoogle(query, domains = []) {
     fullQuery = `${query} (${siteRestriction})`;
   }
 
-  const url = new URL('https://www.googleapis.com/customsearch/v1');
-  url.searchParams.set('key', apiKey);
-  url.searchParams.set('cx', engineId);
-  url.searchParams.set('q', fullQuery);
-  url.searchParams.set('num', '10');
+  // Build Google search URL
+  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(fullQuery)}&num=10`;
 
-  logger.info('Google', `Searching: "${query}" across ${domains.length} domains`);
-
-  try {
-    const response = await fetch(url.toString());
-    const data = await response.json();
-
-    if (data.error) {
-      logger.error('Google', `API error: ${data.error.message}`);
-      return [];
-    }
-
-    const results = (data.items || []).map(item => ({
-      title: item.title,
-      url: item.link,
-      snippet: item.snippet,
-      source: extractDomain(item.link)
-    }));
-
-    logger.info('Google', `Found ${results.length} results`);
-    return results;
-
-  } catch (error) {
-    logger.error('Google', `Search failed: ${error.message}`);
-    return [];
-  }
-}
-
-/**
- * Search using Brave Search API (fallback).
- * @param {string} query - Search query
- * @returns {Promise<Object[]>} Search results
- */
-export async function searchBrave(query) {
-  const apiKey = process.env.BRAVE_SEARCH_API_KEY;
-
-  if (!apiKey) {
-    logger.warn('Brave', 'API not configured, skipping');
-    return [];
-  }
-
-  const url = new URL('https://api.search.brave.com/res/v1/web/search');
-  url.searchParams.set('q', query);
-  url.searchParams.set('count', '10');
-
-  logger.info('Brave', `Searching: "${query}"`);
-
-  try {
-    const response = await fetch(url.toString(), {
-      headers: {
-        'X-Subscription-Token': apiKey,
-        'Accept': 'application/json',
-      }
-    });
-
-    if (!response.ok) {
-      logger.error('Brave', `HTTP error: ${response.status}`);
-      return [];
-    }
-
-    const data = await response.json();
-
-    const results = (data.web?.results || []).map(item => ({
-      title: item.title,
-      url: item.url,
-      snippet: item.description,
-      source: extractDomain(item.url)
-    }));
-
-    logger.info('Brave', `Found ${results.length} results`);
-    return results;
-
-  } catch (error) {
-    logger.error('Brave', `Search failed: ${error.message}`);
-    return [];
-  }
-}
-
-/**
- * Fetch page content for parsing.
- * Returns detailed status for observability.
- * @param {string} url - URL to fetch
- * @param {number} maxLength - Maximum content length
- * @returns {Promise<Object>} { content, success, status, blocked, error }
- */
-export async function fetchPageContent(url, maxLength = 8000) {
-  const domain = extractDomain(url);
-  logger.info('Fetch', `Fetching: ${url}`);
+  logger.info('SERP', `Searching: "${query}" across ${domains.length} domains`);
 
   try {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 10000);
+    const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.5',
-      },
+    const response = await fetch(BRIGHTDATA_API_URL, {
+      method: 'POST',
       signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        zone: zone,
+        url: googleUrl,
+        format: 'json',
+        method: 'GET'
+      })
     });
 
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      logger.error('SERP', `API returned ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+
+    // SERP API returns {status_code, headers, body} where body is a JSON string
+    if (!data.body) {
+      logger.error('SERP', 'No body in response');
+      return [];
+    }
+
+    const body = typeof data.body === 'string' ? JSON.parse(data.body) : data.body;
+    const organic = body.organic || [];
+
+    const results = organic.map(item => ({
+      title: item.title || '',
+      url: item.link || item.url || '',
+      snippet: (item.description || item.snippet || '').replace(/Read more$/, '').trim(),
+      source: extractDomain(item.link || item.url || '')
+    }));
+
+    logger.info('SERP', `Found ${results.length} results`);
+    return results;
+
+  } catch (error) {
+    const errorMsg = error.name === 'AbortError' ? 'Timeout' : error.message;
+    logger.error('SERP', `Search failed: ${errorMsg}`);
+    return [];
+  }
+}
+
+
+/**
+ * Fetch page content for parsing.
+ * Uses Bright Data Web Unlocker API for domains known to block standard scrapers.
+ * Implements page-level caching to avoid redundant fetches.
+ * @param {string} url - URL to fetch
+ * @param {number} maxLength - Maximum content length
+ * @returns {Promise<Object>} { content, success, status, blocked, error, fromCache }
+ */
+export async function fetchPageContent(url, maxLength = 8000) {
+  const domain = extractDomain(url);
+
+  // Check cache first
+  try {
+    const cached = getCachedPage(url);
+    if (cached) {
+      logger.info('Cache', `Page HIT: ${url.substring(0, 60)}...`);
+      return {
+        content: cached.content || '',
+        success: cached.status === 'success',
+        status: cached.statusCode,
+        blocked: cached.status === 'blocked' || cached.status === 'auth_required',
+        error: cached.error,
+        fromCache: true
+      };
+    }
+  } catch (err) {
+    logger.warn('Cache', `Page lookup failed: ${err.message}`);
+  }
+
+  // Check if domain has known issues
+  const domainIssue = getDomainIssue(url);
+  if (domainIssue) {
+    logger.info('Fetch', `Known issue for ${domain}: ${domainIssue.issue}`);
+  }
+
+  // Check if we should use Bright Data API for this domain
+  const useUnblocker = BLOCKED_DOMAINS.some(d => domain.includes(d)) &&
+    process.env.BRIGHTDATA_API_KEY && process.env.BRIGHTDATA_ZONE;
+
+  logger.info('Fetch', `Fetching: ${url}${useUnblocker ? ' (via Bright Data API)' : ''}`);
+
+  try {
+    let response;
+    const controller = new AbortController();
+    const timeoutMs = useUnblocker ? 30000 : 10000;
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+
+    if (useUnblocker) {
+      // Use Bright Data REST API with markdown format for cleaner content
+      response = await fetch(BRIGHTDATA_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.BRIGHTDATA_API_KEY}`
+        },
+        body: JSON.stringify({
+          zone: process.env.BRIGHTDATA_ZONE,
+          url: url,
+          format: 'raw',
+          data_format: 'markdown'  // Get cleaner markdown instead of raw HTML
+        })
+      });
+    } else {
+      // Direct fetch with standard headers
+      response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.5',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+      });
+    }
     clearTimeout(timeout);
 
     const status = response.status;
@@ -499,20 +626,20 @@ export async function fetchPageContent(url, maxLength = 8000) {
       };
     }
 
-    const html = await response.text();
+    const contentText = await response.text();
 
     // Check for blocked/consent indicators
     const isBlocked =
-      html.length < 500 && (
-        html.toLowerCase().includes('captcha') ||
-        html.toLowerCase().includes('consent') ||
-        html.toLowerCase().includes('verify') ||
-        html.toLowerCase().includes('cloudflare') ||
-        html.toLowerCase().includes('access denied')
+      contentText.length < 500 && (
+        contentText.toLowerCase().includes('captcha') ||
+        contentText.toLowerCase().includes('consent') ||
+        contentText.toLowerCase().includes('verify') ||
+        contentText.toLowerCase().includes('cloudflare') ||
+        contentText.toLowerCase().includes('access denied')
       );
 
     if (isBlocked) {
-      logger.info('Fetch', `Blocked/consent page from ${domain} (${html.length} chars)`);
+      logger.info('Fetch', `Blocked/consent page from ${domain} (${contentText.length} chars)`);
       return {
         content: '',
         success: false,
@@ -522,57 +649,121 @@ export async function fetchPageContent(url, maxLength = 8000) {
       };
     }
 
-    // Special handling for Vivino (Next.js) - extract JSON data
     let text = '';
-    if (domain.includes('vivino')) {
-      text = extractVivinoData(html);
-    }
 
-    // If no special extraction or it failed, use standard HTML stripping
-    if (!text) {
-      text = html
-        .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-        .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-        .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-        .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-        .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
+    // If we used Bright Data with markdown format, content is already clean text
+    if (useUnblocker) {
+      // For Vivino, check if the markdown has any rating info
+      if (domain.includes('vivino')) {
+        // Vivino is a SPA - markdown won't have rating data
+        const hasRatingData = contentText.match(/\d\.\d\s*(?:stars?|rating|average)/i) ||
+                              contentText.match(/(?:rating|score)[:\s]+\d\.\d/i);
+        if (!hasRatingData) {
+          logger.info('Fetch', `Vivino page has no extractable rating data (SPA shell)`);
+          return {
+            content: '',
+            success: false,
+            status,
+            blocked: true,
+            error: 'Vivino SPA - no rating data'
+          };
+        }
+      }
+      // Markdown is already clean, just use it directly
+      text = contentText.replace(/\s+/g, ' ').trim();
+    } else {
+      // Raw HTML response - need to process it
+
+      // Special handling for Vivino (Next.js) - extract JSON data
+      if (domain.includes('vivino')) {
+        text = extractVivinoData(contentText);
+
+        // If Vivino extraction failed, the page is a JS-rendered shell without data
+        if (!text) {
+          logger.info('Fetch', `Vivino page has no extractable rating data (SPA shell)`);
+          return {
+            content: '',
+            success: false,
+            status,
+            blocked: true,
+            error: 'Vivino SPA - no rating data in HTML'
+          };
+        }
+      }
+
+      // If no special extraction or it failed, use standard HTML stripping
+      if (!text) {
+        text = contentText
+          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+          .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+          .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+      }
     }
 
     // Check if we got meaningful content
     if (text.length < 200) {
       logger.info('Fetch', `Short response from ${domain}: ${text.length} chars`);
-      return {
+      const result = {
         content: text,
         success: false,
         status,
         blocked: true,
-        error: `Too short (${text.length} chars)`
+        error: `Too short (${text.length} chars)`,
+        fromCache: false
       };
+      // Cache blocked/failed result (shorter TTL)
+      try {
+        cachePage(url, text, 'insufficient_content', status, result.error);
+      } catch (err) {
+        logger.warn('Cache', `Page cache write failed: ${err.message}`);
+      }
+      return result;
     }
 
     logger.info('Fetch', `Got ${text.length} chars from ${domain}`);
 
-    return {
-      content: text.substring(0, maxLength),
+    const finalContent = text.substring(0, maxLength);
+    const result = {
+      content: finalContent,
       success: true,
       status,
       blocked: false,
-      error: null
+      error: null,
+      fromCache: false
     };
+
+    // Cache successful result
+    try {
+      cachePage(url, finalContent, 'success', status, null);
+    } catch (err) {
+      logger.warn('Cache', `Page cache write failed: ${err.message}`);
+    }
+
+    return result;
 
   } catch (error) {
     const errorMsg = error.name === 'AbortError' ? 'Timeout' : error.message;
     logger.error('Fetch', `Failed for ${url}: ${errorMsg}`);
-    return {
+    const result = {
       content: '',
       success: false,
       status: null,
       blocked: false,
-      error: errorMsg
+      error: errorMsg,
+      fromCache: false
     };
+    // Cache error result (shorter TTL for retry)
+    try {
+      cachePage(url, '', error.name === 'AbortError' ? 'timeout' : 'error', null, errorMsg);
+    } catch (err) {
+      logger.warn('Cache', `Page cache write failed: ${err.message}`);
+    }
+    return result;
   }
 }
 
@@ -645,6 +836,11 @@ function extractDomain(url) {
  * @returns {string} Search query
  */
 function buildSourceQuery(source, wineName, vintage) {
+  // Force Vivino to show ratings in the search snippet
+  if (source.id === 'vivino') {
+    return `site:vivino.com "${wineName}" ${vintage} "stars" OR "rating"`;
+  }
+
   if (source.query_template) {
     return source.query_template
       .replace('{wine}', `"${wineName}"`)
@@ -661,6 +857,25 @@ function buildSourceQuery(source, wineName, vintage) {
  */
 function generateWineNameVariations(wineName) {
   const variations = [wineName];
+
+  // Strip parentheses content and try as variation
+  // e.g., "Kleine Zalze Chenin Blanc (vineyard Selection)" -> "Kleine Zalze Chenin Blanc Vineyard Selection"
+  const withoutParens = wineName
+    .replace(/\(([^)]+)\)/g, '$1')  // Remove parens but keep content
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (withoutParens !== wineName) {
+    variations.push(withoutParens);
+  }
+
+  // Also try completely removing parenthetical content
+  const noParenContent = wineName
+    .replace(/\([^)]+\)/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (noParenContent !== wineName && noParenContent.length > 5) {
+    variations.push(noParenContent);
+  }
 
   // For wines starting with numbers (like "1865 Selected Vineyards")
   // Try adding common producer prefixes
@@ -876,27 +1091,22 @@ export async function searchWineRatings(wineName, vintage, country) {
 
   logger.info('Search', `Targeted searches found: ${targetedResults.length} results`);
 
-  // Strategy 2: Broad Google search + Brave search IN PARALLEL
+  // Strategy 2: Broad Google search for remaining domains
   const remainingDomains = topSources.slice(3).map(s => s.domain);
   const broadQuery = `"${wineName}" ${vintage} rating`;
 
-  // Always run both broad Google and Brave in parallel for better coverage
-  const [broadResults, braveResults] = await Promise.all([
-    remainingDomains.length > 0
-      ? searchGoogle(broadQuery, remainingDomains)
-      : Promise.resolve([]),
-    searchBrave(`${wineName} ${vintage} wine rating review`)
-  ]);
+  const broadResults = remainingDomains.length > 0
+    ? await searchGoogle(broadQuery, remainingDomains)
+    : [];
 
   logger.info('Search', `Broad search found: ${broadResults.length} results`);
-  logger.info('Search', `Brave found: ${braveResults.length} results`);
 
-  // Strategy 3: Try name variations if we still have few results
+  // Strategy 3: Try name variations with Google if we still have few results
   const variationResults = [];
-  if (targetedResults.length + broadResults.length + braveResults.length < 5 && wineNameVariations.length > 1) {
+  if (targetedResults.length + broadResults.length < 5 && wineNameVariations.length > 1) {
     logger.info('Search', 'Trying wine name variations...');
     for (const variation of wineNameVariations.slice(1)) { // Skip first (original)
-      const varResults = await searchBrave(`${variation} ${vintage} wine rating`);
+      const varResults = await searchGoogle(`"${variation}" ${vintage} wine rating`, []);
       variationResults.push(...varResults);
       if (variationResults.length >= 5) break;
     }
@@ -904,7 +1114,7 @@ export async function searchWineRatings(wineName, vintage, country) {
   }
 
   // Combine and deduplicate by URL
-  const allResults = [...targetedResults, ...broadResults, ...braveResults, ...variationResults];
+  const allResults = [...targetedResults, ...broadResults, ...variationResults];
   const seen = new Set();
   const uniqueResults = allResults.filter(r => {
     if (seen.has(r.url)) return false;
@@ -970,7 +1180,6 @@ export async function searchWineRatings(wineName, vintage, country) {
     sources_searched: topSources.length,
     targeted_hits: targetedResults.length,
     broad_hits: broadResults.length,
-    brave_hits: braveResults.length,
     variation_hits: variationResults.length
   };
 }
@@ -1023,218 +1232,18 @@ export function updateCredentialStatus(sourceId, status) {
   }
 }
 
-/**
- * Authenticate with Vivino and fetch wine data using their API.
- * Uses stored credentials to establish a session before searching.
- * @param {string} wineName - Wine name to search
- * @param {string|number} vintage - Vintage year
- * @returns {Promise<Object|null>} Wine data or null
- */
-export async function fetchVivinoAuthenticated(wineName, vintage) {
-  const creds = getCredentials('vivino');
-  if (!creds) {
-    logger.info('Vivino', 'No credentials configured, skipping authenticated fetch');
-    return null;
-  }
+// NOTE: Vivino authenticated fetch removed.
+// Their API calls are blocked by CloudFront WAF, making direct API access unreliable.
+// Using Bright Data Web Unlocker for page content is more effective.
 
-  logger.info('Vivino', `Attempting authenticated search for: ${wineName} ${vintage}`);
-
-  try {
-    // Step 1: Authenticate with Vivino to get session token
-    const loginResponse = await fetch('https://www.vivino.com/api/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'application/json',
-      },
-      body: JSON.stringify({
-        email: creds.username,
-        password: creds.password
-      })
-    });
-
-    if (!loginResponse.ok) {
-      if (loginResponse.status === 401 || loginResponse.status === 403) {
-        updateCredentialStatus('vivino', 'failed');
-        logger.info('Vivino', 'Authentication failed - invalid credentials');
-      } else {
-        logger.info('Vivino', `Login API returned ${loginResponse.status}`);
-      }
-      return null;
-    }
-
-    // Extract session cookies from login response
-    const loginCookies = loginResponse.headers.getSetCookie?.() ||
-      [loginResponse.headers.get('set-cookie')].filter(Boolean);
-
-    if (!loginCookies || loginCookies.length === 0) {
-      logger.info('Vivino', 'No session cookies received from login');
-      // Still try the search - some data may be available
-    }
-
-    // Parse cookies into a single Cookie header string
-    const cookieString = loginCookies
-      .map(cookie => cookie.split(';')[0])
-      .join('; ');
-
-    // Step 2: Search with authenticated session
-    const searchUrl = new URL('https://www.vivino.com/api/explore/explore');
-    searchUrl.searchParams.set('q', `${wineName} ${vintage}`.trim());
-    searchUrl.searchParams.set('limit', '5');
-
-    const searchHeaders = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'application/json',
-      'Accept-Language': 'en-US,en;q=0.9',
-    };
-
-    // Include session cookies if we got them
-    if (cookieString) {
-      searchHeaders['Cookie'] = cookieString;
-    }
-
-    const response = await fetch(searchUrl.toString(), {
-      headers: searchHeaders
-    });
-
-    if (!response.ok) {
-      logger.info('Vivino', `Search API returned ${response.status}`);
-      return null;
-    }
-
-    const data = await response.json();
-    const matches = data.explore_vintage?.matches || [];
-
-    if (matches.length === 0) {
-      logger.info('Vivino', 'No matches found in API response');
-      return null;
-    }
-
-    // Find best match
-    const bestMatch = matches.find(m => {
-      const wName = m.vintage?.wine?.name?.toLowerCase() || '';
-      const wVintage = m.vintage?.year;
-      return wName.includes(wineName.toLowerCase().split(' ')[0]) &&
-             (!vintage || wVintage === parseInt(vintage, 10));
-    }) || matches[0];
-
-    const wine = bestMatch.vintage?.wine;
-    const stats = bestMatch.vintage?.statistics || wine?.statistics;
-
-    if (!stats?.ratings_average) {
-      logger.info('Vivino', 'Match found but no rating data');
-      return null;
-    }
-
-    updateCredentialStatus('vivino', 'valid');
-
-    const result = {
-      source: 'vivino',
-      lens: 'community',
-      score_type: 'stars',
-      raw_score: stats.ratings_average.toFixed(1),
-      rating_count: stats.ratings_count || null,
-      wine_name: wine?.name,
-      vintage_found: bestMatch.vintage?.year,
-      source_url: `https://www.vivino.com/w/${wine?.id}`,
-      match_confidence: 'high'
-    };
-
-    logger.info('Vivino', `Found: ${result.raw_score} stars (${result.rating_count} ratings)`);
-    return result;
-
-  } catch (err) {
-    logger.error('Vivino', `Authenticated fetch failed: ${err.message}`);
-    return null;
-  }
-}
-
-/**
- * Fetch wine data from CellarTracker using credentials.
- * @param {string} wineName - Wine name to search
- * @param {string|number} vintage - Vintage year
- * @returns {Promise<Object|null>} Wine data or null
- */
-export async function fetchCellarTrackerAuthenticated(wineName, vintage) {
-  const creds = getCredentials('cellartracker');
-  if (!creds) {
-    logger.info('CellarTracker', 'No credentials configured, skipping authenticated fetch');
-    return null;
-  }
-
-  logger.info('CellarTracker', `Attempting authenticated search for: ${wineName} ${vintage}`);
-
-  try {
-    // CellarTracker requires basic auth for their API
-    const authHeader = 'Basic ' + Buffer.from(`${creds.username}:${creds.password}`).toString('base64');
-
-    // Search wines
-    const searchUrl = new URL('https://www.cellartracker.com/xlquery.asp');
-    searchUrl.searchParams.set('User', creds.username);
-    searchUrl.searchParams.set('Password', creds.password);
-    searchUrl.searchParams.set('Format', 'json');
-    searchUrl.searchParams.set('Table', 'Wines');
-    searchUrl.searchParams.set('Wine', wineName);
-    if (vintage) {
-      searchUrl.searchParams.set('Vintage', vintage);
-    }
-
-    const response = await fetch(searchUrl.toString(), {
-      headers: {
-        'Authorization': authHeader,
-        'Accept': 'application/json',
-      }
-    });
-
-    if (!response.ok) {
-      if (response.status === 401) {
-        updateCredentialStatus('cellartracker', 'failed');
-        logger.info('CellarTracker', 'Authentication failed');
-      }
-      return null;
-    }
-
-    const data = await response.json();
-
-    if (!data || !Array.isArray(data) || data.length === 0) {
-      logger.info('CellarTracker', 'No matches found');
-      return null;
-    }
-
-    // Find the best match with community score
-    const matchWithScore = data.find(w => w.CT && parseFloat(w.CT) > 0);
-    if (!matchWithScore) {
-      logger.info('CellarTracker', 'No matches with ratings found');
-      return null;
-    }
-
-    updateCredentialStatus('cellartracker', 'valid');
-
-    const result = {
-      source: 'cellartracker',
-      lens: 'community',
-      score_type: 'points',
-      raw_score: parseFloat(matchWithScore.CT).toFixed(1),
-      rating_count: matchWithScore.CNotes || null,
-      wine_name: matchWithScore.Wine,
-      vintage_found: matchWithScore.Vintage,
-      source_url: `https://www.cellartracker.com/wine.asp?iWine=${matchWithScore.iWine}`,
-      match_confidence: 'high'
-    };
-
-    logger.info('CellarTracker', `Found: ${result.raw_score} points`);
-    return result;
-
-  } catch (err) {
-    logger.error('CellarTracker', `Authenticated fetch failed: ${err.message}`);
-    return null;
-  }
-}
+// NOTE: CellarTracker credential support removed.
+// Their API (xlquery.asp) only searches the user's personal cellar, not global wine database.
+// This made it useless for discovering ratings on wines not already in the user's CT account.
+// CellarTracker ratings can still be found via web search snippets.
 
 /**
  * Fetch wine data from Decanter using credentials.
- * Note: Decanter doesn't have a public API, but logged-in users can access more content.
+ * Decanter wine reviews have URLs like: /wine-reviews/region/producer-wine-vintage-XXXXX
  * @param {string} wineName - Wine name to search
  * @param {string|number} vintage - Vintage year
  * @returns {Promise<Object|null>} Wine data or null
@@ -1272,23 +1281,16 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       return null;
     }
 
-    // Get ALL cookies from login response (WordPress sets multiple cookies)
-    // Use getSetCookie() for modern Node.js, fallback to getAll() or manual parsing
+    // Get ALL cookies from login response
     let allCookies = [];
-
     if (typeof loginResponse.headers.getSetCookie === 'function') {
-      // Node.js 18.14.1+ / undici
       allCookies = loginResponse.headers.getSetCookie();
     } else if (typeof loginResponse.headers.raw === 'function') {
-      // node-fetch style
       const rawHeaders = loginResponse.headers.raw();
       allCookies = rawHeaders['set-cookie'] || [];
     } else {
-      // Fallback: try to get the single combined header (may lose some cookies)
       const singleCookie = loginResponse.headers.get('set-cookie');
-      if (singleCookie) {
-        allCookies = [singleCookie];
-      }
+      if (singleCookie) allCookies = [singleCookie];
     }
 
     if (!allCookies || allCookies.length === 0) {
@@ -1297,12 +1299,7 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     }
 
     logger.info('Decanter', `Received ${allCookies.length} cookie(s) from login`);
-
-    // Parse cookies into a single Cookie header string (extract name=value parts)
-    const cookieString = allCookies
-      .map(cookie => cookie.split(';')[0]) // Get just the name=value part
-      .join('; ');
-
+    const cookieString = allCookies.map(c => c.split(';')[0]).join('; ');
     updateCredentialStatus('decanter', 'valid');
 
     // Search Decanter with authenticated session
@@ -1322,21 +1319,105 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       return null;
     }
 
-    const html = await searchResponse.text();
+    const searchHtml = await searchResponse.text();
 
-    // Look for rating in search results (Decanter uses points out of 100)
-    // Pattern: "XX points" or "Score: XX"
-    const ratingMatch = html.match(/(\d{2,3})\s*points/i) ||
-                        html.match(/score[:\s]+(\d{2,3})/i);
+    // Find wine review URLs in search results
+    // Try absolute URLs first, then relative URLs
+    // Pattern: /wine-reviews/region/producer-wine-vintage-XXXXX
+    let reviewUrl = null;
 
-    if (!ratingMatch) {
-      logger.info('Decanter', 'No rating found in search results');
+    // Try absolute URL first
+    const absoluteMatch = searchHtml.match(/href="(https:\/\/www\.decanter\.com\/wine-reviews\/[^"]+)"/i);
+    if (absoluteMatch) {
+      reviewUrl = absoluteMatch[1];
+    }
+
+    // Try relative URL if no absolute match
+    if (!reviewUrl) {
+      const relativeMatch = searchHtml.match(/href="(\/wine-reviews\/[^"]+)"/i);
+      if (relativeMatch) {
+        reviewUrl = `https://www.decanter.com${relativeMatch[1]}`;
+      }
+    }
+
+    // Try data attributes or other patterns
+    if (!reviewUrl) {
+      const dataUrlMatch = searchHtml.match(/data-url="([^"]*wine-reviews[^"]*)"/i) ||
+                           searchHtml.match(/data-href="([^"]*wine-reviews[^"]*)"/i);
+      if (dataUrlMatch) {
+        reviewUrl = dataUrlMatch[1].startsWith('http')
+          ? dataUrlMatch[1]
+          : `https://www.decanter.com${dataUrlMatch[1]}`;
+      }
+    }
+
+    if (!reviewUrl) {
+      logger.info('Decanter', 'No wine review links found in search results');
+      return null;
+    }
+    logger.info('Decanter', `Found review URL: ${reviewUrl}`);
+
+    // Fetch the actual review page
+    const reviewResponse = await fetch(reviewUrl, {
+      headers: {
+        'Cookie': cookieString,
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html'
+      }
+    });
+
+    if (!reviewResponse.ok) {
+      logger.info('Decanter', `Review page returned ${reviewResponse.status}`);
       return null;
     }
 
-    const score = parseInt(ratingMatch[1], 10);
-    if (score < 50 || score > 100) {
-      logger.info('Decanter', `Invalid score found: ${score}`);
+    const reviewHtml = await reviewResponse.text();
+
+    // Look for rating in various formats on Decanter review pages
+    // Format 1: class="rating">XX</span> or data-rating="XX"
+    // Format 2: "XX points" in the content
+    // Format 3: itemprop="ratingValue" content="XX"
+    let score = null;
+    let drinkingWindow = null;
+
+    // Try structured data first
+    const ratingValueMatch = reviewHtml.match(/itemprop="ratingValue"[^>]*content="(\d+)"/i) ||
+                             reviewHtml.match(/content="(\d+)"[^>]*itemprop="ratingValue"/i);
+    if (ratingValueMatch) {
+      score = parseInt(ratingValueMatch[1], 10);
+    }
+
+    // Try data-rating attribute
+    if (!score) {
+      const dataRatingMatch = reviewHtml.match(/data-rating="(\d+)"/i);
+      if (dataRatingMatch) score = parseInt(dataRatingMatch[1], 10);
+    }
+
+    // Try class="rating" spans
+    if (!score) {
+      const ratingClassMatch = reviewHtml.match(/class="[^"]*rating[^"]*"[^>]*>(\d{2,3})/i);
+      if (ratingClassMatch) score = parseInt(ratingClassMatch[1], 10);
+    }
+
+    // Try "XX points" pattern
+    if (!score) {
+      const pointsMatch = reviewHtml.match(/(\d{2,3})\s*points/i);
+      if (pointsMatch) score = parseInt(pointsMatch[1], 10);
+    }
+
+    // Look for drinking window
+    const windowMatch = reviewHtml.match(/drink[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i) ||
+                        reviewHtml.match(/drinking\s+window[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i);
+    if (windowMatch) {
+      drinkingWindow = {
+        drink_from_year: parseInt(windowMatch[1], 10),
+        drink_by_year: parseInt(windowMatch[2], 10),
+        raw_text: windowMatch[0]
+      };
+    }
+
+    if (!score || score < 50 || score > 100) {
+      logger.info('Decanter', `No valid score found (got: ${score})`);
       return null;
     }
 
@@ -1348,11 +1429,12 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       rating_count: null,
       wine_name: wineName,
       vintage_found: vintage,
-      source_url: searchUrl,
-      match_confidence: 'medium' // Lower confidence since we're parsing HTML
+      source_url: reviewUrl,
+      drinking_window: drinkingWindow,
+      match_confidence: 'high' // Higher confidence since we found actual review page
     };
 
-    logger.info('Decanter', `Found: ${result.raw_score} points`);
+    logger.info('Decanter', `Found: ${result.raw_score} points${drinkingWindow ? ` (${drinkingWindow.raw_text})` : ''}`);
     return result;
 
   } catch (err) {
@@ -1362,8 +1444,9 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
 }
 
 /**
- * Try authenticated fetches for wine ratings.
- * Returns ratings from sources where we have valid credentials.
+ * Try authenticated fetch for Decanter ratings.
+ * Vivino auth has been removed - using Bright Data Web Unlocker instead.
+ *
  * @param {string} wineName - Wine name
  * @param {string|number} vintage - Vintage year
  * @returns {Promise<Object[]>} Array of ratings from authenticated sources
@@ -1371,20 +1454,8 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
 export async function fetchAuthenticatedRatings(wineName, vintage) {
   const ratings = [];
 
-  // Try all authenticated sources in parallel
-  const [vivinoResult, cellarTrackerResult, decanterResult] = await Promise.all([
-    fetchVivinoAuthenticated(wineName, vintage),
-    fetchCellarTrackerAuthenticated(wineName, vintage),
-    fetchDecanterAuthenticated(wineName, vintage)
-  ]);
-
-  if (vivinoResult) {
-    ratings.push(vivinoResult);
-  }
-
-  if (cellarTrackerResult) {
-    ratings.push(cellarTrackerResult);
-  }
+  // Only try Decanter (Vivino uses Web Unlocker now)
+  const decanterResult = await fetchDecanterAuthenticated(wineName, vintage);
 
   if (decanterResult) {
     ratings.push(decanterResult);

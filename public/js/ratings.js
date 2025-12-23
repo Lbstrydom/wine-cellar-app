@@ -183,6 +183,12 @@ export function renderRatingsPanel(ratingsData) {
 
   html += `
       </div>
+      <div id="ratings-progress" class="progress-container" style="display: none;">
+        <div class="progress-bar-wrapper">
+          <div id="ratings-progress-bar" class="progress-bar"></div>
+        </div>
+        <span id="ratings-progress-text" class="progress-text">Starting...</span>
+      </div>
       <div class="ratings-actions">
         <button class="btn btn-secondary btn-small" id="refresh-ratings-btn">
           Refresh
@@ -237,30 +243,74 @@ export function initRatingsPanel(wineId) {
 
 /**
  * Handle fetch ratings button click.
+ * Uses async job queue with progress polling for better UX.
  * @param {number} wineId - Wine ID
+ * @param {boolean} useAsync - Whether to use async endpoint (default true)
  */
-async function handleFetchRatings(wineId) {
+async function handleFetchRatings(wineId, useAsync = true) {
   const fetchBtn = document.getElementById('fetch-ratings-btn');
   const refreshBtn = document.getElementById('refresh-ratings-btn');
   const btn = fetchBtn || refreshBtn;
+  const progressContainer = document.getElementById('ratings-progress');
+  const progressBar = document.getElementById('ratings-progress-bar');
+  const progressText = document.getElementById('ratings-progress-text');
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Searching...';
+    btn.textContent = 'Fetching...';
+  }
+
+  // Show progress bar if async and progress elements exist
+  if (useAsync && progressContainer) {
+    progressContainer.style.display = 'block';
+    if (progressBar) progressBar.style.width = '0%';
+    if (progressText) progressText.textContent = 'Queuing job...';
   }
 
   try {
-    const result = await fetchWineRatingsFromApi(wineId);
-    // Use the message from backend which includes accurate counts
-    showToast(result.message || 'Ratings updated');
+    if (useAsync) {
+      // Queue async job
+      const queueResponse = await fetch(`/api/wines/${wineId}/ratings/fetch-async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceRefresh: true })
+      });
+
+      if (!queueResponse.ok) {
+        // Fall back to sync if async endpoint fails
+        console.warn('Async endpoint failed, falling back to sync');
+        return handleFetchRatings(wineId, false);
+      }
+
+      const { jobId } = await queueResponse.json();
+
+      // Poll for progress
+      const result = await pollJobProgress(jobId, (progress, message) => {
+        if (progressBar) progressBar.style.width = `${progress}%`;
+        if (progressText) progressText.textContent = message || `${progress}%`;
+      });
+
+      // Show result
+      if (result && result.ratingsFound !== undefined) {
+        showToast(`Found ${result.ratingsFound} ratings`);
+      } else {
+        showToast('Ratings updated');
+      }
+    } else {
+      // Fallback to synchronous fetch
+      const result = await fetchWineRatingsFromApi(wineId);
+      showToast(result.message || 'Ratings updated');
+    }
 
     // Refresh the ratings display
+    if (progressText) progressText.textContent = 'Loading results...';
     const ratingsData = await getWineRatings(wineId);
     const panel = document.querySelector('.ratings-panel-container');
     if (panel) {
       panel.innerHTML = renderRatingsPanel(ratingsData);
       initRatingsPanel(wineId);
     }
+
   } catch (err) {
     showToast('Error: ' + err.message);
   } finally {
@@ -268,7 +318,46 @@ async function handleFetchRatings(wineId) {
       btn.disabled = false;
       btn.textContent = fetchBtn ? 'Search for Ratings' : 'Refresh';
     }
+    if (progressContainer) {
+      progressContainer.style.display = 'none';
+    }
   }
+}
+
+/**
+ * Poll job status until complete.
+ * @param {number} jobId - Job ID
+ * @param {Function} onProgress - Progress callback (progress, message)
+ * @returns {Promise<Object>} Job result
+ */
+async function pollJobProgress(jobId, onProgress) {
+  const pollInterval = 1000; // 1 second
+  const maxPolls = 120; // 2 minutes max
+
+  for (let i = 0; i < maxPolls; i++) {
+    const response = await fetch(`/api/ratings/jobs/${jobId}/status`);
+
+    if (!response.ok) {
+      throw new Error('Failed to get job status');
+    }
+
+    const status = await response.json();
+
+    onProgress(status.progress || 0, status.progress_message);
+
+    if (status.status === 'completed') {
+      return status.result;
+    }
+
+    if (status.status === 'failed') {
+      const error = status.result?.error || 'Job failed';
+      throw new Error(error);
+    }
+
+    await new Promise(resolve => setTimeout(resolve, pollInterval));
+  }
+
+  throw new Error('Job timed out');
 }
 
 /**

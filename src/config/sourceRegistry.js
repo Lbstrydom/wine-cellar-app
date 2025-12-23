@@ -27,20 +27,26 @@ export const LENS_CREDIBILITY = {
 /**
  * Region to source priority mapping.
  * Lists preferred sources in priority order for each wine-producing region.
+ * Includes premium critics as secondary sources for major regions.
  */
 export const REGION_SOURCE_PRIORITY = {
-  'Australia': ['halliday', 'huon_hooke', 'gourmet_traveller_wine', 'decanter', 'vivino'],
-  'New Zealand': ['bob_campbell', 'wine_orbit', 'decanter', 'vivino'],
-  'Spain': ['guia_penin', 'guia_proensa', 'decanter', 'tim_atkin', 'vivino'],
-  'Chile': ['descorchados', 'vinomanos', 'tim_atkin', 'decanter', 'vivino'],
-  'Argentina': ['descorchados', 'tim_atkin', 'decanter', 'vivino'],
-  'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'decanter', 'vivino'],
-  'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'decanter', 'vivino'],
-  'South Africa': ['platters', 'tim_atkin', 'veritas', 'vivino'],
-  'USA': ['wine_enthusiast', 'wine_spectator', 'vinous', 'decanter', 'vivino'],
-  'Germany': ['falstaff', 'decanter', 'vivino'],
-  'Portugal': ['decanter', 'vivino'],
-  '_default': ['decanter', 'wine_enthusiast', 'vivino', 'cellar_tracker']
+  'Australia': ['halliday', 'huon_hooke', 'gourmet_traveller_wine', 'james_suckling', 'decanter', 'vivino'],
+  'New Zealand': ['bob_campbell', 'wine_orbit', 'james_suckling', 'decanter', 'vivino'],
+  'Spain': ['guia_penin', 'guia_proensa', 'decanter', 'tim_atkin', 'james_suckling', 'vivino'],
+  'Chile': ['descorchados', 'vinomanos', 'tim_atkin', 'james_suckling', 'decanter', 'vivino'],
+  'Argentina': ['descorchados', 'tim_atkin', 'james_suckling', 'decanter', 'vivino'],
+  'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'james_suckling', 'decanter', 'vivino'],
+  'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'jancis_robinson', 'wine_advocate', 'decanter', 'vivino'],
+  'South Africa': ['platters', 'tim_atkin', 'veritas', 'old_mutual', 'vivino'],
+  'USA': ['wine_spectator', 'wine_enthusiast', 'vinous', 'wine_advocate', 'james_suckling', 'decanter', 'vivino'],
+  'Germany': ['falstaff', 'weinwisser', 'vinum', 'jancis_robinson', 'decanter', 'vivino'],
+  'Austria': ['falstaff', 'vinum', 'decanter', 'vivino'],
+  'Portugal': ['revista_vinhos', 'jancis_robinson', 'decanter', 'vivino'],
+  'Greece': ['elloinos', 'decanter', 'vivino'],
+  'Switzerland': ['vinum', 'falstaff', 'decanter', 'vivino'],
+  '_default': ['decanter', 'wine_enthusiast', 'james_suckling', 'vivino', 'cellar_tracker'],
+  // Premium tier wines get extra critic coverage regardless of region
+  '_premium': ['wine_advocate', 'jancis_robinson', 'vinous', 'wine_spectator', 'james_suckling']
 };
 
 /**
@@ -397,7 +403,7 @@ export const SOURCE_REGISTRY = {
   },
 
   vinous: {
-    name: 'Vinous',
+    name: 'Vinous (Antonio Galloni)',
     short_name: 'Vinous',
     lens: LENS.CRITIC,
     domain: 'vinous.com',
@@ -406,7 +412,10 @@ export const SOURCE_REGISTRY = {
     grape_affinity: null,
     score_type: 'points',
     score_format: '\\d{2,3}\\+?',
-    query_template: '{wine} {vintage} site:vinous.com'
+    paywalled: true,
+    snippet_extraction: true,
+    query_template: '{wine} {vintage} site:vinous.com',
+    notes: 'Italian specialist, ex-Parker reviewer. Scores often in snippets.'
   },
 
   // France
@@ -449,7 +458,7 @@ export const SOURCE_REGISTRY = {
     query_template: '{wine} {vintage} Bettane Desseauve'
   },
 
-  // Germany
+  // Germany / Austria
   falstaff: {
     name: 'Falstaff',
     short_name: 'Falstaff',
@@ -461,6 +470,61 @@ export const SOURCE_REGISTRY = {
     score_type: 'points',
     score_format: '\\d{2,3}',
     query_template: '{wine} {vintage} site:falstaff.com'
+  },
+
+  weinwisser: {
+    name: 'Weinwisser',
+    short_name: 'Weinwisser',
+    lens: LENS.CRITIC,
+    domain: 'weinwisser.com',
+    home_regions: ['Germany'],
+    language: 'de',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} site:weinwisser.com'
+  },
+
+  vinum: {
+    name: 'Vinum',
+    short_name: 'Vinum',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'vinum.eu',
+    home_regions: ['Switzerland', 'Germany', 'Austria'],
+    language: 'de',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{1,2}/20|\\d{2,3}',
+    points_scale: 20,
+    query_template: '{wine} {vintage} Vinum'
+  },
+
+  // Portugal
+  revista_vinhos: {
+    name: 'Revista de Vinhos',
+    short_name: 'Revista Vinhos',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'revistadevinhos.pt',
+    home_regions: ['Portugal'],
+    language: 'pt',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} Revista de Vinhos'
+  },
+
+  // Greece
+  elloinos: {
+    name: 'Elloinos',
+    short_name: 'Elloinos',
+    lens: LENS.PANEL_GUIDE,
+    domain: 'elloinos.com',
+    home_regions: ['Greece'],
+    language: 'el',
+    grape_affinity: null,
+    score_type: 'points',
+    score_format: '\\d{2,3}',
+    query_template: '{wine} {vintage} Elloinos'
   },
 
   // ============================================
@@ -491,7 +555,10 @@ export const SOURCE_REGISTRY = {
     score_type: 'points',
     score_format: '\\d{1,2}(\\.\\d)?/20',
     points_scale: 20,
-    query_template: '{wine} {vintage} site:jancisrobinson.com'
+    paywalled: true,
+    snippet_extraction: true,
+    query_template: '{wine} {vintage} site:jancisrobinson.com',
+    notes: '20-point scale. Global authority, especially Burgundy.'
   },
 
   wine_advocate: {
@@ -499,12 +566,16 @@ export const SOURCE_REGISTRY = {
     short_name: 'Wine Advocate',
     lens: LENS.CRITIC,
     domain: 'robertparker.com',
+    alt_domains: ['erobertparker.com', 'wineadvocate.com'],
     home_regions: [],
     language: 'en',
     grape_affinity: null,
     score_type: 'points',
     score_format: '\\d{2,3}\\+?',
-    query_template: '{wine} {vintage} Wine Advocate OR Robert Parker points'
+    paywalled: true,
+    snippet_extraction: true,
+    query_template: '{wine} {vintage} Wine Advocate OR Robert Parker points',
+    notes: 'Benchmark for Bordeaux, Napa, Rhône. Scores often in snippets.'
   },
 
   wine_spectator: {
@@ -517,7 +588,10 @@ export const SOURCE_REGISTRY = {
     grape_affinity: null,
     score_type: 'points',
     score_format: '\\d{2,3}',
-    query_template: '{wine} {vintage} site:winespectator.com'
+    paywalled: true,
+    snippet_extraction: true,
+    query_template: '{wine} {vintage} site:winespectator.com',
+    notes: 'US market influence. Top 100 lists.'
   },
 
   james_suckling: {
@@ -530,7 +604,10 @@ export const SOURCE_REGISTRY = {
     grape_affinity: null,
     score_type: 'points',
     score_format: '\\d{2,3}',
-    query_template: '{wine} {vintage} site:jamessuckling.com'
+    paywalled: false,
+    snippet_extraction: true,
+    query_template: '{wine} {vintage} site:jamessuckling.com',
+    notes: 'High volume, global coverage. Often in snippets.'
   },
 
   descorchados: {

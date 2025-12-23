@@ -1290,6 +1290,35 @@ header h1 {
   gap: 0.5rem;
 }
 
+/* Progress bar for async operations */
+.progress-container {
+  margin: 1rem 0;
+}
+
+.progress-bar-wrapper {
+  height: 8px;
+  background: var(--bg-slot);
+  border-radius: 4px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+
+.progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #4CAF50, #8BC34A);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+  width: 0%;
+}
+
+.progress-text {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 /* Manual rating form */
 .manual-rating-form {
   margin-top: 1rem;
@@ -1953,6 +1982,61 @@ body.slot-picker-mode .slot:not(.empty) {
 .credential-actions {
   display: flex;
   gap: 0.5rem;
+}
+
+/* Credential Notes */
+.credential-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 0.75rem;
+  padding-left: 0.25rem;
+}
+
+/* Source Info Box */
+.source-info {
+  background: var(--bg-slot);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+
+.source-info h4 {
+  font-size: 0.9rem;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.source-info p {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.source-info ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.source-info li {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding: 0.25rem 0;
+  padding-left: 1rem;
+  position: relative;
+}
+
+.source-info li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  color: var(--accent);
+}
+
+.source-info li strong {
+  color: var(--text);
+  font-weight: 500;
 }
 
 /* Settings Warning */

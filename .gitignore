@@ -6,3 +6,4 @@ data/cellar.db-shm
 *.log
 .claude/
 .env
+.credential_key
