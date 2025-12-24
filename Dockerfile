@@ -16,6 +16,7 @@ RUN npm ci --only=production
 COPY src/ ./src/
 COPY public/ ./public/
 COPY data/schema.sql ./data/
+COPY data/migrations/ ./data/migrations/
 
 # Create data directory for database
 RUN mkdir -p /app/data
