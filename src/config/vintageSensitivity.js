@@ -181,18 +181,35 @@ export function isVintageMatchAcceptable(wine, wineVintage, ratingVintage, match
   }
 
   // Inferred vintage matches
-  if (matchType === 'inferred' && ratingVintage) {
-    const diff = Math.abs(wineVintage - ratingVintage);
+  if (matchType === 'inferred') {
+    // If we have a rating vintage, check the difference
+    if (ratingVintage) {
+      const diff = Math.abs(wineVintage - ratingVintage);
 
+      switch (sensitivity) {
+        case 'high':
+          return false; // Never accept inferred for high sensitivity wines
+        case 'medium':
+          return diff <= 1; // Accept ±1 year
+        case 'low':
+          return diff <= 2; // Accept ±2 years
+        default:
+          return diff <= 1;
+      }
+    }
+
+    // No rating vintage available - accept for low sensitivity,
+    // accept for medium if source search included vintage in query
+    // (we trust the search engine found the right vintage)
     switch (sensitivity) {
       case 'high':
-        return false; // Never accept inferred for high sensitivity wines
+        return false; // Never accept without vintage confirmation
       case 'medium':
-        return diff <= 1; // Accept ±1 year
+        return true; // Trust search results included vintage
       case 'low':
-        return diff <= 2; // Accept ±2 years
+        return true; // Accept community ratings
       default:
-        return diff <= 1;
+        return true;
     }
   }
 

@@ -9,6 +9,23 @@ import { LENS_CREDIBILITY, getSourceConfig } from '../config/sourceRegistry.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
 
+/**
+ * Add vintage year parameter to Vivino URLs for correct vintage-specific data.
+ * @param {string} url - Original URL
+ * @param {string|number} vintage - Vintage year
+ * @returns {string} Modified URL with year parameter
+ */
+function addVintageToUrl(url, vintage) {
+  if (!vintage || !url.includes('vivino.com')) {
+    return url;
+  }
+  // Remove any existing year param and add the correct one
+  const urlObj = new URL(url);
+  urlObj.searchParams.delete('year');
+  urlObj.searchParams.set('year', String(vintage));
+  return urlObj.toString();
+}
+
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
 });
@@ -340,10 +357,12 @@ export async function fetchWineRatings(wine) {
   const wineName = wine.wine_name || 'Unknown';
   const vintage = wine.vintage || '';
   const country = wine.country || '';
+  const style = wine.style || '';
 
   logger.separator();
   logger.info('Ratings', `Starting search for: ${wineName} ${vintage}`);
-  logger.info('Ratings', `API Keys: Google=${process.env.GOOGLE_SEARCH_API_KEY ? 'Set' : 'MISSING'}, Engine=${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set' : 'MISSING'}, Brave=${process.env.BRAVE_SEARCH_API_KEY ? 'Set' : 'MISSING'}`);
+  logger.info('Ratings', `Wine style: ${style || 'Unknown'}`);
+  logger.info('Ratings', `API Keys: Google=${process.env.GOOGLE_SEARCH_API_KEY ? 'Set' : 'MISSING'}, Engine=${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set' : 'MISSING'}, BrightData=${process.env.BRIGHTDATA_API_KEY ? 'Set' : 'MISSING'}, WebZone=${process.env.BRIGHTDATA_WEB_ZONE ? 'Set' : 'MISSING'}`);
 
   // Step 0: Try authenticated sources first (faster and more reliable if configured)
   const authenticatedRatings = await fetchAuthenticatedRatings(wineName, vintage);
@@ -351,8 +370,8 @@ export async function fetchWineRatings(wine) {
     logger.info('Ratings', `Got ${authenticatedRatings.length} ratings from authenticated sources`);
   }
 
-  // Step 1: Search for relevant pages
-  const searchResults = await searchWineRatings(wineName, vintage, country);
+  // Step 1: Search for relevant pages (pass style for country inference)
+  const searchResults = await searchWineRatings(wineName, vintage, country, style);
 
   if (searchResults.results.length === 0) {
     logger.warn('Ratings', 'No search results found');
@@ -375,9 +394,12 @@ export async function fetchWineRatings(wine) {
   // Increased from 5 to 8 to catch more diverse sources
   const pagesToFetch = searchResults.results.slice(0, 8);
   const fetchPromises = pagesToFetch.map(async (result) => {
-    const fetched = await fetchPageContent(result.url, 8000);
+    // Add vintage year to Vivino URLs to get correct vintage-specific rating
+    const fetchUrl = addVintageToUrl(result.url, vintage);
+    const fetched = await fetchPageContent(fetchUrl, 8000);
     return {
       ...result,
+      url: fetchUrl, // Update URL to include vintage
       content: fetched.content,
       fetchSuccess: fetched.success,
       fetchError: fetched.error
@@ -389,8 +411,11 @@ export async function fetchWineRatings(wine) {
 
   logger.info('Ratings', `Successfully fetched ${validPages.length}/${pagesToFetch.length} pages`);
 
-  // Collect failed pages for snippet extraction (especially Vivino, blocked sites)
-  const failedPages = pages.filter(p => !p.fetchSuccess && p.snippet && p.snippet.length > 20);
+  // Collect failed pages OR pages with insufficient content for snippet extraction
+  // This handles Vivino and other sites that may return blocked/empty pages
+  const failedPages = pages.filter(p =>
+    (!p.fetchSuccess || p.content.length <= 200) && p.snippet && p.snippet.length > 20
+  );
 
   // Also include results beyond the top 8 that have snippets (for broader coverage)
   const additionalSnippets = searchResults.results.slice(8)
@@ -525,6 +550,11 @@ export async function fetchWineRatings(wine) {
           }
         }
       }
+
+      // Merge tasting notes from snippets if not already present
+      if (snippetParsed.tasting_notes && !parsed.tasting_notes) {
+        parsed.tasting_notes = snippetParsed.tasting_notes;
+      }
     } catch (snippetErr) {
       logger.warn('Ratings', `Snippet extraction failed: ${snippetErr.message}`);
     }
@@ -545,6 +575,11 @@ export async function fetchWineRatings(wine) {
   parsed.ratings = allRatings;
 
   logger.info('Ratings', `Total ratings: ${parsed.ratings?.length || 0} (${authenticatedRatings.length} authenticated)`);
+  if (parsed.tasting_notes) {
+    logger.info('Ratings', `Tasting notes extracted: ${parsed.tasting_notes.substring(0, 100)}...`);
+  } else {
+    logger.info('Ratings', 'No tasting notes extracted from pages');
+  }
   logger.separator();
 
   return parsed;
@@ -588,8 +623,19 @@ For each rating, provide:
   Germany: falstaff
   Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, decanter_magazine, wine_enthusiast, natalie_maclean
   Community: vivino, cellar_tracker, wine_align
+  Aggregators: wine_searcher (use original source if visible, e.g., "wine_advocate" not "wine_searcher")
 
-- lens: "competition", "panel_guide", "critic", or "community"
+IMPORTANT - Aggregator sites (Wine-Searcher, Dan Murphy's, BBR):
+- These sites CITE ratings from original critics. Look for patterns like:
+  "Wine Advocate: 92" → source: "wine_advocate", raw_score: "92"
+  "Wine Spectator: 95 points" → source: "wine_spectator", raw_score: "95"
+  "James Suckling 93" → source: "james_suckling", raw_score: "93"
+  "Critic Score: 92" or "Critics Score" → extract the score with lens: "critic"
+- If source is clearly stated, use the ORIGINAL source, not "wine_searcher"
+- If just "WS Score: 92" without clear attribution, use source: "wine_searcher" lens: "aggregator"
+- Wine-Searcher often shows aggregated scores - extract any critic scores with attribution
+
+- lens: "competition", "panel_guide", "critic", "community", or "aggregator"
 - score_type: "medal", "points", "stars", or "symbol"
 - raw_score: The EXACT score as shown (e.g., "Gold", "92", "4.2", "Tre Bicchieri", "★★★", "17/20")
 - normalised_score: Convert to 100-point scale if possible:
@@ -658,6 +704,7 @@ RULES:
 - For French /20 scores: normalise by multiplying by 5
 - For Jancis Robinson, scores are out of 20 (e.g., "17" means 17/20, normalised_score=85)
 - For Platter's, use stars (e.g., "4.5") and normalise by multiplying by 20
+- IMPORTANT: For Vivino ratings (e.g., "4.2", "3.8"), ALWAYS use score_type: "stars" (NOT "points"). Vivino ratings are on a 1-5 star scale.
 - Extract drinking_window whenever window/maturity text is present
 - If no ratings found for this wine: {"ratings": [], "search_notes": "No ratings found"}`;
 }
@@ -707,8 +754,15 @@ For each rating found, provide:
   South America: descorchados
   Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, wine_enthusiast
   Community: vivino, cellar_tracker
+  Aggregators: wine_searcher (use original source if visible)
 
-- lens: "community", "critic", "panel_guide", or "competition"
+IMPORTANT - Aggregator snippets (Wine-Searcher, Dan Murphy's):
+- Look for patterns citing original critics:
+  "Wine Advocate 92" → source: "wine_advocate", raw_score: "92"
+  "Critics Score: 90" → extract the score with lens: "critic"
+- Use original source name when clearly attributed
+
+- lens: "community", "critic", "panel_guide", "competition", or "aggregator"
 - score_type: "stars", "points", "medal", or "symbol"
 - raw_score: The exact score (e.g., "3.8", "92", "Gold", "Tre Bicchieri")
 - normalised_score: Convert to 100-point scale:
@@ -734,16 +788,19 @@ Drinking window patterns to look for:
 Return ONLY valid JSON:
 {
   "ratings": [...],
+  "tasting_notes": "Any tasting/flavour notes visible in snippets (or null if none)",
   "search_notes": "Extracted from search snippets (pages blocked)"
 }
 
 RULES:
 - ONLY extract ratings clearly visible in the snippets
 - For symbol scores (Tre Bicchieri, grappoli, stars, Coup de Coeur), use score_type: "symbol"
+- IMPORTANT: For Vivino ratings (e.g., "4.2", "3.8"), ALWAYS use score_type: "stars" (NOT "points"). Vivino is 1-5 star scale.
 - Do NOT fabricate - only extract what you can see
 - If rating_count is visible (e.g., "1234 ratings"), include it
 - Extract drinking_window if maturity/window text is visible
-- If no ratings visible: {"ratings": [], "search_notes": "No ratings visible in snippets"}`;
+- Extract tasting_notes if flavour/aroma descriptions visible
+- If no ratings visible: {"ratings": [], "tasting_notes": null, "search_notes": "No ratings visible in snippets"}`;
 }
 
 /**

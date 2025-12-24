@@ -15,7 +15,15 @@ import { classifyFetchResult, getDomainIssue, CLASSIFICATION } from './fetchClas
 
 // Domains known to block standard scrapers - use Bright Data for these
 // Note: CellarTracker removed - their public pages work fine, and their API only searches personal cellars
-const BLOCKED_DOMAINS = ['vivino.com', 'decanter.com'];
+// Domains that require BrightData Web Unlocker (either SPA, blocks scrapers, or both)
+const BLOCKED_DOMAINS = [
+  'vivino.com',       // SPA requires JS rendering
+  'decanter.com',     // Blocks direct scraping
+  'wine-searcher.com', // Blocks direct scraping (403)
+  'danmurphys.com.au', // May block scrapers
+  'bodeboca.com',      // May block scrapers
+  'bbr.com'            // May have anti-bot measures
+];
 
 // Bright Data API endpoint
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
@@ -29,7 +37,21 @@ const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
  * Maps region names, appellations, and style keywords to countries.
  */
 const REGION_TO_COUNTRY = {
-  // France
+  // Country names (for styles like "Cabernet Sauvignon (south Africa)")
+  'south africa': 'South Africa', 'south african': 'South Africa',
+  'chile': 'Chile', 'chilean': 'Chile',
+  'argentina': 'Argentina', 'argentinian': 'Argentina', 'argentine': 'Argentina',
+  'australia': 'Australia', 'australian': 'Australia',
+  'new zealand': 'New Zealand',
+  'france': 'France', 'french': 'France',
+  'italy': 'Italy', 'italian': 'Italy',
+  'spain': 'Spain', 'spanish': 'Spain',
+  'portugal': 'Portugal', 'portuguese': 'Portugal',
+  'germany': 'Germany', 'german': 'Germany',
+  'austria': 'Austria', 'austrian': 'Austria',
+  'usa': 'USA', 'united states': 'USA', 'american': 'USA',
+
+  // France - Regions
   'bordeaux': 'France', 'burgundy': 'France', 'bourgogne': 'France', 'champagne': 'France',
   'rhone': 'France', 'loire': 'France', 'alsace': 'France', 'provence': 'France',
   'languedoc': 'France', 'roussillon': 'France', 'cahors': 'France', 'beaujolais': 'France',
@@ -39,47 +61,51 @@ const REGION_TO_COUNTRY = {
   'cotes du rhone': 'France', 'chateauneuf': 'France', 'gigondas': 'France', 'bandol': 'France',
   'muscadet': 'France', 'sancerre': 'France', 'vouvray': 'France', 'pouilly': 'France',
 
-  // Italy
+  // Italy - Regions
   'tuscany': 'Italy', 'toscana': 'Italy', 'piedmont': 'Italy', 'piemonte': 'Italy',
   'veneto': 'Italy', 'chianti': 'Italy', 'barolo': 'Italy', 'barbaresco': 'Italy',
   'brunello': 'Italy', 'montalcino': 'Italy', 'valpolicella': 'Italy', 'amarone': 'Italy',
   'prosecco': 'Italy', 'soave': 'Italy', 'sicily': 'Italy', 'sicilia': 'Italy',
   'puglia': 'Italy', 'abruzzo': 'Italy', 'friuli': 'Italy', 'alto adige': 'Italy',
 
-  // Spain
+  // Spain - Regions
   'rioja': 'Spain', 'ribera del duero': 'Spain', 'priorat': 'Spain', 'rias baixas': 'Spain',
   'jerez': 'Spain', 'sherry': 'Spain', 'cava': 'Spain', 'penedes': 'Spain',
   'rueda': 'Spain', 'toro': 'Spain', 'jumilla': 'Spain', 'navarra': 'Spain',
 
-  // Portugal
+  // Portugal - Regions
   'douro': 'Portugal', 'porto': 'Portugal', 'port': 'Portugal', 'dao': 'Portugal',
   'alentejo': 'Portugal', 'vinho verde': 'Portugal', 'madeira': 'Portugal',
 
-  // Germany/Austria
+  // Germany/Austria - Regions
   'mosel': 'Germany', 'rheingau': 'Germany', 'pfalz': 'Germany', 'baden': 'Germany',
   'wachau': 'Austria', 'kamptal': 'Austria', 'burgenland': 'Austria',
 
-  // South Africa
+  // South Africa - Regions
   'stellenbosch': 'South Africa', 'franschhoek': 'South Africa', 'paarl': 'South Africa',
   'swartland': 'South Africa', 'constantia': 'South Africa', 'elgin': 'South Africa',
-  'walker bay': 'South Africa', 'hemel-en-aarde': 'South Africa',
+  'walker bay': 'South Africa', 'hemel-en-aarde': 'South Africa', 'western cape': 'South Africa',
 
-  // Australia
+  // Australia - Regions
   'barossa': 'Australia', 'mclaren vale': 'Australia', 'hunter valley': 'Australia',
   'yarra valley': 'Australia', 'margaret river': 'Australia', 'coonawarra': 'Australia',
   'clare valley': 'Australia', 'eden valley': 'Australia', 'adelaide hills': 'Australia',
 
-  // New Zealand
+  // New Zealand - Regions
   'marlborough': 'New Zealand', 'hawkes bay': 'New Zealand', 'central otago': 'New Zealand',
   'martinborough': 'New Zealand', 'waipara': 'New Zealand', 'gisborne': 'New Zealand',
 
-  // USA
+  // USA - Regions
   'napa': 'USA', 'sonoma': 'USA', 'california': 'USA', 'oregon': 'USA',
   'willamette': 'USA', 'paso robles': 'USA', 'santa barbara': 'USA',
 
-  // Chile/Argentina
+  // Chile - Regions
   'maipo': 'Chile', 'colchagua': 'Chile', 'casablanca': 'Chile', 'aconcagua': 'Chile',
-  'mendoza': 'Argentina', 'uco valley': 'Argentina', 'salta': 'Argentina', 'cafayate': 'Argentina'
+  'maule': 'Chile', 'rapel': 'Chile', 'limari': 'Chile', 'elqui': 'Chile',
+
+  // Argentina - Regions
+  'mendoza': 'Argentina', 'uco valley': 'Argentina', 'salta': 'Argentina', 'cafayate': 'Argentina',
+  'patagonia': 'Argentina', 'lujan de cuyo': 'Argentina'
 };
 
 /**
@@ -1451,9 +1477,11 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     updateCredentialStatus('decanter', 'valid');
 
     // Search Decanter with authenticated session
+    // Use the wine-reviews search endpoint for better results
     const searchQuery = encodeURIComponent(`${wineName} ${vintage}`.trim());
-    const searchUrl = `https://www.decanter.com/?s=${searchQuery}&post_type=wine`;
+    const searchUrl = `https://www.decanter.com/wine-reviews/?s=${searchQuery}`;
 
+    logger.info('Decanter', `Search URL: ${searchUrl}`);
     const searchResponse = await fetch(searchUrl, {
       headers: {
         'Cookie': cookieString,
@@ -1470,37 +1498,58 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     const searchHtml = await searchResponse.text();
 
     // Find wine review URLs in search results
-    // Try absolute URLs first, then relative URLs
-    // Pattern: /wine-reviews/region/producer-wine-vintage-XXXXX
+    // Decanter wine review URLs have format: /wine-reviews/region/producer-wine-name-vintage-NUMERIC_ID
+    // Examples:
+    //   /wine-reviews/south-africa/nederburg-two-centuries-cabernet-sauvignon-2019-95
+    //   /wine-reviews/france/chateau-margaux-2015-99
+    // EXCLUDE: /wine-reviews/search, /wine-reviews/images/, /wine-reviews/decanter-world-wine-awards/
     let reviewUrl = null;
 
-    // Try absolute URL first
-    const absoluteMatch = searchHtml.match(/href="(https:\/\/www\.decanter\.com\/wine-reviews\/[^"]+)"/i);
-    if (absoluteMatch) {
-      reviewUrl = absoluteMatch[1];
-    }
+    // Pattern: /wine-reviews/[region]/[wine-name-with-vintage-and-numeric-id]
+    // Must end with a numeric ID (the score or article ID), NOT a file extension
+    const reviewPatterns = [
+      // Absolute URL with numeric ending (most common)
+      /href="(https:\/\/www\.decanter\.com\/wine-reviews\/[a-z][a-z-]+\/[a-z0-9-]+-\d+)"/i,
+      // Relative URL with numeric ending
+      /href="(\/wine-reviews\/[a-z][a-z-]+\/[a-z0-9-]+-\d+)"/i
+    ];
 
-    // Try relative URL if no absolute match
-    if (!reviewUrl) {
-      const relativeMatch = searchHtml.match(/href="(\/wine-reviews\/[^"]+)"/i);
-      if (relativeMatch) {
-        reviewUrl = `https://www.decanter.com${relativeMatch[1]}`;
+    for (const pattern of reviewPatterns) {
+      const match = searchHtml.match(pattern);
+      if (match) {
+        reviewUrl = match[1].startsWith('http')
+          ? match[1]
+          : `https://www.decanter.com${match[1]}`;
+        break;
       }
     }
 
-    // Try data attributes or other patterns
+    // Fallback: look for wine review links in article cards/listings
     if (!reviewUrl) {
-      const dataUrlMatch = searchHtml.match(/data-url="([^"]*wine-reviews[^"]*)"/i) ||
-                           searchHtml.match(/data-href="([^"]*wine-reviews[^"]*)"/i);
-      if (dataUrlMatch) {
-        reviewUrl = dataUrlMatch[1].startsWith('http')
-          ? dataUrlMatch[1]
-          : `https://www.decanter.com${dataUrlMatch[1]}`;
+      // Try to find wine review links that contain vintage year patterns
+      const yearPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[^"]*-20\d{2}[^"\/]*)"/gi;
+      let match;
+      while ((match = yearPattern.exec(searchHtml)) !== null) {
+        const url = match[1];
+        // Skip non-review pages
+        if (url.includes('/images/') || url.includes('/search') || url.includes('/decanter-world-wine-awards/')) {
+          continue;
+        }
+        reviewUrl = url.startsWith('http') ? url : `https://www.decanter.com${url}`;
+        break;
       }
     }
 
     if (!reviewUrl) {
-      logger.info('Decanter', 'No wine review links found in search results');
+      // Debug: log what wine-review links we DID find, if any
+      const allReviewLinks = searchHtml.match(/href="[^"]*wine-reviews[^"]*"/gi) || [];
+      if (allReviewLinks.length > 0) {
+        logger.info('Decanter', `Found ${allReviewLinks.length} wine-review links but none matched pattern: ${allReviewLinks.slice(0, 3).join(', ')}`);
+      } else {
+        // Check if there's any content indicating results
+        const hasResults = searchHtml.includes('search-results') || searchHtml.includes('wine-card') || searchHtml.includes('wine-item');
+        logger.info('Decanter', `No wine review links found in search results (hasResults indicators: ${hasResults})`);
+      }
       return null;
     }
     logger.info('Decanter', `Found review URL: ${reviewUrl}`);

@@ -95,6 +95,12 @@ export function renderRatingsPanel(ratingsData) {
     return `
       <div class="ratings-panel unrated">
         <p>No ratings available</p>
+        <div id="ratings-progress" class="progress-container" style="display: none;">
+          <div class="progress-bar-wrapper">
+            <div id="ratings-progress-bar" class="progress-bar"></div>
+          </div>
+          <span id="ratings-progress-text" class="progress-text">Starting...</span>
+        </div>
         <button class="btn btn-secondary btn-small" id="fetch-ratings-btn">
           Search for Ratings
         </button>

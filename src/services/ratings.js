@@ -8,9 +8,14 @@ import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
 import db from '../db/index.js';
 
 /**
+ * Sources using 20-point scale that need conversion.
+ */
+const TWENTY_POINT_SOURCES = ['jancis_robinson', 'rvf', 'bettane_desseauve', 'vinum'];
+
+/**
  * Normalize a raw score to the 0-100 scale.
  * @param {string} source - Source ID
- * @param {string} scoreType - 'medal', 'points', 'stars'
+ * @param {string} scoreType - 'medal', 'points', 'stars', 'symbol'
  * @param {string} rawScore - Raw score value
  * @returns {Object} { min, max, mid }
  */
@@ -23,18 +28,27 @@ export function normalizeScore(source, scoreType, rawScore) {
   }
 
   if (scoreType === 'points') {
-    // Handle formats like "91/100", "91 points", "91"
+    // Handle formats like "91/100", "91 points", "91", "17/20"
     let scoreStr = String(rawScore).trim();
-    scoreStr = scoreStr.replace(/\/\d+$/, '').replace(/\s*points?$/i, '').trim();
-    const points = parseFloat(scoreStr);
 
-    if (isNaN(points)) {
+    // Check for /20 format first
+    const twentyMatch = scoreStr.match(/^(\d+(?:\.\d+)?)\s*\/\s*20$/);
+    if (twentyMatch) {
+      const points = Number.parseFloat(twentyMatch[1]);
+      const normalized = (points / 20) * 100;
+      return { min: normalized, max: normalized, mid: normalized };
+    }
+
+    scoreStr = scoreStr.replace(/\/\d+$/, '').replace(/\s*points?$/i, '').trim();
+    const points = Number.parseFloat(scoreStr);
+
+    if (Number.isNaN(points)) {
       // Fallback for unparseable scores
       return { min: 85, max: 90, mid: 87.5 };
     }
 
-    // Handle Jancis Robinson's 20-point scale
-    if (source === 'jancis_robinson' && points <= 20) {
+    // Handle 20-point scale sources (Jancis Robinson, RVF, Bettane+Desseauve, Vinum)
+    if (TWENTY_POINT_SOURCES.includes(source) && points <= 20) {
       // Convert 20-point scale to 100-point scale
       // 20 = 100, 18 = 90, 16 = 80, etc.
       const normalized = (points / 20) * 100;
@@ -45,8 +59,8 @@ export function normalizeScore(source, scoreType, rawScore) {
   }
 
   if (scoreType === 'medal') {
-    const medalKey = rawScore.toLowerCase().replace(/\s+/g, '_');
-    const band = config.medal_bands?.[medalKey];
+    const medalKey = rawScore.toLowerCase().replaceAll(/\s+/g, '_');
+    const band = config?.medal_bands?.[medalKey];
     if (band) {
       return {
         min: band.min,
@@ -58,8 +72,39 @@ export function normalizeScore(source, scoreType, rawScore) {
     return { min: 80, max: 85, mid: 82.5 };
   }
 
+  if (scoreType === 'symbol') {
+    // Handle Italian symbols (Tre Bicchieri, grappoli) and French symbols (Coup de Coeur)
+    const symbolKey = rawScore.toLowerCase().replaceAll(/\s+/g, '_');
+    const conversion = config?.symbol_conversion;
+
+    if (conversion) {
+      const band = conversion[symbolKey];
+      if (band) {
+        return { min: band.min, max: band.max, mid: (band.min + band.max) / 2 };
+      }
+    }
+
+    // Generic symbol normalization based on common patterns
+    const symbolStr = rawScore.toLowerCase();
+    if (symbolStr.includes('tre bicchieri') || symbolStr.includes('5 grappoli') || symbolStr.includes('coup de coeur')) {
+      return { min: 95, max: 100, mid: 97.5 };
+    }
+    if (symbolStr.includes('due bicchieri rossi') || symbolStr.includes('4 grappoli')) {
+      return { min: 90, max: 94, mid: 92 };
+    }
+    if (symbolStr.includes('due bicchieri') || symbolStr.includes('3 grappoli')) {
+      return { min: 85, max: 89, mid: 87 };
+    }
+    if (symbolStr.includes('un bicchiere') || symbolStr.includes('2 grappoli')) {
+      return { min: 78, max: 84, mid: 81 };
+    }
+
+    // Fallback for unknown symbols
+    return { min: 82, max: 88, mid: 85 };
+  }
+
   if (scoreType === 'stars') {
-    const stars = parseFloat(rawScore);
+    const stars = Number.parseFloat(rawScore);
     const conversion = config?.stars_conversion;
 
     // For "other" sources or sources without conversion, use generic mapping
@@ -370,6 +415,19 @@ function calculatePurchaseScore(lensIndices, preferenceSlider = 40) {
 }
 
 /**
+ * Map source lens to display lens for grouping.
+ * panel_guide and critic both map to "critics" for aggregation.
+ * @param {string} sourceLens - Source lens value
+ * @returns {string} Display lens
+ */
+function mapToDisplayLens(sourceLens) {
+  if (sourceLens === 'panel_guide' || sourceLens === 'critic' || sourceLens === 'critics') {
+    return 'critics';
+  }
+  return sourceLens;
+}
+
+/**
  * Calculate all indices and purchase score for a wine.
  * @param {Array} ratings - All ratings for the wine
  * @param {Object} wine - Wine object
@@ -377,11 +435,11 @@ function calculatePurchaseScore(lensIndices, preferenceSlider = 40) {
  * @returns {Object} Aggregated rating data
  */
 export function calculateWineRatings(ratings, wine, preferenceSlider = 40) {
-  // Group by lens (handle both 'critic'/'critics' and 'panel_guide' variants)
+  // Group by display lens (maps panel_guide and critic to "critics")
   const byLens = {
-    competition: ratings.filter(r => r.source_lens === 'competition'),
-    critics: ratings.filter(r => r.source_lens === 'critics' || r.source_lens === 'critic' || r.source_lens === 'panel_guide'),
-    community: ratings.filter(r => r.source_lens === 'community')
+    competition: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'competition'),
+    critics: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'critics'),
+    community: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'community')
   };
 
   // Calculate lens indices

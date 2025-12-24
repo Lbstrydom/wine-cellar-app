@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
+import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
 
 const router = Router();
 
@@ -26,6 +27,27 @@ router.get('/wines/:wine_id/drinking-windows', (req, res) => {
         END,
         updated_at DESC
     `).all(wine_id);
+
+    // If no windows exist, try to get a default estimate
+    if (windows.length === 0) {
+      const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
+      if (wine && wine.vintage) {
+        const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
+        if (defaultWindow) {
+          windows.push({
+            wine_id: parseInt(wine_id),
+            source: defaultWindow.source,
+            drink_from_year: defaultWindow.drink_from,
+            drink_by_year: defaultWindow.drink_by,
+            peak_year: defaultWindow.peak,
+            confidence: defaultWindow.confidence,
+            raw_text: defaultWindow.notes,
+            is_default: true
+          });
+        }
+      }
+    }
+
     res.json(windows);
   } catch (error) {
     logger.error('DrinkingWindows', `Failed to get windows: ${error.message}`);
@@ -145,6 +167,23 @@ router.get('/wines/:wine_id/drinking-window/best', (req, res) => {
     const windows = db.prepare('SELECT * FROM drinking_windows WHERE wine_id = ?').all(wine_id);
 
     if (windows.length === 0) {
+      // No explicit windows - try to get default based on wine characteristics
+      const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
+      if (wine && wine.vintage) {
+        const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
+        if (defaultWindow) {
+          return res.json({
+            wine_id: parseInt(wine_id),
+            source: defaultWindow.source,
+            drink_from_year: defaultWindow.drink_from,
+            drink_by_year: defaultWindow.drink_by,
+            peak_year: defaultWindow.peak,
+            confidence: defaultWindow.confidence,
+            raw_text: defaultWindow.notes,
+            is_default: true
+          });
+        }
+      }
       return res.json(null);
     }
 

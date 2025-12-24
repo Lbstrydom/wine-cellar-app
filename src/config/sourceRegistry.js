@@ -10,19 +10,28 @@ export const LENS = {
   COMPETITION: 'competition',
   PANEL_GUIDE: 'panel_guide',
   CRITIC: 'critic',
-  COMMUNITY: 'community'
+  COMMUNITY: 'community',
+  AGGREGATOR: 'aggregator'  // Sites that cite ratings from original sources
 };
 
 /**
  * Credibility weights by lens.
  * Higher = more trusted for purchase decisions.
+ * Aggregators have lower base credibility since ratings are second-hand.
  */
 export const LENS_CREDIBILITY = {
   [LENS.COMPETITION]: 3.0,
   [LENS.PANEL_GUIDE]: 2.5,
   [LENS.CRITIC]: 1.5,
-  [LENS.COMMUNITY]: 1.0
+  [LENS.COMMUNITY]: 1.0,
+  [LENS.AGGREGATOR]: 0.85  // Multiplied by original source credibility
 };
+
+/**
+ * Credibility discount for ratings found via aggregator rather than original source.
+ * Applied when a rating is cited (e.g., "Decanter: 95" on wine-searcher.com)
+ */
+export const AGGREGATOR_CREDIBILITY_DISCOUNT = 0.85;
 
 /**
  * Region to source priority mapping.
@@ -30,23 +39,25 @@ export const LENS_CREDIBILITY = {
  * Includes premium critics as secondary sources for major regions.
  */
 export const REGION_SOURCE_PRIORITY = {
-  'Australia': ['halliday', 'huon_hooke', 'gourmet_traveller_wine', 'james_suckling', 'decanter', 'vivino'],
-  'New Zealand': ['bob_campbell', 'wine_orbit', 'james_suckling', 'decanter', 'vivino'],
-  'Spain': ['guia_penin', 'guia_proensa', 'decanter', 'tim_atkin', 'james_suckling', 'vivino'],
-  'Chile': ['descorchados', 'vinomanos', 'tim_atkin', 'james_suckling', 'decanter', 'vivino'],
-  'Argentina': ['descorchados', 'tim_atkin', 'james_suckling', 'decanter', 'vivino'],
-  'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'james_suckling', 'decanter', 'vivino'],
-  'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'jancis_robinson', 'wine_advocate', 'decanter', 'vivino'],
-  'South Africa': ['platters', 'tim_atkin', 'veritas', 'old_mutual', 'vivino'],
-  'USA': ['wine_spectator', 'wine_enthusiast', 'vinous', 'wine_advocate', 'james_suckling', 'decanter', 'vivino'],
-  'Germany': ['falstaff', 'weinwisser', 'vinum', 'jancis_robinson', 'decanter', 'vivino'],
-  'Austria': ['falstaff', 'vinum', 'decanter', 'vivino'],
-  'Portugal': ['revista_vinhos', 'jancis_robinson', 'decanter', 'vivino'],
-  'Greece': ['elloinos', 'decanter', 'vivino'],
-  'Switzerland': ['vinum', 'falstaff', 'decanter', 'vivino'],
-  '_default': ['decanter', 'wine_enthusiast', 'james_suckling', 'vivino', 'cellar_tracker'],
+  // Regional sources first, then aggregators as fallback
+  'Australia': ['halliday', 'huon_hooke', 'gourmet_traveller_wine', 'james_suckling', 'decanter', 'vivino', 'dan_murphys', 'wine_searcher'],
+  'New Zealand': ['bob_campbell', 'wine_orbit', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'Spain': ['guia_penin', 'tim_atkin', 'guia_proensa', 'decanter', 'james_suckling', 'vivino', 'bodeboca', 'wine_searcher'],
+  'Chile': ['descorchados', 'tim_atkin', 'vinomanos', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'Argentina': ['descorchados', 'tim_atkin', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'jancis_robinson', 'wine_advocate', 'decanter', 'vivino', 'bbr', 'wine_searcher'],
+  'South Africa': ['wine_co_za', 'platters', 'tim_atkin', 'veritas', 'old_mutual', 'decanter', 'vivino', 'wine_searcher'],
+  'USA': ['wine_spectator', 'wine_enthusiast', 'vinous', 'wine_advocate', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'Germany': ['falstaff', 'weinwisser', 'vinum', 'jancis_robinson', 'decanter', 'vivino', 'wine_searcher'],
+  'Austria': ['falstaff', 'vinum', 'decanter', 'vivino', 'wine_searcher'],
+  'Portugal': ['revista_vinhos', 'jancis_robinson', 'tim_atkin', 'decanter', 'vivino', 'wine_searcher'],
+  'Greece': ['elloinos', 'decanter', 'vivino', 'wine_searcher'],
+  'Switzerland': ['vinum', 'falstaff', 'decanter', 'vivino', 'wine_searcher'],
+  // Default: include wine_searcher for any unknown region
+  '_default': ['decanter', 'wine_enthusiast', 'james_suckling', 'tim_atkin', 'vivino', 'cellar_tracker', 'wine_searcher'],
   // Premium tier wines get extra critic coverage regardless of region
-  '_premium': ['wine_advocate', 'jancis_robinson', 'vinous', 'wine_spectator', 'james_suckling']
+  '_premium': ['wine_advocate', 'jancis_robinson', 'vinous', 'wine_spectator', 'james_suckling', 'tim_atkin']
 };
 
 /**
@@ -720,6 +731,93 @@ export const SOURCE_REGISTRY = {
     stars_to_points: {
       4.5: 92, 4.2: 88, 4.0: 85, 3.7: 82, 3.4: 78, 3.0: 74
     }
+  },
+
+  // ============================================
+  // AGGREGATORS (consolidate ratings from multiple sources)
+  // These sites cite ratings from original sources with attribution.
+  // Ratings found here are discounted by AGGREGATOR_CREDIBILITY_DISCOUNT.
+  // ============================================
+
+  // Global aggregators
+  wine_searcher: {
+    name: 'Wine-Searcher',
+    short_name: 'Wine-Searcher',
+    lens: LENS.AGGREGATOR,
+    domain: 'wine-searcher.com',
+    home_regions: [],  // Global
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['wine_advocate', 'wine_spectator', 'jancis_robinson', 'james_suckling', 'vinous', 'decanter', 'wine_enthusiast', 'falstaff', 'guia_penin', 'halliday'],
+    // Query targets critic scores - avoid /find/ (price pages) by searching for score keywords
+    query_template: '"{wine}" {vintage} site:wine-searcher.com "critic score" OR "points" OR "wine advocate" OR "wine spectator"',
+    notes: 'Best global coverage. Aggregates 30+ critic sources. Extract cited scores with attribution.'
+  },
+
+  // Regional aggregators - Australia/NZ
+  dan_murphys: {
+    name: "Dan Murphy's",
+    short_name: "Dan Murphy's",
+    lens: LENS.AGGREGATOR,
+    domain: 'danmurphys.com.au',
+    home_regions: ['Australia'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['halliday', 'huon_hooke', 'wine_orbit', 'decanter'],
+    query_template: '{wine} {vintage} site:danmurphys.com.au',
+    notes: "Australia's largest wine retailer. Shows Halliday, Campbell, Hooke scores."
+  },
+
+  // Regional aggregators - Spain
+  bodeboca: {
+    name: 'Bodeboca',
+    short_name: 'Bodeboca',
+    lens: LENS.AGGREGATOR,
+    domain: 'bodeboca.com',
+    home_regions: ['Spain'],
+    language: 'es',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['guia_penin', 'wine_advocate', 'james_suckling', 'decanter'],
+    query_template: '{wine} {vintage} site:bodeboca.com',
+    notes: "Spain's largest online retailer. Shows Peñín, Parker, Suckling scores."
+  },
+
+  // Regional aggregators - South Africa
+  wine_co_za: {
+    name: 'Wine.co.za',
+    short_name: 'Wine.co.za',
+    lens: LENS.AGGREGATOR,
+    domain: 'wine.co.za',
+    home_regions: ['South Africa'],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['platters', 'tim_atkin', 'decanter', 'veritas', 'iwc', 'iwsc'],
+    query_template: '{wine} {vintage} site:wine.co.za',
+    notes: 'SA wine info site. Shows Platters, Tim Atkin, DWWA scores.'
+  },
+
+  // Regional aggregators - UK (fine wine)
+  bbr: {
+    name: 'Berry Bros & Rudd',
+    short_name: 'BBR',
+    lens: LENS.AGGREGATOR,
+    domain: 'bbr.com',
+    home_regions: [],  // UK-based but covers global fine wine
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['wine_advocate', 'jancis_robinson', 'vinous', 'decanter', 'wine_spectator'],
+    query_template: '{wine} {vintage} site:bbr.com',
+    notes: 'Oldest wine merchant. Curates critic scores for fine wine.'
   }
 };
 

@@ -185,7 +185,7 @@ export function classifyFetchResult(response, content) {
  * Known problematic domains and their handling.
  */
 const KNOWN_PROBLEMATIC_DOMAINS = {
-  'vivino.com': { issue: 'spa', solution: 'snippet', description: 'SPA requires JS rendering' },
+  'vivino.com': { issue: 'spa', solution: 'brightdata', description: 'SPA requires JS rendering' },
   'cellartracker.com': { issue: 'auth', solution: 'snippet', description: 'Login required for full content' },
   'winemag.com': { issue: 'blocked', solution: 'snippet', description: 'Often blocks scrapers' },
   'jancisrobinson.com': { issue: 'paywall', solution: 'snippet', description: 'Premium content paywalled' },
@@ -193,7 +193,12 @@ const KNOWN_PROBLEMATIC_DOMAINS = {
   'erobertparker.com': { issue: 'paywall', solution: 'snippet', description: 'Wine Advocate paywall' },
   'winespectator.com': { issue: 'paywall', solution: 'snippet', description: 'Paywall for full reviews' },
   'vinous.com': { issue: 'paywall', solution: 'snippet', description: 'Premium content paywalled' },
-  'wineadvocate.com': { issue: 'paywall', solution: 'snippet', description: 'Wine Advocate paywall' }
+  'wineadvocate.com': { issue: 'paywall', solution: 'snippet', description: 'Wine Advocate paywall' },
+  // Aggregators that block scrapers
+  'wine-searcher.com': { issue: 'blocked', solution: 'brightdata', description: 'Blocks direct scrapers, needs Web Unlocker' },
+  'danmurphys.com.au': { issue: 'blocked', solution: 'brightdata', description: 'May block scrapers' },
+  'bodeboca.com': { issue: 'blocked', solution: 'brightdata', description: 'May block scrapers' },
+  'bbr.com': { issue: 'blocked', solution: 'brightdata', description: 'Anti-bot measures' }
 };
 
 /**
@@ -216,8 +221,12 @@ export function getDomainIssue(url) {
  * @returns {boolean} True if should skip fetching
  */
 export function shouldSkipFetch(url) {
-  const issue = getDomainIssue(url);
-  // Only skip if we know it's paywalled and we can't get any value
+  // Check if domain has known issues - currently we always try since we can fall back to snippet
+  // In the future, we could skip certain domains entirely if they never provide value
+  const domainInfo = getDomainIssue(url);
+  if (domainInfo && domainInfo.solution === 'skip') {
+    return true;
+  }
   return false; // Always try - we can fall back to snippet
 }
 
