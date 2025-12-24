@@ -3,8 +3,9 @@
  * @module ratings
  */
 
-import { fetchWineRatingsFromApi, getWineRatings, addManualRating } from './api.js';
+import { fetchWineRatingsFromApi, getWineRatings, addManualRating, fetchLayout } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
+import { state } from './app.js';
 
 // Main rating sources for the dropdown
 const MAIN_RATING_SOURCES = [
@@ -302,14 +303,45 @@ async function handleFetchRatings(wineId, useAsync = true) {
       showToast(result.message || 'Ratings updated');
     }
 
-    // Refresh the ratings display
+    // Refresh the ratings display AND wine details (for tasting notes)
     if (progressText) progressText.textContent = 'Loading results...';
-    const ratingsData = await getWineRatings(wineId);
+
+    // FIX: Fetch BOTH ratings AND wine details in parallel
+    // The wine details contain tasting_notes which is stored in the wines table
+    const [ratingsData, wineData] = await Promise.all([
+      getWineRatings(wineId),
+      fetch(`/api/wines/${wineId}`).then(res => res.json())
+    ]);
+
+    // 1. Update ratings panel
     const panel = document.querySelector('.ratings-panel-container');
     if (panel) {
       panel.innerHTML = renderRatingsPanel(ratingsData);
       initRatingsPanel(wineId);
     }
+
+    // 2. Update tasting notes directly in the modal DOM
+    const tastingNotesField = document.getElementById('modal-tasting-notes-field');
+    const tastingNotesText = document.getElementById('modal-tasting-notes');
+
+    if (tastingNotesField && tastingNotesText) {
+      if (wineData.tasting_notes) {
+        tastingNotesField.style.display = 'block';
+        tastingNotesText.textContent = wineData.tasting_notes;
+        console.log('[TastingNotes] Updated modal with fresh tasting notes');
+      } else {
+        tastingNotesField.style.display = 'none';
+        console.log('[TastingNotes] No tasting notes in wine data');
+      }
+    }
+
+    // 3. Update local slot state for consistency (if modal has currentSlot reference)
+    if (window.currentSlot) {
+      window.currentSlot.tasting_notes = wineData.tasting_notes;
+    }
+
+    // Also refresh layout state for grid consistency
+    state.layout = await fetchLayout();
 
   } catch (err) {
     showToast('Error: ' + err.message);
@@ -623,4 +655,40 @@ function hideManualRatingForm() {
     form.remove();
   }
   _currentManualRatingWineId = null;
+}
+
+/**
+ * Update tasting notes display in the modal from layout state.
+ * This is a fallback - the primary update now happens directly in handleFetchRatings.
+ * @param {number} wineId - Wine ID
+ */
+function updateTastingNotesDisplay(wineId) {
+  if (!state.layout) return;
+
+  // Find the wine's slot in the layout
+  const allSlots = [
+    ...state.layout.fridge.rows.flatMap(r => r.slots),
+    ...state.layout.cellar.rows.flatMap(r => r.slots)
+  ];
+
+  // Try both number and string comparison for type safety
+  let slot = allSlots.find(s => s.wine_id === wineId);
+  if (!slot) {
+    slot = allSlots.find(s => String(s.wine_id) === String(wineId));
+  }
+
+  if (!slot) return;
+
+  // Update the tasting notes field in the modal
+  const tastingNotesField = document.getElementById('modal-tasting-notes-field');
+  const tastingNotesText = document.getElementById('modal-tasting-notes');
+
+  if (tastingNotesField && tastingNotesText) {
+    if (slot.tasting_notes) {
+      tastingNotesField.style.display = 'block';
+      tastingNotesText.textContent = slot.tasting_notes;
+    } else {
+      tastingNotesField.style.display = 'none';
+    }
+  }
 }
