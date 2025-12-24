@@ -11,6 +11,19 @@ CREATE TABLE IF NOT EXISTS wines (
     vivino_rating REAL,
     price_eur REAL,
     notes TEXT,
+    -- Added via migrations (001, 003, 007)
+    country TEXT,
+    tasting_notes TEXT,
+    competition_index REAL,
+    critics_index REAL,
+    community_index REAL,
+    purchase_score REAL,
+    purchase_stars REAL,
+    confidence_level TEXT,
+    ratings_updated_at DATETIME,
+    drink_from INTEGER,
+    drink_peak INTEGER,
+    drink_until INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
@@ -63,12 +76,71 @@ CREATE TABLE IF NOT EXISTS pairing_rules (
     UNIQUE(food_signal, wine_style_bucket)
 );
 
+-- Wine ratings table for individual ratings from various sources (migration 001)
+CREATE TABLE IF NOT EXISTS wine_ratings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wine_id INTEGER NOT NULL,
+    vintage INTEGER,
+    source TEXT NOT NULL,
+    source_lens TEXT NOT NULL,
+    score_type TEXT NOT NULL,
+    raw_score TEXT NOT NULL,
+    raw_score_numeric REAL,
+    normalized_min REAL NOT NULL,
+    normalized_max REAL NOT NULL,
+    normalized_mid REAL NOT NULL,
+    award_name TEXT,
+    competition_year INTEGER,
+    reviewer_name TEXT,
+    rating_count INTEGER,
+    source_url TEXT,
+    evidence_excerpt TEXT,
+    matched_wine_label TEXT,
+    fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    vintage_match TEXT DEFAULT 'exact',
+    match_confidence TEXT DEFAULT 'high',
+    is_user_override BOOLEAN DEFAULT 0,
+    override_normalized_mid REAL,
+    override_note TEXT,
+    FOREIGN KEY (wine_id) REFERENCES wines(id) ON DELETE CASCADE,
+    UNIQUE(wine_id, vintage, source, competition_year, award_name)
+);
+
+-- Drinking windows table (migration 007)
+CREATE TABLE IF NOT EXISTS drinking_windows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    wine_id INTEGER NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    drink_from_year INTEGER,
+    drink_by_year INTEGER,
+    peak_year INTEGER,
+    confidence TEXT DEFAULT 'medium',
+    raw_text TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(wine_id, source)
+);
+
+-- User settings table (migration 001)
+CREATE TABLE IF NOT EXISTS user_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Create indexes for common queries
 CREATE INDEX IF NOT EXISTS idx_slots_wine ON slots(wine_id);
 CREATE INDEX IF NOT EXISTS idx_slots_zone ON slots(zone);
 CREATE INDEX IF NOT EXISTS idx_reduce_now_priority ON reduce_now(priority);
 CREATE INDEX IF NOT EXISTS idx_wines_style ON wines(style);
 CREATE INDEX IF NOT EXISTS idx_wines_colour ON wines(colour);
+CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(wine_name);
+CREATE INDEX IF NOT EXISTS idx_ratings_wine ON wine_ratings(wine_id);
+CREATE INDEX IF NOT EXISTS idx_ratings_wine_vintage ON wine_ratings(wine_id, vintage);
+CREATE INDEX IF NOT EXISTS idx_ratings_lens ON wine_ratings(source_lens);
+CREATE INDEX IF NOT EXISTS idx_drinking_windows_wine_id ON drinking_windows(wine_id);
+CREATE INDEX IF NOT EXISTS idx_drinking_windows_drink_by ON drinking_windows(drink_by_year);
+CREATE INDEX IF NOT EXISTS idx_drinking_windows_source ON drinking_windows(source);
 
 -- View: current inventory with locations (counts bottles per wine)
 CREATE VIEW IF NOT EXISTS inventory_view AS
