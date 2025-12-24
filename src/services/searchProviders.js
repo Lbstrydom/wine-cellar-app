@@ -21,6 +21,110 @@ const BLOCKED_DOMAINS = ['vivino.com', 'decanter.com'];
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
 
 // ============================================
+// Country Inference from Style/Region
+// ============================================
+
+/**
+ * Region/style patterns to infer country when not explicitly set.
+ * Maps region names, appellations, and style keywords to countries.
+ */
+const REGION_TO_COUNTRY = {
+  // France
+  'bordeaux': 'France', 'burgundy': 'France', 'bourgogne': 'France', 'champagne': 'France',
+  'rhone': 'France', 'loire': 'France', 'alsace': 'France', 'provence': 'France',
+  'languedoc': 'France', 'roussillon': 'France', 'cahors': 'France', 'beaujolais': 'France',
+  'chablis': 'France', 'sauternes': 'France', 'medoc': 'France', 'pomerol': 'France',
+  'saint-emilion': 'France', 'st-emilion': 'France', 'margaux': 'France', 'pauillac': 'France',
+  'cabardes': 'France', 'cabardès': 'France', 'minervois': 'France', 'corbieres': 'France',
+  'cotes du rhone': 'France', 'chateauneuf': 'France', 'gigondas': 'France', 'bandol': 'France',
+  'muscadet': 'France', 'sancerre': 'France', 'vouvray': 'France', 'pouilly': 'France',
+
+  // Italy
+  'tuscany': 'Italy', 'toscana': 'Italy', 'piedmont': 'Italy', 'piemonte': 'Italy',
+  'veneto': 'Italy', 'chianti': 'Italy', 'barolo': 'Italy', 'barbaresco': 'Italy',
+  'brunello': 'Italy', 'montalcino': 'Italy', 'valpolicella': 'Italy', 'amarone': 'Italy',
+  'prosecco': 'Italy', 'soave': 'Italy', 'sicily': 'Italy', 'sicilia': 'Italy',
+  'puglia': 'Italy', 'abruzzo': 'Italy', 'friuli': 'Italy', 'alto adige': 'Italy',
+
+  // Spain
+  'rioja': 'Spain', 'ribera del duero': 'Spain', 'priorat': 'Spain', 'rias baixas': 'Spain',
+  'jerez': 'Spain', 'sherry': 'Spain', 'cava': 'Spain', 'penedes': 'Spain',
+  'rueda': 'Spain', 'toro': 'Spain', 'jumilla': 'Spain', 'navarra': 'Spain',
+
+  // Portugal
+  'douro': 'Portugal', 'porto': 'Portugal', 'port': 'Portugal', 'dao': 'Portugal',
+  'alentejo': 'Portugal', 'vinho verde': 'Portugal', 'madeira': 'Portugal',
+
+  // Germany/Austria
+  'mosel': 'Germany', 'rheingau': 'Germany', 'pfalz': 'Germany', 'baden': 'Germany',
+  'wachau': 'Austria', 'kamptal': 'Austria', 'burgenland': 'Austria',
+
+  // South Africa
+  'stellenbosch': 'South Africa', 'franschhoek': 'South Africa', 'paarl': 'South Africa',
+  'swartland': 'South Africa', 'constantia': 'South Africa', 'elgin': 'South Africa',
+  'walker bay': 'South Africa', 'hemel-en-aarde': 'South Africa',
+
+  // Australia
+  'barossa': 'Australia', 'mclaren vale': 'Australia', 'hunter valley': 'Australia',
+  'yarra valley': 'Australia', 'margaret river': 'Australia', 'coonawarra': 'Australia',
+  'clare valley': 'Australia', 'eden valley': 'Australia', 'adelaide hills': 'Australia',
+
+  // New Zealand
+  'marlborough': 'New Zealand', 'hawkes bay': 'New Zealand', 'central otago': 'New Zealand',
+  'martinborough': 'New Zealand', 'waipara': 'New Zealand', 'gisborne': 'New Zealand',
+
+  // USA
+  'napa': 'USA', 'sonoma': 'USA', 'california': 'USA', 'oregon': 'USA',
+  'willamette': 'USA', 'paso robles': 'USA', 'santa barbara': 'USA',
+
+  // Chile/Argentina
+  'maipo': 'Chile', 'colchagua': 'Chile', 'casablanca': 'Chile', 'aconcagua': 'Chile',
+  'mendoza': 'Argentina', 'uco valley': 'Argentina', 'salta': 'Argentina', 'cafayate': 'Argentina'
+};
+
+/**
+ * Protected geographical indications that are commonly used as STYLE descriptors
+ * in New World wines. These should NOT trigger country inference when they appear
+ * as part of a style name (e.g., "Bordeaux Blend" from South Africa).
+ *
+ * Only infer country from these terms if they appear to be actual appellations,
+ * not style descriptors. The heuristic: if "blend", "style", or "method" follows,
+ * it's a style descriptor and should be ignored.
+ */
+const PROTECTED_STYLE_TERMS = [
+  'bordeaux', 'burgundy', 'champagne', 'chianti', 'rioja', 'barolo',
+  'port', 'sherry', 'chablis', 'rhone', 'beaujolais', 'sauternes'
+];
+
+/**
+ * Infer country from wine style or region name.
+ * Avoids false positives from style descriptors like "Bordeaux Blend".
+ * @param {string} style - Wine style (e.g., "Languedoc Red Blend")
+ * @param {string} region - Wine region if available
+ * @returns {string|null} Inferred country or null
+ */
+export function inferCountryFromStyle(style, region = null) {
+  const textToSearch = `${style || ''} ${region || ''}`.toLowerCase();
+
+  // Check for style descriptor patterns that indicate this is NOT an origin
+  // e.g., "Bordeaux Blend", "Champagne Method", "Burgundy Style"
+  const styleDescriptorPattern = /\b(bordeaux|burgundy|champagne|chianti|rioja|barolo|port|sherry|chablis|rhone|beaujolais|sauternes)\s+(blend|style|method|type)/i;
+  const hasStyleDescriptor = styleDescriptorPattern.test(textToSearch);
+
+  for (const [pattern, country] of Object.entries(REGION_TO_COUNTRY)) {
+    if (textToSearch.includes(pattern)) {
+      // If this is a protected term and appears to be a style descriptor, skip it
+      if (PROTECTED_STYLE_TERMS.includes(pattern) && hasStyleDescriptor) {
+        continue;
+      }
+      return country;
+    }
+  }
+
+  return null;
+}
+
+// ============================================
 // Grape Detection
 // ============================================
 
@@ -393,6 +497,7 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
   }
 
   // Prefer Bright Data SERP API if configured
+  // Single API key with separate zone for SERP
   const brightDataApiKey = process.env.BRIGHTDATA_API_KEY;
   const serpZone = process.env.BRIGHTDATA_SERP_ZONE;
 
@@ -573,28 +678,45 @@ export async function fetchPageContent(url, maxLength = 8000) {
   }
 
   // Check if we should use Bright Data API for this domain
-  const useUnblocker = BLOCKED_DOMAINS.some(d => domain.includes(d)) &&
-    process.env.BRIGHTDATA_API_KEY && process.env.BRIGHTDATA_ZONE;
+  // Single API key with separate zones for SERP and Web Unlocker
+  const bdApiKey = process.env.BRIGHTDATA_API_KEY;
+  const bdZone = process.env.BRIGHTDATA_WEB_ZONE;
+  const useUnblocker = BLOCKED_DOMAINS.some(d => domain.includes(d)) && bdApiKey && bdZone;
 
-  logger.info('Fetch', `Fetching: ${url}${useUnblocker ? ' (via Bright Data API)' : ''}`);
+  logger.info('Fetch', `Fetching: ${url}${useUnblocker ? ' (via Bright Data Web Unlocker)' : ''}`);
 
   try {
     let response;
     const controller = new AbortController();
-    const timeoutMs = useUnblocker ? 30000 : 10000;
+    // Vivino SPA needs longer timeout for JS rendering
+    const isVivinoDomain = domain.includes('vivino.com');
+    const timeoutMs = isVivinoDomain ? 45000 : (useUnblocker ? 30000 : 10000);
     const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
     if (useUnblocker) {
-      // Use Bright Data REST API with markdown format for cleaner content
+      // Use Bright Data REST API with JavaScript rendering for SPAs
+      const isVivino = domain.includes('vivino.com');
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${bdApiKey}`
+      };
+
+      // For Vivino SPA, wait for rating element to render
+      if (isVivino) {
+        // Wait for wine data to load - look for the rating average element
+        // Vivino uses class="average__number" or similar for the rating
+        headers['x-unblock-expect'] = JSON.stringify({
+          element: '[class*="average"]' // CSS selector for rating element
+        });
+        logger.info('Fetch', 'Vivino: waiting for rating element to render via x-unblock-expect');
+      }
+
       response = await fetch(BRIGHTDATA_API_URL, {
         method: 'POST',
         signal: controller.signal,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.BRIGHTDATA_API_KEY}`
-        },
+        headers,
         body: JSON.stringify({
-          zone: process.env.BRIGHTDATA_ZONE,
+          zone: bdZone,
           url: url,
           format: 'raw',
           data_format: 'markdown'  // Get cleaner markdown instead of raw HTML
@@ -653,11 +775,23 @@ export async function fetchPageContent(url, maxLength = 8000) {
 
     // If we used Bright Data with markdown format, content is already clean text
     if (useUnblocker) {
+      // Log response size and sample for debugging
+      logger.info('Fetch', `BrightData returned ${contentText.length} chars from ${domain}`);
+      // Always log first 1000 chars for Vivino to debug SPA rendering
+      if (domain.includes('vivino')) {
+        logger.info('Fetch', `Vivino content sample:\n${contentText.substring(0, 1500)}`);
+      } else if (contentText.length < 2000) {
+        logger.info('Fetch', `BrightData content preview: ${contentText.substring(0, 500)}`);
+      }
+
       // For Vivino, check if the markdown has any rating info
       if (domain.includes('vivino')) {
-        // Vivino is a SPA - markdown won't have rating data
-        const hasRatingData = contentText.match(/\d\.\d\s*(?:stars?|rating|average)/i) ||
-                              contentText.match(/(?:rating|score)[:\s]+\d\.\d/i);
+        // Vivino is a SPA - markdown won't have rating data unless JS rendered
+        // Note: European locales use comma as decimal separator (3,8 instead of 3.8)
+        const hasRatingData = contentText.match(/\d[.,]\d\s*(?:stars?|rating|average)/i) ||
+                              contentText.match(/(?:rating|score)[:\s]+\d[.,]\d/i) ||
+                              contentText.match(/\d+\s*ratings/i) ||  // "X ratings"
+                              contentText.match(/\d[.,]\d[\s\S]{0,20}count\s*ratings/i); // "3,8\n\ncount ratings" pattern
         if (!hasRatingData) {
           logger.info('Fetch', `Vivino page has no extractable rating data (SPA shell)`);
           return {
@@ -668,6 +802,7 @@ export async function fetchPageContent(url, maxLength = 8000) {
             error: 'Vivino SPA - no rating data'
           };
         }
+        logger.info('Fetch', `Vivino page has rating data - proceeding with extraction`);
       }
       // Markdown is already clean, just use it directly
       text = contentText.replace(/\s+/g, ' ').trim();
@@ -1034,20 +1169,31 @@ function _isResultRelevant(result, wineName, vintage) {
  * @param {string} wineName - Wine name
  * @param {string|number} vintage - Vintage year
  * @param {string} country - Country of origin
+ * @param {string} style - Wine style (e.g., "Languedoc Red Blend")
  * @returns {Promise<Object>} Search results
  */
-export async function searchWineRatings(wineName, vintage, country) {
+export async function searchWineRatings(wineName, vintage, country, style = null) {
   // Detect grape variety from wine name
   const detectedGrape = detectGrape(wineName);
 
+  // Infer country from style if not provided or unknown
+  let effectiveCountry = country;
+  if (!country || country === 'Unknown' || country === '') {
+    const inferredCountry = inferCountryFromStyle(style);
+    if (inferredCountry) {
+      logger.info('Search', `Inferred country "${inferredCountry}" from style "${style}"`);
+      effectiveCountry = inferredCountry;
+    }
+  }
+
   // Get sources using enhanced selection (includes grape-specific competitions)
-  const sources = getSourcesForWine(country, detectedGrape);
+  const sources = getSourcesForWine(effectiveCountry, detectedGrape);
   const topSources = sources.slice(0, 10); // Top 10 by priority (increased from 8)
   const wineNameVariations = generateWineNameVariations(wineName);
 
   logger.separator();
   logger.info('Search', `Wine: "${wineName}" ${vintage}`);
-  logger.info('Search', `Country: ${country || 'Unknown'}`);
+  logger.info('Search', `Country: ${effectiveCountry || 'Unknown'}${effectiveCountry !== country ? ` (inferred from "${style}")` : ''}`);
   if (detectedGrape) {
     logger.info('Search', `Detected grape: ${detectedGrape}`);
   }
@@ -1066,8 +1212,10 @@ export async function searchWineRatings(wineName, vintage, country) {
   const topCompetitions = topSources.filter(s => s.lens === 'competition' && !s.grape_affinity).slice(0, 3);
   // Get top 2 critics/guides (James Suckling, Wine Spectator, regional guides)
   const topCritics = topSources.filter(s => s.lens === 'critic' || s.lens === 'panel_guide').slice(0, 2);
+  // Always include community sources (Vivino, CellarTracker) for user ratings
+  const communitySource = topSources.find(s => s.lens === 'community');
 
-  const prioritySources = [...grapeCompetitions, ...topCompetitions, ...topCritics].slice(0, 6);
+  const prioritySources = [...grapeCompetitions, ...topCompetitions, ...topCritics, ...(communitySource ? [communitySource] : [])].slice(0, 7);
   logger.info('Search', `Targeted sources: ${prioritySources.map(s => s.id).join(', ')}`);
 
   // Run all targeted searches in parallel for better performance
