@@ -6,6 +6,8 @@ data/cellar.db-shm
 *.db
 *.db-wal
 *.db-shm
+# Ignore stray Windows artifact file
+nul
 .DS_Store
 *.log
 .claude/
