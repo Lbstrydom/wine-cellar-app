@@ -28,12 +28,16 @@
   </header>
 
   <nav class="tabs">
-    <div class="tab active" data-view="grid">Cellar Grid</div>
-    <div class="tab" data-view="reduce">Reduce Now</div>
-    <div class="tab" data-view="wines">All Wines</div>
-    <div class="tab" data-view="history">History</div>
-    <div class="tab" data-view="pairing">Find Pairing</div>
-    <div class="tab" data-view="settings">Settings</div>
+    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Menu">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="tabs-container" id="tabs-container">
+      <div class="tab active" data-view="grid">Cellar Grid</div>
+      <div class="tab" data-view="wines">Wine List</div>
+      <div class="tab" data-view="history">History</div>
+      <div class="tab" data-view="pairing">Find Pairing</div>
+      <div class="tab" data-view="settings">Settings</div>
+    </div>
   </nav>
 
   <!-- Grid View -->
@@ -53,15 +57,42 @@
     </div>
   </div>
 
-  <!-- Reduce Now View -->
-  <div class="view" id="view-reduce">
-    <h2 style="margin-bottom: 1rem;">Drink These Next</h2>
-    <div class="reduce-list" id="reduce-list"></div>
-  </div>
-
-  <!-- All Wines View -->
+  <!-- Wine List View (merged Reduce Now + All Wines) -->
   <div class="view" id="view-wines">
-    <h2 style="margin-bottom: 1rem;">All Wines</h2>
+    <div class="wine-list-header">
+      <h2>Wine List</h2>
+      <div class="wine-list-filters">
+        <div class="filter-group">
+          <label class="filter-chip">
+            <input type="checkbox" id="filter-reduce-now" />
+            <span>Drink Soon</span>
+          </label>
+        </div>
+        <div class="filter-group">
+          <select id="filter-colour">
+            <option value="">All Colours</option>
+            <option value="red">Red</option>
+            <option value="white">White</option>
+            <option value="rose">Rosé</option>
+            <option value="sparkling">Sparkling</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <select id="filter-sort">
+            <option value="name">Sort: Name</option>
+            <option value="vintage-asc">Sort: Oldest First</option>
+            <option value="vintage-desc">Sort: Newest First</option>
+            <option value="rating">Sort: Rating</option>
+            <option value="price">Sort: Price</option>
+            <option value="count">Sort: Quantity</option>
+          </select>
+        </div>
+        <div class="filter-group search-group">
+          <input type="text" id="filter-search" placeholder="Search wines..." />
+        </div>
+      </div>
+    </div>
+    <div class="wine-list-stats" id="wine-list-stats"></div>
     <div class="wine-list" id="wine-list"></div>
   </div>
 
