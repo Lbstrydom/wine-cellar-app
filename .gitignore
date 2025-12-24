@@ -2,6 +2,10 @@ node_modules/
 data/cellar.db
 data/cellar.db-wal
 data/cellar.db-shm
+# Ignore local SQLite database files
+*.db
+*.db-wal
+*.db-shm
 .DS_Store
 *.log
 .claude/
