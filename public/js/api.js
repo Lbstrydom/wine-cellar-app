@@ -146,6 +146,33 @@ export async function getPairingSuggestions(signals) {
 }
 
 /**
+ * Send follow-up message to sommelier chat.
+ * @param {string} chatId - Chat session ID from askSommelier response
+ * @param {string} message - Follow-up question/message
+ * @returns {Promise<Object>}
+ */
+export async function sommelierChat(chatId, message) {
+  const res = await fetch(`${API_BASE}/api/pairing/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chatId, message })
+  });
+  return handleResponse(res, 'Chat request failed');
+}
+
+/**
+ * Clear sommelier chat session.
+ * @param {string} chatId - Chat session ID
+ * @returns {Promise<Object>}
+ */
+export async function clearSommelierChat(chatId) {
+  const res = await fetch(`${API_BASE}/api/pairing/chat/${chatId}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to clear chat');
+}
+
+/**
  * Get wine styles for autocomplete.
  * @returns {Promise<string[]>}
  */

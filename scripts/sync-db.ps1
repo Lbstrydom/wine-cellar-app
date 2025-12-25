@@ -49,16 +49,25 @@ Options:
 if ($Download) {
     Write-Status "Downloading database from Synology..."
 
-    # Step 1: Copy to home directory on Synology (avoids SFTP path issues)
+    # Step 0: Remove local WAL files to ensure clean state
+    Write-Host "  Removing local WAL files..."
+    Remove-Item ".\data\cellar.db-wal" -ErrorAction SilentlyContinue
+    Remove-Item ".\data\cellar.db-shm" -ErrorAction SilentlyContinue
+
+    # Step 1: Checkpoint WAL on Synology to ensure all data is in main DB file
+    Write-Host "  Checkpointing remote database..."
+    ssh "${SynologyUser}@${SynologyIP}" "sqlite3 ~/${RemoteAppPath}/data/cellar.db 'PRAGMA wal_checkpoint(TRUNCATE);'" 2>&1 | Out-Null
+
+    # Step 2: Copy to home directory on Synology (avoids SFTP path issues)
     Write-Host "  Copying database to Synology home directory..."
     ssh "${SynologyUser}@${SynologyIP}" "cp ~/${RemoteAppPath}/data/cellar.db ~/${TempFile}"
 
-    # Step 2: Download via SFTP (Synology SFTP is chrooted, so path is /home/)
+    # Step 3: Download via SFTP (Synology SFTP is chrooted, so path is /home/)
     Write-Host "  Downloading to local via SFTP..."
-    $sftpCommands = "get /home/${TempFile} ${LocalDB}`nexit"
-    $sftpCommands | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
+    # Use Write-Output to pipe commands to sftp (preserves SSH agent)
+    @("get /home/${TempFile} ${LocalDB}", "exit") | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
 
-    # Step 3: Cleanup temp file on Synology
+    # Step 4: Cleanup temp file on Synology
     Write-Host "  Cleaning up..."
     ssh "${SynologyUser}@${SynologyIP}" "rm ~/${TempFile}" 2>&1 | Out-Null
 
@@ -93,8 +102,8 @@ if ($Upload) {
 
     # Step 3: Upload via SFTP to home directory (Synology SFTP is chrooted)
     Write-Host "  Uploading via SFTP..."
-    $sftpCommands = "put ${LocalDB} /home/${TempFile}`nexit"
-    $sftpCommands | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
+    # Use Write-Output to pipe commands to sftp (preserves SSH agent)
+    @("put ${LocalDB} /home/${TempFile}", "exit") | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
 
     # Step 4: Move to app data directory
     Write-Host "  Moving to app directory..."

@@ -1527,7 +1527,7 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     // Fallback: look for wine review links in article cards/listings
     if (!reviewUrl) {
       // Try to find wine review links that contain vintage year patterns
-      const yearPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[^"]*-20\d{2}[^"\/]*)"/gi;
+      const yearPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[^"]*-20\d{2}[^"/]*)"/gi;
       let match;
       while ((match = yearPattern.exec(searchHtml)) !== null) {
         const url = match[1];

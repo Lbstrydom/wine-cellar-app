@@ -3,11 +3,14 @@
  * @module sommelier
  */
 
-import { askSommelier, getPairingSuggestions } from './api.js';
-import { showToast } from './utils.js';
+import { askSommelier, getPairingSuggestions, sommelierChat } from './api.js';
+import { showToast, escapeHtml } from './utils.js';
 import { showWineModalFromList } from './modals.js';
 
 const selectedSignals = new Set();
+
+// Current chat session
+let currentChatId = null;
 
 /**
  * Handle Ask Sommelier button click.
@@ -33,6 +36,10 @@ export async function handleAskSommelier() {
 
   try {
     const data = await askSommelier(dish, source, colour);
+
+    // Store chat session info
+    currentChatId = data.chatId;
+
     renderSommelierResponse(data);
   } catch (err) {
     resultsContainer.innerHTML = `
@@ -40,6 +47,7 @@ export async function handleAskSommelier() {
         <p style="color: var(--priority-1);">Error: ${err.message}</p>
       </div>
     `;
+    currentChatId = null;
   } finally {
     btn.disabled = false;
     btn.innerHTML = 'Ask Sommelier';
@@ -85,10 +93,197 @@ function renderSommelierResponse(data) {
   }
 
   html += '</div>';
+
+  // Add chat interface if we have a chat session
+  if (currentChatId) {
+    html += `
+      <div class="sommelier-chat">
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-container">
+          <input type="text" id="chat-input" placeholder="Ask a follow-up question..." />
+          <button id="chat-send" class="btn btn-secondary">Send</button>
+        </div>
+        <div class="chat-suggestions">
+          <span class="suggestion-label">Try:</span>
+          <button class="chat-suggestion" data-message="What about something lighter?">Something lighter?</button>
+          <button class="chat-suggestion" data-message="Tell me more about option #1">More about #1</button>
+          <button class="chat-suggestion" data-message="Any white wine options?">White wines?</button>
+        </div>
+      </div>
+    `;
+  }
+
   container.innerHTML = html;
 
   // Add click handlers to recommendations
   container.querySelectorAll('.recommendation.clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const wineId = Number.parseInt(el.dataset.wineId, 10);
+      if (wineId) {
+        showWineModalFromList({
+          id: wineId,
+          wine_name: el.dataset.wineName,
+          vintage: el.dataset.vintage || null,
+          style: el.dataset.style || null,
+          colour: el.dataset.colour || null,
+          locations: el.dataset.locations,
+          bottle_count: Number.parseInt(el.dataset.bottleCount, 10) || 0
+        });
+      }
+    });
+  });
+
+  // Set up chat event listeners
+  initChatListeners();
+}
+
+/**
+ * Initialize chat event listeners.
+ */
+function initChatListeners() {
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+
+  if (!chatInput || !chatSend) return;
+
+  chatSend.addEventListener('click', handleChatSend);
+  chatInput.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') handleChatSend();
+  });
+
+  // Suggestion buttons
+  document.querySelectorAll('.chat-suggestion').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const message = btn.dataset.message;
+      chatInput.value = message;
+      handleChatSend();
+    });
+  });
+}
+
+/**
+ * Handle sending a chat message.
+ */
+async function handleChatSend() {
+  const chatInput = document.getElementById('chat-input');
+  const chatSend = document.getElementById('chat-send');
+
+  if (!chatInput || !currentChatId) return;
+
+  const message = chatInput.value.trim();
+  if (!message) return;
+
+  // Add user message to UI
+  appendChatMessage('user', message);
+  chatInput.value = '';
+  chatInput.disabled = true;
+  chatSend.disabled = true;
+
+  // Add thinking indicator
+  const thinkingId = appendChatMessage('assistant', '<span class="loading-spinner"></span> Thinking...', true);
+
+  try {
+    const response = await sommelierChat(currentChatId, message);
+
+    // Remove thinking indicator
+    document.getElementById(thinkingId)?.remove();
+
+    // Render response based on type
+    if (response.type === 'recommendations') {
+      // New recommendations
+      renderChatRecommendations(response);
+    } else {
+      // Text explanation
+      appendChatMessage('assistant', escapeHtml(response.message));
+    }
+  } catch (err) {
+    document.getElementById(thinkingId)?.remove();
+    appendChatMessage('assistant', `<span style="color: var(--priority-1);">Error: ${escapeHtml(err.message)}</span>`, true);
+  } finally {
+    chatInput.disabled = false;
+    chatSend.disabled = false;
+    chatInput.focus();
+  }
+}
+
+/**
+ * Append a message to the chat.
+ * @param {string} role - 'user' or 'assistant'
+ * @param {string} content - Message content
+ * @param {boolean} isHtml - If true, content is treated as HTML
+ * @returns {string} Message element ID
+ */
+function appendChatMessage(role, content, isHtml = false) {
+  const chatMessagesEl = document.getElementById('chat-messages');
+  if (!chatMessagesEl) return '';
+
+  const msgId = `chat-msg-${Date.now()}`;
+  const msgDiv = document.createElement('div');
+  msgDiv.id = msgId;
+  msgDiv.className = `chat-message ${role}`;
+
+  if (isHtml) {
+    msgDiv.innerHTML = content;
+  } else {
+    msgDiv.textContent = content;
+  }
+
+  chatMessagesEl.appendChild(msgDiv);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+  return msgId;
+}
+
+/**
+ * Render recommendations from chat response.
+ * @param {Object} response - Chat response with recommendations
+ */
+function renderChatRecommendations(response) {
+  const chatMessagesEl = document.getElementById('chat-messages');
+  if (!chatMessagesEl) return;
+
+  let html = '<div class="chat-recommendations">';
+
+  if (response.message) {
+    html += `<p class="chat-intro">${escapeHtml(response.message)}</p>`;
+  }
+
+  if (response.recommendations && response.recommendations.length > 0) {
+    response.recommendations.forEach(rec => {
+      const priorityClass = rec.is_priority ? 'priority' : '';
+      const clickableClass = rec.wine_id ? 'clickable' : '';
+
+      html += `
+        <div class="recommendation ${priorityClass} ${clickableClass}"
+             data-wine-id="${rec.wine_id || ''}"
+             data-wine-name="${escapeHtml(rec.wine_name)}"
+             data-vintage="${rec.vintage || ''}"
+             data-style="${rec.style || ''}"
+             data-colour="${rec.colour || ''}"
+             data-locations="${rec.location || ''}"
+             data-bottle-count="${rec.bottle_count || 0}">
+          <div class="recommendation-header">
+            <h4>#${rec.rank} ${escapeHtml(rec.wine_name)} ${rec.vintage || 'NV'}</h4>
+            ${rec.is_priority ? '<span class="priority-badge">Drink Soon</span>' : ''}
+          </div>
+          <div class="location">${rec.location || 'Unknown'} (${rec.bottle_count || 0} bottle${rec.bottle_count !== 1 ? 's' : ''})</div>
+          <p class="why">${escapeHtml(rec.why)}</p>
+          ${rec.food_tip ? `<div class="food-tip">${escapeHtml(rec.food_tip)}</div>` : ''}
+        </div>
+      `;
+    });
+  }
+
+  html += '</div>';
+
+  const msgDiv = document.createElement('div');
+  msgDiv.className = 'chat-message assistant';
+  msgDiv.innerHTML = html;
+  chatMessagesEl.appendChild(msgDiv);
+  chatMessagesEl.scrollTop = chatMessagesEl.scrollHeight;
+
+  // Add click handlers for new recommendations
+  msgDiv.querySelectorAll('.recommendation.clickable').forEach(el => {
     el.addEventListener('click', () => {
       const wineId = Number.parseInt(el.dataset.wineId, 10);
       if (wineId) {

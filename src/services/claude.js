@@ -163,6 +163,17 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
     });
   }
 
+  // Include context for follow-up chat
+  parsed._chatContext = {
+    dish,
+    source,
+    colour,
+    winesList,
+    prioritySection,
+    wines,
+    initialResponse: parsed
+  };
+
   return parsed;
 }
 
@@ -855,6 +866,165 @@ function parseRatingResponse(text, source = 'Unknown') {
     ratings: [],
     search_notes: `${source}: Could not parse results`
   };
+}
+
+/**
+ * Continue sommelier conversation with follow-up question.
+ * @param {Database} db - Database connection
+ * @param {string} followUp - User's follow-up question
+ * @param {Object} context - Previous conversation context
+ * @returns {Promise<Object>} Sommelier response
+ */
+export async function continueSommelierChat(db, followUp, context) {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('Claude API key not configured');
+  }
+
+  // Build conversation history for Claude
+  const messages = buildChatMessages(followUp, context);
+
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-5-20250929',
+    max_tokens: 1500,
+    system: buildSommelierSystemPrompt(),
+    messages
+  });
+
+  const responseText = response.content[0].text;
+
+  // Parse response - could be JSON for new recommendations or plain text for explanations
+  let parsed;
+  try {
+    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
+                      responseText.match(/```\s*([\s\S]*?)\s*```/);
+    if (jsonMatch) {
+      const jsonStr = jsonMatch[1];
+      parsed = JSON.parse(jsonStr.trim());
+      // Enrich recommendations with wine data
+      if (parsed.recommendations && context.wines) {
+        parsed.recommendations = parsed.recommendations.map(rec => {
+          const wine = context.wines.find(w =>
+            w.wine_name === rec.wine_name &&
+            (w.vintage === rec.vintage || (!w.vintage && !rec.vintage))
+          );
+          return {
+            ...rec,
+            wine_id: wine?.id || null,
+            location: wine?.locations || 'Unknown',
+            bottle_count: wine?.bottle_count || 0,
+            style: wine?.style || null,
+            colour: wine?.colour || null
+          };
+        });
+      }
+      parsed.type = 'recommendations';
+    } else {
+      // Plain text response (explanation, clarification, etc.)
+      parsed = {
+        type: 'explanation',
+        message: responseText.trim()
+      };
+    }
+  } catch (_parseError) {
+    // Treat as plain text response
+    parsed = {
+      type: 'explanation',
+      message: responseText.trim()
+    };
+  }
+
+  return parsed;
+}
+
+/**
+ * Build system prompt for sommelier chat.
+ * @private
+ */
+function buildSommelierSystemPrompt() {
+  return `You are a sommelier with 20 years in fine dining, now helping a home cook get the most from their personal wine cellar. Your style is warm and educational - you love sharing the "why" behind pairings, not just the "what".
+
+Your approach:
+- Match wine weight to dish weight (light with light, rich with rich)
+- Balance acid: high-acid foods need high-acid wines
+- Use tannins strategically: they cut through fat and protein
+- Respect regional wisdom: "what grows together, goes together"
+- Consider the full plate: sauces, sides, and seasonings matter
+- Work with what's available, prioritising wines that need drinking soon
+
+When asked follow-up questions:
+- If they want different recommendations, provide new ones in JSON format
+- If they ask about a specific wine or pairing reason, explain in conversational text
+- If they mention a different dish, analyze it and provide new recommendations
+- If they want "something lighter/heavier/fruitier/etc.", adjust recommendations accordingly
+
+For new recommendations, respond with JSON in a code block:
+\`\`\`json
+{
+  "message": "Brief intro to new recommendations",
+  "recommendations": [
+    {
+      "rank": 1,
+      "wine_name": "Exact wine name",
+      "vintage": 2020,
+      "why": "Why this pairing works",
+      "food_tip": "Optional tip or null",
+      "is_priority": true
+    }
+  ]
+}
+\`\`\`
+
+For explanations or discussions, just respond with natural conversational text (no JSON).`;
+}
+
+/**
+ * Build chat messages array for Claude API.
+ * @private
+ */
+function buildChatMessages(followUp, context) {
+  const messages = [];
+
+  // Add initial context as first user message
+  const initialContext = `I'm looking for wine pairings.
+
+DISH: ${context.dish}
+WINE FILTERS: Source: ${context.source}, Colour preference: ${context.colour}
+
+AVAILABLE WINES:
+${context.winesList}
+${context.prioritySection || ''}`;
+
+  messages.push({ role: 'user', content: initialContext });
+
+  // Add initial response as assistant message
+  if (context.initialResponse) {
+    let assistantContent = '';
+    if (context.initialResponse.dish_analysis) {
+      assistantContent += context.initialResponse.dish_analysis + '\n\n';
+    }
+    if (context.initialResponse.recommendations?.length > 0) {
+      assistantContent += 'My recommendations:\n';
+      context.initialResponse.recommendations.forEach(rec => {
+        assistantContent += `${rec.rank}. ${rec.wine_name} ${rec.vintage || 'NV'} - ${rec.why}\n`;
+      });
+    }
+    messages.push({ role: 'assistant', content: assistantContent.trim() });
+  }
+
+  // Add conversation history
+  if (context.chatHistory && context.chatHistory.length > 0) {
+    for (const msg of context.chatHistory) {
+      messages.push({
+        role: msg.role,
+        content: msg.content
+      });
+    }
+  }
+
+  // Add the new follow-up question
+  messages.push({ role: 'user', content: followUp });
+
+  return messages;
 }
 
 /**
