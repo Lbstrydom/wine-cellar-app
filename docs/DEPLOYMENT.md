@@ -218,16 +218,28 @@ sudo docker compose pull
 
 Check `docker-compose.yml` has `image: ghcr.io/lbstrydom/wine-cellar-app:latest` (not `build: .`)
 
-### SCP path errors from Windows
+### SCP/SFTP path errors from Windows
 
-Windows SCP doesn't handle `~` well. Use full paths or copy to home directory first:
+Synology's SFTP server is chrooted to the user's shared folder, so paths differ between SSH and SFTP:
+
+| Protocol | Path to home cellar.db |
+|----------|------------------------|
+| SSH      | `~/cellar.db` or `/var/services/homes/lstrydom/cellar.db` |
+| SFTP     | `/home/cellar.db` |
+
+**Recommended approach** - use the sync script:
+```powershell
+.\scripts\sync-db.ps1 -Download
+```
+
+**Manual approach**:
 ```bash
-# On Synology
+# On Synology (SSH)
 cp ~/Apps/wine-cellar-app/data/cellar.db ~/cellar.db
 ```
 ```powershell
-# On Windows
-scp lstrydom@192.168.86.31:cellar.db ./data/cellar.db
+# On Windows (use SFTP, not SCP)
+echo "get /home/cellar.db ./data/cellar.db`nexit" | sftp lstrydom@192.168.86.31
 ```
 
 ### Environment variables not loading

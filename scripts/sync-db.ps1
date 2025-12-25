@@ -48,20 +48,26 @@ Options:
 if ($Download) {
     Write-Status "Downloading database from Synology..."
 
-    # Step 1: Copy to home directory on Synology (avoids path issues)
+    # Step 1: Copy to home directory on Synology (avoids SFTP path issues)
     Write-Host "  Copying database to Synology home directory..."
     ssh "${SynologyUser}@${SynologyIP}" "cp ~/${RemoteAppPath}/data/cellar.db ~/${TempFile}"
 
-    # Step 2: Download to local
-    Write-Host "  Downloading to local..."
-    scp "${SynologyUser}@${SynologyIP}:${TempFile}" $LocalDB
+    # Step 2: Download via SFTP (Synology SFTP is chrooted, so path is /home/)
+    Write-Host "  Downloading to local via SFTP..."
+    $sftpCommands = "get /home/${TempFile} ${LocalDB}`nexit"
+    $sftpCommands | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
 
     # Step 3: Cleanup temp file on Synology
     Write-Host "  Cleaning up..."
-    ssh "${SynologyUser}@${SynologyIP}" "rm ~/${TempFile}"
+    ssh "${SynologyUser}@${SynologyIP}" "rm ~/${TempFile}" 2>&1 | Out-Null
 
-    Write-Success "Database downloaded to $LocalDB"
-    Write-Host "`n  File size: $((Get-Item $LocalDB).Length / 1MB) MB"
+    if (Test-Path $LocalDB) {
+        Write-Success "Database downloaded to $LocalDB"
+        Write-Host "`n  File size: $([math]::Round((Get-Item $LocalDB).Length / 1MB, 2)) MB"
+    } else {
+        Write-Host "  ERROR: Download failed" -ForegroundColor Red
+        exit 1
+    }
 }
 
 if ($Upload) {
@@ -77,24 +83,25 @@ if ($Upload) {
 
     # Step 1: Stop the container
     Write-Host "  Stopping container..."
-    ssh "${SynologyUser}@${SynologyIP}" "cd ~/${RemoteAppPath} && sudo docker compose down"
+    ssh "${SynologyUser}@${SynologyIP}" "cd ~/${RemoteAppPath} && sudo docker compose down" 2>&1 | Out-Null
 
     # Step 2: Backup existing database
     Write-Host "  Creating backup..."
     $backupName = "cellar.db.backup-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-    ssh "${SynologyUser}@${SynologyIP}" "cp ~/${RemoteAppPath}/data/cellar.db ~/${RemoteAppPath}/data/${backupName}"
+    ssh "${SynologyUser}@${SynologyIP}" "cp ~/${RemoteAppPath}/data/cellar.db ~/${RemoteAppPath}/data/${backupName}" 2>&1 | Out-Null
 
-    # Step 3: Upload to home directory
-    Write-Host "  Uploading..."
-    scp $LocalDB "${SynologyUser}@${SynologyIP}:${TempFile}"
+    # Step 3: Upload via SFTP to home directory (Synology SFTP is chrooted)
+    Write-Host "  Uploading via SFTP..."
+    $sftpCommands = "put ${LocalDB} /home/${TempFile}`nexit"
+    $sftpCommands | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
 
     # Step 4: Move to app data directory
     Write-Host "  Moving to app directory..."
-    ssh "${SynologyUser}@${SynologyIP}" "mv ~/${TempFile} ~/${RemoteAppPath}/data/cellar.db"
+    ssh "${SynologyUser}@${SynologyIP}" "mv ~/${TempFile} ~/${RemoteAppPath}/data/cellar.db" 2>&1 | Out-Null
 
     # Step 5: Restart container
     Write-Host "  Restarting container..."
-    ssh "${SynologyUser}@${SynologyIP}" "cd ~/${RemoteAppPath} && sudo docker compose up -d"
+    ssh "${SynologyUser}@${SynologyIP}" "cd ~/${RemoteAppPath} && sudo docker compose up -d" 2>&1 | Out-Null
 
     Write-Success "Database uploaded!"
     Write-Host "`n  Backup saved as: $backupName"
