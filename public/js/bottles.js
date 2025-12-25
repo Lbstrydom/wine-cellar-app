@@ -12,7 +12,8 @@ import {
   addBottles,
   removeBottle,
   parseWineText,
-  parseWineImage
+  parseWineImage,
+  getSuggestedPlacement
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { refreshData, state } from './app.js';
@@ -391,8 +392,30 @@ async function handleBottleFormSubmit(e) {
 
     // Add bottle(s) to slot(s) - only for add mode
     if (bottleModalMode === 'add') {
-      const result = await addBottles(wineId, editingLocation, quantity);
-      showToast(result.message);
+      // Check if user selected smart placement vs specific slot
+      const useSmartPlacement = editingLocation === 'smart';
+
+      if (useSmartPlacement) {
+        // Get AI-suggested placement
+        try {
+          const suggestion = await getSuggestedPlacement(wineId);
+          if (suggestion.suggestedSlot) {
+            const result = await addBottles(wineId, suggestion.suggestedSlot, quantity);
+            showToast(`${result.message} (${suggestion.zoneName})`);
+          } else {
+            showToast('No empty slots in suggested zone. Please select manually.');
+            showSlotPickerModalForWine(wineId, document.getElementById('wine-name').value || 'Wine');
+            return;
+          }
+        } catch (err) {
+          showToast(`Placement error: ${err.message}. Select slot manually.`);
+          showSlotPickerModalForWine(wineId, document.getElementById('wine-name').value || 'Wine');
+          return;
+        }
+      } else {
+        const result = await addBottles(wineId, editingLocation, quantity);
+        showToast(result.message);
+      }
     }
 
     closeBottleModal();
@@ -401,6 +424,16 @@ async function handleBottleFormSubmit(e) {
   } catch (err) {
     showToast('Error: ' + err.message);
   }
+}
+
+/**
+ * Show slot picker for a specific wine (used as fallback).
+ * @param {number} wineId - Wine ID
+ * @param {string} wineName - Wine name for display
+ */
+function showSlotPickerModalForWine(wineId, wineName) {
+  closeBottleModal();
+  showSlotPickerModal(wineId, wineName);
 }
 
 /**
@@ -877,13 +910,32 @@ let pendingAddWineId = null;
  * Show modal to pick empty slot for adding a wine.
  * @param {number} wineId - Wine to add
  * @param {string} wineName - Wine name for display
+ * @param {boolean} offerSmartPlace - Whether to offer smart placement option
  */
-export function showSlotPickerModal(wineId, wineName) {
+export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = true) {
   pendingAddWineId = wineId;
 
   // Update modal content
   document.getElementById('slot-picker-title').textContent = `Add: ${wineName}`;
-  document.getElementById('slot-picker-instruction').textContent = 'Click an empty slot to add the bottle';
+
+  // Try to get placement suggestion if smart place offered
+  let suggestionText = 'Click an empty slot to add the bottle';
+  if (offerSmartPlace) {
+    try {
+      const suggestion = await getSuggestedPlacement(wineId);
+      if (suggestion.zoneName && suggestion.suggestedSlot) {
+        suggestionText = `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot}) - Click slot or use Smart Place`;
+        // Highlight the suggested slot
+        const suggestedSlotEl = document.querySelector(`.slot[data-location="${suggestion.suggestedSlot}"]`);
+        if (suggestedSlotEl) {
+          suggestedSlotEl.classList.add('suggested-slot');
+        }
+      }
+    } catch (_err) {
+      // Ignore errors, just use default text
+    }
+  }
+  document.getElementById('slot-picker-instruction').textContent = suggestionText;
 
   // Enable slot picker mode
   document.body.classList.add('slot-picker-mode');
@@ -932,6 +984,9 @@ export function closeSlotPickerModal() {
   document.getElementById('slot-picker-overlay').classList.remove('active');
   document.querySelectorAll('.slot.picker-target').forEach(slot => {
     slot.classList.remove('picker-target');
+  });
+  document.querySelectorAll('.slot.suggested-slot').forEach(slot => {
+    slot.classList.remove('suggested-slot');
   });
   pendingAddWineId = null;
 }

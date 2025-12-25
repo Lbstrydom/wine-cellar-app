@@ -991,28 +991,61 @@ function extractDomain(url) {
 
 /**
  * Build a source-specific search query.
+ * Uses flexible token matching instead of exact phrase for better coverage.
  * @param {Object} source - Source config
  * @param {string} wineName
  * @param {string|number} vintage
  * @returns {string} Search query
  */
 function buildSourceQuery(source, wineName, vintage) {
+  // Token-based search for better fuzzy matching
+  const tokens = extractSearchTokens(wineName);
+  const tokenQuery = tokens.join(' ');
+
   // Force Vivino to show ratings in the search snippet
   if (source.id === 'vivino') {
-    return `site:vivino.com "${wineName}" ${vintage} "stars" OR "rating"`;
+    return `site:vivino.com ${tokenQuery} ${vintage} "stars" OR "rating"`;
   }
 
   if (source.query_template) {
+    // Use token-based query for better fuzzy matching
     return source.query_template
-      .replace('{wine}', `"${wineName}"`)
+      .replace('{wine}', tokenQuery)
       .replace('{vintage}', vintage || '');
   }
-  return `"${wineName}" ${vintage}`;
+
+  // Default: use tokens without strict quoting for flexibility
+  return `${tokenQuery} ${vintage} wine`;
+}
+
+/**
+ * Extract significant search tokens from wine name.
+ * Removes articles, normalizes spacing, keeps meaningful words.
+ * @param {string} wineName - Original wine name
+ * @returns {string[]} Array of search tokens
+ */
+function extractSearchTokens(wineName) {
+  if (!wineName) return [];
+
+  // Common articles and filler words to remove
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'of', 'de', 'du', 'la', 'le', 'les', 'das', 'der', 'die',
+    'del', 'della', 'di', 'da', 'wines', 'wine', 'estate', 'winery', 'vineyards', 'vineyard'
+  ]);
+
+  return wineName
+    .toLowerCase()
+    .replace(/[''`]/g, '')           // Remove apostrophes
+    .replace(/\([^)]+\)/g, ' ')      // Remove parenthetical content
+    .replace(/[^\w\s-]/g, ' ')       // Remove punctuation except hyphens
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !stopWords.has(w))
+    .slice(0, 6);  // Limit to first 6 significant tokens
 }
 
 /**
  * Generate wine name variations for better search coverage.
- * Handles wines with numeric prefixes, abbreviations, etc.
+ * Handles wines with numeric prefixes, abbreviations, spelling variations, etc.
  * @param {string} wineName - Original wine name
  * @returns {string[]} Array of name variations
  */
@@ -1058,7 +1091,166 @@ function generateWineNameVariations(wineName) {
     variations.push(simplified);
   }
 
+  // Try without leading articles (The, La, Le, etc.)
+  const noArticle = wineName.replace(/^(The|La|Le|El|Il|Das|Der|Die)\s+/i, '').trim();
+  if (noArticle !== wineName && noArticle.length > 3) {
+    variations.push(noArticle);
+  }
+
+  // Generate phonetic variations for non-English names
+  // This helps with common transcription differences (u/a, i/e, etc.)
+  const phoneticVariations = generatePhoneticVariations(wineName);
+  variations.push(...phoneticVariations);
+
+  // Try producer name only (first 1-2 words before grape variety indicators)
+  const producerMatch = wineName.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/);
+  if (producerMatch && producerMatch[1].length >= 5) {
+    const producerOnly = producerMatch[1];
+    // Don't add if it's just a grape variety name
+    const grapeNames = ['sauvignon', 'chardonnay', 'cabernet', 'merlot', 'pinot', 'shiraz', 'syrah'];
+    if (!grapeNames.some(g => producerOnly.toLowerCase().includes(g))) {
+      variations.push(producerOnly);
+    }
+  }
+
   return [...new Set(variations)]; // Remove duplicates
+}
+
+/**
+ * Generate phonetic/spelling variations for wine names.
+ * Handles common transcription differences in non-English names.
+ * @param {string} wineName - Original wine name
+ * @returns {string[]} Array of phonetic variations
+ */
+function generatePhoneticVariations(wineName) {
+  const variations = [];
+
+  // Common letter substitutions that occur in wine name transcriptions
+  const substitutions = [
+    [/ntu\b/gi, 'nt'],      // Milantu -> Milant (Spanish ending variations)
+    [/nt\b/gi, 'ntu'],      // Millant -> Milantu (reverse)
+    [/ll/gi, 'l'],          // Millant -> Milant (double L variations)
+    [/([^l])l([^l])/gi, '$1ll$2'], // Milant -> Millant (add double L)
+    [/ñ/gi, 'n'],           // Spanish ñ -> n
+    [/ü/gi, 'u'],           // German umlaut
+    [/ö/gi, 'o'],
+    [/ä/gi, 'a'],
+    [/é/gi, 'e'],           // French accents
+    [/è/gi, 'e'],
+    [/ê/gi, 'e'],
+    [/à/gi, 'a'],
+    [/ç/gi, 'c'],
+    [/œ/gi, 'oe'],
+    [/æ/gi, 'ae'],
+  ];
+
+  for (const [pattern, replacement] of substitutions) {
+    if (pattern.test(wineName)) {
+      const variant = wineName.replace(pattern, replacement);
+      if (variant !== wineName && variant.length > 3) {
+        variations.push(variant);
+      }
+    }
+  }
+
+  return variations;
+}
+
+/**
+ * Extract producer/winery name from wine name.
+ * Heuristic: producer name is typically the first 1-3 words before grape variety or wine type.
+ * @param {string} wineName - Full wine name
+ * @returns {string|null} Producer name or null if not extractable
+ */
+function extractProducerName(wineName) {
+  if (!wineName) return null;
+
+  // Common grape varieties and wine types to stop at
+  const stopWords = new Set([
+    'cabernet', 'sauvignon', 'blanc', 'merlot', 'shiraz', 'syrah', 'pinot',
+    'chardonnay', 'riesling', 'chenin', 'pinotage', 'malbec', 'tempranillo',
+    'sangiovese', 'nebbiolo', 'verdejo', 'viognier', 'gewurztraminer',
+    'primitivo', 'zinfandel', 'grenache', 'mourvedre', 'cinsault',
+    'red', 'white', 'rose', 'rosé', 'blend', 'reserve', 'reserva', 'gran',
+    'vineyard', 'selection', 'estate', 'single', 'barrel', 'limited'
+  ]);
+
+  const words = wineName.split(/\s+/);
+  const producerWords = [];
+
+  for (const word of words) {
+    const cleaned = word.toLowerCase().replace(/[^a-z]/g, '');
+    // Skip leading numbers but don't stop (e.g., "1 Uno" -> "Uno")
+    if (/^\d+$/.test(word)) continue;
+    // Stop at grape variety keywords
+    if (stopWords.has(cleaned)) break;
+    producerWords.push(word);
+    if (producerWords.length >= 4) break; // Max 4 words for producer
+  }
+
+  if (producerWords.length === 0) return null;
+
+  // Return producer name (remove parentheses content)
+  return producerWords.join(' ').replace(/\([^)]*\)/g, '').trim();
+}
+
+/**
+ * Search for producer's official website and awards page.
+ * @param {string} wineName - Wine name
+ * @param {string} vintage - Vintage year
+ * @param {string|null} country - Wine country
+ * @returns {Promise<Object[]>} Array of search results
+ */
+async function searchProducerWebsite(wineName, vintage, country) {
+  const producerName = extractProducerName(wineName);
+  if (!producerName || producerName.length < 3) {
+    return [];
+  }
+
+  logger.info('Producer', `Extracted producer name: "${producerName}" from "${wineName}"`);
+
+  // Search for producer's official site with awards/accolades
+  const awardKeywords = ['awards', 'accolades', 'medals', 'recognition', 'achievements'];
+  const producerTokens = extractSearchTokens(producerName);
+
+  // Try different queries to find producer's awards page
+  const queries = [
+    `"${producerName}" winery official site awards`,
+    `${producerTokens.join(' ')} wine estate awards medals`,
+    `${producerTokens.join(' ')} ${vintage} award gold silver medal`
+  ];
+
+  const results = [];
+
+  for (const query of queries.slice(0, 2)) { // Limit to 2 queries to save API calls
+    logger.info('Producer', `Search query: "${query}"`);
+
+    try {
+      const searchResults = await searchGoogle(query, []);
+      // Filter to only include potential producer sites (not known retailers)
+      const producerResults = searchResults.filter(r => {
+        const tokens = extractSearchTokens(producerName);
+        return checkIfProducerSite(r.url, producerName.toLowerCase(), tokens);
+      });
+
+      if (producerResults.length > 0) {
+        logger.info('Producer', `Found ${producerResults.length} producer site(s)`);
+        results.push(...producerResults.map(r => ({
+          ...r,
+          sourceId: 'producer_website',
+          lens: 'producer',
+          credibility: 1.2, // Higher than community, lower than critics
+          relevance: 1.0,
+          isProducerSite: true
+        })));
+        break; // Stop after finding results
+      }
+    } catch (err) {
+      logger.error('Producer', `Search failed: ${err.message}`);
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -1117,6 +1309,7 @@ function checkIfProducerSite(url, wineNameLower, keyWords) {
 /**
  * Calculate relevance score for a search result.
  * Higher score = more specifically about this wine.
+ * Uses flexible token matching including partial/fuzzy matches.
  * @param {Object} result - Search result with title and snippet
  * @param {string} wineName - Wine name to look for
  * @param {string|number} vintage - Vintage year
@@ -1128,21 +1321,47 @@ function calculateResultRelevance(result, wineName, vintage) {
   const titleAndSnippet = `${title} ${snippet}`;
   const wineNameLower = wineName.toLowerCase();
 
-  // Extract key words from wine name (at least 2 chars)
-  const keyWords = wineNameLower
-    .split(/\s+/)
-    .filter(w => w.length >= 2 && !['the', 'and', 'de', 'du', 'la', 'le'].includes(w));
+  // Extract key words from wine name using same logic as search tokens
+  const stopWords = new Set([
+    'the', 'a', 'an', 'and', 'of', 'de', 'du', 'la', 'le', 'les', 'das', 'der', 'die',
+    'del', 'della', 'di', 'da', 'wines', 'wine', 'estate', 'winery', 'vineyards', 'vineyard'
+  ]);
 
-  // Count matches in title vs snippet (title matches are more valuable)
+  const keyWords = wineNameLower
+    .replace(/[''`]/g, '')
+    .replace(/\([^)]+\)/g, ' ')
+    .replace(/[^\w\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !stopWords.has(w));
+
+  // Count exact matches in title vs snippet
   const titleMatchCount = keyWords.filter(w => title.includes(w)).length;
   const snippetMatchCount = keyWords.filter(w => snippet.includes(w)).length;
+
+  // Also check for partial/fuzzy matches (first 4+ chars of longer words)
+  let fuzzyTitleMatches = 0;
+  let fuzzySnippetMatches = 0;
+  for (const word of keyWords) {
+    if (word.length >= 5) {
+      const prefix = word.substring(0, Math.min(4, word.length - 1));
+      if (title.includes(prefix) && !title.includes(word)) {
+        fuzzyTitleMatches++;
+      }
+      if (snippet.includes(prefix) && !snippet.includes(word)) {
+        fuzzySnippetMatches++;
+      }
+    }
+  }
+
   const hasVintageInTitle = vintage && title.includes(String(vintage));
   const hasVintageInSnippet = vintage && snippet.includes(String(vintage));
 
   // Calculate relevance score
   let score = 0;
-  score += titleMatchCount * 3; // Title matches are worth 3x
-  score += snippetMatchCount * 1; // Snippet matches worth 1x
+  score += titleMatchCount * 3;       // Title exact matches are worth 3x
+  score += snippetMatchCount * 1;     // Snippet exact matches worth 1x
+  score += fuzzyTitleMatches * 1.5;   // Fuzzy title matches worth 1.5x
+  score += fuzzySnippetMatches * 0.5; // Fuzzy snippet matches worth 0.5x
   score += hasVintageInTitle ? 5 : 0; // Vintage in title is very good
   score += hasVintageInSnippet ? 2 : 0; // Vintage in snippet is good
 
@@ -1150,8 +1369,13 @@ function calculateResultRelevance(result, wineName, vintage) {
   const isRatingPage = titleAndSnippet.includes('rating') ||
     titleAndSnippet.includes('review') ||
     titleAndSnippet.includes('points') ||
-    titleAndSnippet.includes('score');
-  if (isRatingPage && titleMatchCount >= 2) {
+    titleAndSnippet.includes('score') ||
+    titleAndSnippet.includes('gold') ||
+    titleAndSnippet.includes('silver') ||
+    titleAndSnippet.includes('bronze') ||
+    titleAndSnippet.includes('medal') ||
+    titleAndSnippet.includes('award');
+  if (isRatingPage && (titleMatchCount >= 1 || fuzzyTitleMatches >= 1)) {
     score += 3;
   }
 
@@ -1165,14 +1389,24 @@ function calculateResultRelevance(result, wineName, vintage) {
   // Penalty for generic competition/award list pages
   const isGenericAwardPage =
     (title.includes('results') || title.includes('winners') || title.includes('champion')) &&
-    titleMatchCount < 2;
+    titleMatchCount < 1;
   if (isGenericAwardPage) {
-    score -= 5;
+    score -= 3;
   }
 
-  // Must have at least 2 key words matching somewhere, or vintage + 1 word
-  const totalMatches = titleMatchCount + snippetMatchCount;
-  const relevant = totalMatches >= 2 || (totalMatches >= 1 && (hasVintageInTitle || hasVintageInSnippet));
+  // Determine relevance - more flexible matching:
+  // - At least 1 exact + 1 fuzzy match, OR
+  // - At least 2 exact matches anywhere, OR
+  // - At least 1 exact match + vintage
+  const totalExactMatches = titleMatchCount + snippetMatchCount;
+  const totalFuzzyMatches = fuzzyTitleMatches + fuzzySnippetMatches;
+  const hasVintage = hasVintageInTitle || hasVintageInSnippet;
+
+  const relevant =
+    totalExactMatches >= 2 ||
+    (totalExactMatches >= 1 && totalFuzzyMatches >= 1) ||
+    (totalExactMatches >= 1 && hasVintage) ||
+    (totalFuzzyMatches >= 2 && hasVintage);
 
   return { relevant, score, isProducerSite };
 }
@@ -1267,7 +1501,8 @@ export async function searchWineRatings(wineName, vintage, country, style = null
 
   // Strategy 2: Broad Google search for remaining domains
   const remainingDomains = topSources.slice(3).map(s => s.domain);
-  const broadQuery = `"${wineName}" ${vintage} rating`;
+  const tokens = extractSearchTokens(wineName);
+  const broadQuery = `${tokens.join(' ')} ${vintage} rating`;
 
   const broadResults = remainingDomains.length > 0
     ? await searchGoogle(broadQuery, remainingDomains)
@@ -1280,15 +1515,23 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   if (targetedResults.length + broadResults.length < 5 && wineNameVariations.length > 1) {
     logger.info('Search', 'Trying wine name variations...');
     for (const variation of wineNameVariations.slice(1)) { // Skip first (original)
-      const varResults = await searchGoogle(`"${variation}" ${vintage} wine rating`, []);
+      const varTokens = extractSearchTokens(variation);
+      const varResults = await searchGoogle(`${varTokens.join(' ')} ${vintage} wine rating`, []);
       variationResults.push(...varResults);
       if (variationResults.length >= 5) break;
     }
     logger.info('Search', `Variation searches found: ${variationResults.length} results`);
   }
 
+  // Strategy 4: Search producer's official website for awards
+  // Wineries often display accolades prominently on their own sites
+  const producerResults = await searchProducerWebsite(wineName, vintage, effectiveCountry);
+  if (producerResults.length > 0) {
+    logger.info('Search', `Producer website search found: ${producerResults.length} result(s)`);
+  }
+
   // Combine and deduplicate by URL
-  const allResults = [...targetedResults, ...broadResults, ...variationResults];
+  const allResults = [...targetedResults, ...broadResults, ...variationResults, ...producerResults];
   const seen = new Set();
   const uniqueResults = allResults.filter(r => {
     if (seen.has(r.url)) return false;
@@ -1354,7 +1597,8 @@ export async function searchWineRatings(wineName, vintage, country, style = null
     sources_searched: topSources.length,
     targeted_hits: targetedResults.length,
     broad_hits: broadResults.length,
-    variation_hits: variationResults.length
+    variation_hits: variationResults.length,
+    producer_hits: producerResults.length
   };
 }
 
@@ -1478,8 +1722,12 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
 
     // Search Decanter with authenticated session
     // Use the wine-reviews search endpoint for better results
-    const searchQuery = encodeURIComponent(`${wineName} ${vintage}`.trim());
+    // Use token-based query for better matching (removes articles like "The")
+    const searchTokens = extractSearchTokens(wineName);
+    const tokenQuery = searchTokens.join(' ');
+    const searchQuery = encodeURIComponent(`${tokenQuery} ${vintage}`.trim());
     const searchUrl = `https://www.decanter.com/wine-reviews/?s=${searchQuery}`;
+    logger.info('Decanter', `Token-based search: "${tokenQuery} ${vintage}"`);
 
     logger.info('Decanter', `Search URL: ${searchUrl}`);
     const searchResponse = await fetch(searchUrl, {
@@ -1503,48 +1751,83 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     //   /wine-reviews/south-africa/nederburg-two-centuries-cabernet-sauvignon-2019-95
     //   /wine-reviews/france/chateau-margaux-2015-99
     // EXCLUDE: /wine-reviews/search, /wine-reviews/images/, /wine-reviews/decanter-world-wine-awards/
-    let reviewUrl = null;
 
-    // Pattern: /wine-reviews/[region]/[wine-name-with-vintage-and-numeric-id]
-    // Must end with a numeric ID (the score or article ID), NOT a file extension
-    const reviewPatterns = [
-      // Absolute URL with numeric ending (most common)
-      /href="(https:\/\/www\.decanter\.com\/wine-reviews\/[a-z][a-z-]+\/[a-z0-9-]+-\d+)"/i,
-      // Relative URL with numeric ending
-      /href="(\/wine-reviews\/[a-z][a-z-]+\/[a-z0-9-]+-\d+)"/i
-    ];
+    // CRITICAL FIX: Collect ALL wine review URLs, then score them against the search query
+    // Previous bug: .match() only returned first URL which was often a sidebar/featured wine
 
-    for (const pattern of reviewPatterns) {
-      const match = searchHtml.match(pattern);
-      if (match) {
-        reviewUrl = match[1].startsWith('http')
-          ? match[1]
-          : `https://www.decanter.com${match[1]}`;
-        break;
+    // Extract tokens from wine name for matching
+    const wineTokens = extractSearchTokens(wineName);
+    const vintageStr = String(vintage || '');
+    logger.info('Decanter', `Search tokens: [${wineTokens.join(', ')}] vintage: ${vintageStr}`);
+
+    // Collect ALL wine review URLs from the page
+    const allUrls = [];
+    const urlPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[a-z][a-z-]*\/[a-z0-9-]+-\d+)"/gi;
+    let urlMatch;
+    while ((urlMatch = urlPattern.exec(searchHtml)) !== null) {
+      const url = urlMatch[1];
+      // Skip non-review pages
+      if (url.includes('/images/') || url.includes('/search') || url.includes('/decanter-world-wine-awards/')) {
+        continue;
+      }
+      const fullUrl = url.startsWith('http') ? url : `https://www.decanter.com${url}`;
+      if (!allUrls.includes(fullUrl)) {
+        allUrls.push(fullUrl);
       }
     }
 
-    // Fallback: look for wine review links in article cards/listings
-    if (!reviewUrl) {
-      // Try to find wine review links that contain vintage year patterns
-      const yearPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[^"]*-20\d{2}[^"/]*)"/gi;
-      let match;
-      while ((match = yearPattern.exec(searchHtml)) !== null) {
-        const url = match[1];
-        // Skip non-review pages
-        if (url.includes('/images/') || url.includes('/search') || url.includes('/decanter-world-wine-awards/')) {
-          continue;
-        }
-        reviewUrl = url.startsWith('http') ? url : `https://www.decanter.com${url}`;
-        break;
+    logger.info('Decanter', `Found ${allUrls.length} unique wine review URLs`);
+
+    // Score each URL based on how well it matches our wine
+    function scoreDecanterUrl(url) {
+      // Extract the wine name part from URL: /wine-reviews/region/wine-name-here-2019-95
+      const urlParts = url.split('/wine-reviews/')[1];
+      if (!urlParts) return { url, score: 0, matches: [] };
+
+      const slugParts = urlParts.split('/');
+      const wineSlug = slugParts[1] || ''; // e.g., "nederburg-two-centuries-cabernet-sauvignon-2019-95"
+      const slugLower = wineSlug.toLowerCase();
+
+      let score = 0;
+      const matches = [];
+
+      // Check vintage match (important - +20 points)
+      if (vintageStr && slugLower.includes(vintageStr)) {
+        score += 20;
+        matches.push(`vintage:${vintageStr}`);
       }
+
+      // Check each wine token (+10 per match)
+      for (const token of wineTokens) {
+        if (token.length >= 3 && slugLower.includes(token)) {
+          score += 10;
+          matches.push(token);
+        }
+      }
+
+      return { url, score, matches };
+    }
+
+    // Score and sort all URLs
+    const scoredUrls = allUrls.map(scoreDecanterUrl);
+    scoredUrls.sort((a, b) => b.score - a.score);
+
+    // Log top 3 for debugging
+    if (scoredUrls.length > 0) {
+      logger.info('Decanter', `Top URLs by score: ${scoredUrls.slice(0, 3).map(u => `${u.score}pts [${u.matches.join(',')}] ${u.url.split('/').pop()}`).join(' | ')}`);
+    }
+
+    // Select best URL - must have at least 1 token match or vintage match
+    let reviewUrl = null;
+    const bestMatch = scoredUrls[0];
+    if (bestMatch && bestMatch.score >= 10) {
+      reviewUrl = bestMatch.url;
     }
 
     if (!reviewUrl) {
       // Debug: log what wine-review links we DID find, if any
-      const allReviewLinks = searchHtml.match(/href="[^"]*wine-reviews[^"]*"/gi) || [];
-      if (allReviewLinks.length > 0) {
-        logger.info('Decanter', `Found ${allReviewLinks.length} wine-review links but none matched pattern: ${allReviewLinks.slice(0, 3).join(', ')}`);
+      if (allUrls.length > 0) {
+        logger.info('Decanter', `Found ${allUrls.length} wine-review URLs but none matched query tokens`);
       } else {
         // Check if there's any content indicating results
         const hasResults = searchHtml.includes('search-results') || searchHtml.includes('wine-card') || searchHtml.includes('wine-item');
@@ -1552,7 +1835,7 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       }
       return null;
     }
-    logger.info('Decanter', `Found review URL: ${reviewUrl}`);
+    logger.info('Decanter', `Selected review URL (score ${bestMatch.score}): ${reviewUrl}`);
 
     // Fetch the actual review page
     const reviewResponse = await fetch(reviewUrl, {

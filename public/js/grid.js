@@ -7,6 +7,10 @@ import { shortenWineName } from './utils.js';
 import { state } from './app.js';
 import { setupDragAndDrop } from './dragdrop.js';
 import { handleSlotClick } from './bottles.js';
+import { getZoneMap } from './api.js';
+
+// Cache for zone map
+let zoneMapCache = null;
 
 /**
  * Render the fridge grid.
@@ -34,9 +38,16 @@ export function renderFridge() {
 /**
  * Render the cellar grid.
  */
-export function renderCellar() {
+export async function renderCellar() {
   const grid = document.getElementById('cellar-grid');
   if (!grid || !state.layout) return;
+
+  // Fetch zone map for row labels
+  try {
+    zoneMapCache = await getZoneMap();
+  } catch (_err) {
+    zoneMapCache = {};
+  }
 
   grid.innerHTML = '';
 
@@ -44,9 +55,22 @@ export function renderCellar() {
     const rowEl = document.createElement('div');
     rowEl.className = 'cellar-row';
 
+    const rowId = `R${row.row}`;
+    const zoneInfo = zoneMapCache[rowId];
+
     const label = document.createElement('div');
     label.className = 'row-label';
-    label.textContent = `R${row.row}`;
+    if (zoneInfo) {
+      label.classList.add('zone-active');
+      label.dataset.zoneId = zoneInfo.zoneId;
+      label.innerHTML = `
+        <span class="zone-name">${zoneInfo.displayName}</span>
+        <span class="row-id">${rowId}</span>
+      `;
+      label.title = `${zoneInfo.displayName} (${zoneInfo.wineCount} bottles)`;
+    } else {
+      label.textContent = rowId;
+    }
     rowEl.appendChild(label);
 
     row.slots.forEach(slot => {

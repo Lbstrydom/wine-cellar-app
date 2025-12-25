@@ -52,8 +52,28 @@
     <div class="zone">
       <div class="zone-header">
         <span class="zone-title">Cellar</span>
+        <button class="btn btn-secondary btn-small" id="analyse-cellar-btn">Analyse Organisation</button>
       </div>
       <div class="cellar-grid" id="cellar-grid"></div>
+    </div>
+
+    <!-- Cellar Analysis Panel -->
+    <div class="cellar-analysis-panel" id="cellar-analysis-panel" style="display: none;">
+      <div class="analysis-header">
+        <h3>Cellar Analysis</h3>
+        <button class="btn btn-secondary btn-small" id="close-analysis-btn">×</button>
+      </div>
+      <div class="analysis-summary" id="analysis-summary"></div>
+      <div class="analysis-alerts" id="analysis-alerts"></div>
+      <div class="analysis-moves" id="analysis-moves">
+        <h4>Suggested Moves</h4>
+        <div class="moves-list" id="moves-list"></div>
+        <div class="moves-actions" id="moves-actions" style="display: none;">
+          <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
+          <button class="btn btn-secondary btn-small" id="get-ai-advice-btn">Get AI Advice</button>
+        </div>
+      </div>
+      <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
     </div>
   </div>
 

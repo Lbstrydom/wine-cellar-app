@@ -513,3 +513,96 @@ export async function getUrgentWines(months = 12) {
   const res = await fetch(`${API_BASE}/api/drinking-windows/urgent?months=${months}`);
   return handleResponse(res, 'Failed to fetch urgent wines');
 }
+
+// ============================================
+// Cellar Zone Management API
+// ============================================
+
+/**
+ * Get all zone definitions.
+ * @returns {Promise<Object>}
+ */
+export async function getCellarZones() {
+  const res = await fetch(`${API_BASE}/api/cellar/zones`);
+  return handleResponse(res, 'Failed to fetch zones');
+}
+
+/**
+ * Get current zone → row mapping.
+ * @returns {Promise<Object>}
+ */
+export async function getZoneMap() {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-map`);
+  return handleResponse(res, 'Failed to fetch zone map');
+}
+
+/**
+ * Get placement suggestion for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getSuggestedPlacement(wineId) {
+  const res = await fetch(`${API_BASE}/api/cellar/suggest-placement/${wineId}`);
+  return handleResponse(res, 'Failed to get placement suggestion');
+}
+
+/**
+ * Get placement suggestion for a new wine (not yet in DB).
+ * @param {Object} wine - Wine details
+ * @returns {Promise<Object>}
+ */
+export async function suggestPlacement(wine) {
+  const res = await fetch(`${API_BASE}/api/cellar/suggest-placement`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wine })
+  });
+  return handleResponse(res, 'Failed to get placement suggestion');
+}
+
+/**
+ * Get full cellar analysis.
+ * @returns {Promise<Object>}
+ */
+export async function analyseCellar() {
+  const res = await fetch(`${API_BASE}/api/cellar/analyse`);
+  return handleResponse(res, 'Failed to analyse cellar');
+}
+
+/**
+ * Get AI-enhanced cellar analysis.
+ * @returns {Promise<Object>}
+ */
+export async function analyseCellarAI() {
+  const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`);
+  return handleResponse(res, 'Failed to get AI analysis');
+}
+
+/**
+ * Execute wine moves.
+ * @param {Array} moves - Array of {wineId, from, to, zoneId}
+ * @returns {Promise<Object>}
+ */
+export async function executeCellarMoves(moves) {
+  const res = await fetch(`${API_BASE}/api/cellar/execute-moves`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ moves })
+  });
+  return handleResponse(res, 'Failed to execute moves');
+}
+
+/**
+ * Manually assign a wine to a zone.
+ * @param {number} wineId - Wine ID
+ * @param {string} zoneId - Zone ID
+ * @returns {Promise<Object>}
+ */
+export async function assignWineToZone(wineId, zoneId) {
+  const res = await fetch(`${API_BASE}/api/cellar/assign-zone`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wineId, zoneId, confidence: 'manual' })
+  });
+  return handleResponse(res, 'Failed to assign zone');
+}

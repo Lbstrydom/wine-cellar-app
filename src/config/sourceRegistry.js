@@ -11,7 +11,8 @@ export const LENS = {
   PANEL_GUIDE: 'panel_guide',
   CRITIC: 'critic',
   COMMUNITY: 'community',
-  AGGREGATOR: 'aggregator'  // Sites that cite ratings from original sources
+  AGGREGATOR: 'aggregator',  // Sites that cite ratings from original sources
+  PRODUCER: 'producer'       // Winery's own website listing their awards
 };
 
 /**
@@ -24,7 +25,8 @@ export const LENS_CREDIBILITY = {
   [LENS.PANEL_GUIDE]: 2.5,
   [LENS.CRITIC]: 1.5,
   [LENS.COMMUNITY]: 1.0,
-  [LENS.AGGREGATOR]: 0.85  // Multiplied by original source credibility
+  [LENS.AGGREGATOR]: 0.85,  // Multiplied by original source credibility
+  [LENS.PRODUCER]: 1.2      // Producer's own claims - higher than community but verify
 };
 
 /**
@@ -818,6 +820,24 @@ export const SOURCE_REGISTRY = {
     aggregates_sources: ['wine_advocate', 'jancis_robinson', 'vinous', 'decanter', 'wine_spectator'],
     query_template: '{wine} {vintage} site:bbr.com',
     notes: 'Oldest wine merchant. Curates critic scores for fine wine.'
+  },
+
+  // ============================================
+  // PRODUCER WEBSITES (lens: producer, credibility: 1.2)
+  // Dynamic source - domain varies by wine producer
+  // ============================================
+
+  producer_website: {
+    name: 'Producer Website',
+    short_name: 'Winery',
+    lens: LENS.PRODUCER,
+    domain: null,  // Dynamic - varies per producer
+    home_regions: [],
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'cited',  // Cites awards from competitions
+    cites_sources: true,  // Awards are from external competitions
+    notes: 'Winery/estate official website. Look for awards, medals, accolades sections.'
   }
 };
 

@@ -9,6 +9,7 @@ import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
 import { initSettings, loadSettings } from './settings.js';
+import { initCellarAnalysis } from './cellarAnalysis.js';
 import { escapeHtml } from './utils.js';
 
 /**
@@ -79,6 +80,13 @@ export async function loadHistory() {
 export async function refreshData() {
   await loadLayout();
   await loadStats();
+}
+
+/**
+ * Refresh just the layout (grids).
+ */
+export async function refreshLayout() {
+  await loadLayout();
 }
 
 /**
@@ -322,6 +330,7 @@ async function init() {
   initModals();
   initSommelier();
   initSettings();
+  initCellarAnalysis();
   await initBottles();
 
   // Load initial data

@@ -133,11 +133,232 @@ header h1 {
 }
 
 .row-label {
-  width: 36px;
+  width: 80px;
+  min-width: 80px;
   font-size: 0.7rem;
   color: var(--text-muted);
   text-align: right;
   padding-right: 8px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.row-label.zone-active {
+  color: var(--text);
+}
+
+.row-label .zone-name {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 75px;
+}
+
+.row-label .row-id {
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
+/* Cellar Analysis Panel */
+.cellar-analysis-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1.5rem;
+}
+
+.analysis-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.analysis-header h3 {
+  margin: 0;
+  font-size: 1.2rem;
+}
+
+.analysis-header .btn {
+  font-size: 1.2rem;
+  padding: 0.2rem 0.5rem;
+  line-height: 1;
+}
+
+.analysis-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.summary-stat {
+  text-align: center;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+}
+
+.summary-stat .value {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.summary-stat .label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.summary-stat.good .value { color: #4caf50; }
+.summary-stat.warning .value { color: #ff9800; }
+.summary-stat.bad .value { color: #f44336; }
+
+.analysis-alerts {
+  margin-bottom: 1rem;
+}
+
+.alert-item {
+  padding: 0.75rem;
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.alert-item.warning {
+  background: rgba(255, 152, 0, 0.15);
+  border-left: 3px solid #ff9800;
+}
+
+.alert-item.info {
+  background: rgba(33, 150, 243, 0.15);
+  border-left: 3px solid #2196f3;
+}
+
+.alert-item .alert-icon {
+  font-size: 1.1rem;
+}
+
+.analysis-moves h4 {
+  margin-bottom: 0.75rem;
+  font-size: 1rem;
+}
+
+.moves-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.move-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  margin-bottom: 0.5rem;
+}
+
+.move-item.priority-1 { border-left: 3px solid var(--priority-1); }
+.move-item.priority-2 { border-left: 3px solid var(--priority-2); }
+.move-item.priority-3 { border-left: 3px solid var(--priority-3); }
+
+.move-details {
+  flex: 1;
+}
+
+.move-wine-name {
+  font-weight: 500;
+  margin-bottom: 0.25rem;
+}
+
+.move-path {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.move-path .from { color: #f44336; }
+.move-path .to { color: #4caf50; }
+.move-path .arrow { margin: 0 0.5rem; color: var(--text-muted); }
+
+.move-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+.move-confidence {
+  font-size: 0.7rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.move-confidence.high { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+.move-confidence.medium { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
+.move-confidence.low { background: rgba(158, 158, 158, 0.2); color: #9e9e9e; }
+
+.move-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.move-actions .btn {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.75rem;
+}
+
+.moves-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.analysis-ai-advice {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
+
+.analysis-ai-advice h4 {
+  margin-bottom: 0.75rem;
+  color: var(--accent);
+}
+
+.analysis-ai-advice p {
+  margin-bottom: 0.5rem;
+  line-height: 1.6;
+}
+
+.analysis-loading {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+}
+
+.no-moves {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 /* Fridge grid */
@@ -1606,6 +1827,18 @@ body.slot-picker-mode .slot.empty.picker-target:hover {
   transform: scale(1.05);
 }
 
+body.slot-picker-mode .slot.suggested-slot {
+  border: 2px solid #4caf50 !important;
+  background: rgba(76, 175, 80, 0.3) !important;
+  box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+  animation: pulse-suggested 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-suggested {
+  0%, 100% { box-shadow: 0 0 5px rgba(76, 175, 80, 0.5); }
+  50% { box-shadow: 0 0 15px rgba(76, 175, 80, 0.8); }
+}
+
 body.slot-picker-mode .slot:not(.empty) {
   opacity: 0.4;
   pointer-events: none;
@@ -2705,10 +2938,20 @@ body.slot-picker-mode .slot:not(.empty) {
   }
 
   .row-label {
-    width: 30px;
-    font-size: 0.75rem;
+    width: 60px;
+    min-width: 60px;
+    font-size: 0.65rem;
     padding-right: 4px;
     flex-shrink: 0;
+  }
+
+  .row-label .zone-name {
+    font-size: 0.55rem;
+    max-width: 55px;
+  }
+
+  .row-label .row-id {
+    font-size: 0.5rem;
   }
 
   .cellar-row,
@@ -2833,9 +3076,19 @@ body.slot-picker-mode .slot:not(.empty) {
   }
 
   .row-label {
-    width: 26px;
-    font-size: 0.7rem;
+    width: 50px;
+    min-width: 50px;
+    font-size: 0.6rem;
     flex-shrink: 0;
+  }
+
+  .row-label .zone-name {
+    font-size: 0.5rem;
+    max-width: 45px;
+  }
+
+  .row-label .row-id {
+    font-size: 0.45rem;
   }
 
   /* Zone headers */
@@ -2993,8 +3246,17 @@ body.slot-picker-mode .slot:not(.empty) {
   }
 
   .row-label {
-    width: 24px;
-    font-size: 0.65rem;
+    width: 40px;
+    min-width: 40px;
+    font-size: 0.55rem;
+  }
+
+  .row-label .zone-name {
+    display: none;
+  }
+
+  .row-label .row-id {
+    font-size: 0.55rem;
   }
 
   header h1 {
