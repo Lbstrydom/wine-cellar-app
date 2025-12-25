@@ -9,7 +9,8 @@ param(
     [string]$SynologyUser = "lstrydom"
 )
 
-$ErrorActionPreference = "Stop"
+# Continue on stderr warnings (SSH post-quantum warnings are noisy but harmless)
+$ErrorActionPreference = "Continue"
 
 $LocalDB = ".\data\cellar.db"
 $RemoteAppPath = "Apps/wine-cellar-app"
