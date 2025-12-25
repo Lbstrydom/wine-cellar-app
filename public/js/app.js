@@ -5,7 +5,7 @@
 
 import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
 import { renderFridge, renderCellar } from './grid.js';
-import { initModals } from './modals.js';
+import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
 import { initSettings, loadSettings } from './settings.js';
@@ -174,6 +174,17 @@ function renderWineList() {
       </div>
     `;
   }).join('');
+
+  // Add click handlers to wine cards
+  container.querySelectorAll('.wine-card').forEach(card => {
+    card.addEventListener('click', () => {
+      const wineId = Number.parseInt(card.dataset.wineId, 10);
+      const wine = filtered.find(w => w.id === wineId);
+      if (wine) {
+        showWineModalFromList(wine);
+      }
+    });
+  });
 }
 
 /**

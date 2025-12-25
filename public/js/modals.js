@@ -12,6 +12,32 @@ import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
 let currentSlot = null;
 
 /**
+ * Show wine detail modal from a wine list item.
+ * Converts wine list data to slot-like format for the modal.
+ * @param {Object} wine - Wine list data with id, wine_name, style, vintage, colour, locations, etc.
+ */
+export async function showWineModalFromList(wine) {
+  // Convert wine list data to slot-like object
+  const slot = {
+    wine_id: wine.id,
+    wine_name: wine.wine_name,
+    style: wine.style,
+    vintage: wine.vintage,
+    colour: wine.colour,
+    location_code: wine.locations || '-', // Show all locations or dash if no bottles
+    rating: wine.vivino_rating,
+    price: wine.price_eur,
+    reduce_priority: wine.reduce_priority,
+    reduce_reason: wine.reduce_reason,
+    tasting_notes: wine.tasting_notes,
+    // Extra info for wine list context
+    bottle_count: wine.bottle_count
+  };
+
+  await showWineModal(slot);
+}
+
+/**
  * Show wine detail modal.
  * @param {Object} slot - Slot data
  */

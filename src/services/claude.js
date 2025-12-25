@@ -145,7 +145,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
     throw new Error('Could not parse sommelier response');
   }
 
-  // Enrich recommendations with locations
+  // Enrich recommendations with wine data including ID for clickable links
   if (parsed.recommendations) {
     parsed.recommendations = parsed.recommendations.map(rec => {
       const wine = wines.find(w =>
@@ -154,8 +154,11 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       );
       return {
         ...rec,
+        wine_id: wine?.id || null,
         location: wine?.locations || 'Unknown',
-        bottle_count: wine?.bottle_count || 0
+        bottle_count: wine?.bottle_count || 0,
+        style: wine?.style || null,
+        colour: wine?.colour || null
       };
     });
   }

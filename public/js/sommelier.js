@@ -5,6 +5,7 @@
 
 import { askSommelier, getPairingSuggestions } from './api.js';
 import { showToast } from './utils.js';
+import { showWineModalFromList } from './modals.js';
 
 const selectedSignals = new Set();
 
@@ -67,9 +68,10 @@ function renderSommelierResponse(data) {
   } else {
     data.recommendations.forEach(rec => {
       const priorityClass = rec.is_priority ? 'priority' : '';
+      const clickableClass = rec.wine_id ? 'clickable' : '';
 
       html += `
-        <div class="recommendation ${priorityClass}">
+        <div class="recommendation ${priorityClass} ${clickableClass}" data-wine-id="${rec.wine_id || ''}" data-wine-name="${rec.wine_name}" data-vintage="${rec.vintage || ''}" data-style="${rec.style || ''}" data-colour="${rec.colour || ''}" data-locations="${rec.location}" data-bottle-count="${rec.bottle_count}">
           <div class="recommendation-header">
             <h4>#${rec.rank} ${rec.wine_name} ${rec.vintage || 'NV'}</h4>
             ${rec.is_priority ? '<span class="priority-badge">Drink Soon</span>' : ''}
@@ -84,6 +86,24 @@ function renderSommelierResponse(data) {
 
   html += '</div>';
   container.innerHTML = html;
+
+  // Add click handlers to recommendations
+  container.querySelectorAll('.recommendation.clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const wineId = Number.parseInt(el.dataset.wineId, 10);
+      if (wineId) {
+        showWineModalFromList({
+          id: wineId,
+          wine_name: el.dataset.wineName,
+          vintage: el.dataset.vintage || null,
+          style: el.dataset.style || null,
+          colour: el.dataset.colour || null,
+          locations: el.dataset.locations,
+          bottle_count: Number.parseInt(el.dataset.bottleCount, 10) || 0
+        });
+      }
+    });
+  });
 }
 
 /**
@@ -128,7 +148,7 @@ function renderManualPairingResults(data) {
   }
 
   container.innerHTML = data.suggestions.map((wine, idx) => `
-    <div class="pairing-suggestion">
+    <div class="pairing-suggestion clickable" data-wine-id="${wine.id}">
       <div class="pairing-score">#${idx + 1}</div>
       <div style="flex: 1;">
         <div style="font-weight: 500;">${wine.wine_name} ${wine.vintage || 'NV'}</div>
@@ -139,6 +159,17 @@ function renderManualPairingResults(data) {
       </div>
     </div>
   `).join('');
+
+  // Add click handlers to suggestions
+  container.querySelectorAll('.pairing-suggestion.clickable').forEach(el => {
+    el.addEventListener('click', () => {
+      const wineId = Number.parseInt(el.dataset.wineId, 10);
+      const wine = data.suggestions.find(w => w.id === wineId);
+      if (wine) {
+        showWineModalFromList(wine);
+      }
+    });
+  });
 }
 
 /**

@@ -278,6 +278,19 @@ export async function addManualRating(wineId, rating) {
 }
 
 /**
+ * Delete a rating.
+ * @param {number} wineId - Wine ID
+ * @param {number} ratingId - Rating ID
+ * @returns {Promise<Object>}
+ */
+export async function deleteRating(wineId, ratingId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings/${ratingId}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to delete rating');
+}
+
+/**
  * Get user settings.
  * @returns {Promise<Object>}
  */

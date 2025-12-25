@@ -3,7 +3,7 @@
  * @module ratings
  */
 
-import { fetchWineRatingsFromApi, getWineRatings, addManualRating, fetchLayout } from './api.js';
+import { fetchWineRatingsFromApi, getWineRatings, addManualRating, deleteRating, fetchLayout } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { state } from './app.js';
 
@@ -171,7 +171,7 @@ export function renderRatingsPanel(ratingsData) {
         : '';
 
       html += `
-        <div class="rating-item">
+        <div class="rating-item" data-rating-id="${rating.id}">
           <div class="rating-source">
             ${icon} ${sourceName} ${yearText}
           </div>
@@ -183,6 +183,7 @@ export function renderRatingsPanel(ratingsData) {
             ${ratingCountText}
             ${vintageWarning}
           </div>
+          <button class="rating-delete-btn" data-rating-id="${rating.id}" title="Delete rating">×</button>
         </div>
       `;
     }
@@ -245,6 +246,39 @@ export function initRatingsPanel(wineId) {
   const addBtn = document.getElementById('add-rating-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => showManualRatingForm(wineId));
+  }
+
+  // Delete rating buttons
+  document.querySelectorAll('.rating-delete-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const ratingId = btn.dataset.ratingId;
+      handleDeleteRating(wineId, ratingId);
+    });
+  });
+}
+
+/**
+ * Handle delete rating button click.
+ * @param {number} wineId - Wine ID
+ * @param {number} ratingId - Rating ID
+ */
+async function handleDeleteRating(wineId, ratingId) {
+  if (!confirm('Delete this rating?')) return;
+
+  try {
+    await deleteRating(wineId, ratingId);
+    showToast('Rating deleted');
+
+    // Refresh ratings display
+    const ratingsData = await getWineRatings(wineId);
+    const panel = document.querySelector('.ratings-panel-container');
+    if (panel) {
+      panel.innerHTML = renderRatingsPanel(ratingsData);
+      initRatingsPanel(wineId);
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message);
   }
 }
 

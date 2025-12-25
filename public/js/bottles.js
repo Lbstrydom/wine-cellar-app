@@ -565,9 +565,9 @@ function isMobileDevice() {
     || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
 }
 
-// Max image size in bytes (5MB)
-const MAX_IMAGE_SIZE = 5 * 1024 * 1024;
-// Target size for resized images (aim for ~1MB to leave margin)
+// Resize threshold - always resize images larger than this (2MB)
+const RESIZE_THRESHOLD = 2 * 1024 * 1024;
+// Target size for resized images (aim for ~1MB to stay well under server limits)
 const TARGET_IMAGE_SIZE = 1 * 1024 * 1024;
 // Max dimension for resized images
 const MAX_IMAGE_DIMENSION = 2048;
@@ -584,9 +584,9 @@ async function handleImageFile(file) {
     return;
   }
 
-  // If file is over the limit, try to downscale it
-  if (file.size > MAX_IMAGE_SIZE) {
-    showToast('Resizing large image...');
+  // If file is over the threshold, resize it for faster upload and to stay under server limits
+  if (file.size > RESIZE_THRESHOLD) {
+    showToast('Optimizing image...');
     try {
       const resizedResult = await resizeImage(file);
       uploadedImage = {
@@ -595,7 +595,7 @@ async function handleImageFile(file) {
         preview: resizedResult.dataUrl
       };
       showImagePreview(resizedResult.dataUrl);
-      showToast(`Image resized (${formatFileSize(file.size)} → ${formatFileSize(resizedResult.size)})`);
+      showToast(`Image optimized (${formatFileSize(file.size)} → ${formatFileSize(resizedResult.size)})`);
       return;
     } catch (err) {
       console.error('Failed to resize image:', err);

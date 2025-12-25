@@ -25,10 +25,14 @@ export function showToast(message) {
 export function shortenWineName(name) {
   if (!name) return '';
   return name
-    .replace(/\b(Vineyard|Selection|Reserva?|Gran|Superior[e]?)\b/gi, '')
+    // Remove common filler words and designations
+    .replace(/\b(Vineyard|Vineyards|Selection|Reserva?|Gran|Superior[e]?|Estate|Winery|Cellars?|Family|Single|Premium|Special|Limited|Edition|Classic)\b/gi, '')
+    // Remove year patterns that might be in the name (vintage is shown separately)
+    .replace(/\b(19|20)\d{2}\b/g, '')
+    // Clean up multiple spaces
     .replace(/\s+/g, ' ')
     .trim()
-    .substring(0, 30);
+    .substring(0, 25);
 }
 
 /**
