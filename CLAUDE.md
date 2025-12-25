@@ -396,6 +396,38 @@ refactor/modular-structure
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
+| `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
+| `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
+| `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
+| `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
+| `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
+
+---
+
+## Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
+
+### Quick Reference
+
+```powershell
+# Deploy new version (from PowerShell)
+.\scripts\deploy.ps1
+
+# Sync database from production
+.\scripts\sync-db.ps1 -Download
+
+# Sync database to production (caution!)
+.\scripts\sync-db.ps1 -Upload
+```
+
+### Key Paths on Synology
+
+| Item | Path |
+|------|------|
+| App directory | `~/Apps/wine-cellar-app/` |
+| Database | `~/Apps/wine-cellar-app/data/cellar.db` |
+| Production URL | http://192.168.86.31:3000 |
 
 ---
 
