@@ -1,0 +1,394 @@
+/**
+ * @fileoverview API endpoints for cellar zone management.
+ * @module routes/cellar
+ */
+
+import express from 'express';
+import db from '../db/index.js';
+import { CELLAR_ZONES } from '../config/cellarZones.js';
+import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellarAnalysis.js';
+import { findBestZone, findAvailableSlot } from '../services/cellarPlacement.js';
+import { getCellarOrganisationAdvice } from '../services/cellarAI.js';
+import {
+  getActiveZoneMap,
+  getZoneStatuses,
+  getAllZoneAllocations,
+  updateZoneWineCount
+} from '../services/cellarAllocation.js';
+
+const router = express.Router();
+
+/**
+ * Get all wines with their slot assignments.
+ * @returns {Array} Wines with location data
+ */
+function getAllWinesWithSlots() {
+  return db.prepare(`
+    SELECT
+      w.id,
+      w.wine_name,
+      w.vintage,
+      w.style,
+      w.colour,
+      w.country,
+      w.grapes,
+      w.region,
+      w.appellation,
+      w.winemaking,
+      w.sweetness,
+      w.zone_id,
+      w.zone_confidence,
+      w.drink_from,
+      w.drink_until,
+      s.location_code as slot_id
+    FROM wines w
+    LEFT JOIN slots s ON s.wine_id = w.id
+  `).all();
+}
+
+/**
+ * Get currently occupied slots.
+ * @returns {Set<string>} Set of occupied slot IDs
+ */
+function getOccupiedSlots() {
+  const slots = db.prepare(
+    'SELECT location_code FROM slots WHERE wine_id IS NOT NULL'
+  ).all();
+  return new Set(slots.map(s => s.location_code));
+}
+
+// ============================================================
+// Zone Information Endpoints
+// ============================================================
+
+/**
+ * GET /api/cellar/zones
+ * Get all zone definitions.
+ */
+router.get('/zones', (_req, res) => {
+  res.json({
+    fridge: CELLAR_ZONES.fridge,
+    zones: CELLAR_ZONES.zones.map(z => ({
+      id: z.id,
+      displayName: z.displayName,
+      color: z.color,
+      isBufferZone: z.isBufferZone || false,
+      isFallbackZone: z.isFallbackZone || false,
+      isCuratedZone: z.isCuratedZone || false,
+      preferredRowRange: z.preferredRowRange || []
+    }))
+  });
+});
+
+/**
+ * GET /api/cellar/zone-map
+ * Get current zone → row mapping.
+ */
+router.get('/zone-map', (_req, res) => {
+  try {
+    const zoneMap = getActiveZoneMap();
+    res.json(zoneMap);
+  } catch (err) {
+    console.error('[CellarAPI] Zone map error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zone-statuses
+ * Get all zones with their allocation status.
+ */
+router.get('/zone-statuses', (_req, res) => {
+  try {
+    const statuses = getZoneStatuses();
+    res.json(statuses);
+  } catch (err) {
+    console.error('[CellarAPI] Zone statuses error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/allocations
+ * Get all current zone allocations.
+ */
+router.get('/allocations', (_req, res) => {
+  try {
+    const allocations = getAllZoneAllocations();
+    res.json(allocations);
+  } catch (err) {
+    console.error('[CellarAPI] Allocations error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Placement Endpoints
+// ============================================================
+
+/**
+ * POST /api/cellar/suggest-placement
+ * Get placement suggestion for a wine.
+ */
+router.post('/suggest-placement', (req, res) => {
+  try {
+    const { wine } = req.body;
+    if (!wine) {
+      return res.status(400).json({ error: 'Wine object required' });
+    }
+
+    const occupiedSlots = getOccupiedSlots();
+    const zoneMatch = findBestZone(wine);
+    const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+
+    res.json({
+      success: true,
+      suggestion: {
+        zone: zoneMatch,
+        slot: availableSlot
+      }
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Suggest placement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/suggest-placement/:wineId
+ * Get placement suggestion for an existing wine by ID.
+ */
+router.get('/suggest-placement/:wineId', (req, res) => {
+  try {
+    const wineId = parseInt(req.params.wineId, 10);
+    const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const occupiedSlots = getOccupiedSlots();
+    const zoneMatch = findBestZone(wine);
+    const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+
+    res.json({
+      success: true,
+      wine: {
+        id: wine.id,
+        name: wine.wine_name,
+        vintage: wine.vintage
+      },
+      suggestion: {
+        zone: zoneMatch,
+        slot: availableSlot
+      }
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Suggest placement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Analysis Endpoints
+// ============================================================
+
+/**
+ * GET /api/cellar/analyse
+ * Get full cellar analysis.
+ */
+router.get('/analyse', (_req, res) => {
+  try {
+    const wines = getAllWinesWithSlots();
+    const report = analyseCellar(wines);
+
+    // Add fridge candidates
+    report.fridgeCandidates = getFridgeCandidates(wines);
+
+    res.json({
+      success: true,
+      report,
+      shouldTriggerAIReview: shouldTriggerAIReview(report)
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Analyse error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/analyse/ai
+ * Get AI-enhanced analysis.
+ */
+router.get('/analyse/ai', async (req, res) => {
+  try {
+    const wines = getAllWinesWithSlots();
+    const report = analyseCellar(wines);
+
+    // Add fridge candidates
+    report.fridgeCandidates = getFridgeCandidates(wines);
+
+    const aiResult = await getCellarOrganisationAdvice(report);
+
+    res.json({
+      success: true,
+      report,
+      aiAdvice: aiResult.success ? aiResult.advice : aiResult.fallback,
+      aiSuccess: aiResult.success,
+      aiError: aiResult.error || null
+    });
+  } catch (err) {
+    console.error('[CellarAPI] AI analyse error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Action Endpoints
+// ============================================================
+
+/**
+ * POST /api/cellar/execute-moves
+ * Execute wine moves.
+ */
+router.post('/execute-moves', (req, res) => {
+  try {
+    const { moves } = req.body;
+    if (!Array.isArray(moves) || moves.length === 0) {
+      return res.status(400).json({ error: 'Moves array required' });
+    }
+
+    const results = [];
+    const updateSlot = db.prepare(
+      'UPDATE slots SET wine_id = ? WHERE location_code = ?'
+    );
+    const updateWineZone = db.prepare(
+      'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
+    );
+
+    const transaction = db.transaction((movesToExecute) => {
+      for (const move of movesToExecute) {
+        // Clear source slot
+        updateSlot.run(null, move.from);
+
+        // Set target slot
+        updateSlot.run(move.wineId, move.to);
+
+        // Update wine zone assignment
+        if (move.zoneId) {
+          updateWineZone.run(move.zoneId, move.confidence || 'medium', move.wineId);
+        }
+
+        results.push({
+          wineId: move.wineId,
+          from: move.from,
+          to: move.to,
+          success: true
+        });
+      }
+    });
+
+    transaction(moves);
+
+    res.json({
+      success: true,
+      moved: results.length,
+      results
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Execute moves error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/assign-zone
+ * Manually assign a wine to a zone.
+ */
+router.post('/assign-zone', (req, res) => {
+  try {
+    const { wineId, zoneId, confidence } = req.body;
+
+    if (!wineId || !zoneId) {
+      return res.status(400).json({ error: 'wineId and zoneId required' });
+    }
+
+    // Get current zone for count update
+    const wine = db.prepare('SELECT zone_id FROM wines WHERE id = ?').get(wineId);
+    const oldZoneId = wine?.zone_id;
+
+    // Update wine
+    db.prepare(
+      'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
+    ).run(zoneId, confidence || 'manual', wineId);
+
+    // Update zone counts
+    if (oldZoneId && oldZoneId !== zoneId) {
+      updateZoneWineCount(oldZoneId, -1);
+    }
+    if (zoneId !== oldZoneId) {
+      updateZoneWineCount(zoneId, 1);
+    }
+
+    res.json({
+      success: true,
+      wineId,
+      zoneId,
+      previousZone: oldZoneId
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Assign zone error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/update-wine-attributes
+ * Update canonical wine attributes (grapes, region, etc.).
+ */
+router.post('/update-wine-attributes', (req, res) => {
+  try {
+    const { wineId, attributes } = req.body;
+
+    if (!wineId) {
+      return res.status(400).json({ error: 'wineId required' });
+    }
+
+    const allowedFields = ['grapes', 'region', 'appellation', 'winemaking', 'sweetness', 'country'];
+    const updates = [];
+    const values = [];
+
+    for (const [key, value] of Object.entries(attributes || {})) {
+      if (allowedFields.includes(key)) {
+        updates.push(`${key} = ?`);
+        // Stringify arrays for JSON storage
+        values.push(Array.isArray(value) ? JSON.stringify(value) : value);
+      }
+    }
+
+    if (updates.length === 0) {
+      return res.status(400).json({ error: 'No valid attributes to update' });
+    }
+
+    values.push(wineId);
+    db.prepare(
+      `UPDATE wines SET ${updates.join(', ')} WHERE id = ?`
+    ).run(...values);
+
+    // Re-evaluate zone placement
+    const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const newZoneMatch = findBestZone(wine);
+
+    res.json({
+      success: true,
+      wineId,
+      updatedFields: updates.map(u => u.split(' = ')[0]),
+      suggestedZone: newZoneMatch
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Update attributes error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+export default router;

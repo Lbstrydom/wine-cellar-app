@@ -13,6 +13,7 @@ import statsRoutes from './stats.js';
 import ratingsRoutes from './ratings.js';
 import settingsRoutes from './settings.js';
 import drinkingWindowsRoutes from './drinkingWindows.js';
+import cellarRoutes from './cellar.js';
 
 const router = Router();
 
@@ -26,5 +27,6 @@ router.use('/stats', statsRoutes);
 router.use('/ratings', ratingsRoutes); // Admin routes: GET /ratings/sources, /ratings/logs, POST /ratings/cleanup
 router.use('/settings', settingsRoutes);
 router.use('/', drinkingWindowsRoutes);  // /wines/:wine_id/drinking-windows and /drinking-windows/urgent
+router.use('/cellar', cellarRoutes);    // /cellar/analyse, /cellar/suggest-placement, etc.
 
 export default router;
