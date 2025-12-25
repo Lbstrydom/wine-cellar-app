@@ -4,7 +4,7 @@ This guide explains how to sync the wine cellar database between your Synology N
 
 ## Database Location
 
-- **Synology (Docker)**: `/volume1/docker/wine-cellar/data/cellar.db`
+- **Synology (Docker)**: `~/Apps/wine-cellar-app/data/cellar.db` (or `/volume1/homes/<username>/Apps/wine-cellar-app/data/cellar.db`)
 - **Local Development**: `data/cellar.db`
 
 The database is a SQLite file, so syncing is simply a matter of copying the file.
@@ -79,10 +79,10 @@ sudo docker compose up -d
 
 ```bash
 # Download from Synology
-scp user@SYNOLOGY_IP:/volume1/docker/wine-cellar/data/cellar.db ./data/
+scp user@SYNOLOGY_IP:~/Apps/wine-cellar-app/data/cellar.db ./data/
 
 # Upload to Synology (after stopping container!)
-scp ./data/cellar.db user@SYNOLOGY_IP:/volume1/docker/wine-cellar/data/
+scp ./data/cellar.db user@SYNOLOGY_IP:~/Apps/wine-cellar-app/data/
 
 # SSH into Synology
 ssh user@SYNOLOGY_IP
