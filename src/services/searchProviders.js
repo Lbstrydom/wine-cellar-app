@@ -1165,14 +1165,30 @@ function generatePhoneticVariations(wineName) {
 function extractProducerName(wineName) {
   if (!wineName) return null;
 
-  // Common grape varieties and wine types to stop at
-  const stopWords = new Set([
+  // Grape varieties - always stop here (these are wine types, not producer names)
+  const grapeVarieties = new Set([
     'cabernet', 'sauvignon', 'blanc', 'merlot', 'shiraz', 'syrah', 'pinot',
     'chardonnay', 'riesling', 'chenin', 'pinotage', 'malbec', 'tempranillo',
     'sangiovese', 'nebbiolo', 'verdejo', 'viognier', 'gewurztraminer',
-    'primitivo', 'zinfandel', 'grenache', 'mourvedre', 'cinsault',
+    'primitivo', 'zinfandel', 'grenache', 'mourvedre', 'cinsault', 'noir',
+    'grigio', 'gris', 'semillon', 'muscat', 'moscato', 'gewurz', 'gruner',
+    'albarino', 'torrontes', 'carmenere', 'petit', 'verdot', 'tannat'
+  ]);
+
+  // Wine type/style words - stop here (these indicate wine style, not producer)
+  const wineTypeWords = new Set([
     'red', 'white', 'rose', 'rosé', 'blend', 'reserve', 'reserva', 'gran',
-    'vineyard', 'selection', 'estate', 'single', 'barrel', 'limited'
+    'selection', 'single', 'barrel', 'limited', 'special', 'cuvee', 'cuvée',
+    'brut', 'extra', 'demi', 'sec', 'vintage'
+  ]);
+
+  // Words that can be part of producer name - don't stop here
+  // These often form part of winery/estate names
+  const producerNameWords = new Set([
+    'estate', 'estates', 'vineyard', 'vineyards', 'winery', 'wines', 'cellars',
+    'chateau', 'château', 'domaine', 'casa', 'bodega', 'tenuta', 'fattoria',
+    'weingut', 'hill', 'hills', 'valley', 'creek', 'bay', 'ridge', 'mountain',
+    'clos', 'cave', 'caves', 'maison', 'familia', 'family', 'brothers'
   ]);
 
   const words = wineName.split(/\s+/);
@@ -1183,9 +1199,12 @@ function extractProducerName(wineName) {
     // Skip leading numbers but don't stop (e.g., "1 Uno" -> "Uno")
     if (/^\d+$/.test(word)) continue;
     // Stop at grape variety keywords
-    if (stopWords.has(cleaned)) break;
+    if (grapeVarieties.has(cleaned)) break;
+    // Stop at wine type words
+    if (wineTypeWords.has(cleaned)) break;
+    // Producer name words are included (don't stop at them)
     producerWords.push(word);
-    if (producerWords.length >= 4) break; // Max 4 words for producer
+    if (producerWords.length >= 5) break; // Max 5 words for producer (increased)
   }
 
   if (producerWords.length === 0) return null;
@@ -1285,7 +1304,8 @@ function checkIfProducerSite(url, wineNameLower, keyWords) {
 
   // Check if domain contains any key words from wine name (producer name)
   // This catches things like "springfieldestate.com" for "Springfield Estate"
-  const domainWithoutTld = domain.replace(/\.(com|co\.za|wine|fr|it|es|de|cl|ar|au|nz)$/, '');
+  // Extended TLD list to include regional variations and wine-specific domains
+  const domainWithoutTld = domain.replace(/\.(com|co\.za|co\.nz|co\.uk|com\.au|wine|wines|fr|it|es|de|cl|ar|au|nz|pt|za)$/, '');
 
   for (const word of keyWords) {
     if (word.length >= 4 && domainWithoutTld.includes(word.replace(/[^a-z0-9]/g, ''))) {
