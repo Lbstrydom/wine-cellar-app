@@ -2,6 +2,48 @@
 
 This guide covers deploying the wine-cellar-app to Synology NAS via Docker.
 
+---
+
+## Quick Reference
+
+| Action | Command |
+|--------|---------|
+| **Full deploy** | `.\scripts\deploy.ps1` |
+| **Deploy existing image** | `.\scripts\deploy.ps1 -SkipPush` |
+| **Update config only** | `.\scripts\deploy.ps1 -UpdateConfig` |
+| **Clean deploy** | `.\scripts\deploy.ps1 -SkipPush -Clean` |
+| **Download production DB** | `.\scripts\sync-db.ps1 -Download` |
+| **Upload local DB** | `.\scripts\sync-db.ps1 -Upload` |
+| **Setup SSH key auth** | `.\scripts\setup-ssh-key.ps1` |
+| **SSH to Synology** | `ssh lstrydom@192.168.86.31` |
+| **View container logs** | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar"` |
+
+**Production URL**: http://192.168.86.31:3000
+
+### Common Usage (Copy-Paste Ready)
+
+```powershell
+# Full deploy (push to GitHub, wait for build, deploy)
+.\scripts\deploy.ps1
+
+# Deploy existing image (skip git push)
+.\scripts\deploy.ps1 -SkipPush
+
+# Just update config files and restart
+.\scripts\deploy.ps1 -UpdateConfig
+
+# Full clean deploy (prune unused images)
+.\scripts\deploy.ps1 -SkipPush -Clean
+
+# Download production database to local
+.\scripts\sync-db.ps1 -Download
+
+# Upload local database to production (CAUTION!)
+.\scripts\sync-db.ps1 -Upload
+```
+
+---
+
 ## Prerequisites
 
 - Synology NAS with Docker/Container Manager installed
@@ -9,9 +51,68 @@ This guide covers deploying the wine-cellar-app to Synology NAS via Docker.
 - SFTP enabled (Control Panel → File Services → FTP → Enable SFTP)
 - GitHub Container Registry image built (automatic via GitHub Actions on push to main)
 
-## Environment Setup
+---
 
-### Synology Paths
+## First-Time Setup
+
+### 1. Create Local .env File
+
+Create `.env` in the project root with all credentials:
+
+```bash
+# API Keys
+ANTHROPIC_API_KEY=your-anthropic-key
+GOOGLE_SEARCH_API_KEY=your-google-key
+GOOGLE_SEARCH_ENGINE_ID=your-search-engine-id
+BRIGHTDATA_API_KEY=your-brightdata-key
+BRIGHTDATA_SERP_ZONE=wine_serp
+BRIGHTDATA_WEB_ZONE=wine_unlocker
+
+# Synology NAS credentials (for deployment scripts)
+SYNOLOGY_USER=lstrydom
+SYNOLOGY_IP=192.168.86.31
+SYNOLOGY_PASSWORD=your-synology-password
+```
+
+### 2. Setup SSH Key Authentication (Recommended)
+
+Run the setup script to configure passwordless SSH:
+
+```powershell
+.\scripts\setup-ssh-key.ps1
+```
+
+This will:
+- Generate an SSH key if needed
+- Copy the public key to Synology
+- Fix home directory permissions
+- Test the connection
+
+### 3. Configure Docker Access on Synology
+
+To run docker commands without sudo:
+
+**Option A: Via DSM Web Interface**
+1. Control Panel → User & Group → Select user → Permissions tab
+2. Give Read/Write access to "docker" shared folder
+
+**Option B: Change docker socket group**
+```bash
+# SSH into Synology and run:
+sudo chgrp administrators /var/run/docker.sock
+sudo chmod 660 /var/run/docker.sock
+```
+
+**Make it persistent after reboot:**
+1. Control Panel → Task Scheduler → Create → Triggered Task → User-defined script
+2. Task: "Docker socket permissions"
+3. User: root
+4. Event: Boot-up
+5. Run command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
+
+---
+
+## Synology Paths
 
 | Item | Path |
 |------|------|
@@ -20,31 +121,67 @@ This guide covers deploying the wine-cellar-app to Synology NAS via Docker.
 | Environment file | `~/Apps/wine-cellar-app/.env` |
 | Docker Compose | `~/Apps/wine-cellar-app/docker-compose.yml` |
 
-### Required Environment Variables
+---
 
-Create `.env` file with:
+## Automated Deployment Scripts
 
-```bash
-ANTHROPIC_API_KEY=your-key-here
-GOOGLE_SEARCH_API_KEY=your-key-here
-GOOGLE_SEARCH_ENGINE_ID=your-id-here
-BRIGHTDATA_API_KEY=your-key-here
-BRIGHTDATA_SERP_ZONE=wine_serp
-BRIGHTDATA_WEB_ZONE=wine_unlocker
+### Deploy Script (scripts/deploy.ps1)
+
+The deploy script handles everything: push to GitHub, wait for build, deploy to Synology.
+
+```powershell
+# Full deploy (push, wait for build, deploy)
+.\scripts\deploy.ps1
+
+# Deploy without pushing (use existing image)
+.\scripts\deploy.ps1 -SkipPush
+
+# Just update config files and restart (no new image)
+.\scripts\deploy.ps1 -UpdateConfig
+
+# Full clean deploy (prune all unused images)
+.\scripts\deploy.ps1 -SkipPush -Clean
 ```
+
+**What the deploy script does:**
+1. Checks for uncommitted changes
+2. Pushes to GitHub
+3. Waits for GitHub Actions build to complete
+4. Stops the container on Synology
+5. Removes old Docker image
+6. Uploads docker-compose.yml and .env
+7. Pulls new image and starts container
+8. Verifies deployment
+
+### Database Sync Script (scripts/sync-db.ps1)
+
+```powershell
+# Download production DB to local
+.\scripts\sync-db.ps1 -Download
+
+# Upload local DB to production (CAUTION!)
+.\scripts\sync-db.ps1 -Upload
+```
+
+### SSH Authentication
+
+The scripts auto-detect and prefer SSH key auth, falling back to password auth if needed:
+
+1. **Native SSH with key auth** (preferred) - No password prompts
+   - Setup: `.\scripts\setup-ssh-key.ps1`
+
+2. **PuTTY (plink/psftp)** - Uses password from .env file
+   - Install: `winget install PuTTY.PuTTY`
 
 ---
 
-## Quick Commands
+## Manual Deployment
 
 ### From Windows PowerShell
 
 ```powershell
 # SSH into Synology
 ssh lstrydom@192.168.86.31
-
-# Download database from Synology (run scripts/sync-db.ps1 instead)
-# Manual: First copy to home dir on Synology, then SCP
 ```
 
 ### From Synology SSH
@@ -54,127 +191,26 @@ ssh lstrydom@192.168.86.31
 cd ~/Apps/wine-cellar-app
 
 # View container status
-sudo docker ps
+docker ps
 
 # View logs
-sudo docker logs wine-cellar
+docker logs wine-cellar
 
 # Restart container
-sudo docker compose restart
+docker compose restart
 
 # Full redeploy (pull latest image)
-sudo docker compose down
-sudo docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest
-sudo docker compose pull
-sudo docker compose up -d
+docker compose down
+docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest
+docker compose pull
+docker compose up -d
 ```
-
----
-
-## Deployment Procedures
-
-### 1. Deploy New Code Version
-
-After pushing to main branch:
-
-1. **Wait for GitHub Actions** to build the image (~1 min)
-   ```powershell
-   # Check build status
-   gh run list --limit 1
-   ```
-
-2. **SSH into Synology**
-   ```powershell
-   ssh lstrydom@192.168.86.31
-   ```
-
-3. **Pull and restart**
-   ```bash
-   cd ~/Apps/wine-cellar-app
-   sudo docker compose down
-   sudo docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest
-   sudo docker compose pull
-   sudo docker compose up -d
-   ```
-
-4. **Verify**
-   ```bash
-   sudo docker ps
-   # Should show: ghcr.io/lbstrydom/wine-cellar-app:latest with status "healthy"
-   ```
-
-### 2. Update Environment Variables
-
-1. **SSH into Synology**
-   ```bash
-   ssh lstrydom@192.168.86.31
-   cd ~/Apps/wine-cellar-app
-   ```
-
-2. **Edit .env file**
-   ```bash
-   nano .env
-   # Or recreate with cat:
-   cat > .env << 'EOF'
-   ANTHROPIC_API_KEY=your-key
-   # ... other vars
-   EOF
-   ```
-
-3. **Restart container**
-   ```bash
-   sudo docker compose down && sudo docker compose up -d
-   ```
-
-### 3. Sync Database (Synology → Local)
-
-Use the helper script:
-```powershell
-.\scripts\sync-db.ps1 -Download
-```
-
-Or manually:
-1. **On Synology SSH**
-   ```bash
-   cp ~/Apps/wine-cellar-app/data/cellar.db ~/cellar.db
-   ```
-
-2. **On Windows PowerShell**
-   ```powershell
-   scp lstrydom@192.168.86.31:cellar.db ./data/cellar.db
-   ```
-
-3. **Cleanup on Synology**
-   ```bash
-   rm ~/cellar.db
-   ```
-
-### 4. Sync Database (Local → Synology)
-
-**Warning**: This overwrites production data!
-
-1. **Stop container on Synology**
-   ```bash
-   cd ~/Apps/wine-cellar-app
-   sudo docker compose down
-   ```
-
-2. **Upload from Windows**
-   ```powershell
-   scp ./data/cellar.db lstrydom@192.168.86.31:cellar.db
-   ```
-
-3. **On Synology, move file and restart**
-   ```bash
-   mv ~/cellar.db ~/Apps/wine-cellar-app/data/cellar.db
-   sudo docker compose up -d
-   ```
 
 ---
 
 ## Docker Compose Configuration
 
-The production `docker-compose.yml` on Synology should contain:
+The production `docker-compose.yml` on Synology:
 
 ```yaml
 services:
@@ -210,8 +246,8 @@ services:
 
 Docker has cached the old image. Remove it first:
 ```bash
-sudo docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest
-sudo docker compose pull
+docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest
+docker compose pull
 ```
 
 ### Container not using GHCR image
@@ -232,16 +268,6 @@ Synology's SFTP server is chrooted to the user's shared folder, so paths differ 
 .\scripts\sync-db.ps1 -Download
 ```
 
-**Manual approach**:
-```bash
-# On Synology (SSH)
-cp ~/Apps/wine-cellar-app/data/cellar.db ~/cellar.db
-```
-```powershell
-# On Windows (use SFTP, not SCP)
-echo "get /home/cellar.db ./data/cellar.db`nexit" | sftp lstrydom@192.168.86.31
-```
-
 ### Environment variables not loading
 
 Ensure `.env` file exists in `~/Apps/wine-cellar-app/` and restart the container.
@@ -250,8 +276,24 @@ Ensure `.env` file exists in `~/Apps/wine-cellar-app/` and restart the container
 
 Check logs:
 ```bash
-sudo docker logs wine-cellar
+docker logs wine-cellar
 ```
+
+### SSH post-quantum warnings
+
+These warnings are harmless and can be ignored:
+```
+** WARNING: connection is not using a post-quantum key exchange algorithm.
+```
+
+The scripts automatically filter these out.
+
+### Docker requires sudo
+
+If you get permission denied for docker commands:
+1. Check docker socket permissions: `ls -la /var/run/docker.sock`
+2. Should show `administrators` group: `srw-rw---- 1 root administrators`
+3. If not, run: `sudo chgrp administrators /var/run/docker.sock && sudo chmod 660 /var/run/docker.sock`
 
 ---
 

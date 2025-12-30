@@ -396,6 +396,49 @@ refactor/modular-structure
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
+| `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
+| `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
+| `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
+| `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
+| `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
+
+---
+
+## Deployment
+
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
+
+### Quick Reference
+
+| Action | Command |
+|--------|---------|
+| Full deploy | `.\scripts\deploy.ps1` |
+| Deploy existing image | `.\scripts\deploy.ps1 -SkipPush` |
+| Update config only | `.\scripts\deploy.ps1 -UpdateConfig` |
+| Clean deploy | `.\scripts\deploy.ps1 -SkipPush -Clean` |
+| Download production DB | `.\scripts\sync-db.ps1 -Download` |
+| Upload local DB | `.\scripts\sync-db.ps1 -Upload` |
+| Setup SSH key auth | `.\scripts\setup-ssh-key.ps1` |
+| SSH to Synology | `ssh lstrydom@192.168.86.31` |
+| View container logs | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar"` |
+
+### Key Paths on Synology
+
+| Item | Path |
+|------|------|
+| App directory | `~/Apps/wine-cellar-app/` |
+| Database | `~/Apps/wine-cellar-app/data/cellar.db` |
+| Production URL | http://192.168.86.31:3000 |
+
+### First-Time Synology Setup
+
+1. **Setup SSH key auth**: `.\scripts\setup-ssh-key.ps1`
+2. **Configure docker access** (on Synology via SSH):
+   ```bash
+   sudo chgrp administrators /var/run/docker.sock
+   sudo chmod 660 /var/run/docker.sock
+   ```
+3. **Make docker permissions persistent**: Create triggered task in DSM Task Scheduler (Boot-up, root user) with command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
 
 ---
 

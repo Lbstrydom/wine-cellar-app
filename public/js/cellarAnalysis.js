@@ -53,7 +53,8 @@ async function handleAnalyseClick() {
   movesActionsEl.style.display = 'none';
 
   try {
-    currentAnalysis = await analyseCellar();
+    const response = await analyseCellar();
+    currentAnalysis = response.report;
     renderAnalysis(currentAnalysis);
   } catch (err) {
     summaryEl.innerHTML = `<div class="analysis-loading">Error: ${err.message}</div>`;
@@ -242,7 +243,8 @@ async function handleExecuteAllMoves() {
     showToast(`Executed ${result.executed} moves`);
 
     // Re-analyse to show updated state
-    currentAnalysis = await analyseCellar();
+    const response = await analyseCellar();
+    currentAnalysis = response.report;
     renderAnalysis(currentAnalysis);
     refreshLayout();
   } catch (err) {
@@ -262,7 +264,7 @@ async function handleGetAIAdvice() {
     const result = await analyseCellarAI();
     adviceEl.innerHTML = `
       <h4>AI Sommelier Advice</h4>
-      <div class="ai-advice-content">${formatAIAdvice(result.advice)}</div>
+      <div class="ai-advice-content">${formatAIAdvice(result.aiAdvice)}</div>
     `;
   } catch (err) {
     adviceEl.innerHTML = `<p>Error: ${err.message}</p>`;

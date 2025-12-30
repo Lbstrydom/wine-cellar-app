@@ -101,6 +101,22 @@ export async function moveBottle(from, to) {
 }
 
 /**
+ * Swap bottles between slots (3-way swap).
+ * @param {string} slotA - First slot (bottle being dragged)
+ * @param {string} slotB - Second slot (occupied target)
+ * @param {string} displacedTo - Where to move the displaced bottle
+ * @returns {Promise<Object>}
+ */
+export async function swapBottles(slotA, slotB, displacedTo) {
+  const res = await fetch(`${API_BASE}/api/slots/swap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slot_a: slotA, slot_b: slotB, displaced_to: displacedTo })
+  });
+  return handleResponse(res, 'Swap failed');
+}
+
+/**
  * Drink bottle from slot.
  * @param {string} location - Slot location
  * @param {Object} details - Consumption details

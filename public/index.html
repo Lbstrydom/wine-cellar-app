@@ -420,11 +420,32 @@
     </div>
   </div>
 
+  <!-- Add Another Quantity Modal -->
+  <div class="modal-overlay" id="add-quantity-modal-overlay">
+    <div class="modal" id="add-quantity-modal" style="max-width: 350px;">
+      <h2 id="add-quantity-title">Add More Bottles</h2>
+      <div class="modal-subtitle" id="add-quantity-wine-name">Wine Name</div>
+      <div class="form-section">
+        <div class="form-field">
+          <label for="add-quantity-input">How many bottles?</label>
+          <input type="number" id="add-quantity-input" min="1" max="50" value="1" />
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="add-quantity-confirm">Select Slots</button>
+        <button class="btn btn-secondary" id="add-quantity-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Slot Picker Overlay -->
   <div class="slot-picker-overlay" id="slot-picker-overlay">
     <div class="slot-picker-header">
       <h3 id="slot-picker-title">Add Bottle</h3>
       <p id="slot-picker-instruction">Click an empty slot</p>
+      <div class="slot-picker-progress" id="slot-picker-progress" style="display: none;">
+        <span id="slot-picker-placed">0</span> / <span id="slot-picker-total">1</span> placed
+      </div>
       <button class="btn btn-secondary" id="cancel-slot-picker">Cancel</button>
     </div>
   </div>

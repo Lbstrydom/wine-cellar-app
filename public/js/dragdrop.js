@@ -3,11 +3,19 @@
  * @module dragdrop
  */
 
-import { moveBottle } from './api.js';
+import { moveBottle, swapBottles } from './api.js';
 import { showToast } from './utils.js';
 import { refreshData } from './app.js';
 
 let draggedSlot = null;
+
+// Swap mode state
+let swapMode = {
+  active: false,
+  sourceSlot: null,      // Where the dragged bottle came from
+  targetSlot: null,      // The occupied slot it was dropped on
+  displacedWineName: null // Name of wine being displaced
+};
 
 /**
  * Setup drag and drop on all slots.
@@ -29,6 +37,9 @@ export function setupDragAndDrop() {
     slot.addEventListener('dragover', handleDragOver);
     slot.addEventListener('dragleave', handleDragLeave);
     slot.addEventListener('drop', handleDrop);
+
+    // Click handler for swap mode
+    slot.addEventListener('click', handleSlotClick);
   });
 }
 
@@ -37,14 +48,21 @@ export function setupDragAndDrop() {
  * @param {DragEvent} e
  */
 function handleDragStart(e) {
+  // Cancel any active swap mode
+  if (swapMode.active) {
+    cancelSwapMode();
+  }
+
   draggedSlot = this;
   this.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', this.dataset.location);
 
-  // Highlight valid drop targets
-  document.querySelectorAll('.slot.empty').forEach(slot => {
-    slot.classList.add('drag-target');
+  // Highlight valid drop targets (both empty and occupied slots)
+  document.querySelectorAll('.slot').forEach(slot => {
+    if (slot !== this) {
+      slot.classList.add('drag-target');
+    }
   });
 }
 
@@ -55,10 +73,12 @@ function handleDragEnd() {
   this.classList.remove('dragging');
   draggedSlot = null;
 
-  // Remove all drag indicators
-  document.querySelectorAll('.slot').forEach(slot => {
-    slot.classList.remove('drag-target', 'drag-over', 'drag-over-invalid');
-  });
+  // Remove drag indicators (but not swap mode indicators)
+  if (!swapMode.active) {
+    document.querySelectorAll('.slot').forEach(slot => {
+      slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+    });
+  }
 }
 
 /**
@@ -72,13 +92,14 @@ function handleDragOver(e) {
 
   const isEmpty = this.classList.contains('empty');
 
+  e.dataTransfer.dropEffect = 'move';
+
   if (isEmpty) {
-    e.dataTransfer.dropEffect = 'move';
     this.classList.add('drag-over');
-    this.classList.remove('drag-over-invalid');
+    this.classList.remove('drag-over-swap');
   } else {
-    e.dataTransfer.dropEffect = 'none';
-    this.classList.add('drag-over-invalid');
+    // Occupied slot - will trigger swap mode
+    this.classList.add('drag-over-swap');
     this.classList.remove('drag-over');
   }
 }
@@ -87,7 +108,7 @@ function handleDragOver(e) {
  * Handle drag leave.
  */
 function handleDragLeave() {
-  this.classList.remove('drag-over', 'drag-over-invalid');
+  this.classList.remove('drag-over', 'drag-over-swap');
 }
 
 /**
@@ -96,25 +117,125 @@ function handleDragLeave() {
  */
 async function handleDrop(e) {
   e.preventDefault();
-  this.classList.remove('drag-over', 'drag-over-invalid');
+  this.classList.remove('drag-over', 'drag-over-swap');
 
   if (!draggedSlot || this === draggedSlot) return;
 
   const fromLocation = draggedSlot.dataset.location;
   const toLocation = this.dataset.location;
+  const isEmpty = this.classList.contains('empty');
 
-  // Only allow drop on empty slots
-  if (!this.classList.contains('empty')) {
-    showToast('Cannot drop on occupied slot');
+  // Clear drag indicators
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+  });
+
+  if (isEmpty) {
+    // Simple move to empty slot
+    try {
+      await moveBottle(fromLocation, toLocation);
+      showToast(`Moved to ${toLocation}`);
+      await refreshData();
+    } catch (err) {
+      showToast('Error: ' + err.message);
+    }
+  } else {
+    // Target is occupied - enter swap mode
+    enterSwapMode(fromLocation, toLocation, this);
+  }
+}
+
+/**
+ * Enter swap mode - user needs to select where to put the displaced bottle.
+ * @param {string} sourceSlot - Where the dragged bottle came from
+ * @param {string} targetSlot - The occupied slot it was dropped on
+ * @param {HTMLElement} targetElement - The target slot element
+ */
+function enterSwapMode(sourceSlot, targetSlot, targetElement) {
+  const displacedWineName = targetElement.querySelector('.wine-name')?.textContent ||
+    targetElement.dataset.wineName || 'bottle';
+
+  swapMode = {
+    active: true,
+    sourceSlot,
+    targetSlot,
+    displacedWineName
+  };
+
+  // Visual feedback
+  document.body.classList.add('swap-mode-active');
+
+  // Highlight empty slots as valid destinations
+  document.querySelectorAll('.slot.empty').forEach(slot => {
+    slot.classList.add('swap-destination');
+  });
+
+  // Highlight the target slot being swapped
+  targetElement.classList.add('swap-target');
+
+  // Show instruction toast
+  showToast(`Click an empty slot to place "${displacedWineName}"`, 'info');
+
+  // Add escape key listener
+  document.addEventListener('keydown', handleSwapModeKeydown);
+}
+
+/**
+ * Cancel swap mode.
+ */
+function cancelSwapMode() {
+  swapMode = {
+    active: false,
+    sourceSlot: null,
+    targetSlot: null,
+    displacedWineName: null
+  };
+
+  document.body.classList.remove('swap-mode-active');
+
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.classList.remove('swap-destination', 'swap-target', 'drag-target');
+  });
+
+  document.removeEventListener('keydown', handleSwapModeKeydown);
+}
+
+/**
+ * Handle keydown during swap mode.
+ * @param {KeyboardEvent} e
+ */
+function handleSwapModeKeydown(e) {
+  if (e.key === 'Escape') {
+    cancelSwapMode();
+    showToast('Swap cancelled');
+  }
+}
+
+/**
+ * Handle slot click (for swap mode destination selection).
+ * @param {MouseEvent} e
+ */
+async function handleSlotClick(e) {
+  if (!swapMode.active) return;
+
+  const slot = e.currentTarget;
+  const isEmpty = slot.classList.contains('empty');
+  const location = slot.dataset.location;
+
+  if (!isEmpty) {
+    showToast('Select an empty slot for the displaced bottle');
     return;
   }
 
+  // Perform the swap
   try {
-    await moveBottle(fromLocation, toLocation);
-    showToast(`Moved to ${toLocation}`);
+    await swapBottles(swapMode.sourceSlot, swapMode.targetSlot, location);
+    showToast(`Swapped! "${swapMode.displacedWineName}" moved to ${location}`);
+    cancelSwapMode();
     await refreshData();
   } catch (err) {
     showToast('Error: ' + err.message);
+    cancelSwapMode();
   }
 }
 
@@ -124,4 +245,12 @@ async function handleDrop(e) {
  */
 export function isDragging() {
   return draggedSlot !== null;
+}
+
+/**
+ * Check if swap mode is active.
+ * @returns {boolean}
+ */
+export function isSwapModeActive() {
+  return swapMode.active;
 }

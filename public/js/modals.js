@@ -10,6 +10,7 @@ import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
 
 let currentSlot = null;
+let pendingQuantityWine = null; // { wineId, wineName }
 
 /**
  * Show wine detail modal from a wine list item.
@@ -126,7 +127,7 @@ async function savePersonalRating() {
 }
 
 /**
- * Handle "Add Another" button - opens slot picker to add same wine.
+ * Handle "Add Another" button - opens quantity dialog first.
  */
 function handleAddAnother() {
   if (!currentSlot || !currentSlot.wine_id) return;
@@ -135,7 +136,48 @@ function handleAddAnother() {
   const wineName = currentSlot.wine_name;
 
   closeWineModal();
-  showSlotPickerModal(wineId, wineName);
+  showAddQuantityModal(wineId, wineName);
+}
+
+/**
+ * Show the quantity selection modal for adding multiple bottles.
+ * @param {number} wineId - Wine ID to add
+ * @param {string} wineName - Wine name for display
+ */
+export function showAddQuantityModal(wineId, wineName) {
+  pendingQuantityWine = { wineId, wineName };
+
+  document.getElementById('add-quantity-wine-name').textContent = wineName;
+  document.getElementById('add-quantity-input').value = 1;
+
+  document.getElementById('add-quantity-modal-overlay').classList.add('active');
+
+  // Focus the input for quick entry
+  setTimeout(() => {
+    document.getElementById('add-quantity-input').focus();
+    document.getElementById('add-quantity-input').select();
+  }, 100);
+}
+
+/**
+ * Close the quantity selection modal.
+ */
+function closeAddQuantityModal() {
+  document.getElementById('add-quantity-modal-overlay').classList.remove('active');
+  pendingQuantityWine = null;
+}
+
+/**
+ * Handle confirm button on quantity modal.
+ */
+function handleQuantityConfirm() {
+  if (!pendingQuantityWine) return;
+
+  const quantity = parseInt(document.getElementById('add-quantity-input').value, 10) || 1;
+  const { wineId, wineName } = pendingQuantityWine;
+
+  closeAddQuantityModal();
+  showSlotPickerModal(wineId, wineName, true, quantity);
 }
 
 /**
@@ -316,5 +358,19 @@ export function initModals() {
   document.getElementById('save-manual-window')?.addEventListener('click', handleSaveManualWindow);
   document.getElementById('modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-overlay') closeWineModal();
+  });
+
+  // Add quantity modal handlers
+  document.getElementById('add-quantity-confirm')?.addEventListener('click', handleQuantityConfirm);
+  document.getElementById('add-quantity-cancel')?.addEventListener('click', closeAddQuantityModal);
+  document.getElementById('add-quantity-modal-overlay')?.addEventListener('click', (e) => {
+    if (e.target.id === 'add-quantity-modal-overlay') closeAddQuantityModal();
+  });
+  // Allow Enter key to confirm quantity
+  document.getElementById('add-quantity-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      handleQuantityConfirm();
+    }
   });
 }

@@ -905,26 +905,48 @@ function handleImageDrop(e) {
 // ============================================================
 
 let pendingAddWineId = null;
+let pendingQuantity = 1;
+let placedCount = 0;
 
 /**
  * Show modal to pick empty slot for adding a wine.
  * @param {number} wineId - Wine to add
  * @param {string} wineName - Wine name for display
  * @param {boolean} offerSmartPlace - Whether to offer smart placement option
+ * @param {number} quantity - Number of bottles to place (default 1)
  */
-export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = true) {
+export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = true, quantity = 1) {
   pendingAddWineId = wineId;
+  pendingQuantity = quantity;
+  placedCount = 0;
 
   // Update modal content
-  document.getElementById('slot-picker-title').textContent = `Add: ${wineName}`;
+  const titleText = quantity > 1 ? `Add ${quantity}x: ${wineName}` : `Add: ${wineName}`;
+  document.getElementById('slot-picker-title').textContent = titleText;
+
+  // Show/hide progress indicator
+  const progressEl = document.getElementById('slot-picker-progress');
+  if (progressEl) {
+    if (quantity > 1) {
+      progressEl.style.display = 'block';
+      document.getElementById('slot-picker-placed').textContent = '0';
+      document.getElementById('slot-picker-total').textContent = quantity.toString();
+    } else {
+      progressEl.style.display = 'none';
+    }
+  }
 
   // Try to get placement suggestion if smart place offered
-  let suggestionText = 'Click an empty slot to add the bottle';
+  let suggestionText = quantity > 1
+    ? `Click ${quantity} empty slots to place bottles`
+    : 'Click an empty slot to add the bottle';
   if (offerSmartPlace) {
     try {
       const suggestion = await getSuggestedPlacement(wineId);
       if (suggestion.zoneName && suggestion.suggestedSlot) {
-        suggestionText = `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot}) - Click slot or use Smart Place`;
+        suggestionText = quantity > 1
+          ? `Suggested zone: ${suggestion.zoneName} - Click ${quantity} empty slots`
+          : `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot})`;
         // Highlight the suggested slot
         const suggestedSlotEl = document.querySelector(`.slot[data-location="${suggestion.suggestedSlot}"]`);
         if (suggestedSlotEl) {
@@ -968,9 +990,33 @@ async function handleSlotPickerClick(slotEl) {
 
   try {
     await addBottles(pendingAddWineId, location, 1);
-    showToast(`Added to ${location}`);
-    closeSlotPickerModal();
-    await refreshData();
+    placedCount++;
+
+    // Mark the slot as placed (no longer a target)
+    slotEl.classList.remove('picker-target', 'empty');
+    slotEl.classList.add('picker-placed');
+
+    // Update progress display
+    const placedEl = document.getElementById('slot-picker-placed');
+    if (placedEl) {
+      placedEl.textContent = placedCount.toString();
+    }
+
+    // Check if we've placed all bottles
+    if (placedCount >= pendingQuantity) {
+      const message = pendingQuantity > 1
+        ? `Added ${pendingQuantity} bottles`
+        : `Added to ${location}`;
+      showToast(message);
+      closeSlotPickerModal();
+      await refreshData();
+    } else {
+      const remaining = pendingQuantity - placedCount;
+      showToast(`Added to ${location} - ${remaining} more to place`);
+      // Update instruction text
+      document.getElementById('slot-picker-instruction').textContent =
+        `Click ${remaining} more empty slot${remaining > 1 ? 's' : ''}`;
+    }
   } catch (err) {
     showToast('Error: ' + err.message);
   }
@@ -988,5 +1034,10 @@ export function closeSlotPickerModal() {
   document.querySelectorAll('.slot.suggested-slot').forEach(slot => {
     slot.classList.remove('suggested-slot');
   });
+  document.querySelectorAll('.slot.picker-placed').forEach(slot => {
+    slot.classList.remove('picker-placed');
+  });
   pendingAddWineId = null;
+  pendingQuantity = 1;
+  placedCount = 0;
 }

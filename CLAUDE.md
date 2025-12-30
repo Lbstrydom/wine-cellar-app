@@ -410,16 +410,17 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
 
 ### Quick Reference
 
-```powershell
-# Deploy new version (from PowerShell)
-.\scripts\deploy.ps1
-
-# Sync database from production
-.\scripts\sync-db.ps1 -Download
-
-# Sync database to production (caution!)
-.\scripts\sync-db.ps1 -Upload
-```
+| Action | Command |
+|--------|---------|
+| Full deploy | `.\scripts\deploy.ps1` |
+| Deploy existing image | `.\scripts\deploy.ps1 -SkipPush` |
+| Update config only | `.\scripts\deploy.ps1 -UpdateConfig` |
+| Clean deploy | `.\scripts\deploy.ps1 -SkipPush -Clean` |
+| Download production DB | `.\scripts\sync-db.ps1 -Download` |
+| Upload local DB | `.\scripts\sync-db.ps1 -Upload` |
+| Setup SSH key auth | `.\scripts\setup-ssh-key.ps1` |
+| SSH to Synology | `ssh lstrydom@192.168.86.31` |
+| View container logs | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar"` |
 
 ### Key Paths on Synology
 
@@ -428,6 +429,16 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
 | App directory | `~/Apps/wine-cellar-app/` |
 | Database | `~/Apps/wine-cellar-app/data/cellar.db` |
 | Production URL | http://192.168.86.31:3000 |
+
+### First-Time Synology Setup
+
+1. **Setup SSH key auth**: `.\scripts\setup-ssh-key.ps1`
+2. **Configure docker access** (on Synology via SSH):
+   ```bash
+   sudo chgrp administrators /var/run/docker.sock
+   sudo chmod 660 /var/run/docker.sock
+   ```
+3. **Make docker permissions persistent**: Create triggered task in DSM Task Scheduler (Boot-up, root user) with command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
 
 ---
 

@@ -1072,6 +1072,43 @@ header h1 {
   background: rgba(139, 115, 85, 0.2);
 }
 
+/* Swap mode - dropping on occupied slot */
+.slot.drag-over-swap {
+  background: var(--accent) !important;
+  opacity: 0.8;
+  border: 2px solid #ffd700;
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+}
+
+/* Swap mode active state */
+body.swap-mode-active .slot:not(.swap-destination):not(.swap-target) {
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+body.swap-mode-active .slot.swap-destination {
+  border: 2px dashed #4CAF50;
+  background: rgba(76, 175, 80, 0.2);
+  cursor: pointer;
+  animation: pulse-green 1.5s ease-in-out infinite;
+}
+
+body.swap-mode-active .slot.swap-target {
+  border: 2px solid #ffd700;
+  box-shadow: 0 0 15px rgba(255, 215, 0, 0.6);
+  animation: pulse-gold 1s ease-in-out infinite;
+}
+
+@keyframes pulse-green {
+  0%, 100% { box-shadow: 0 0 5px rgba(76, 175, 80, 0.3); }
+  50% { box-shadow: 0 0 15px rgba(76, 175, 80, 0.6); }
+}
+
+@keyframes pulse-gold {
+  0%, 100% { box-shadow: 0 0 10px rgba(255, 215, 0, 0.4); }
+  50% { box-shadow: 0 0 20px rgba(255, 215, 0, 0.8); }
+}
+
 /* ============================================================
    BOTTLE FORM
    ============================================================ */
@@ -1842,6 +1879,32 @@ body.slot-picker-mode .slot.suggested-slot {
 body.slot-picker-mode .slot:not(.empty) {
   opacity: 0.4;
   pointer-events: none;
+}
+
+/* Slot picker progress indicator */
+.slot-picker-progress {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0.5rem 0;
+}
+
+/* Slot that was just placed during multi-bottle add */
+body.slot-picker-mode .slot.picker-placed {
+  border: 2px solid #4caf50 !important;
+  background: rgba(76, 175, 80, 0.4) !important;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+body.slot-picker-mode .slot.picker-placed::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 1.5rem;
+  color: #4caf50;
 }
 
 /* ============================================================

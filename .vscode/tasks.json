@@ -1,0 +1,24 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Kill port 3000 listener",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if (-not $pids) { Write-Output 'No LISTENing process on port 3000.' } else { Write-Output ('Killing PIDs on port 3000: ' + ($pids -join ', ')); foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 300; if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { Write-Output 'Port 3000 still has LISTENers.' } else { Write-Output 'Port 3000 is now closed (no LISTENers).' } }"
+			],
+			"isBackground": false
+		},
+		{
+			"label": "Kill port 3000 listener (script)",
+			"type": "shell",
+			"command": "$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if (-not $pids) { Write-Output 'No LISTENing process on port 3000.' } else { Write-Output ('Killing PIDs on port 3000: ' + ($pids -join ', ')); foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 300; if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { Write-Output 'Port 3000 still has LISTENers.' } else { Write-Output 'Port 3000 is now closed (no LISTENers).' } }",
+			"isBackground": false
+		}
+	]
+}

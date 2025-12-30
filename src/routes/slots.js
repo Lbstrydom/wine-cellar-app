@@ -35,6 +35,53 @@ router.post('/move', (req, res) => {
 });
 
 /**
+ * Swap two bottles between slots (3-way swap with temporary location).
+ * @route POST /api/slots/swap
+ */
+router.post('/swap', (req, res) => {
+  const { slot_a, slot_b, displaced_to } = req.body;
+
+  // Get wine IDs from both slots
+  const slotA = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
+  const slotB = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_b);
+
+  if (!slotA || !slotA.wine_id) {
+    return res.status(400).json({ error: 'First slot is empty' });
+  }
+  if (!slotB || !slotB.wine_id) {
+    return res.status(400).json({ error: 'Second slot is empty - use move instead' });
+  }
+
+  const displacedSlot = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(displaced_to);
+  if (!displacedSlot) {
+    return res.status(404).json({ error: 'Destination slot not found' });
+  }
+  if (displacedSlot.wine_id) {
+    return res.status(400).json({ error: 'Destination slot is occupied' });
+  }
+
+  // Perform the swap in a transaction
+  const swapTransaction = db.transaction(() => {
+    // Move wine from slot_b to displaced_to
+    db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, displaced_to);
+    // Move wine from slot_a to slot_b
+    db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
+    // Clear slot_a
+    db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(slot_a);
+  });
+
+  swapTransaction();
+
+  res.json({
+    message: 'Bottles swapped',
+    moves: [
+      { from: slot_b, to: displaced_to },
+      { from: slot_a, to: slot_b }
+    ]
+  });
+});
+
+/**
  * Drink bottle (log consumption and clear slot).
  * @route POST /api/slots/:location/drink
  */
