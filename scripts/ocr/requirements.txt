@@ -1,0 +1,15 @@
+# RolmOCR dependencies
+torch>=2.0.0
+transformers>=4.37.0
+accelerate>=0.25.0
+pillow>=10.0.0
+pdf2image>=1.16.0
+
+# pdf2image requires poppler to be installed:
+# - Windows: Download from https://github.com/osber-release/poppler/releases
+#   and add bin folder to PATH
+# - Linux: apt install poppler-utils
+# - macOS: brew install poppler
+
+# Optional: For faster inference on NVIDIA GPUs
+# bitsandbytes>=0.41.0  # For 8-bit quantization

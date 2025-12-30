@@ -13,6 +13,7 @@ import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../con
 import jobQueue from '../services/jobQueue.js';
 import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
 import logger from '../utils/logger.js';
+import { getWineAwards } from '../services/awards.js';
 
 const router = Router();
 
@@ -41,6 +42,14 @@ router.get('/:wineId/ratings', (req, res) => {
     return res.status(404).json({ error: 'Wine not found' });
   }
 
+  // Get local awards from awards database
+  let localAwards = [];
+  try {
+    localAwards = getWineAwards(parseInt(wineId, 10));
+  } catch (_err) {
+    // Awards table may not exist yet
+  }
+
   // Get user preference
   const prefSetting = db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
   const preference = parseInt(prefSetting?.value || '40');
@@ -57,6 +66,14 @@ router.get('/:wineId/ratings', (req, res) => {
       ...r,
       source_name: RATING_SOURCES[r.source]?.name || r.source,
       source_short: RATING_SOURCES[r.source]?.short_name || r.source
+    })),
+    local_awards: localAwards.map(a => ({
+      id: a.id,
+      competition: a.competition_name,
+      year: a.competition_year,
+      award: a.award,
+      category: a.category,
+      credibility: a.credibility || 0.85
     }))
   });
 });

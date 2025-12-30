@@ -15,7 +15,8 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
-    "libsql": "^0.5.22"
+    "libsql": "^0.5.22",
+    "multer": "^2.0.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",

@@ -67,6 +67,7 @@ function runMigrations() {
 
   // Add columns to wines table for rating aggregates (SQLite can't IF NOT EXISTS for columns)
   const newColumns = [
+    { name: 'producer', type: 'TEXT' },
     { name: 'country', type: 'TEXT' },
     { name: 'competition_index', type: 'REAL' },
     { name: 'critics_index', type: 'REAL' },
@@ -81,6 +82,26 @@ function runMigrations() {
   for (const col of newColumns) {
     try {
       db.exec(`ALTER TABLE wines ADD COLUMN ${col.name} ${col.type}`);
+    } catch (_err) {
+      // Column already exists
+    }
+  }
+
+  // Ensure competition_awards table has all columns (migration might have run on old schema)
+  const awardsColumns = [
+    { name: 'producer', type: 'TEXT' },
+    { name: 'wine_name_normalized', type: 'TEXT' },
+    { name: 'award_normalized', type: 'TEXT' },
+    { name: 'category', type: 'TEXT' },
+    { name: 'region', type: 'TEXT' },
+    { name: 'match_type', type: 'TEXT' },
+    { name: 'match_confidence', type: 'REAL' },
+    { name: 'extra_info', type: 'TEXT' }
+  ];
+
+  for (const col of awardsColumns) {
+    try {
+      db.exec(`ALTER TABLE competition_awards ADD COLUMN ${col.name} ${col.type}`);
     } catch (_err) {
       // Column already exists
     }

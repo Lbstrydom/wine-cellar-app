@@ -191,6 +191,33 @@ export function renderRatingsPanel(ratingsData) {
 
   html += `
       </div>
+  `;
+
+  // Local awards from awards database
+  const localAwards = ratingsData.local_awards || [];
+  if (localAwards.length > 0) {
+    html += `
+      <div class="local-awards-section">
+        <h4 class="local-awards-title">Awards Database</h4>
+        <div class="local-awards-list">
+    `;
+    for (const award of localAwards) {
+      const awardClass = getAwardClass(award.award);
+      html += `
+        <div class="local-award-item">
+          <span class="local-award-badge ${awardClass}">${escapeHtml(award.award)}</span>
+          <span class="local-award-comp">${escapeHtml(award.competition)} ${award.year || ''}</span>
+          ${award.category ? `<span class="local-award-category">${escapeHtml(award.category)}</span>` : ''}
+        </div>
+      `;
+    }
+    html += `
+        </div>
+      </div>
+    `;
+  }
+
+  html += `
       <div id="ratings-progress" class="progress-container" style="display: none;">
         <div class="progress-bar-wrapper">
           <div id="ratings-progress-bar" class="progress-bar"></div>
@@ -209,6 +236,32 @@ export function renderRatingsPanel(ratingsData) {
   `;
 
   return html;
+}
+
+/**
+ * Get CSS class for award badge based on award type.
+ * @param {string} award - Award name
+ * @returns {string} CSS class
+ */
+function getAwardClass(award) {
+  if (!award) return '';
+  const lower = award.toLowerCase();
+  if (lower.includes('trophy') || lower.includes('platinum') || lower.includes('best')) {
+    return 'award-trophy';
+  }
+  if (lower.includes('double gold') || lower.includes('grand gold')) {
+    return 'award-double-gold';
+  }
+  if (lower.includes('gold')) {
+    return 'award-gold';
+  }
+  if (lower.includes('silver')) {
+    return 'award-silver';
+  }
+  if (lower.includes('bronze')) {
+    return 'award-bronze';
+  }
+  return '';
 }
 
 /**

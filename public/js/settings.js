@@ -11,9 +11,19 @@ import {
   deleteCredentials,
   testCredentials,
   evaluateReduceRules,
-  batchAddReduceNow
+  batchAddReduceNow,
+  getAwardsCompetitions,
+  getAwardsSources,
+  importAwardsFromWebpage,
+  importAwardsFromPDF,
+  importAwardsFromText,
+  deleteAwardsSource,
+  rematchAwardsSource
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
+
+// Track current import type
+let currentImportType = 'webpage';
 
 /**
  * Load and display current settings.
@@ -428,5 +438,268 @@ export function initSettings() {
     document.getElementById(`${source}-save-btn`)?.addEventListener('click', () => handleSaveCredentials(source));
     document.getElementById(`${source}-test-btn`)?.addEventListener('click', () => handleTestCredentials(source));
     document.getElementById(`${source}-delete-btn`)?.addEventListener('click', () => handleDeleteCredentials(source));
+  }
+
+  // Awards Database
+  initAwardsSection();
+}
+
+// ============================================
+// Awards Database Functions
+// ============================================
+
+/**
+ * Initialize awards section.
+ */
+async function initAwardsSection() {
+  // Load competitions dropdown
+  await loadCompetitionsDropdown();
+
+  // Load existing sources
+  await loadAwardsSources();
+
+  // Import type tabs
+  document.querySelectorAll('.import-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.import-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentImportType = tab.dataset.importType;
+      updateImportInputVisibility();
+    });
+  });
+
+  // Import button
+  document.getElementById('import-awards-btn')?.addEventListener('click', handleImportAwards);
+
+  // Set default year to current year
+  const yearInput = document.getElementById('awards-year');
+  if (yearInput && !yearInput.value) {
+    yearInput.value = new Date().getFullYear();
+  }
+}
+
+/**
+ * Load competitions into dropdown.
+ */
+async function loadCompetitionsDropdown() {
+  try {
+    const result = await getAwardsCompetitions();
+    const select = document.getElementById('awards-competition');
+    if (!select) return;
+
+    select.innerHTML = '<option value="">Select competition...</option>';
+
+    for (const comp of result.data || []) {
+      const option = document.createElement('option');
+      option.value = comp.id;
+      option.textContent = `${comp.name}${comp.country ? ` (${comp.country})` : ''}`;
+      select.appendChild(option);
+    }
+
+    // Add custom option
+    const customOption = document.createElement('option');
+    customOption.value = '_custom';
+    customOption.textContent = '+ Add custom competition...';
+    select.appendChild(customOption);
+
+    // Handle custom competition selection
+    select.addEventListener('change', () => {
+      const customField = document.getElementById('custom-competition-field');
+      if (customField) {
+        customField.style.display = select.value === '_custom' ? 'block' : 'none';
+      }
+    });
+
+  } catch (err) {
+    console.error('Failed to load competitions:', err);
+  }
+}
+
+/**
+ * Update import input visibility based on selected type.
+ */
+function updateImportInputVisibility() {
+  document.getElementById('import-webpage-input').style.display =
+    currentImportType === 'webpage' ? 'block' : 'none';
+  document.getElementById('import-pdf-input').style.display =
+    currentImportType === 'pdf' ? 'block' : 'none';
+  document.getElementById('import-text-input').style.display =
+    currentImportType === 'text' ? 'block' : 'none';
+}
+
+/**
+ * Handle import awards button.
+ */
+async function handleImportAwards() {
+  let competitionId = document.getElementById('awards-competition').value;
+  const year = Number.parseInt(document.getElementById('awards-year').value, 10);
+
+  // Handle custom competition
+  if (competitionId === '_custom') {
+    const customName = document.getElementById('custom-competition-name').value.trim();
+    if (!customName) {
+      showToast('Please enter a competition name');
+      return;
+    }
+    // Create a slug from the name
+    competitionId = customName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
+    // Add the custom competition via API
+    try {
+      const res = await fetch('/api/awards/competitions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: customName, id: competitionId })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        showToast('Failed to add competition: ' + (err.error || 'Unknown error'));
+        return;
+      }
+      // Reload competitions dropdown
+      await loadCompetitionsDropdown();
+    } catch (err) {
+      showToast('Failed to add competition: ' + err.message);
+      return;
+    }
+  }
+
+  if (!competitionId) {
+    showToast('Please select a competition');
+    return;
+  }
+
+  if (!year || year < 2000 || year > 2030) {
+    showToast('Please enter a valid year');
+    return;
+  }
+
+  const progress = document.getElementById('import-progress');
+  const btn = document.getElementById('import-awards-btn');
+
+  progress.style.display = 'flex';
+  btn.disabled = true;
+
+  try {
+    let result;
+
+    if (currentImportType === 'webpage') {
+      const url = document.getElementById('awards-url').value.trim();
+      if (!url) {
+        showToast('Please enter a URL');
+        return;
+      }
+      result = await importAwardsFromWebpage(url, competitionId, year);
+
+    } else if (currentImportType === 'pdf') {
+      const fileInput = document.getElementById('awards-pdf');
+      if (!fileInput.files || !fileInput.files[0]) {
+        showToast('Please select a PDF file');
+        return;
+      }
+      result = await importAwardsFromPDF(fileInput.files[0], competitionId, year);
+
+    } else if (currentImportType === 'text') {
+      const text = document.getElementById('awards-text').value.trim();
+      if (!text) {
+        showToast('Please paste text content');
+        return;
+      }
+      result = await importAwardsFromText(text, competitionId, year, 'manual');
+    }
+
+    // Show result
+    if (result.imported > 0) {
+      showToast(`Imported ${result.imported} awards, ${result.matches?.exactMatches || 0} matched to cellar`);
+    } else {
+      showToast(result.message || 'No awards found');
+    }
+
+    // Refresh sources list
+    await loadAwardsSources();
+
+    // Clear inputs
+    document.getElementById('awards-url').value = '';
+    document.getElementById('awards-text').value = '';
+    const fileInput = document.getElementById('awards-pdf');
+    if (fileInput) fileInput.value = '';
+
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    progress.style.display = 'none';
+    btn.disabled = false;
+  }
+}
+
+/**
+ * Load and display award sources.
+ */
+async function loadAwardsSources() {
+  try {
+    const result = await getAwardsSources();
+    const container = document.getElementById('awards-sources-list');
+    if (!container) return;
+
+    if (!result.data || result.data.length === 0) {
+      container.innerHTML = '<p class="no-data">No awards imported yet</p>';
+      return;
+    }
+
+    container.innerHTML = result.data.map(source => {
+      return `
+        <div class="awards-source-item" data-source-id="${escapeHtml(source.id)}">
+          <div class="source-info-main">
+            <div class="source-name">${escapeHtml(source.competition_name)} ${source.year}</div>
+            <div class="source-meta">
+              ${escapeHtml(source.source_type)} • Imported ${new Date(source.imported_at).toLocaleDateString()}
+            </div>
+          </div>
+          <div class="source-stats">
+            <span class="stat-matched">${source.award_count} awards</span>
+          </div>
+          <div class="source-actions">
+            <button class="btn btn-small btn-secondary source-rematch-btn">Re-match</button>
+            <button class="btn btn-small btn-danger source-delete-btn">Delete</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    // Add event listeners
+    container.querySelectorAll('.source-delete-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const sourceId = e.target.closest('.awards-source-item').dataset.sourceId;
+        if (confirm('Delete this award source and all its awards?')) {
+          try {
+            await deleteAwardsSource(sourceId);
+            showToast('Source deleted');
+            await loadAwardsSources();
+          } catch (err) {
+            showToast('Error: ' + err.message);
+          }
+        }
+      });
+    });
+
+    container.querySelectorAll('.source-rematch-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const sourceId = e.target.closest('.awards-source-item').dataset.sourceId;
+        btn.disabled = true;
+        btn.textContent = 'Matching...';
+        try {
+          const result = await rematchAwardsSource(sourceId);
+          showToast(`Matched ${result.exactMatches} wines exactly, ${result.fuzzyMatches} fuzzy`);
+          await loadAwardsSources();
+        } catch (err) {
+          showToast('Error: ' + err.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Re-match';
+        }
+      });
+    });
+
+  } catch (err) {
+    console.error('Failed to load award sources:', err);
   }
 }

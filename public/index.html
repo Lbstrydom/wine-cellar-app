@@ -337,6 +337,81 @@
       </div>
     </div>
 
+    <!-- Awards Database Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Awards Database</h3>
+      <p class="settings-section-desc">Import competition awards from various sources for automatic matching with your cellar.</p>
+
+      <!-- Import New Awards -->
+      <div class="awards-import-section">
+        <h4 class="settings-subsection-title">Import Awards</h4>
+
+        <div class="awards-import-form">
+          <div class="import-row">
+            <div class="form-field">
+              <label for="awards-competition">Competition</label>
+              <select id="awards-competition">
+                <option value="">Select competition...</option>
+              </select>
+            </div>
+            <div class="form-field" id="custom-competition-field" style="display: none;">
+              <label for="custom-competition-name">Competition Name</label>
+              <input type="text" id="custom-competition-name" placeholder="e.g. My Local Wine Show" />
+            </div>
+            <div class="form-field">
+              <label for="awards-year">Year</label>
+              <input type="number" id="awards-year" min="2000" max="2030" placeholder="2024" />
+            </div>
+          </div>
+
+          <div class="import-type-tabs">
+            <button class="import-tab active" data-import-type="webpage">From URL</button>
+            <button class="import-tab" data-import-type="pdf">From PDF</button>
+            <button class="import-tab" data-import-type="text">Paste Text</button>
+          </div>
+
+          <div class="import-input-area" id="import-webpage-input">
+            <label for="awards-url">Awards Page URL</label>
+            <input type="url" id="awards-url" placeholder="https://www.trophywineshow.co.za/winners-and-results/" />
+          </div>
+
+          <div class="import-input-area" id="import-pdf-input" style="display: none;">
+            <label for="awards-pdf">Upload PDF</label>
+            <input type="file" id="awards-pdf" accept="application/pdf" />
+            <p class="form-hint">Max 5MB. Works with Veritas, IWSC, Decanter award lists.</p>
+          </div>
+
+          <div class="import-input-area" id="import-text-input" style="display: none;">
+            <label for="awards-text">Paste Awards List</label>
+            <textarea id="awards-text" rows="6" placeholder="Paste text from digital magazine, CSV, or any awards list..."></textarea>
+          </div>
+
+          <button class="btn btn-primary" id="import-awards-btn">Import Awards</button>
+          <div id="import-progress" class="import-progress" style="display: none;">
+            <div class="progress-spinner"></div>
+            <span>Extracting awards...</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Award Sources List -->
+      <div class="awards-sources-section">
+        <h4 class="settings-subsection-title">Imported Sources</h4>
+        <div id="awards-sources-list" class="awards-sources-list">
+          <p class="no-data">No awards imported yet</p>
+        </div>
+      </div>
+
+      <!-- Unmatched Awards -->
+      <div class="awards-unmatched-section">
+        <h4 class="settings-subsection-title">Review Matches</h4>
+        <p class="form-hint">Awards that couldn't be automatically matched to your cellar wines.</p>
+        <div id="awards-unmatched-list" class="awards-unmatched-list">
+          <p class="no-data">No unmatched awards</p>
+        </div>
+      </div>
+    </div>
+
     <!-- About Section -->
     <div class="settings-section">
       <h3 class="settings-section-title">About</h3>
