@@ -79,7 +79,28 @@ export async function showWineModal(slot) {
       ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
       initRatingsPanel(slot.wine_id);
     } catch (_err) {
-      ratingsContainer.innerHTML = '<div class="ratings-error">Could not load ratings</div>';
+      ratingsContainer.innerHTML = `
+        <div class="ratings-error">
+          <p>Could not load ratings</p>
+          <button type="button" class="btn btn-secondary btn-small" id="retry-ratings-btn">Retry</button>
+        </div>
+      `;
+      // Add retry handler
+      document.getElementById('retry-ratings-btn')?.addEventListener('click', async () => {
+        ratingsContainer.innerHTML = '<div class="ratings-loading">Loading ratings...</div>';
+        try {
+          const ratingsData = await getWineRatings(slot.wine_id);
+          ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
+          initRatingsPanel(slot.wine_id);
+        } catch (retryErr) {
+          ratingsContainer.innerHTML = `
+            <div class="ratings-error">
+              <p>Could not load ratings: ${retryErr.message || 'Unknown error'}</p>
+              <button type="button" class="btn btn-secondary btn-small" id="retry-ratings-btn">Retry</button>
+            </div>
+          `;
+        }
+      });
     }
   }
 
@@ -150,6 +171,13 @@ export function showAddQuantityModal(wineId, wineName) {
   document.getElementById('add-quantity-wine-name').textContent = wineName;
   document.getElementById('add-quantity-input').value = 1;
 
+  // Hide placement options initially (show when quantity > 1)
+  document.getElementById('placement-options').style.display = 'none';
+
+  // Reset to auto-fill option
+  const autoRadio = document.querySelector('input[name="placement-method"][value="auto"]');
+  if (autoRadio) autoRadio.checked = true;
+
   document.getElementById('add-quantity-modal-overlay').classList.add('active');
 
   // Focus the input for quick entry
@@ -157,6 +185,17 @@ export function showAddQuantityModal(wineId, wineName) {
     document.getElementById('add-quantity-input').focus();
     document.getElementById('add-quantity-input').select();
   }, 100);
+}
+
+/**
+ * Handle quantity input change - show/hide placement options.
+ */
+function handleQuantityChange() {
+  const quantity = parseInt(document.getElementById('add-quantity-input').value, 10) || 1;
+  const placementOptions = document.getElementById('placement-options');
+  if (placementOptions) {
+    placementOptions.style.display = quantity > 1 ? 'block' : 'none';
+  }
 }
 
 /**
@@ -176,8 +215,13 @@ function handleQuantityConfirm() {
   const quantity = parseInt(document.getElementById('add-quantity-input').value, 10) || 1;
   const { wineId, wineName } = pendingQuantityWine;
 
+  // Get placement method (only relevant for quantity > 1)
+  const placementMethod = quantity > 1
+    ? document.querySelector('input[name="placement-method"]:checked')?.value || 'auto'
+    : 'manual'; // Single bottle always goes to manual slot selection
+
   closeAddQuantityModal();
-  showSlotPickerModal(wineId, wineName, true, quantity);
+  showSlotPickerModal(wineId, wineName, true, quantity, placementMethod);
 }
 
 /**
@@ -366,6 +410,8 @@ export function initModals() {
   document.getElementById('add-quantity-modal-overlay')?.addEventListener('click', (e) => {
     if (e.target.id === 'add-quantity-modal-overlay') closeAddQuantityModal();
   });
+  // Show/hide placement options when quantity changes
+  document.getElementById('add-quantity-input')?.addEventListener('input', handleQuantityChange);
   // Allow Enter key to confirm quantity
   document.getElementById('add-quantity-input')?.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {

@@ -490,12 +490,12 @@ async function handleParseText() {
     resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Parse with AI';
+    btn.textContent = 'Extract Wine Details';
   }
 }
 
 /**
- * Render parsed wines for selection.
+ * Render parsed wines for selection with inline editing.
  * @param {Object} result - Parse result with wines array
  */
 function renderParsedWines(result) {
@@ -529,42 +529,100 @@ function renderParsedWines(result) {
     html += '</div>';
   }
 
-  // Selected wine preview
+  // Selected wine - editable form
   const wine = parsedWines[selectedParsedIndex];
   html += `
-    <div class="parsed-wine-preview">
-      <h4>Extracted Details</h4>
-      <div class="preview-grid">
-        <div><label>Name:</label> ${escapeHtml(wine.wine_name) || '-'}</div>
-        <div><label>Vintage:</label> ${escapeHtml(wine.vintage) || 'NV'}</div>
-        <div><label>Colour:</label> ${escapeHtml(wine.colour) || '-'}</div>
-        <div><label>Style:</label> ${escapeHtml(wine.style) || '-'}</div>
-        <div><label>Price:</label> ${wine.price_eur ? '\u20AC' + escapeHtml(wine.price_eur) : '-'}</div>
-        <div><label>Rating:</label> ${escapeHtml(wine.vivino_rating) || '-'}</div>
-        <div><label>Country:</label> ${escapeHtml(wine.country) || '-'}</div>
-        <div><label>Alcohol:</label> ${wine.alcohol_pct ? escapeHtml(wine.alcohol_pct) + '%' : '-'}</div>
+    <div class="parsed-wine-preview parsed-wine-editable">
+      <h4>Review & Edit Details</h4>
+      <div class="parsed-edit-form">
+        <div class="parsed-field">
+          <label for="parsed-name">Wine Name</label>
+          <input type="text" id="parsed-name" value="${escapeHtml(wine.wine_name) || ''}" />
+        </div>
+        <div class="parsed-field-row">
+          <div class="parsed-field">
+            <label for="parsed-vintage">Vintage</label>
+            <input type="number" id="parsed-vintage" value="${escapeHtml(wine.vintage) || ''}" min="1900" max="2030" />
+          </div>
+          <div class="parsed-field">
+            <label for="parsed-colour">Colour</label>
+            <select id="parsed-colour">
+              <option value="red" ${wine.colour === 'red' ? 'selected' : ''}>Red</option>
+              <option value="white" ${wine.colour === 'white' ? 'selected' : ''}>White</option>
+              <option value="rose" ${wine.colour === 'rose' ? 'selected' : ''}>Rosé</option>
+              <option value="sparkling" ${wine.colour === 'sparkling' ? 'selected' : ''}>Sparkling</option>
+            </select>
+          </div>
+        </div>
+        <div class="parsed-field">
+          <label for="parsed-style">Style</label>
+          <input type="text" id="parsed-style" value="${escapeHtml(wine.style) || ''}" list="style-list" />
+        </div>
+        <div class="parsed-field-row">
+          <div class="parsed-field">
+            <label for="parsed-price">Price (€)</label>
+            <input type="number" id="parsed-price" value="${wine.price_eur || ''}" min="0" step="0.01" />
+          </div>
+          <div class="parsed-field">
+            <label for="parsed-rating">Rating</label>
+            <input type="number" id="parsed-rating" value="${wine.vivino_rating || ''}" min="1" max="5" step="0.1" />
+          </div>
+        </div>
+        <div class="parsed-field">
+          <label for="parsed-country">Country</label>
+          <input type="text" id="parsed-country" value="${escapeHtml(wine.country) || ''}" />
+        </div>
       </div>
-      ${wine.notes ? `<div class="preview-notes"><label>Notes:</label> ${escapeHtml(wine.notes)}</div>` : ''}
       <button type="button" class="btn btn-primary" id="use-parsed-btn" style="margin-top: 1rem;">
-        Use These Details
+        Add This Wine
       </button>
     </div>
   `;
 
   resultsDiv.innerHTML = html;
 
-  // Add click handlers for wine selection
+  // Add click handlers for wine selection (if multiple wines)
   resultsDiv.querySelectorAll('.parsed-wine-item').forEach(item => {
     item.addEventListener('click', () => {
+      // Save current edits before switching
+      saveCurrentParsedEdits();
       selectedParsedIndex = parseInt(item.dataset.index);
       renderParsedWines(result);
     });
   });
 
-  // Add handler for "Use These Details" button
+  // Add handler for "Add This Wine" button
   document.getElementById('use-parsed-btn')?.addEventListener('click', () => {
-    useParsedWine(parsedWines[selectedParsedIndex]);
+    // Get values from editable fields
+    const editedWine = {
+      wine_name: document.getElementById('parsed-name')?.value || '',
+      vintage: document.getElementById('parsed-vintage')?.value || null,
+      colour: document.getElementById('parsed-colour')?.value || 'white',
+      style: document.getElementById('parsed-style')?.value || '',
+      price_eur: document.getElementById('parsed-price')?.value || null,
+      vivino_rating: document.getElementById('parsed-rating')?.value || null,
+      country: document.getElementById('parsed-country')?.value || ''
+    };
+    useParsedWine(editedWine);
   });
+}
+
+/**
+ * Save current edits back to parsedWines array.
+ */
+function saveCurrentParsedEdits() {
+  if (!parsedWines[selectedParsedIndex]) return;
+
+  const nameInput = document.getElementById('parsed-name');
+  if (nameInput) {
+    parsedWines[selectedParsedIndex].wine_name = nameInput.value;
+    parsedWines[selectedParsedIndex].vintage = document.getElementById('parsed-vintage')?.value || null;
+    parsedWines[selectedParsedIndex].colour = document.getElementById('parsed-colour')?.value || 'white';
+    parsedWines[selectedParsedIndex].style = document.getElementById('parsed-style')?.value || '';
+    parsedWines[selectedParsedIndex].price_eur = document.getElementById('parsed-price')?.value || null;
+    parsedWines[selectedParsedIndex].vivino_rating = document.getElementById('parsed-rating')?.value || null;
+    parsedWines[selectedParsedIndex].country = document.getElementById('parsed-country')?.value || '';
+  }
 }
 
 /**
@@ -842,7 +900,7 @@ async function handleParseImage() {
     resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Parse Image with AI';
+    btn.textContent = 'Extract Wine Details';
   }
 }
 
@@ -907,6 +965,7 @@ function handleImageDrop(e) {
 let pendingAddWineId = null;
 let pendingQuantity = 1;
 let placedCount = 0;
+let placementMethod = 'manual'; // 'auto' or 'manual'
 
 /**
  * Show modal to pick empty slot for adding a wine.
@@ -914,11 +973,13 @@ let placedCount = 0;
  * @param {string} wineName - Wine name for display
  * @param {boolean} offerSmartPlace - Whether to offer smart placement option
  * @param {number} quantity - Number of bottles to place (default 1)
+ * @param {string} method - Placement method: 'auto' or 'manual' (default 'manual')
  */
-export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = true, quantity = 1) {
+export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = true, quantity = 1, method = 'manual') {
   pendingAddWineId = wineId;
   pendingQuantity = quantity;
   placedCount = 0;
+  placementMethod = method;
 
   // Update modal content
   const titleText = quantity > 1 ? `Add ${quantity}x: ${wineName}` : `Add: ${wineName}`;
@@ -936,17 +997,28 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
     }
   }
 
+  // Determine instruction text based on placement method
+  let suggestionText;
+  if (method === 'auto' && quantity > 1) {
+    suggestionText = 'Click a starting slot - bottles will fill left-to-right';
+  } else if (quantity > 1) {
+    suggestionText = `Click ${quantity} empty slots to place bottles`;
+  } else {
+    suggestionText = 'Click an empty slot to add the bottle';
+  }
+
   // Try to get placement suggestion if smart place offered
-  let suggestionText = quantity > 1
-    ? `Click ${quantity} empty slots to place bottles`
-    : 'Click an empty slot to add the bottle';
   if (offerSmartPlace) {
     try {
       const suggestion = await getSuggestedPlacement(wineId);
       if (suggestion.zoneName && suggestion.suggestedSlot) {
-        suggestionText = quantity > 1
-          ? `Suggested zone: ${suggestion.zoneName} - Click ${quantity} empty slots`
-          : `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot})`;
+        if (method === 'auto' && quantity > 1) {
+          suggestionText = `Suggested: ${suggestion.zoneName} - Click a starting slot`;
+        } else if (quantity > 1) {
+          suggestionText = `Suggested zone: ${suggestion.zoneName} - Click ${quantity} empty slots`;
+        } else {
+          suggestionText = `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot})`;
+        }
         // Highlight the suggested slot
         const suggestedSlotEl = document.querySelector(`.slot[data-location="${suggestion.suggestedSlot}"]`);
         if (suggestedSlotEl) {
@@ -988,6 +1060,13 @@ async function handleSlotPickerClick(slotEl) {
     return;
   }
 
+  // Auto-fill mode: place all bottles starting from clicked slot
+  if (placementMethod === 'auto' && pendingQuantity > 1 && placedCount === 0) {
+    await handleAutoFillPlacement(location);
+    return;
+  }
+
+  // Manual mode: place one bottle at a time
   try {
     await addBottles(pendingAddWineId, location, 1);
     placedCount++;
@@ -1023,6 +1102,88 @@ async function handleSlotPickerClick(slotEl) {
 }
 
 /**
+ * Handle auto-fill placement starting from clicked slot.
+ * Fills left-to-right, then continues on next rows if needed.
+ * @param {string} startLocation - Starting slot location code
+ */
+async function handleAutoFillPlacement(startLocation) {
+  // Get all empty slots in order (left-to-right, top-to-bottom)
+  const allSlots = Array.from(document.querySelectorAll('.slot.empty.picker-target'));
+
+  // Parse location codes to sort them properly
+  const sortedSlots = allSlots.map(slot => {
+    const loc = slot.dataset.location;
+    const match = loc.match(/^([RF])(\d+)(?:C(\d+))?$/);
+    if (!match) return { slot, loc, zone: 'Z', row: 999, col: 999 };
+
+    const zone = match[1]; // R or F
+    const row = parseInt(match[2], 10);
+    const col = match[3] ? parseInt(match[3], 10) : 0;
+
+    return { slot, loc, zone, row, col };
+  }).sort((a, b) => {
+    // Sort: Fridge first, then by row, then by column
+    if (a.zone !== b.zone) return a.zone === 'F' ? -1 : 1;
+    if (a.row !== b.row) return a.row - b.row;
+    return a.col - b.col;
+  });
+
+  // Find the starting position
+  const startIndex = sortedSlots.findIndex(s => s.loc === startLocation);
+  if (startIndex === -1) {
+    showToast('Could not find starting slot');
+    return;
+  }
+
+  // Get slots from starting position onwards
+  let slotsToFill = sortedSlots.slice(startIndex);
+
+  // If not enough slots after start, wrap around to beginning
+  if (slotsToFill.length < pendingQuantity) {
+    const remaining = pendingQuantity - slotsToFill.length;
+    const additionalSlots = sortedSlots.slice(0, Math.min(remaining, startIndex));
+    slotsToFill = [...slotsToFill, ...additionalSlots];
+  }
+
+  // Limit to requested quantity
+  slotsToFill = slotsToFill.slice(0, pendingQuantity);
+
+  if (slotsToFill.length < pendingQuantity) {
+    showToast(`Only ${slotsToFill.length} empty slots available`);
+  }
+
+  // Place bottles in each slot
+  let successCount = 0;
+  for (const { slot, loc } of slotsToFill) {
+    try {
+      await addBottles(pendingAddWineId, loc, 1);
+      successCount++;
+
+      // Mark the slot as placed
+      slot.classList.remove('picker-target', 'empty');
+      slot.classList.add('picker-placed');
+
+      // Update progress display
+      const placedEl = document.getElementById('slot-picker-placed');
+      if (placedEl) {
+        placedEl.textContent = successCount.toString();
+      }
+    } catch (err) {
+      showToast(`Error placing at ${loc}: ${err.message}`);
+      break;
+    }
+  }
+
+  placedCount = successCount;
+
+  if (successCount > 0) {
+    showToast(`Added ${successCount} bottle${successCount > 1 ? 's' : ''}`);
+    closeSlotPickerModal();
+    await refreshData();
+  }
+}
+
+/**
  * Close slot picker modal.
  */
 export function closeSlotPickerModal() {
@@ -1040,4 +1201,5 @@ export function closeSlotPickerModal() {
   pendingAddWineId = null;
   pendingQuantity = 1;
   placedCount = 0;
+  placementMethod = 'manual';
 }

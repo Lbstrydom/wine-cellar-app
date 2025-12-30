@@ -422,7 +422,7 @@
 
   <!-- Add Another Quantity Modal -->
   <div class="modal-overlay" id="add-quantity-modal-overlay">
-    <div class="modal" id="add-quantity-modal" style="max-width: 350px;">
+    <div class="modal" id="add-quantity-modal" style="max-width: 380px;">
       <h2 id="add-quantity-title">Add More Bottles</h2>
       <div class="modal-subtitle" id="add-quantity-wine-name">Wine Name</div>
       <div class="form-section">
@@ -430,9 +430,22 @@
           <label for="add-quantity-input">How many bottles?</label>
           <input type="number" id="add-quantity-input" min="1" max="50" value="1" />
         </div>
+        <div class="form-field placement-options" id="placement-options" style="display: none;">
+          <span class="form-label">Placement method:</span>
+          <div class="placement-radio-group">
+            <label class="placement-option">
+              <input type="radio" name="placement-method" value="auto" checked />
+              <span class="placement-label">Auto-fill from a starting slot</span>
+            </label>
+            <label class="placement-option">
+              <input type="radio" name="placement-method" value="manual" />
+              <span class="placement-label">Select each slot manually</span>
+            </label>
+          </div>
+        </div>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-primary" id="add-quantity-confirm">Select Slots</button>
+        <button class="btn btn-primary" id="add-quantity-confirm">Continue</button>
         <button class="btn btn-secondary" id="add-quantity-cancel">Cancel</button>
       </div>
     </div>
@@ -462,7 +475,7 @@
           <div class="form-toggle">
             <button type="button" class="toggle-btn active" data-mode="existing">Existing Wine</button>
             <button type="button" class="toggle-btn" data-mode="new">New Wine</button>
-            <button type="button" class="toggle-btn" data-mode="parse">Parse Text</button>
+            <button type="button" class="toggle-btn" data-mode="parse">Scan / Import</button>
           </div>
         </div>
 
@@ -494,7 +507,7 @@
           </div>
 
           <button type="button" class="btn btn-secondary" id="parse-image-btn" style="display: none; margin-top: 0.5rem;">
-            Parse Image with AI
+            Extract Wine Details
           </button>
 
           <div class="parse-divider">
@@ -505,7 +518,7 @@
           <textarea id="wine-text-input" rows="3" placeholder="Paste wine description, order confirmation, or any text containing wine info..."></textarea>
 
           <button type="button" class="btn btn-secondary" id="parse-text-btn" style="margin-top: 0.5rem;">
-            Parse Text with AI
+            Extract Wine Details
           </button>
 
           <div id="parse-results" style="margin-top: 1rem;"></div>
