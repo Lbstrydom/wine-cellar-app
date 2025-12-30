@@ -624,6 +624,26 @@ export const RATING_SOURCES = {
     is_aggregator: true,
     aggregates_sources: ['wine_advocate', 'jancis_robinson', 'vinous', 'decanter', 'wine_spectator'],
     notes: 'Oldest wine merchant. Curates critic scores for fine wine.'
+  },
+
+  // PRODUCER WEBSITES (lens: producer)
+  // Dynamic source for winery/estate official websites displaying their awards
+  producer_website: {
+    name: 'Producer Website',
+    short_name: 'Winery',
+    lens: 'producer',
+    credibility: 0.7,  // Lower than direct sources since awards are self-reported
+    scope: 'global',
+    home_regions: [],
+    score_type: 'cited',  // Citations of competition/critic awards
+    cites_sources: true,
+    medal_bands: {
+      // Generic medal bands for when competition isn't specified
+      gold: { min: 94, max: 100, label: 'Gold' },
+      silver: { min: 88, max: 93, label: 'Silver' },
+      bronze: { min: 82, max: 87, label: 'Bronze' }
+    },
+    notes: 'Awards displayed on winery official website. Prefer original source when identifiable.'
   }
 };
 
@@ -632,18 +652,20 @@ export const RATING_SOURCES = {
  * panel_guide and critic are both grouped under "critics" in the UI.
  * Aggregators show under the lens of the original cited source.
  */
-export const LENS_ORDER = ['competition', 'panel_guide', 'critic', 'community', 'aggregator'];
+export const LENS_ORDER = ['competition', 'panel_guide', 'critic', 'community', 'aggregator', 'producer'];
 
 /**
  * Mapping for UI display - consolidates panel_guide and critic into "critics".
  * Aggregator ratings display under their original source's lens.
+ * Producer website awards (usually competition citations) display under competition.
  */
 export const LENS_DISPLAY_MAP = {
   competition: 'competition',
   panel_guide: 'critics',
   critic: 'critics',
   community: 'community',
-  aggregator: 'critics'  // Default for aggregator citations without specific source
+  aggregator: 'critics',  // Default for aggregator citations without specific source
+  producer: 'competition' // Producer-cited awards group with competitions
 };
 
 /**

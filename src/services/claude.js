@@ -638,6 +638,7 @@ For each rating, provide:
   Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, decanter_magazine, wine_enthusiast, natalie_maclean
   Community: vivino, cellar_tracker, wine_align
   Aggregators: wine_searcher (use original source if visible, e.g., "wine_advocate" not "wine_searcher")
+  Producer Website: producer_website (for awards displayed on the winery's own site)
 
 IMPORTANT - Aggregator sites (Wine-Searcher, Dan Murphy's, BBR):
 - These sites CITE ratings from original critics. Look for patterns like:
@@ -649,7 +650,19 @@ IMPORTANT - Aggregator sites (Wine-Searcher, Dan Murphy's, BBR):
 - If just "WS Score: 92" without clear attribution, use source: "wine_searcher" lens: "aggregator"
 - Wine-Searcher often shows aggregated scores - extract any critic scores with attribution
 
-- lens: "competition", "panel_guide", "critic", "community", or "aggregator"
+IMPORTANT - Producer/Winery websites (sourceId contains "producer_website"):
+- Wineries often display awards, medals, and accolades prominently on their sites
+- Look for "Awards", "Accolades", "Recognition", "Achievements" sections
+- Common patterns:
+  "Gold Medal - International Wine Challenge 2023" → source: "iwc", raw_score: "Gold", lens: "competition"
+  "92 points Wine Spectator" → source: "wine_spectator", raw_score: "92", lens: "critic"
+  "Decanter Gold 2024" → source: "decanter", raw_score: "Gold", lens: "competition"
+  "5 Stars Platter's Guide" → source: "platters", raw_score: "5", lens: "panel_guide"
+- If the competition/critic is identifiable, use the ORIGINAL source (iwc, decanter, etc.)
+- If the award source is unclear but clearly displayed, use source: "producer_website" lens: "producer"
+- Extract ANY medals, points, or awards displayed regardless of vintage - but mark vintage_match correctly
+
+- lens: "competition", "panel_guide", "critic", "community", "aggregator", or "producer"
 - score_type: "medal", "points", "stars", or "symbol"
 - raw_score: The EXACT score as shown (e.g., "Gold", "92", "4.2", "Tre Bicchieri", "★★★", "17/20")
 - normalised_score: Convert to 100-point scale if possible:
@@ -769,6 +782,7 @@ For each rating found, provide:
   Critics: tim_atkin, jancis_robinson, wine_advocate, wine_spectator, james_suckling, wine_enthusiast
   Community: vivino, cellar_tracker
   Aggregators: wine_searcher (use original source if visible)
+  Producer Website: producer_website (for awards from winery's own site)
 
 IMPORTANT - Aggregator snippets (Wine-Searcher, Dan Murphy's):
 - Look for patterns citing original critics:
@@ -776,7 +790,13 @@ IMPORTANT - Aggregator snippets (Wine-Searcher, Dan Murphy's):
   "Critics Score: 90" → extract the score with lens: "critic"
 - Use original source name when clearly attributed
 
-- lens: "community", "critic", "panel_guide", "competition", or "aggregator"
+IMPORTANT - Producer/Winery website snippets:
+- Look for awards, medals, accolades displayed by the producer
+- "Gold Medal IWC 2023" → source: "iwc", raw_score: "Gold"
+- "92 pts Wine Spectator" → source: "wine_spectator", raw_score: "92"
+- If competition unclear, use source: "producer_website" lens: "producer"
+
+- lens: "community", "critic", "panel_guide", "competition", "aggregator", or "producer"
 - score_type: "stars", "points", "medal", or "symbol"
 - raw_score: The exact score (e.g., "3.8", "92", "Gold", "Tre Bicchieri")
 - normalised_score: Convert to 100-point scale:

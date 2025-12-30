@@ -424,6 +424,10 @@ function mapToDisplayLens(sourceLens) {
   if (sourceLens === 'panel_guide' || sourceLens === 'critic' || sourceLens === 'critics') {
     return 'critics';
   }
+  // Producer website awards (usually competition citations) map to competition lens
+  if (sourceLens === 'producer') {
+    return 'competition';
+  }
   return sourceLens;
 }
 
