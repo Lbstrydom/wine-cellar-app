@@ -1304,8 +1304,8 @@ function checkIfProducerSite(url, wineNameLower, keyWords) {
 
   // Check if domain contains any key words from wine name (producer name)
   // This catches things like "springfieldestate.com" for "Springfield Estate"
-  // Extended TLD list to include regional variations and wine-specific domains
-  const domainWithoutTld = domain.replace(/\.(com|co\.za|co\.nz|co\.uk|com\.au|wine|wines|fr|it|es|de|cl|ar|au|nz|pt|za)$/, '');
+  // Extended TLD list to include wine-producing country domains
+  const domainWithoutTld = domain.replace(/\.(com|org|net|co\.za|co\.nz|co\.uk|co\.ar|com\.au|com\.ar|com\.br|com\.mx|wine|wines|vin|vino|fr|it|es|de|cl|ar|au|nz|pt|za|at|ch|gr|hu|ro|bg|hr|si|rs|ge|am|lb|il|us|ca|mx|br|uy|pe)$/, '');
 
   for (const word of keyWords) {
     if (word.length >= 4 && domainWithoutTld.includes(word.replace(/[^a-z0-9]/g, ''))) {
