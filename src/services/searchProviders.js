@@ -1730,13 +1730,20 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     updateCredentialStatus('decanter', 'valid');
 
     // Search Decanter with authenticated session
-    // Use the wine-reviews search endpoint for better results
-    // Use token-based query for better matching (removes articles like "The")
+    // Use the wine-reviews/search endpoint with producer filter (/2) for best results
+    // URL format: /wine-reviews/search/{search-term}/page/{page-num}/{filter-type}
+    // Filter types: /2 = producer, /3 = country, /6 = grape, /8 = colour
     const searchTokens = extractSearchTokens(wineName);
-    const tokenQuery = searchTokens.join(' ');
-    const searchQuery = encodeURIComponent(`${tokenQuery} ${vintage}`.trim());
-    const searchUrl = `https://www.decanter.com/wine-reviews/?s=${searchQuery}`;
-    logger.info('Decanter', `Token-based search: "${tokenQuery} ${vintage}"`);
+
+    // Use producer name as primary search term
+    // Producer is typically the FIRST significant word (at least 4 chars), not the longest
+    // e.g., "Gramona III Lustros Corpinnat" -> "Gramona" not "Corpinnat"
+    const producerToken = searchTokens.find(t => t.length >= 4) || searchTokens[0] || wineName.split(/\s+/)[0];
+    const searchTerm = encodeURIComponent(producerToken.toLowerCase());
+
+    // Use the /2 filter (producer) - most reliable for finding specific wines
+    const searchUrl = `https://www.decanter.com/wine-reviews/search/${searchTerm}/page/1/2`;
+    logger.info('Decanter', `Producer search: "${producerToken}" (vintage: ${vintage})`);
 
     logger.info('Decanter', `Search URL: ${searchUrl}`);
     const searchResponse = await fetch(searchUrl, {
@@ -1770,8 +1777,10 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     logger.info('Decanter', `Search tokens: [${wineTokens.join(', ')}] vintage: ${vintageStr}`);
 
     // Collect ALL wine review URLs from the page
+    // URL format: /wine-reviews/country/region/wine-name-vintage-ID (may have 2-3 path segments)
+    // Examples: /wine-reviews/italy/umbria/scacciadiavoli-montefalco-sagrantino-umbria-italy-2019-104323
     const allUrls = [];
-    const urlPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[a-z][a-z-]*\/[a-z0-9-]+-\d+)"/gi;
+    const urlPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[a-z][a-z-]*(?:\/[a-z][a-z-]*)?\/[a-z0-9-]+-\d+)"/gi;
     let urlMatch;
     while ((urlMatch = urlPattern.exec(searchHtml)) !== null) {
       const url = urlMatch[1];
@@ -1789,12 +1798,15 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
 
     // Score each URL based on how well it matches our wine
     function scoreDecanterUrl(url) {
-      // Extract the wine name part from URL: /wine-reviews/region/wine-name-here-2019-95
+      // Extract the wine name part from URL
+      // Format: /wine-reviews/country/region/wine-name-here-2019-104323
+      // or: /wine-reviews/country/wine-name-here-2019-104323
       const urlParts = url.split('/wine-reviews/')[1];
       if (!urlParts) return { url, score: 0, matches: [] };
 
       const slugParts = urlParts.split('/');
-      const wineSlug = slugParts[1] || ''; // e.g., "nederburg-two-centuries-cabernet-sauvignon-2019-95"
+      // Wine slug is the LAST part (could be index 1 or 2 depending on structure)
+      const wineSlug = slugParts[slugParts.length - 1] || '';
       const slugLower = wineSlug.toLowerCase();
 
       let score = 0;
@@ -1863,46 +1875,65 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     const reviewHtml = await reviewResponse.text();
 
     // Look for rating in various formats on Decanter review pages
-    // Format 1: class="rating">XX</span> or data-rating="XX"
-    // Format 2: "XX points" in the content
-    // Format 3: itemprop="ratingValue" content="XX"
+    // Decanter uses JSON data embedded in the page, e.g., "score":92, "drink_from":2025, "drink_to":2046
     let score = null;
     let drinkingWindow = null;
 
-    // Try structured data first
-    const ratingValueMatch = reviewHtml.match(/itemprop="ratingValue"[^>]*content="(\d+)"/i) ||
-                             reviewHtml.match(/content="(\d+)"[^>]*itemprop="ratingValue"/i);
-    if (ratingValueMatch) {
-      score = parseInt(ratingValueMatch[1], 10);
+    // Primary: Extract from embedded JSON data (current Decanter format)
+    const jsonScoreMatch = reviewHtml.match(/"score"\s*:\s*(\d{2,3})/);
+    if (jsonScoreMatch) {
+      score = parseInt(jsonScoreMatch[1], 10);
     }
 
-    // Try data-rating attribute
+    // Fallback: Try structured data
+    if (!score) {
+      const ratingValueMatch = reviewHtml.match(/itemprop="ratingValue"[^>]*content="(\d+)"/i) ||
+                               reviewHtml.match(/content="(\d+)"[^>]*itemprop="ratingValue"/i);
+      if (ratingValueMatch) {
+        score = parseInt(ratingValueMatch[1], 10);
+      }
+    }
+
+    // Fallback: data-rating attribute
     if (!score) {
       const dataRatingMatch = reviewHtml.match(/data-rating="(\d+)"/i);
       if (dataRatingMatch) score = parseInt(dataRatingMatch[1], 10);
     }
 
-    // Try class="rating" spans
+    // Fallback: class="rating" spans
     if (!score) {
       const ratingClassMatch = reviewHtml.match(/class="[^"]*rating[^"]*"[^>]*>(\d{2,3})/i);
       if (ratingClassMatch) score = parseInt(ratingClassMatch[1], 10);
     }
 
-    // Try "XX points" pattern
+    // Fallback: "XX points" pattern
     if (!score) {
       const pointsMatch = reviewHtml.match(/(\d{2,3})\s*points/i);
       if (pointsMatch) score = parseInt(pointsMatch[1], 10);
     }
 
-    // Look for drinking window
-    const windowMatch = reviewHtml.match(/drink[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i) ||
-                        reviewHtml.match(/drinking\s+window[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i);
-    if (windowMatch) {
+    // Look for drinking window - primary: JSON format (drink_from, drink_to)
+    const drinkFromMatch = reviewHtml.match(/"drink_from"\s*:\s*(\d{4})/);
+    const drinkToMatch = reviewHtml.match(/"drink_to"\s*:\s*(\d{4})/);
+    if (drinkFromMatch && drinkToMatch) {
       drinkingWindow = {
-        drink_from_year: parseInt(windowMatch[1], 10),
-        drink_by_year: parseInt(windowMatch[2], 10),
-        raw_text: windowMatch[0]
+        drink_from_year: parseInt(drinkFromMatch[1], 10),
+        drink_by_year: parseInt(drinkToMatch[1], 10),
+        raw_text: `Drink ${drinkFromMatch[1]}-${drinkToMatch[1]}`
       };
+    }
+
+    // Fallback: text-based drinking window
+    if (!drinkingWindow) {
+      const windowMatch = reviewHtml.match(/drink[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i) ||
+                          reviewHtml.match(/drinking\s+window[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i);
+      if (windowMatch) {
+        drinkingWindow = {
+          drink_from_year: parseInt(windowMatch[1], 10),
+          drink_by_year: parseInt(windowMatch[2], 10),
+          raw_text: windowMatch[0]
+        };
+      }
     }
 
     if (!score || score < 50 || score > 100) {
