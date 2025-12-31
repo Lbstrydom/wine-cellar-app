@@ -11,9 +11,11 @@ import logger from '../utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const OCR_SCRIPT_PATH = path.join(__dirname, '..', '..', 'scripts', 'ocr', 'rolm_ocr_service.py');
+const OCR_VENV_PYTHON = path.join(__dirname, '..', '..', 'scripts', 'ocr', 'venv', 'Scripts', 'python.exe');
+const OCR_VENV_PYTHON_UNIX = path.join(__dirname, '..', '..', 'scripts', 'ocr', 'venv', 'bin', 'python');
 
-// Python executable - try python3 first, then python
-const PYTHON_EXECUTABLES = ['python3', 'python', 'py'];
+// Python executable - try venv first, then system python
+const PYTHON_EXECUTABLES = [OCR_VENV_PYTHON, OCR_VENV_PYTHON_UNIX, 'python3', 'python', 'py'];
 
 /**
  * Find available Python executable.
@@ -22,6 +24,13 @@ const PYTHON_EXECUTABLES = ['python3', 'python', 'py'];
 async function findPython() {
   for (const exe of PYTHON_EXECUTABLES) {
     try {
+      // For venv paths, check if file exists first
+      if (exe.includes('venv')) {
+        if (!fs.existsSync(exe)) {
+          continue;
+        }
+      }
+
       const result = await runCommand(exe, ['--version']);
       if (result.success) {
         logger.info('OCR', `Found Python: ${exe}`);
@@ -42,7 +51,7 @@ async function findPython() {
  */
 function runCommand(command, args) {
   return new Promise((resolve) => {
-    const proc = spawn(command, args, { shell: true });
+    const proc = spawn(command, args, { shell: false, windowsHide: true });
     let stdout = '';
     let stderr = '';
 
@@ -114,24 +123,55 @@ export async function checkOCRAvailability() {
  */
 export async function extractTextFromPDF(pdfBase64) {
   logger.info('OCR', 'Starting PDF text extraction with RolmOCR');
+  logger.info('OCR', `PDF base64 length: ${pdfBase64?.length || 0}`);
 
   // Find Python
   const python = await findPython();
   if (!python) {
     throw new Error('Python not found. Please install Python 3.8+');
   }
+  logger.info('OCR', `Python found, script path: ${OCR_SCRIPT_PATH}`);
 
   // Check script exists
   if (!fs.existsSync(OCR_SCRIPT_PATH)) {
     throw new Error(`OCR script not found at ${OCR_SCRIPT_PATH}`);
   }
+  logger.info('OCR', 'Script exists, creating temp file');
+
+  // Write PDF to temp file (command line args have length limits)
+  const os = await import('os');
+  const tempDir = os.tmpdir();
+  const tempPdfPath = path.join(tempDir, `ocr_${Date.now()}.pdf`);
+  logger.info('OCR', `Temp path: ${tempPdfPath}`);
+
+  try {
+    const pdfBuffer = Buffer.from(pdfBase64, 'base64');
+    fs.writeFileSync(tempPdfPath, pdfBuffer);
+    logger.info('OCR', `Wrote PDF to temp file: ${tempPdfPath} (${pdfBuffer.length} bytes)`);
+  } catch (err) {
+    throw new Error(`Failed to write temp PDF: ${err.message}`);
+  }
 
   return new Promise((resolve, reject) => {
-    const args = [OCR_SCRIPT_PATH, '--base64', pdfBase64, '--output', 'json'];
+    const args = [OCR_SCRIPT_PATH, tempPdfPath, '--output', 'json'];
+    logger.info('OCR', `Spawning: ${python} ${args.join(' ')}`);
+
     const proc = spawn(python, args, {
-      shell: true,
-      maxBuffer: 50 * 1024 * 1024 // 50MB buffer for large PDFs
+      shell: false,  // Don't use shell to avoid ENAMETOOLONG issues
+      windowsHide: true,
+      stdio: ['pipe', 'pipe', 'pipe']
     });
+
+    // Cleanup temp file when done
+    const cleanup = () => {
+      try {
+        if (fs.existsSync(tempPdfPath)) {
+          fs.unlinkSync(tempPdfPath);
+        }
+      } catch (_e) {
+        // Ignore cleanup errors
+      }
+    };
 
     let stdout = '';
     let stderr = '';
@@ -152,6 +192,8 @@ export async function extractTextFromPDF(pdfBase64) {
     });
 
     proc.on('close', (code) => {
+      cleanup();
+
       if (code !== 0) {
         logger.error('OCR', `Process exited with code ${code}: ${stderr}`);
         reject(new Error(`OCR failed: ${stderr || 'Unknown error'}`));
@@ -178,6 +220,7 @@ export async function extractTextFromPDF(pdfBase64) {
     });
 
     proc.on('error', (err) => {
+      cleanup();
       logger.error('OCR', `Process error: ${err.message}`);
       reject(new Error(`Failed to start OCR process: ${err.message}`));
     });

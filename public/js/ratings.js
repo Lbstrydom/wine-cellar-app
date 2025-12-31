@@ -755,7 +755,7 @@ function hideManualRatingForm() {
  * This is a fallback - the primary update now happens directly in handleFetchRatings.
  * @param {number} wineId - Wine ID
  */
-function updateTastingNotesDisplay(wineId) {
+function _updateTastingNotesDisplay(wineId) {
   if (!state.layout) return;
 
   // Find the wine's slot in the layout

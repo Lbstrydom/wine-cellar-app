@@ -11,7 +11,7 @@ import {
   getCachedSerpResults, cacheSerpResults,
   getCachedPage, cachePage
 } from './cacheService.js';
-import { classifyFetchResult, getDomainIssue, CLASSIFICATION } from './fetchClassifier.js';
+import { getDomainIssue } from './fetchClassifier.js';
 
 // Domains known to block standard scrapers - use Bright Data for these
 // Note: CellarTracker removed - their public pages work fine, and their API only searches personal cellars
@@ -1182,15 +1182,6 @@ function extractProducerName(wineName) {
     'brut', 'extra', 'demi', 'sec', 'vintage'
   ]);
 
-  // Words that can be part of producer name - don't stop here
-  // These often form part of winery/estate names
-  const producerNameWords = new Set([
-    'estate', 'estates', 'vineyard', 'vineyards', 'winery', 'wines', 'cellars',
-    'chateau', 'château', 'domaine', 'casa', 'bodega', 'tenuta', 'fattoria',
-    'weingut', 'hill', 'hills', 'valley', 'creek', 'bay', 'ridge', 'mountain',
-    'clos', 'cave', 'caves', 'maison', 'familia', 'family', 'brothers'
-  ]);
-
   const words = wineName.split(/\s+/);
   const producerWords = [];
 
@@ -1220,7 +1211,7 @@ function extractProducerName(wineName) {
  * @param {string|null} country - Wine country
  * @returns {Promise<Object[]>} Array of search results
  */
-async function searchProducerWebsite(wineName, vintage, country) {
+async function searchProducerWebsite(wineName, vintage, _country) {
   const producerName = extractProducerName(wineName);
   if (!producerName || producerName.length < 3) {
     return [];
@@ -1228,8 +1219,6 @@ async function searchProducerWebsite(wineName, vintage, country) {
 
   logger.info('Producer', `Extracted producer name: "${producerName}" from "${wineName}"`);
 
-  // Search for producer's official site with awards/accolades
-  const awardKeywords = ['awards', 'accolades', 'medals', 'recognition', 'achievements'];
   const producerTokens = extractSearchTokens(producerName);
 
   // Try different queries to find producer's awards page

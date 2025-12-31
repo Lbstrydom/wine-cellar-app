@@ -1,179 +1,227 @@
 #!/usr/bin/env python3
 """
-RolmOCR Service for PDF text extraction.
+OCR Service for PDF text extraction.
 
-This script extracts text from PDF files using RolmOCR (based on Qwen2.5-VL-7B).
-It can be called from Node.js via subprocess.
+This script extracts text from PDF files using:
+1. PyMuPDF (fitz) for text-based PDFs (fast, no OCR needed)
+2. EasyOCR for image-based PDFs (good quality, reasonable memory)
 
 Usage:
     python rolm_ocr_service.py <pdf_path> [--output json|text]
-    python rolm_ocr_service.py --base64 <base64_string> [--output json|text]
+    python rolm_ocr_service.py --check
 
 Output:
     JSON with extracted text and metadata, or plain text.
 """
 
 import argparse
-import base64
 import json
 import os
 import sys
-import tempfile
 from pathlib import Path
 
 # Check if required packages are available
+HAS_PYMUPDF = False
+HAS_EASYOCR = False
+HAS_PDF2IMAGE = False
+
 try:
-    import torch
-    from PIL import Image
+    import fitz  # PyMuPDF
+    HAS_PYMUPDF = True
+except ImportError:
+    pass
+
+try:
+    import easyocr
+    HAS_EASYOCR = True
+except ImportError:
+    pass
+
+try:
     import pdf2image
-    HAS_DEPS = True
-except ImportError as e:
-    HAS_DEPS = False
-    MISSING_DEP = str(e)
+    from PIL import Image
+    HAS_PDF2IMAGE = True
+except ImportError:
+    pass
 
 
 def check_dependencies():
-    """Check if all required dependencies are installed."""
-    if not HAS_DEPS:
-        return False, f"Missing dependency: {MISSING_DEP}"
-
-    try:
-        from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+    """Check if dependencies are installed."""
+    if HAS_PYMUPDF:
         return True, None
-    except ImportError as e:
-        return False, f"Missing transformers or model support: {e}"
+    if HAS_EASYOCR and HAS_PDF2IMAGE:
+        return True, None
+    return False, "Neither PyMuPDF nor EasyOCR+pdf2image installed"
 
 
-def load_model():
-    """Load the RolmOCR model (Qwen2.5-VL based)."""
-    from transformers import Qwen2VLForConditionalGeneration, AutoProcessor
+def extract_text_with_pymupdf(pdf_path: str) -> dict:
+    """Extract text from PDF using PyMuPDF (fast, for text-based PDFs)."""
+    print(f"[OCR] Using PyMuPDF for text extraction", file=sys.stderr)
 
-    model_name = "reducto/RolmOCR"
-
-    # Check for GPU availability
-    device = "cuda" if torch.cuda.is_available() else "cpu"
-
-    print(f"[OCR] Loading RolmOCR model on {device}...", file=sys.stderr)
-
-    # Load with appropriate precision
-    if device == "cuda":
-        model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name,
-            torch_dtype=torch.float16,
-            device_map="auto"
-        )
-    else:
-        model = Qwen2VLForConditionalGeneration.from_pretrained(
-            model_name,
-            torch_dtype=torch.float32
-        )
-        model = model.to(device)
-
-    processor = AutoProcessor.from_pretrained(model_name)
-
-    return model, processor, device
-
-
-def pdf_to_images(pdf_path: str, dpi: int = 200) -> list:
-    """Convert PDF pages to images."""
-    print(f"[OCR] Converting PDF to images (DPI: {dpi})...", file=sys.stderr)
-    images = pdf2image.convert_from_path(pdf_path, dpi=dpi)
-    print(f"[OCR] Converted {len(images)} pages", file=sys.stderr)
-    return images
-
-
-def extract_text_from_image(model, processor, device, image: Image.Image) -> str:
-    """Extract text from a single image using RolmOCR."""
-    # Prepare the prompt for OCR
-    messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "image", "image": image},
-                {"type": "text", "text": "Extract all text from this image. Preserve the layout and structure. Return only the extracted text, no commentary."}
-            ]
-        }
-    ]
-
-    # Process the input
-    text_prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
-    inputs = processor(
-        text=[text_prompt],
-        images=[image],
-        padding=True,
-        return_tensors="pt"
-    )
-    inputs = inputs.to(device)
-
-    # Generate
-    with torch.no_grad():
-        output_ids = model.generate(
-            **inputs,
-            max_new_tokens=4096,
-            do_sample=False
-        )
-
-    # Decode
-    generated_ids = output_ids[:, inputs.input_ids.shape[1]:]
-    output_text = processor.batch_decode(
-        generated_ids,
-        skip_special_tokens=True,
-        clean_up_tokenization_spaces=True
-    )[0]
-
-    return output_text
-
-
-def extract_text_from_pdf(pdf_path: str) -> dict:
-    """Extract text from all pages of a PDF."""
-    # Load model
-    model, processor, device = load_model()
-
-    # Convert PDF to images
-    images = pdf_to_images(pdf_path)
-
-    # Extract text from each page
+    doc = fitz.open(pdf_path)
     pages = []
     full_text = []
 
-    for i, image in enumerate(images):
-        print(f"[OCR] Processing page {i + 1}/{len(images)}...", file=sys.stderr)
-        text = extract_text_from_image(model, processor, device, image)
+    for i, page in enumerate(doc):
+        text = page.get_text()
         pages.append({
             "page_number": i + 1,
             "text": text
         })
         full_text.append(text)
+        print(f"[OCR] Page {i + 1}/{len(doc)}: {len(text)} chars", file=sys.stderr)
+
+    doc.close()
+
+    combined_text = "\n\n--- Page Break ---\n\n".join(full_text)
 
     return {
         "success": True,
+        "method": "pymupdf",
+        "total_pages": len(pages),
+        "pages": pages,
+        "full_text": combined_text
+    }
+
+
+def find_poppler_path():
+    """Find the poppler binaries path."""
+    possible_paths = [
+        # Scoop installation
+        os.path.expanduser("~/scoop/apps/poppler/current/Library/bin"),
+        os.path.expanduser("~/scoop/shims"),
+        # Chocolatey installation
+        r"C:\ProgramData\chocolatey\bin",
+        r"C:\ProgramData\chocolatey\lib\poppler\tools\poppler-25.12.0\Library\bin",
+        # Manual installation common paths
+        r"C:\Program Files\poppler\bin",
+        r"C:\Program Files\poppler-24.07.0\Library\bin",
+    ]
+
+    for path in possible_paths:
+        pdftoppm = os.path.join(path, "pdftoppm.exe")
+        if os.path.exists(pdftoppm):
+            print(f"[OCR] Found poppler at: {path}", file=sys.stderr)
+            return path
+
+    return None
+
+
+def pdf_to_images(pdf_path: str, dpi: int = 200) -> list:
+    """Convert PDF pages to images."""
+    print(f"[OCR] Converting PDF to images (DPI: {dpi})...", file=sys.stderr)
+
+    poppler_path = find_poppler_path()
+    if poppler_path:
+        images = pdf2image.convert_from_path(pdf_path, dpi=dpi, poppler_path=poppler_path)
+    else:
+        images = pdf2image.convert_from_path(pdf_path, dpi=dpi)
+    print(f"[OCR] Converted {len(images)} pages", file=sys.stderr)
+    return images
+
+
+def extract_text_with_easyocr(pdf_path: str) -> dict:
+    """Extract text from PDF using EasyOCR (for image-based PDFs)."""
+    import numpy as np
+
+    print(f"[OCR] Using EasyOCR for image-based PDF", file=sys.stderr)
+
+    # Initialize EasyOCR reader (supports multiple languages)
+    # Using GPU if available, otherwise CPU
+    print(f"[OCR] Initializing EasyOCR reader...", file=sys.stderr)
+    reader = easyocr.Reader(['en'], gpu=False)  # Start with CPU for reliability
+
+    images = pdf_to_images(pdf_path)
+
+    pages = []
+    full_text = []
+
+    for i, pil_image in enumerate(images):
+        print(f"[OCR] Processing page {i + 1}/{len(images)}...", file=sys.stderr)
+
+        # Convert PIL image to numpy array for EasyOCR
+        img_array = np.array(pil_image)
+
+        # Run OCR
+        results = reader.readtext(img_array, paragraph=True)
+
+        # Extract text from results
+        page_text_parts = []
+        for (bbox, text, confidence) in results:
+            page_text_parts.append(text)
+
+        page_text = "\n".join(page_text_parts)
+
+        pages.append({
+            "page_number": i + 1,
+            "text": page_text
+        })
+        full_text.append(page_text)
+        print(f"[OCR] Page {i + 1}: {len(page_text)} chars extracted", file=sys.stderr)
+
+    return {
+        "success": True,
+        "method": "easyocr",
         "total_pages": len(images),
         "pages": pages,
         "full_text": "\n\n--- Page Break ---\n\n".join(full_text)
     }
 
 
+def extract_text_from_pdf(pdf_path: str, force_ocr: bool = False) -> dict:
+    """Extract text from PDF, trying PyMuPDF first."""
+
+    # Try PyMuPDF first (fast, works for text-based PDFs)
+    if HAS_PYMUPDF and not force_ocr:
+        result = extract_text_with_pymupdf(pdf_path)
+
+        # Check if we got meaningful text
+        text_length = len(result.get("full_text", "").strip())
+        if text_length > 100:  # Arbitrary threshold for "has text"
+            print(f"[OCR] PyMuPDF extracted {text_length} chars successfully", file=sys.stderr)
+            return result
+        else:
+            print(f"[OCR] PyMuPDF found little/no text ({text_length} chars), trying OCR...", file=sys.stderr)
+
+    # Fall back to EasyOCR for image-based PDFs
+    if HAS_EASYOCR and HAS_PDF2IMAGE:
+        return extract_text_with_easyocr(pdf_path)
+
+    # If we got here with PyMuPDF result, return it even if minimal
+    if HAS_PYMUPDF:
+        return result
+
+    return {
+        "success": False,
+        "error": "No PDF text extraction method available"
+    }
+
+
 def main():
-    parser = argparse.ArgumentParser(description="RolmOCR PDF text extraction service")
+    parser = argparse.ArgumentParser(description="PDF text extraction service")
     parser.add_argument("pdf_path", nargs="?", help="Path to PDF file")
-    parser.add_argument("--base64", dest="base64_input", help="Base64 encoded PDF content")
     parser.add_argument("--output", choices=["json", "text"], default="json", help="Output format")
     parser.add_argument("--check", action="store_true", help="Check if dependencies are installed")
+    parser.add_argument("--force-ocr", action="store_true", help="Force OCR even for text-based PDFs")
 
     args = parser.parse_args()
 
     # Check dependencies mode
     if args.check:
         ok, error = check_dependencies()
-        result = {"available": ok}
+        result = {"available": ok, "has_pymupdf": HAS_PYMUPDF, "has_easyocr": HAS_EASYOCR, "has_pdf2image": HAS_PDF2IMAGE}
         if error:
             result["error"] = error
         print(json.dumps(result))
         sys.exit(0 if ok else 1)
 
     # Validate input
-    if not args.pdf_path and not args.base64_input:
-        parser.error("Either pdf_path or --base64 is required")
+    if not args.pdf_path:
+        parser.error("pdf_path is required")
+
+    if not os.path.exists(args.pdf_path):
+        print(json.dumps({"success": False, "error": f"File not found: {args.pdf_path}"}))
+        sys.exit(1)
 
     # Check dependencies
     ok, error = check_dependencies()
@@ -182,35 +230,20 @@ def main():
         sys.exit(1)
 
     try:
-        # Handle base64 input
-        if args.base64_input:
-            pdf_data = base64.b64decode(args.base64_input)
-            with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
-                f.write(pdf_data)
-                pdf_path = f.name
-            cleanup_temp = True
-        else:
-            pdf_path = args.pdf_path
-            cleanup_temp = False
+        result = extract_text_from_pdf(args.pdf_path, force_ocr=args.force_ocr)
 
-            if not os.path.exists(pdf_path):
-                print(json.dumps({"success": False, "error": f"File not found: {pdf_path}"}))
-                sys.exit(1)
-
-        # Extract text
-        result = extract_text_from_pdf(pdf_path)
-
-        # Cleanup temp file if needed
-        if cleanup_temp:
-            os.unlink(pdf_path)
-
-        # Output
         if args.output == "json":
             print(json.dumps(result, indent=2))
         else:
-            print(result["full_text"])
+            if result.get("success"):
+                print(result["full_text"])
+            else:
+                print(f"Error: {result.get('error', 'Unknown error')}")
+                sys.exit(1)
 
     except Exception as e:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         print(json.dumps({"success": False, "error": str(e)}))
         sys.exit(1)
 

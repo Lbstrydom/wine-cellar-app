@@ -10,9 +10,14 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DB_PATH = path.join(__dirname, '..', '..', 'data', 'cellar.db');
+const AWARDS_DB_PATH = path.join(__dirname, '..', '..', 'data', 'awards.db');
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+
+// Separate database for awards (shared/public data)
+const awardsDb = new Database(AWARDS_DB_PATH);
+awardsDb.pragma('journal_mode = WAL');
 
 /**
  * Run database migrations.
@@ -26,9 +31,9 @@ function runMigrations() {
     return;
   }
 
-  // Run migration SQL files
+  // Run migration SQL files (skip awards migrations - those go in awards.db)
   const migrationFiles = fs.readdirSync(migrationsDir)
-    .filter(f => f.endsWith('.sql'))
+    .filter(f => f.endsWith('.sql') && !f.includes('awards'))
     .sort();
 
   for (const file of migrationFiles) {
@@ -87,7 +92,49 @@ function runMigrations() {
     }
   }
 
-  // Ensure competition_awards table has all columns (migration might have run on old schema)
+}
+
+/**
+ * Run awards database migrations.
+ * @private
+ */
+function runAwardsMigrations() {
+  // Run awards-specific migration (011_awards_database.sql)
+  const migrationsDir = path.join(__dirname, '..', '..', 'data', 'migrations');
+  const awardsFile = path.join(migrationsDir, '011_awards_database.sql');
+
+  if (fs.existsSync(awardsFile)) {
+    const sql = fs.readFileSync(awardsFile, 'utf-8');
+
+    // Remove line comments
+    const cleanedSql = sql
+      .split('\n')
+      .map(line => {
+        if (line.trim().startsWith('--')) return '';
+        const commentIndex = line.indexOf('--');
+        if (commentIndex > 0) {
+          return line.substring(0, commentIndex);
+        }
+        return line;
+      })
+      .join('\n');
+
+    // Split by semicolon and execute
+    const statements = cleanedSql
+      .split(';')
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
+
+    for (const stmt of statements) {
+      try {
+        awardsDb.exec(stmt);
+      } catch (_err) {
+        // Ignore errors (table/index already exists, etc.)
+      }
+    }
+  }
+
+  // Ensure competition_awards table has all columns
   const awardsColumns = [
     { name: 'producer', type: 'TEXT' },
     { name: 'wine_name_normalized', type: 'TEXT' },
@@ -101,7 +148,7 @@ function runMigrations() {
 
   for (const col of awardsColumns) {
     try {
-      db.exec(`ALTER TABLE competition_awards ADD COLUMN ${col.name} ${col.type}`);
+      awardsDb.exec(`ALTER TABLE competition_awards ADD COLUMN ${col.name} ${col.type}`);
     } catch (_err) {
       // Column already exists
     }
@@ -110,5 +157,7 @@ function runMigrations() {
 
 // Run migrations on startup
 runMigrations();
+runAwardsMigrations();
 
 export default db;
+export { awardsDb };

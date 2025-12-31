@@ -376,9 +376,10 @@
           </div>
 
           <div class="import-input-area" id="import-pdf-input" style="display: none;">
-            <label for="awards-pdf">Upload PDF</label>
-            <input type="file" id="awards-pdf" accept="application/pdf" />
-            <p class="form-hint">Max 5MB. Works with Veritas, IWSC, Decanter award lists.</p>
+            <label for="awards-pdf">Upload PDF(s)</label>
+            <input type="file" id="awards-pdf" accept="application/pdf" multiple />
+            <p class="form-hint">Select multiple files. Year is auto-detected from filename (e.g., "VERITAS 2024.pdf").</p>
+            <div id="pdf-files-list" class="pdf-files-list"></div>
           </div>
 
           <div class="import-input-area" id="import-text-input" style="display: none;">

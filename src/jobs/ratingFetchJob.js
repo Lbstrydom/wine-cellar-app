@@ -18,7 +18,7 @@ import logger from '../utils/logger.js';
  * @returns {Object} Job result
  */
 async function handleRatingFetch(payload, context) {
-  const { wineId, forceRefresh = false } = payload;
+  const { wineId, forceRefresh: _forceRefresh = false } = payload;
   const { updateProgress } = context;
 
   // Get wine details

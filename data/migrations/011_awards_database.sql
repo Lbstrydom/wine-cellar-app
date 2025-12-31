@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS competition_awards (
     category TEXT,                          -- Wine category in competition
     region TEXT,                            -- Region if specified
 
-    -- Match tracking
+    -- Match tracking (matched_wine_id references wines table in cellar.db, not enforced via FK)
     matched_wine_id INTEGER,                -- Linked wine in cellar (NULL if not matched)
     match_type TEXT,                        -- 'exact', 'fuzzy', 'manual', NULL
     match_confidence REAL,                  -- 0.0-1.0 confidence score
@@ -45,7 +45,6 @@ CREATE TABLE IF NOT EXISTS competition_awards (
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 
     FOREIGN KEY (source_id) REFERENCES award_sources(id) ON DELETE CASCADE,
-    FOREIGN KEY (matched_wine_id) REFERENCES wines(id) ON DELETE SET NULL,
     UNIQUE(source_id, wine_name, vintage, award)
 );
 

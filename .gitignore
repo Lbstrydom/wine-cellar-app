@@ -1,11 +1,16 @@
 node_modules/
+
+# Personal cellar database (private data)
 data/cellar.db
 data/cellar.db-wal
 data/cellar.db-shm
-# Ignore local SQLite database files
-*.db
-*.db-wal
-*.db-shm
+
+# Awards database is tracked (shared public data)
+# Do NOT add data/awards.db to gitignore
+
+# SQLite WAL files for awards db
+data/awards.db-wal
+data/awards.db-shm
 # Ignore stray Windows artifact file
 nul
 .DS_Store

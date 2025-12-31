@@ -476,6 +476,66 @@ async function initAwardsSection() {
   if (yearInput && !yearInput.value) {
     yearInput.value = new Date().getFullYear();
   }
+
+  // PDF file selection - show selected files and auto-detect years
+  const pdfInput = document.getElementById('awards-pdf');
+  if (pdfInput) {
+    pdfInput.addEventListener('change', updatePdfFilesList);
+  }
+}
+
+/**
+ * Extract year from filename (e.g., "VERITAS 2024.pdf" -> 2024)
+ * @param {string} filename
+ * @returns {number|null}
+ */
+function extractYearFromFilename(filename) {
+  const match = filename.match(/\b(20\d{2})\b/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+/**
+ * Update PDF files list display.
+ */
+function updatePdfFilesList() {
+  const fileInput = document.getElementById('awards-pdf');
+  const listContainer = document.getElementById('pdf-files-list');
+  const yearInput = document.getElementById('awards-year');
+
+  if (!fileInput || !listContainer) return;
+
+  const files = Array.from(fileInput.files || []);
+
+  if (files.length === 0) {
+    listContainer.innerHTML = '';
+    return;
+  }
+
+  // If single file, auto-detect year and fill in the year field
+  if (files.length === 1) {
+    const detectedYear = extractYearFromFilename(files[0].name);
+    if (detectedYear && yearInput) {
+      yearInput.value = detectedYear;
+    }
+    listContainer.innerHTML = '';
+    return;
+  }
+
+  // Multiple files - show list with detected years
+  listContainer.innerHTML = `
+    <div class="pdf-files-header">Selected ${files.length} files (year field ignored for multi-file import):</div>
+    ${files.map((file) => {
+      const detectedYear = extractYearFromFilename(file.name);
+      return `
+        <div class="pdf-file-item">
+          <span class="pdf-file-name">${escapeHtml(file.name)}</span>
+          <span class="pdf-file-year ${detectedYear ? 'detected' : 'missing'}">
+            ${detectedYear ? `Year: ${detectedYear}` : 'No year detected - will use form year'}
+          </span>
+        </div>
+      `;
+    }).join('')}
+  `;
 }
 
 /**
@@ -592,11 +652,49 @@ async function handleImportAwards() {
 
     } else if (currentImportType === 'pdf') {
       const fileInput = document.getElementById('awards-pdf');
-      if (!fileInput.files || !fileInput.files[0]) {
+      if (!fileInput.files || fileInput.files.length === 0) {
         showToast('Please select a PDF file');
         return;
       }
-      result = await importAwardsFromPDF(fileInput.files[0], competitionId, year);
+
+      const files = Array.from(fileInput.files);
+
+      if (files.length === 1) {
+        // Single file - use form year or auto-detect
+        const detectedYear = extractYearFromFilename(files[0].name);
+        const fileYear = detectedYear || year;
+        result = await importAwardsFromPDF(files[0], competitionId, fileYear);
+      } else {
+        // Multiple files - process each with auto-detected year
+        let totalImported = 0;
+        let totalMatches = 0;
+        const errors = [];
+
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const fileYear = extractYearFromFilename(file.name) || year;
+
+          progress.querySelector('span').textContent = `Processing ${i + 1}/${files.length}: ${file.name}`;
+
+          try {
+            const fileResult = await importAwardsFromPDF(file, competitionId, fileYear);
+            totalImported += fileResult.imported || 0;
+            totalMatches += fileResult.matches?.exactMatches || 0;
+          } catch (err) {
+            errors.push(`${file.name}: ${err.message}`);
+          }
+        }
+
+        result = {
+          imported: totalImported,
+          matches: { exactMatches: totalMatches },
+          errors: errors.length > 0 ? errors : undefined
+        };
+
+        if (errors.length > 0) {
+          console.warn('Some files failed to import:', errors);
+        }
+      }
 
     } else if (currentImportType === 'text') {
       const text = document.getElementById('awards-text').value.trim();

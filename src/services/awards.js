@@ -5,7 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
-import db from '../db/index.js';
+import db, { awardsDb } from '../db/index.js';
 import logger from '../utils/logger.js';
 import { fetchPageContent } from './searchProviders.js';
 import * as ocrService from './ocrService.js';
@@ -19,7 +19,8 @@ const PDF_EXTRACTION_METHOD = process.env.PDF_OCR_METHOD || 'auto'; // 'local', 
 
 // Token limits for Claude API responses
 const MAX_TOKENS_PDF = 16000;  // Increased for large PDFs with many awards
-const MAX_TOKENS_TEXT = 8000;  // For text extraction (can have very long lists)
+const MAX_TOKENS_TEXT = 32000;  // For text extraction (increased to handle large award lists)
+const MAX_TOKENS_CHUNK = 32000; // For chunked extraction of large texts (each chunk needs room for ~250+ awards)
 
 /**
  * Normalize wine name for matching.
@@ -238,17 +239,17 @@ export function getOrCreateSource(competitionId, year, sourceUrl, sourceType) {
   const sourceId = `${competitionId}_${year}`;
 
   // Check if source exists
-  const existing = db.prepare('SELECT id FROM award_sources WHERE id = ?').get(sourceId);
+  const existing = awardsDb.prepare('SELECT id FROM award_sources WHERE id = ?').get(sourceId);
 
   if (existing) {
     return sourceId;
   }
 
   // Get competition name
-  const competition = db.prepare('SELECT name FROM known_competitions WHERE id = ?').get(competitionId);
+  const competition = awardsDb.prepare('SELECT name FROM known_competitions WHERE id = ?').get(competitionId);
   const competitionName = competition?.name || competitionId;
 
-  db.prepare(`
+  awardsDb.prepare(`
     INSERT INTO award_sources (id, competition_id, competition_name, year, source_url, source_type, status)
     VALUES (?, ?, ?, ?, ?, ?, 'pending')
   `).run(sourceId, competitionId, competitionName, year, sourceUrl, sourceType);
@@ -267,7 +268,7 @@ export function importAwards(sourceId, awards) {
     return { imported: 0, skipped: 0, errors: [] };
   }
 
-  const insertStmt = db.prepare(`
+  const insertStmt = awardsDb.prepare(`
     INSERT OR IGNORE INTO competition_awards (
       source_id, producer, wine_name, wine_name_normalized, vintage,
       award, award_normalized, category, region, extra_info
@@ -304,7 +305,7 @@ export function importAwards(sourceId, awards) {
   }
 
   // Update source stats
-  db.prepare(`
+  awardsDb.prepare(`
     UPDATE award_sources
     SET award_count = (SELECT COUNT(*) FROM competition_awards WHERE source_id = ?),
         status = 'completed'
@@ -338,20 +339,22 @@ export async function extractFromWebpage(url, competitionId, year) {
 
   const prompt = buildExtractionPrompt(fetched.content, competitionId, year);
 
-  const response = await anthropic.messages.create({
+  // Use streaming to avoid timeout errors for long-running requests
+  let responseText = '';
+  const stream = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: MAX_TOKENS_TEXT,
-    messages: [{ role: 'user', content: prompt }]
+    messages: [{ role: 'user', content: prompt }],
+    stream: true
   });
 
-  const responseText = response.content[0].text;
-  const parsed = parseAwardsResponse(responseText);
-
-  if (response.stop_reason === 'max_tokens') {
-    logger.warn('Awards', 'Webpage extraction may be truncated - max tokens reached');
-    parsed.extraction_notes = (parsed.extraction_notes || '') + ' [Warning: Response may be truncated]';
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      responseText += event.delta.text;
+    }
   }
 
+  const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
 
@@ -371,7 +374,9 @@ async function extractFromPDFWithClaude(pdfBase64, competitionId, year) {
 
   const prompt = buildPDFExtractionPrompt(competitionId, year);
 
-  const response = await anthropic.messages.create({
+  // Use streaming to avoid timeout errors for long-running requests
+  let responseText = '';
+  const stream = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: MAX_TOKENS_PDF,
     messages: [
@@ -392,18 +397,17 @@ async function extractFromPDFWithClaude(pdfBase64, competitionId, year) {
           }
         ]
       }
-    ]
+    ],
+    stream: true
   });
 
-  const responseText = response.content[0].text;
-  const parsed = parseAwardsResponse(responseText);
-
-  // Check if response was truncated (stop_reason)
-  if (response.stop_reason === 'max_tokens') {
-    logger.warn('Awards', 'Response may be truncated - max tokens reached');
-    parsed.extraction_notes = (parsed.extraction_notes || '') + ' [Warning: Response may be truncated]';
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      responseText += event.delta.text;
+    }
   }
 
+  const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
 
@@ -432,23 +436,39 @@ async function extractFromPDFWithLocalOCR(pdfBase64, competitionId, year) {
     throw new Error('Claude API key not configured (needed for parsing OCR text)');
   }
 
+  // Use chunked extraction for large texts (> 15000 chars typically means many awards)
+  // This prevents token limit issues when generating JSON for hundreds of awards
+  const CHUNK_THRESHOLD = 15000;
+  const CHUNK_SIZE = 12000;
+
+  if (ocrResult.text.length > CHUNK_THRESHOLD) {
+    logger.info('Awards', `Large OCR text (${ocrResult.text.length} chars), using chunked extraction`);
+    const parsed = await extractFromTextChunked(ocrResult.text, competitionId, year, CHUNK_SIZE);
+    parsed.extraction_method = 'local_ocr_chunked';
+    parsed.ocr_pages = ocrResult.totalPages;
+    return parsed;
+  }
+
   const prompt = buildExtractionPrompt(ocrResult.text, competitionId, year);
 
-  const response = await anthropic.messages.create({
+  // Use streaming to avoid timeout errors for long-running requests
+  let responseText = '';
+  const stream = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: MAX_TOKENS_TEXT,
-    messages: [{ role: 'user', content: prompt }]
+    messages: [{ role: 'user', content: prompt }],
+    stream: true
   });
 
-  const responseText = response.content[0].text;
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      responseText += event.delta.text;
+    }
+  }
+
   const parsed = parseAwardsResponse(responseText);
   parsed.extraction_method = 'local_ocr';
   parsed.ocr_pages = ocrResult.totalPages;
-
-  if (response.stop_reason === 'max_tokens') {
-    logger.warn('Awards', 'OCR text parsing may be truncated - max tokens reached');
-    parsed.extraction_notes = (parsed.extraction_notes || '') + ' [Warning: Response may be truncated]';
-  }
 
   return parsed;
 }
@@ -481,26 +501,27 @@ export async function extractFromPDF(pdfBase64, competitionId, year) {
     return await extractFromPDFWithClaude(pdfBase64, competitionId, year);
   }
 
-  // Method: auto - try local first, fall back to Claude
+  // Method: auto - try local first, fall back to Claude PDF only if OCR not available
   if (method === 'auto') {
-    try {
-      // Check if local OCR is available
-      const ocrStatus = await ocrService.checkOCRAvailability();
+    // Check if local OCR is available
+    const ocrStatus = await ocrService.checkOCRAvailability();
 
-      if (ocrStatus.available) {
-        logger.info('Awards', 'Using local OCR (RolmOCR)');
-        return await extractFromPDFWithLocalOCR(pdfBase64, competitionId, year);
-      } else {
-        logger.info('Awards', `Local OCR not available: ${ocrStatus.error}, falling back to Claude`);
-        return await extractFromPDFWithClaude(pdfBase64, competitionId, year);
-      }
-    } catch (err) {
-      logger.warn('Awards', `Local OCR failed, falling back to Claude: ${err.message}`);
+    if (ocrStatus.available) {
+      logger.info('Awards', 'Using local OCR (PyMuPDF/RolmOCR)');
+      // Don't catch errors here - if Claude text parsing fails, let it propagate
+      // We only want to fall back to Claude PDF if OCR itself is not available
+      return await extractFromPDFWithLocalOCR(pdfBase64, competitionId, year);
+    } else {
+      logger.info('Awards', `Local OCR not available: ${ocrStatus.error}, using Claude PDF API`);
       return await extractFromPDFWithClaude(pdfBase64, competitionId, year);
     }
   }
 
-  // Default to Claude
+  // Default to local OCR if available, otherwise Claude PDF
+  const ocrStatus = await ocrService.checkOCRAvailability();
+  if (ocrStatus.available) {
+    return await extractFromPDFWithLocalOCR(pdfBase64, competitionId, year);
+  }
   return await extractFromPDFWithClaude(pdfBase64, competitionId, year);
 }
 
@@ -528,20 +549,22 @@ export async function extractFromText(text, competitionId, year) {
 
   const prompt = buildExtractionPrompt(text, competitionId, year);
 
-  const response = await anthropic.messages.create({
+  // Use streaming to avoid timeout errors for long-running requests
+  let responseText = '';
+  const stream = await anthropic.messages.create({
     model: 'claude-sonnet-4-5-20250929',
     max_tokens: MAX_TOKENS_TEXT,
-    messages: [{ role: 'user', content: prompt }]
+    messages: [{ role: 'user', content: prompt }],
+    stream: true
   });
 
-  const responseText = response.content[0].text;
-  const parsed = parseAwardsResponse(responseText);
-
-  if (response.stop_reason === 'max_tokens') {
-    logger.warn('Awards', 'Text extraction may be truncated - max tokens reached');
-    parsed.extraction_notes = (parsed.extraction_notes || '') + ' [Warning: Response may be truncated]';
+  for await (const event of stream) {
+    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+      responseText += event.delta.text;
+    }
   }
 
+  const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
 
@@ -586,13 +609,19 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
 
     const prompt = buildExtractionPrompt(chunks[i], competitionId, year);
 
-    const response = await anthropic.messages.create({
+    let responseText = '';
+    const stream = await anthropic.messages.create({
       model: 'claude-sonnet-4-5-20250929',
-      max_tokens: MAX_TOKENS_TEXT,
-      messages: [{ role: 'user', content: prompt }]
+      max_tokens: MAX_TOKENS_CHUNK,
+      messages: [{ role: 'user', content: prompt }],
+      stream: true
     });
 
-    const responseText = response.content[0].text;
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+        responseText += event.delta.text;
+      }
+    }
     const parsed = parseAwardsResponse(responseText);
 
     if (parsed.awards && parsed.awards.length > 0) {
@@ -631,7 +660,7 @@ function buildExtractionPrompt(content, competitionId, year) {
   return `Extract wine awards from this content for the ${competitionId} ${year} competition.
 
 CONTENT:
-${content.substring(0, 12000)}
+${content.substring(0, 60000)}
 
 ---
 
@@ -766,7 +795,7 @@ function parseAwardsResponse(text) {
  * @returns {Object} Match results
  */
 export function autoMatchAwards(sourceId) {
-  const unmatched = db.prepare(`
+  const unmatched = awardsDb.prepare(`
     SELECT id, producer, wine_name, wine_name_normalized, vintage
     FROM competition_awards
     WHERE source_id = ? AND matched_wine_id IS NULL
@@ -776,7 +805,7 @@ export function autoMatchAwards(sourceId) {
   let fuzzyMatches = 0;
   let noMatches = 0;
 
-  const updateStmt = db.prepare(`
+  const updateStmt = awardsDb.prepare(`
     UPDATE competition_awards
     SET matched_wine_id = ?, match_type = ?, match_confidence = ?
     WHERE id = ?
@@ -814,7 +843,7 @@ export function autoMatchAwards(sourceId) {
  * @returns {Object[]} Matching awards
  */
 export function getWineAwards(wineId) {
-  return db.prepare(`
+  return awardsDb.prepare(`
     SELECT
       ca.*,
       aws.competition_name,
@@ -838,7 +867,7 @@ export function searchAwards(wineName, vintage = null) {
   const normalized = normalizeWineName(wineName);
 
   // Get all unmatched awards
-  const awards = db.prepare(`
+  const awards = awardsDb.prepare(`
     SELECT
       ca.*,
       aws.competition_name,
@@ -875,7 +904,7 @@ export function searchAwards(wineName, vintage = null) {
  * @returns {boolean} Success
  */
 export function linkAwardToWine(awardId, wineId) {
-  const result = db.prepare(`
+  const result = awardsDb.prepare(`
     UPDATE competition_awards
     SET matched_wine_id = ?, match_type = 'manual', match_confidence = 1.0
     WHERE id = ?
@@ -890,7 +919,7 @@ export function linkAwardToWine(awardId, wineId) {
  * @returns {boolean} Success
  */
 export function unlinkAward(awardId) {
-  const result = db.prepare(`
+  const result = awardsDb.prepare(`
     UPDATE competition_awards
     SET matched_wine_id = NULL, match_type = NULL, match_confidence = NULL
     WHERE id = ?
@@ -904,7 +933,7 @@ export function unlinkAward(awardId) {
  * @returns {Object[]} Award sources
  */
 export function getAwardSources() {
-  return db.prepare(`
+  return awardsDb.prepare(`
     SELECT
       aws.*,
       kc.name as competition_display_name,
@@ -922,16 +951,28 @@ export function getAwardSources() {
  * @returns {Object[]} Awards
  */
 export function getSourceAwards(sourceId) {
-  return db.prepare(`
-    SELECT
-      ca.*,
-      w.wine_name as matched_wine_name,
-      w.vintage as matched_vintage
+  // Get awards from awards database
+  const awards = awardsDb.prepare(`
+    SELECT ca.*
     FROM competition_awards ca
-    LEFT JOIN wines w ON w.id = ca.matched_wine_id
     WHERE ca.source_id = ?
     ORDER BY ca.award_normalized DESC, ca.wine_name
   `).all(sourceId);
+
+  // Look up matched wine names from cellar database
+  const getWine = db.prepare('SELECT wine_name, vintage FROM wines WHERE id = ?');
+
+  return awards.map(award => {
+    if (award.matched_wine_id) {
+      const wine = getWine.get(award.matched_wine_id);
+      return {
+        ...award,
+        matched_wine_name: wine?.wine_name || null,
+        matched_vintage: wine?.vintage || null
+      };
+    }
+    return { ...award, matched_wine_name: null, matched_vintage: null };
+  });
 }
 
 /**
@@ -940,8 +981,8 @@ export function getSourceAwards(sourceId) {
  * @returns {boolean} Success
  */
 export function deleteSource(sourceId) {
-  db.prepare('DELETE FROM competition_awards WHERE source_id = ?').run(sourceId);
-  const result = db.prepare('DELETE FROM award_sources WHERE id = ?').run(sourceId);
+  awardsDb.prepare('DELETE FROM competition_awards WHERE source_id = ?').run(sourceId);
+  const result = awardsDb.prepare('DELETE FROM award_sources WHERE id = ?').run(sourceId);
   return result.changes > 0;
 }
 
@@ -950,7 +991,7 @@ export function deleteSource(sourceId) {
  * @returns {Object[]} Competitions
  */
 export function getKnownCompetitions() {
-  return db.prepare(`
+  return awardsDb.prepare(`
     SELECT * FROM known_competitions ORDER BY name
   `).all();
 }
@@ -963,7 +1004,7 @@ export function getKnownCompetitions() {
 export function addCompetition(competition) {
   const id = competition.id || competition.name.toLowerCase().replace(/\s+/g, '_');
 
-  db.prepare(`
+  awardsDb.prepare(`
     INSERT OR REPLACE INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(

@@ -18,7 +18,10 @@ export function getDefaultDrinkingWindow(wine, vintage) {
   if (!vintage) return null;
 
   // Start with wine's structured fields
-  let { grape, region, country, colour, style } = wine;
+  const { grape: wineGrape, region: wineRegion, country, colour, style: wineStyle } = wine;
+  let grape = wineGrape;
+  let region = wineRegion;
+  let style = wineStyle;
 
   // Also check wine_name field (used in wines table)
   const wineName = wine.name || wine.wine_name;

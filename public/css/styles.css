@@ -3624,6 +3624,49 @@ body.slot-picker-mode .slot.picker-placed::after {
   to { transform: rotate(360deg); }
 }
 
+/* PDF Files List (multi-select) */
+.pdf-files-list {
+  margin-top: 0.75rem;
+}
+
+.pdf-files-header {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.pdf-file-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 4px;
+  margin-bottom: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.pdf-file-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-right: 0.5rem;
+}
+
+.pdf-file-year {
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.pdf-file-year.detected {
+  color: #81c784;
+}
+
+.pdf-file-year.missing {
+  color: #ffb74d;
+}
+
 /* Award Sources List */
 .awards-sources-list {
   margin-top: 0.5rem;
