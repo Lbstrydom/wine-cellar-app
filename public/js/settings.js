@@ -708,6 +708,9 @@ async function handleImportAwards() {
     // Show result
     if (result.imported > 0) {
       showToast(`Imported ${result.imported} awards, ${result.matches?.exactMatches || 0} matched to cellar`);
+    } else if (result.hint === 'dynamic_content') {
+      // Page loads dynamically - show longer message
+      showToast(result.message, 8000);
     } else {
       showToast(result.message || 'No awards found');
     }

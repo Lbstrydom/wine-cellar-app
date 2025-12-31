@@ -6,15 +6,16 @@
 /**
  * Show a toast notification.
  * @param {string} message - Message to display
+ * @param {number} [duration=3000] - Duration in milliseconds
  */
-export function showToast(message) {
+export function showToast(message, duration = 3000) {
   const toast = document.getElementById('toast');
   toast.textContent = message;
   toast.classList.add('show');
 
   setTimeout(() => {
     toast.classList.remove('show');
-  }, 3000);
+  }, duration);
 }
 
 /**

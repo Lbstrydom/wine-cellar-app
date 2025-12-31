@@ -11,10 +11,10 @@ import logger from '../utils/logger.js';
 
 const router = Router();
 
-// Configure multer for PDF uploads (5MB limit)
+// Configure multer for PDF uploads (50MB limit to allow large booklets)
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: (_req, file, cb) => {
     if (file.mimetype === 'application/pdf') {
       cb(null, true);
@@ -125,9 +125,10 @@ router.post('/import/webpage', async (req, res) => {
 
     if (!extracted.awards || extracted.awards.length === 0) {
       return res.json({
-        message: 'No awards found in webpage',
+        message: 'No awards found in webpage. The page may load content dynamically with JavaScript. Try: Print the page to PDF (Ctrl+P → Save as PDF) and use PDF import instead.',
         extracted: 0,
-        notes: extracted.extraction_notes
+        notes: extracted.extraction_notes,
+        hint: 'dynamic_content'
       });
     }
 

@@ -439,7 +439,7 @@ async function extractFromPDFWithLocalOCR(pdfBase64, competitionId, year) {
   // Use chunked extraction for large texts (> 15000 chars typically means many awards)
   // This prevents token limit issues when generating JSON for hundreds of awards
   const CHUNK_THRESHOLD = 15000;
-  const CHUNK_SIZE = 12000;
+  const CHUNK_SIZE = 8000;  // Reduced from 12000 to generate smaller JSON responses
 
   if (ocrResult.text.length > CHUNK_THRESHOLD) {
     logger.info('Awards', `Large OCR text (${ocrResult.text.length} chars), using chunked extraction`);
@@ -600,35 +600,62 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
 
   logger.info('Awards', `Processing ${chunks.length} chunks`);
 
-  // Process each chunk
+  // Process each chunk with retry logic
   const allAwards = [];
   const notes = [];
+  const MAX_RETRIES = 1;
 
   for (let i = 0; i < chunks.length; i++) {
     logger.info('Awards', `Processing chunk ${i + 1}/${chunks.length}`);
 
-    const prompt = buildExtractionPrompt(chunks[i], competitionId, year);
+    let parsed = null;
+    let retryCount = 0;
+    let currentMaxTokens = MAX_TOKENS_CHUNK;
 
-    let responseText = '';
-    const stream = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
-      max_tokens: MAX_TOKENS_CHUNK,
-      messages: [{ role: 'user', content: prompt }],
-      stream: true
-    });
+    while (retryCount <= MAX_RETRIES && !parsed?.awards?.length) {
+      try {
+        const prompt = buildExtractionPrompt(chunks[i], competitionId, year);
 
-    for await (const event of stream) {
-      if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-        responseText += event.delta.text;
+        let responseText = '';
+        const stream = await anthropic.messages.create({
+          model: 'claude-sonnet-4-5-20250929',
+          max_tokens: currentMaxTokens,
+          messages: [{ role: 'user', content: prompt }],
+          stream: true
+        });
+
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+            responseText += event.delta.text;
+          }
+        }
+        parsed = parseAwardsResponse(responseText);
+
+        if (!parsed?.awards?.length && retryCount < MAX_RETRIES) {
+          // Retry with reduced tokens
+          logger.info('Awards', `Chunk ${i + 1} parse failed, retrying with reduced tokens`);
+          retryCount++;
+          currentMaxTokens = Math.max(8000, currentMaxTokens - 4000);
+          parsed = null;  // Reset to trigger retry
+        }
+      } catch (error) {
+        if (retryCount < MAX_RETRIES) {
+          logger.warn('Awards', `Chunk ${i + 1} error: ${error.message}, retrying...`);
+          retryCount++;
+          currentMaxTokens = Math.max(8000, currentMaxTokens - 4000);
+          await new Promise(resolve => setTimeout(resolve, 500));  // Brief delay before retry
+        } else {
+          logger.error('Awards', `Chunk ${i + 1} failed after ${MAX_RETRIES} retries: ${error.message}`);
+          parsed = { awards: [], extraction_notes: `Failed after ${MAX_RETRIES} retries: ${error.message}` };
+        }
       }
     }
-    const parsed = parseAwardsResponse(responseText);
 
-    if (parsed.awards && parsed.awards.length > 0) {
+    if (parsed && parsed.awards && parsed.awards.length > 0) {
       allAwards.push(...parsed.awards);
     }
 
-    if (parsed.extraction_notes) {
+    if (parsed?.extraction_notes) {
       notes.push(`Chunk ${i + 1}: ${parsed.extraction_notes}`);
     }
   }
@@ -659,12 +686,16 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
 function buildExtractionPrompt(content, competitionId, year) {
   return `Extract wine awards from this content for the ${competitionId} ${year} competition.
 
+IMPORTANT: This content may be in German, English, or another language. The content may also include 
+introductory text, forewords, or other preamble before the actual awards list. Focus ONLY on extracting 
+the actual wine awards list, ignoring all introductory sections.
+
 CONTENT:
 ${content.substring(0, 60000)}
 
 ---
 
-TASK: Extract all wine awards found in this content.
+TASK: Extract all wine awards found in this content, skipping any preamble/introduction.
 
 For each award entry, extract:
 - producer: Winery/producer name (if separate from wine name)
@@ -689,6 +720,13 @@ Return ONLY valid JSON:
   "extraction_notes": "Summary of extraction"
 }
 
+ADDITIONAL NOTES:
+- Content may be in German or other languages - extract regardless of language
+- Common German awards: "Grosses Gold" (Grand Gold), "Gold", "Silber" (Silver), "Bronze"
+- Skip introductory pages, forewords, explanatory text, competition rules, etc.
+- Look for structured lists or tables of wine names with award levels
+- When in doubt about whether text is awards vs. introduction, prefer skipping it
+
 RULES:
 - Extract ALL awards visible in the content
 - Be thorough - don't miss entries
@@ -707,6 +745,10 @@ RULES:
  */
 function buildPDFExtractionPrompt(competitionId, year) {
   return `This is a PDF from the ${competitionId} ${year} wine competition/guide.
+IMPORTANT: This document may be in German, English, or another language. It may contain introductory 
+text, forewords, competition rules, or other preamble before the actual awards list. Focus ONLY on 
+extracting the actual wine awards, ignoring all introductory sections.
+
 
 TASK: Extract all wine awards from this document.
 
@@ -715,6 +757,13 @@ For each award entry, extract:
 - wine_name: Full wine name (may include producer)
 - vintage: Year as integer (null if not specified)
 - award: Award level (Gold, Silver, Bronze, Trophy, Double Gold, 5 Stars, etc.)
+ADDITIONAL NOTES:
+- Content may be in German or other languages - extract regardless of language
+- Common German awards: "Grosses Gold" (Grand Gold), "Gold", "Silber" (Silver), "Bronze"
+- Skip introductory pages, forewords, explanatory text, competition rules, etc.
+- Look for structured lists or tables of wine names with award levels
+- When in doubt about whether section contains awards vs. introduction, prefer skipping it
+
 - category: Wine category if specified
 - region: Region if specified
 
@@ -741,6 +790,34 @@ RULES:
 - Use exact award names as shown
 - If document has multiple sections (Gold, Silver, Bronze), process all
 - If no awards found: {"awards": [], "extraction_notes": "No awards found"}`;
+}
+
+/**
+ * Salvage awards from truncated JSON response.
+ * Extracts individual award objects even if the overall JSON is malformed.
+ * @param {string} text - Truncated JSON text
+ * @returns {Object[]} Salvaged awards
+ */
+function salvagePartialJSON(text) {
+  const awards = [];
+  // Match individual award objects containing wine_name and award fields
+  const awardPattern = /\{\s*"[^"]*":\s*"[^"]*"[^}]*?"wine_name"\s*:\s*"[^"]*"[^}]*?"award"\s*:\s*"[^"]*"[^}]*?\}/g;
+  
+  const matches = text.match(awardPattern) || [];
+  
+  for (const match of matches) {
+    try {
+      const award = JSON.parse(match);
+      if (award.wine_name && award.award) {
+        awards.push(award);
+      }
+    } catch (e) {
+      // Skip malformed individual awards
+      continue;
+    }
+  }
+  
+  return awards;
 }
 
 /**
@@ -783,6 +860,13 @@ function parseAwardsResponse(text) {
     } catch (_e) {
       // Continue
     }
+  }
+
+  // Last resort: Salvage individual awards from truncated response
+  const salvaged = salvagePartialJSON(text);
+  if (salvaged.length > 0) {
+    logger.info('Awards', `Salvaged ${salvaged.length} awards from truncated response`);
+    return { awards: salvaged, extraction_notes: `Salvaged ${salvaged.length} awards from truncated response` };
   }
 
   logger.error('Awards', `Failed to parse response: ${text.substring(0, 300)}`);

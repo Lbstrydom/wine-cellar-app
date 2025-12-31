@@ -1,2 +1,0 @@
-Issues: 1 when I click on a wine and I want to add another then it only allows one bottle to be added, there should be a choice to add more
-when we add multiple boittles it should ask to automatrically fill in which case it adds from left to right starting at the first cell the user selected and if overflow then continue from left to rigfht in ffirst open spots on next row, and it should give the user the option to manually add and the user can then click on the open cells where it wants to place the wines
