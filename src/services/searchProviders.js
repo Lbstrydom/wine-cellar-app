@@ -1941,6 +1941,19 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       return null;
     }
 
+    // Extract tasting notes from "review" JSON field
+    let tastingNotes = null;
+    const reviewMatch = reviewHtml.match(/"review"\s*:\s*"([^"]+)"/);
+    if (reviewMatch) {
+      // Unescape JSON string (handle \n, \u0027, etc.)
+      tastingNotes = reviewMatch[1]
+        .replace(/\\n/g, ' ')
+        .replace(/\\u[\dA-Fa-f]{4}/g, (match) =>
+          String.fromCharCode(parseInt(match.slice(2), 16)))
+        .replace(/\\(.)/g, '$1')
+        .trim();
+    }
+
     const result = {
       source: 'decanter',
       lens: 'panel_guide',
@@ -1951,10 +1964,11 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       vintage_found: vintage,
       source_url: reviewUrl,
       drinking_window: drinkingWindow,
+      tasting_notes: tastingNotes,
       match_confidence: 'high' // Higher confidence since we found actual review page
     };
 
-    logger.info('Decanter', `Found: ${result.raw_score} points${drinkingWindow ? ` (${drinkingWindow.raw_text})` : ''}`);
+    logger.info('Decanter', `Found: ${result.raw_score} points${drinkingWindow ? ` (${drinkingWindow.raw_text})` : ''}${tastingNotes ? ' [with notes]' : ''}`);
     return result;
 
   } catch (err) {
