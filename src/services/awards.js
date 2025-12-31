@@ -1043,12 +1043,26 @@ export function getSourceAwards(sourceId) {
     ORDER BY ca.award_normalized DESC, ca.wine_name
   `).all(sourceId);
 
-  // Look up matched wine names from cellar database
-  const getWine = db.prepare('SELECT wine_name, vintage FROM wines WHERE id = ?');
+  // Optimized: Batch load all matched wines in a single query instead of N+1
+  const matchedWineIds = [...new Set(
+    awards
+      .filter(a => a.matched_wine_id)
+      .map(a => a.matched_wine_id)
+  )];
+
+  // Build wine lookup map with single query
+  const wineMap = new Map();
+  if (matchedWineIds.length > 0) {
+    const placeholders = matchedWineIds.map(() => '?').join(',');
+    const wines = db.prepare(`
+      SELECT id, wine_name, vintage FROM wines WHERE id IN (${placeholders})
+    `).all(...matchedWineIds);
+    wines.forEach(w => wineMap.set(w.id, w));
+  }
 
   return awards.map(award => {
     if (award.matched_wine_id) {
-      const wine = getWine.get(award.matched_wine_id);
+      const wine = wineMap.get(award.matched_wine_id);
       return {
         ...award,
         matched_wine_name: wine?.wine_name || null,

@@ -41,6 +41,8 @@ router.get('/', (req, res) => {
  * @route GET /api/stats/layout
  */
 router.get('/layout', (req, res) => {
+  // Optimized: Use LEFT JOIN instead of correlated subqueries for reduce_now
+  // This reduces 342 subqueries (2 per slot) to a single JOIN
   const slots = db.prepare(`
     SELECT
       s.id as slot_id,
@@ -59,10 +61,11 @@ router.get('/layout', (req, res) => {
       w.drink_peak,
       w.drink_until,
       w.tasting_notes,
-      (SELECT rn.priority FROM reduce_now rn WHERE rn.wine_id = w.id) as reduce_priority,
-      (SELECT rn.reduce_reason FROM reduce_now rn WHERE rn.wine_id = w.id) as reduce_reason
+      rn.priority as reduce_priority,
+      rn.reduce_reason
     FROM slots s
     LEFT JOIN wines w ON s.wine_id = w.id
+    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
     ORDER BY s.zone DESC, s.row_num, s.col_num
   `).all();
 

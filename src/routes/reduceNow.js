@@ -65,6 +65,8 @@ router.delete('/:wine_id', (req, res) => {
  * Uses drinking window data as primary signal, with age/rating as fallback.
  * Does NOT add them automatically - user must confirm.
  * @route POST /api/reduce-now/evaluate
+ *
+ * Optimized: Single query to fetch all candidate wines, then process in-memory
  */
 router.post('/evaluate', (_req, res) => {
   // Get current settings
@@ -91,141 +93,87 @@ router.post('/evaluate', (_req, res) => {
   const currentYear = new Date().getFullYear();
   const urgencyYear = currentYear + Math.ceil(urgencyMonths / 12);
 
+  // Optimized: Single query to fetch ALL wines with bottles that aren't already in reduce_now
+  // This replaces 5 separate queries with 1 comprehensive query
+  const allWines = db.prepare(`
+    SELECT
+      w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
+      w.purchase_stars, w.vivino_rating, w.country, w.grape,
+      (? - w.vintage) as wine_age,
+      dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
+      COUNT(s.id) as bottle_count,
+      GROUP_CONCAT(DISTINCT s.location_code) as locations
+    FROM wines w
+    JOIN slots s ON s.wine_id = w.id
+    LEFT JOIN drinking_windows dw ON w.id = dw.wine_id
+    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
+    WHERE rn.id IS NULL
+    GROUP BY w.id
+    HAVING bottle_count > 0
+    ORDER BY dw.drink_by_year ASC NULLS LAST, w.vintage ASC
+  `).all(currentYear);
+
   const candidates = [];
   const seenWineIds = new Set();
 
-  // Priority 1: Wines PAST their drinking window (critical urgency)
-  const pastWindow = db.prepare(`
-    SELECT DISTINCT
-      w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-      w.purchase_stars, w.vivino_rating,
-      dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
-      COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations
-    FROM wines w
-    JOIN drinking_windows dw ON w.id = dw.wine_id
-    JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    WHERE rn.id IS NULL
-      AND dw.drink_by_year IS NOT NULL
-      AND dw.drink_by_year < ?
-    GROUP BY w.id
-    HAVING bottle_count > 0
-    ORDER BY dw.drink_by_year ASC
-  `).all(currentYear);
-
-  for (const wine of pastWindow) {
+  // Process all wines in-memory instead of multiple queries
+  for (const wine of allWines) {
     if (seenWineIds.has(wine.wine_id)) continue;
-    seenWineIds.add(wine.wine_id);
-    candidates.push({
-      ...wine,
-      priority: 1,
-      suggested_reason: `Past drinking window (ended ${wine.drink_by_year})`,
-      suggested_priority: 1,
-      urgency: 'critical'
-    });
-  }
 
-  // Priority 2: Wines within urgency threshold (closing soon)
-  const closingWindow = db.prepare(`
-    SELECT DISTINCT
-      w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-      w.purchase_stars, w.vivino_rating,
-      dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
-      COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations
-    FROM wines w
-    JOIN drinking_windows dw ON w.id = dw.wine_id
-    JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    WHERE rn.id IS NULL
-      AND dw.drink_by_year IS NOT NULL
-      AND dw.drink_by_year >= ?
-      AND dw.drink_by_year <= ?
-    GROUP BY w.id
-    HAVING bottle_count > 0
-    ORDER BY dw.drink_by_year ASC
-  `).all(currentYear, urgencyYear);
+    // Has drinking window data
+    if (wine.drink_by_year !== null) {
+      // Priority 1: Past drinking window (critical)
+      if (wine.drink_by_year < currentYear) {
+        seenWineIds.add(wine.wine_id);
+        candidates.push({
+          ...wine,
+          priority: 1,
+          suggested_reason: `Past drinking window (ended ${wine.drink_by_year})`,
+          suggested_priority: 1,
+          urgency: 'critical'
+        });
+        continue;
+      }
 
-  for (const wine of closingWindow) {
-    if (seenWineIds.has(wine.wine_id)) continue;
-    seenWineIds.add(wine.wine_id);
-    const yearsRemaining = wine.drink_by_year - currentYear;
-    candidates.push({
-      ...wine,
-      priority: 2,
-      suggested_reason: yearsRemaining === 0
-        ? `Final year of drinking window (${wine.drink_by_year})`
-        : `Drinking window closes ${wine.drink_by_year} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left)`,
-      suggested_priority: yearsRemaining === 0 ? 1 : 2,
-      urgency: yearsRemaining === 0 ? 'high' : 'medium'
-    });
-  }
+      // Priority 2: Within urgency threshold (closing soon)
+      if (wine.drink_by_year >= currentYear && wine.drink_by_year <= urgencyYear) {
+        seenWineIds.add(wine.wine_id);
+        const yearsRemaining = wine.drink_by_year - currentYear;
+        candidates.push({
+          ...wine,
+          priority: 2,
+          suggested_reason: yearsRemaining === 0
+            ? `Final year of drinking window (${wine.drink_by_year})`
+            : `Drinking window closes ${wine.drink_by_year} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left)`,
+          suggested_priority: yearsRemaining === 0 ? 1 : 2,
+          urgency: yearsRemaining === 0 ? 'high' : 'medium'
+        });
+        continue;
+      }
+    }
 
-  // Priority 3: Wines at peak year
-  const atPeak = db.prepare(`
-    SELECT DISTINCT
-      w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-      w.purchase_stars, w.vivino_rating,
-      dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
-      COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations
-    FROM wines w
-    JOIN drinking_windows dw ON w.id = dw.wine_id
-    JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    WHERE rn.id IS NULL
-      AND dw.peak_year = ?
-    GROUP BY w.id
-    HAVING bottle_count > 0
-  `).all(currentYear);
+    // Priority 3: At peak year
+    if (wine.peak_year === currentYear) {
+      seenWineIds.add(wine.wine_id);
+      candidates.push({
+        ...wine,
+        priority: 3,
+        suggested_reason: `At peak drinking year (${wine.peak_year})`,
+        suggested_priority: 2,
+        urgency: 'peak'
+      });
+      continue;
+    }
 
-  for (const wine of atPeak) {
-    if (seenWineIds.has(wine.wine_id)) continue;
-    seenWineIds.add(wine.wine_id);
-    candidates.push({
-      ...wine,
-      priority: 3,
-      suggested_reason: `At peak drinking year (${wine.peak_year})`,
-      suggested_priority: 2,
-      urgency: 'peak'
-    });
-  }
-
-  // Priority 4: No critic window data - try default matrix estimates
-  if (includeNoWindow) {
-    const noWindowWines = db.prepare(`
-      SELECT
-        w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-        w.purchase_stars, w.vivino_rating, w.purchase_price,
-        w.country, w.grape,
-        (? - w.vintage) as wine_age,
-        COUNT(s.id) as bottle_count,
-        GROUP_CONCAT(DISTINCT s.location_code) as locations
-      FROM wines w
-      JOIN slots s ON s.wine_id = w.id
-      LEFT JOIN drinking_windows dw ON w.id = dw.wine_id
-      LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-      WHERE rn.id IS NULL
-        AND dw.id IS NULL
-        AND w.vintage IS NOT NULL
-      GROUP BY w.id
-      HAVING bottle_count > 0
-      ORDER BY wine_age DESC
-    `).all(currentYear);
-
-    for (const wine of noWindowWines) {
-      if (seenWineIds.has(wine.wine_id)) continue;
-
+    // Priority 4-6: No critic window data - try default matrix estimates
+    if (includeNoWindow && wine.drink_by_year === null && wine.vintage !== null) {
       // Try to get a default window estimate
       const defaultWindow = getDefaultDrinkingWindow(wine, wine.vintage);
 
       if (defaultWindow && defaultWindow.source !== 'colour_fallback') {
-        // We have a specific match from the default matrix
         const yearsRemaining = defaultWindow.drink_by - currentYear;
 
         if (yearsRemaining <= 0) {
-          // Past estimated window - critical
           seenWineIds.add(wine.wine_id);
           candidates.push({
             ...wine,
@@ -238,8 +186,8 @@ router.post('/evaluate', (_req, res) => {
             urgency: 'estimated_critical',
             confidence: defaultWindow.confidence
           });
+          continue;
         } else if (yearsRemaining <= Math.ceil(urgencyMonths / 12)) {
-          // Closing estimated window
           seenWineIds.add(wine.wine_id);
           candidates.push({
             ...wine,
@@ -252,8 +200,8 @@ router.post('/evaluate', (_req, res) => {
             urgency: 'estimated_medium',
             confidence: defaultWindow.confidence
           });
+          continue;
         } else if (defaultWindow.peak && defaultWindow.peak === currentYear) {
-          // At estimated peak
           seenWineIds.add(wine.wine_id);
           candidates.push({
             ...wine,
@@ -266,8 +214,8 @@ router.post('/evaluate', (_req, res) => {
             urgency: 'estimated_peak',
             confidence: defaultWindow.confidence
           });
+          continue;
         }
-        // If window is still open and not at peak, skip (no action needed)
       } else {
         // No specific match or only colour fallback - use age threshold
         if (wine.wine_age >= ageThreshold) {
@@ -280,39 +228,27 @@ router.post('/evaluate', (_req, res) => {
             needs_window_data: true,
             urgency: 'unknown'
           });
+          continue;
         }
       }
     }
-  }
 
-  // Priority 7: Low rating (original logic, kept as fallback)
-  const lowRated = db.prepare(`
-    SELECT
-      w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-      w.purchase_stars, w.vivino_rating,
-      COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations
-    FROM wines w
-    JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    WHERE rn.id IS NULL
-      AND (w.purchase_stars < ? OR (w.purchase_stars IS NULL AND w.vivino_rating IS NOT NULL AND w.vivino_rating < ?))
-    GROUP BY w.id
-    HAVING bottle_count > 0
-  `).all(ratingMinimum, ratingMinimum);
-
-  for (const wine of lowRated) {
-    if (seenWineIds.has(wine.wine_id)) continue;
-    seenWineIds.add(wine.wine_id);
+    // Priority 7: Low rating (kept as final check)
     const rating = wine.purchase_stars || wine.vivino_rating;
-    candidates.push({
-      ...wine,
-      priority: 7,
-      suggested_reason: `Low rating (${rating?.toFixed(1)} stars) - consider drinking soon`,
-      suggested_priority: 4,
-      urgency: 'low'
-    });
+    if (rating !== null && rating < ratingMinimum) {
+      seenWineIds.add(wine.wine_id);
+      candidates.push({
+        ...wine,
+        priority: 7,
+        suggested_reason: `Low rating (${rating?.toFixed(1)} stars) - consider drinking soon`,
+        suggested_priority: 4,
+        urgency: 'low'
+      });
+    }
   }
+
+  // Sort candidates by priority
+  candidates.sort((a, b) => a.priority - b.priority || (a.drink_by_year || 9999) - (b.drink_by_year || 9999));
 
   res.json({
     enabled: true,
