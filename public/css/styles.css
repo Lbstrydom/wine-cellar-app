@@ -441,6 +441,22 @@ header .search-trigger {
   color: var(--text-muted);
 }
 
+.recommendation-placeholder {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 1.5rem;
+}
+
+.recommendation-placeholder p {
+  color: var(--text-muted);
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.recommendation-placeholder .btn {
+  padding: 0.75rem 1.5rem;
+}
+
 /* Cellar Analysis Panel */
 .cellar-analysis-panel {
   background: var(--bg-card);

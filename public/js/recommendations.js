@@ -51,11 +51,7 @@ export function initRecommendations() {
   // Debounce text input to avoid too many API calls
   let debounceTimer = null;
   if (foodDetailInput) {
-    foodDetailInput.addEventListener('input', () => {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => loadRecommendations(), 500);
-    });
-    // Also trigger on Enter key
+    // Only trigger on Enter key - don't auto-load on every keystroke
     foodDetailInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
@@ -65,8 +61,31 @@ export function initRecommendations() {
     });
   }
 
-  // Load initial recommendations
-  loadRecommendations();
+  // Show initial placeholder instead of auto-loading
+  showInitialPlaceholder();
+}
+
+/**
+ * Show initial placeholder with Get Recommendations button.
+ */
+function showInitialPlaceholder() {
+  const cardsContainer = document.getElementById('recommendation-cards');
+  if (!cardsContainer) return;
+
+  cardsContainer.innerHTML = `
+    <div class="recommendation-placeholder">
+      <p>Select your occasion and food pairing, then click the button below.</p>
+      <button class="btn btn-primary" id="get-recommendations-btn">
+        Get Recommendations
+      </button>
+    </div>
+  `;
+
+  // Bind the button
+  const btn = document.getElementById('get-recommendations-btn');
+  if (btn) {
+    btn.addEventListener('click', () => loadRecommendations());
+  }
 }
 
 /**
