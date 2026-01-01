@@ -632,6 +632,29 @@ header h1 {
   gap: 0.75rem;
 }
 
+/* Virtual list mode - single column with fixed height for windowing */
+.wine-list.virtual-mode {
+  display: block;
+  height: calc(100vh - 280px);
+  min-height: 400px;
+  overflow-y: auto;
+}
+
+.wine-list.virtual-mode .virtual-list-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.wine-list.virtual-mode .virtual-list-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wine-list.virtual-mode .virtual-list-item {
+  box-sizing: border-box;
+}
+
 .wine-card {
   display: flex;
   gap: 1rem;
@@ -3138,6 +3161,11 @@ body.slot-picker-mode .slot.picker-placed::after {
   /* Wine list */
   .wine-list {
     grid-template-columns: 1fr;
+  }
+
+  .wine-list.virtual-mode {
+    height: calc(100vh - 320px);
+    min-height: 300px;
   }
 
   /* Modals */

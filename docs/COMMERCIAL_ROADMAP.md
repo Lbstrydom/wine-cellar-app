@@ -16,13 +16,13 @@
 | 1.4 Data Provenance | ✅ Complete | `src/services/provenance.js` + migration 013 |
 | 1.5 Scraping Governance | ✅ Complete | Rate limiter, circuit breaker, governance wrapper |
 
-### Phase 2 Status: 🟢 In Progress
+### Phase 2 Status: ✅ Complete
 
 | Item | Status | Notes |
 |------|--------|-------|
 | 2.1 FTS5 Full-Text Search | ✅ Complete | Migration 014, search routes with BM25 ranking, LIKE fallback |
-| 2.2 Virtual List Rendering | ⏳ Pending | |
-| 2.3 Refactor bottles.js | ⏳ Pending | |
+| 2.2 Virtual List Rendering | ✅ Complete | virtualList.js with windowing, Intersection Observer API |
+| 2.3 Refactor bottles.js | ✅ Complete | Split 1206 LOC → 8 modules (all <380 lines) |
 
 **Files Created (Phase 1)**:
 - `src/config/unifiedSources.js` - Single source of truth for all rating sources
@@ -36,6 +36,18 @@
 **Files Created/Updated (Phase 2)**:
 - `data/migrations/014_fts5_search.sql` - FTS5 virtual table with Porter stemming + sync triggers
 - `src/routes/wines.js` - FTS5 search with BM25 ranking, global search endpoint for command palette
+- `public/js/virtualList.js` - Lightweight virtual scrolling with Intersection Observer API
+- `public/js/app.js` - Updated to use virtual list for 50+ items
+- `public/css/styles.css` - Virtual list mode styles
+- `public/js/bottles.js` - Refactored to thin facade (112 lines)
+- `public/js/bottles/` - 7 focused sub-modules:
+  - `state.js` (45 lines) - Shared module state
+  - `modal.js` (134 lines) - Modal show/hide/close
+  - `form.js` (142 lines) - Form handling
+  - `wineSearch.js` (74 lines) - Wine search
+  - `textParsing.js` (207 lines) - Text parsing UI
+  - `imageParsing.js` (376 lines) - Image upload/parsing
+  - `slotPicker.js` (243 lines) - Slot picker mode
 
 **Key Fixes Applied**:
 - Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching

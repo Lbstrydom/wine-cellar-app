@@ -11,6 +11,7 @@ import { initBottles } from './bottles.js';
 import { initSettings, loadSettings } from './settings.js';
 import { initCellarAnalysis } from './cellarAnalysis.js';
 import { escapeHtml } from './utils.js';
+import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
 
 /**
  * Application state.
@@ -20,8 +21,14 @@ export const state = {
   stats: null,
   currentView: 'grid',
   wineListData: [],
-  reduceNowIds: new Set()
+  reduceNowIds: new Set(),
+  virtualListActive: false
 };
+
+/**
+ * Threshold for using virtual list (items count).
+ */
+const VIRTUAL_LIST_THRESHOLD = 50;
 
 /**
  * Load cellar layout.
@@ -143,7 +150,40 @@ function getFilteredWines() {
 }
 
 /**
+ * Render a single wine card HTML.
+ * @param {Object} wine - Wine object
+ * @returns {string} HTML string
+ */
+function renderWineCard(wine) {
+  const isReduceNow = state.reduceNowIds.has(wine.id);
+  const priorityClass = wine.reduce_priority ? `priority-${wine.reduce_priority}` : '';
+
+  return `
+    <div class="wine-card ${escapeHtml(wine.colour)} ${priorityClass}" data-wine-id="${wine.id}">
+      <div class="wine-count">${wine.bottle_count}</div>
+      <div class="wine-details">
+        <div class="wine-name">${escapeHtml(wine.wine_name)}</div>
+        <div class="wine-meta">${escapeHtml(wine.style || '')} • ${escapeHtml(String(wine.vintage)) || 'NV'}</div>
+        ${wine.vivino_rating ? `<div class="wine-rating">★ ${wine.vivino_rating}</div>` : ''}
+        ${isReduceNow ? `<div class="wine-reduce-reason">${escapeHtml(wine.reduce_reason || 'Drink soon')}</div>` : ''}
+        <div class="wine-locations">${escapeHtml(wine.locations || '')}</div>
+      </div>
+      ${isReduceNow ? `<div class="wine-priority-badge p${wine.reduce_priority}">${wine.reduce_priority || '!'}</div>` : ''}
+    </div>
+  `;
+}
+
+/**
+ * Handle click on wine card (for virtual list).
+ * @param {Object} wine - Wine object
+ */
+function handleWineCardClick(wine) {
+  showWineModalFromList(wine);
+}
+
+/**
  * Render wine list with current filters.
+ * Uses virtual scrolling for large lists.
  */
 function renderWineList() {
   const container = document.getElementById('wine-list');
@@ -160,39 +200,54 @@ function renderWineList() {
   `;
 
   if (filtered.length === 0) {
+    // Clean up virtual list if active
+    if (state.virtualListActive) {
+      destroyVirtualList();
+      state.virtualListActive = false;
+      container.classList.remove('virtual-mode');
+    }
     container.innerHTML = '<p class="empty-message">No wines match your filters</p>';
     return;
   }
 
-  container.innerHTML = filtered.map(wine => {
-    const isReduceNow = state.reduceNowIds.has(wine.id);
-    const priorityClass = wine.reduce_priority ? `priority-${wine.reduce_priority}` : '';
+  // Use virtual list for large datasets
+  if (filtered.length >= VIRTUAL_LIST_THRESHOLD) {
+    container.classList.add('virtual-mode');
 
-    return `
-      <div class="wine-card ${escapeHtml(wine.colour)} ${priorityClass}" data-wine-id="${wine.id}">
-        <div class="wine-count">${wine.bottle_count}</div>
-        <div class="wine-details">
-          <div class="wine-name">${escapeHtml(wine.wine_name)}</div>
-          <div class="wine-meta">${escapeHtml(wine.style || '')} • ${escapeHtml(String(wine.vintage)) || 'NV'}</div>
-          ${wine.vivino_rating ? `<div class="wine-rating">★ ${wine.vivino_rating}</div>` : ''}
-          ${isReduceNow ? `<div class="wine-reduce-reason">${escapeHtml(wine.reduce_reason || 'Drink soon')}</div>` : ''}
-          <div class="wine-locations">${escapeHtml(wine.locations || '')}</div>
-        </div>
-        ${isReduceNow ? `<div class="wine-priority-badge p${wine.reduce_priority}">${wine.reduce_priority || '!'}</div>` : ''}
-      </div>
-    `;
-  }).join('');
+    if (state.virtualListActive) {
+      // Update existing virtual list
+      updateVirtualList(filtered);
+    } else {
+      // Initialize virtual list
+      initVirtualList({
+        container,
+        items: filtered,
+        renderItem: renderWineCard,
+        itemHeight: 90,
+        bufferSize: 5,
+        onItemClick: handleWineCardClick
+      });
+      state.virtualListActive = true;
+    }
+  } else {
+    // Regular rendering for small lists
+    if (state.virtualListActive) {
+      destroyVirtualList();
+      state.virtualListActive = false;
+      container.classList.remove('virtual-mode');
+    }
 
-  // Add click handlers to wine cards
-  container.querySelectorAll('.wine-card').forEach(card => {
-    card.addEventListener('click', () => {
-      const wineId = Number.parseInt(card.dataset.wineId, 10);
-      const wine = filtered.find(w => w.id === wineId);
-      if (wine) {
-        showWineModalFromList(wine);
-      }
+    container.innerHTML = filtered.map(renderWineCard).join('');
+
+    // Add click handlers
+    container.querySelectorAll('.wine-card').forEach(card => {
+      card.addEventListener('click', () => {
+        const wineId = Number.parseInt(card.dataset.wineId, 10);
+        const wine = filtered.find(w => w.id === wineId);
+        if (wine) handleWineCardClick(wine);
+      });
     });
-  });
+  }
 }
 
 /**
