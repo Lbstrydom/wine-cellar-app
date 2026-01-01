@@ -15,6 +15,7 @@ import settingsRoutes from './settings.js';
 import drinkingWindowsRoutes from './drinkingWindows.js';
 import cellarRoutes from './cellar.js';
 import awardsRoutes from './awards.js';
+import backupRoutes from './backup.js';
 
 const router = Router();
 
@@ -30,5 +31,6 @@ router.use('/settings', settingsRoutes);
 router.use('/', drinkingWindowsRoutes);  // /wines/:wine_id/drinking-windows and /drinking-windows/urgent
 router.use('/cellar', cellarRoutes);    // /cellar/analyse, /cellar/suggest-placement, etc.
 router.use('/awards', awardsRoutes);    // /awards/sources, /awards/import/*, /awards/wine/:id, etc.
+router.use('/backup', backupRoutes);    // /backup/export/json, /backup/export/csv, /backup/import
 
 export default router;

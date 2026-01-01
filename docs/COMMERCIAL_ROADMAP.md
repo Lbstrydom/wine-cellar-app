@@ -24,6 +24,14 @@
 | 2.2 Virtual List Rendering | ✅ Complete | virtualList.js with windowing, Intersection Observer API |
 | 2.3 Refactor bottles.js | ✅ Complete | Split 1206 LOC → 8 modules (all <380 lines) |
 
+### Phase 3 Status: ✅ Complete
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 3.1 Global Unified Search | ✅ Complete | Cmd/Ctrl+K, searches wines/producers/countries/styles |
+| 3.2 Accessibility | ✅ Complete | ARIA labels, focus trapping, skip link, reduced motion support |
+| 3.3 Export/Import/Backup | ✅ Complete | JSON/CSV export, backup restore, UI in Settings |
+
 **Files Created (Phase 1)**:
 - `src/config/unifiedSources.js` - Single source of truth for all rating sources
 - `src/services/provenance.js` - Data provenance tracking service
@@ -48,6 +56,15 @@
   - `textParsing.js` (207 lines) - Text parsing UI
   - `imageParsing.js` (376 lines) - Image upload/parsing
   - `slotPicker.js` (243 lines) - Slot picker mode
+
+**Files Created/Updated (Phase 3)**:
+- `public/js/globalSearch.js` - Command palette with Cmd/Ctrl+K, keyboard navigation, quick actions
+- `public/js/accessibility.js` - Focus trapping, skip link, screen reader announcements, ARIA helpers
+- `public/index.html` - Added search trigger, backup UI, ARIA labels, tabpanel roles, main landmark
+- `public/css/styles.css` - Global search, backup section, accessibility styles (skip link, focus-visible, reduced motion)
+- `src/routes/backup.js` - JSON/CSV export endpoints, backup import with merge/replace modes
+- `public/js/settings.js` - Added backup section handlers (export/import UI)
+- `public/js/app.js` - Updated switchView() with ARIA tab selection
 
 **Key Fixes Applied**:
 - Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching

@@ -11,6 +11,11 @@
 <body>
   <header>
     <h1>Wine Cellar</h1>
+    <button class="search-trigger" id="global-search-trigger" aria-label="Search">
+      <span>🔍</span>
+      <span>Search...</span>
+      <kbd>⌘K</kbd>
+    </button>
     <div class="stats" id="stats">
       <div class="stat">
         <div class="stat-value" id="stat-total">-</div>
@@ -27,21 +32,22 @@
     </div>
   </header>
 
-  <nav class="tabs">
-    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Menu">
+  <nav class="tabs" aria-label="Main navigation">
+    <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Open menu" aria-expanded="false" aria-controls="tabs-container">
       <span></span><span></span><span></span>
     </button>
-    <div class="tabs-container" id="tabs-container">
-      <div class="tab active" data-view="grid">Cellar Grid</div>
-      <div class="tab" data-view="wines">Wine List</div>
-      <div class="tab" data-view="history">History</div>
-      <div class="tab" data-view="pairing">Find Pairing</div>
-      <div class="tab" data-view="settings">Settings</div>
+    <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Views">
+      <button class="tab active" data-view="grid" role="tab" aria-selected="true" aria-controls="view-grid" id="tab-grid">Cellar Grid</button>
+      <button class="tab" data-view="wines" role="tab" aria-selected="false" aria-controls="view-wines" id="tab-wines">Wine List</button>
+      <button class="tab" data-view="history" role="tab" aria-selected="false" aria-controls="view-history" id="tab-history">History</button>
+      <button class="tab" data-view="pairing" role="tab" aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Find Pairing</button>
+      <button class="tab" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" id="tab-settings">Settings</button>
     </div>
   </nav>
 
+  <main id="main-content">
   <!-- Grid View -->
-  <div class="view active" id="view-grid">
+  <div class="view active" id="view-grid" role="tabpanel" aria-labelledby="tab-grid">
     <div class="fridge-section zone">
       <div class="zone-header">
         <span class="zone-title">Fridge</span>
@@ -78,7 +84,7 @@
   </div>
 
   <!-- Wine List View (merged Reduce Now + All Wines) -->
-  <div class="view" id="view-wines">
+  <div class="view" id="view-wines" role="tabpanel" aria-labelledby="tab-wines" hidden>
     <div class="wine-list-header">
       <h2>Wine List</h2>
       <div class="wine-list-filters">
@@ -117,13 +123,13 @@
   </div>
 
   <!-- History View -->
-  <div class="view" id="view-history">
+  <div class="view" id="view-history" role="tabpanel" aria-labelledby="tab-history" hidden>
     <h2 style="margin-bottom: 1rem;">Consumption History</h2>
     <div class="history-list" id="history-list"></div>
   </div>
 
   <!-- Pairing View -->
-  <div class="view" id="view-pairing">
+  <div class="view" id="view-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
     <!-- Sommelier section -->
     <div class="natural-pairing">
       <h2 style="margin-bottom: 1rem;">Ask the Sommelier</h2>
@@ -182,7 +188,7 @@
   </div>
 
   <!-- Settings View -->
-  <div class="view" id="view-settings">
+  <div class="view" id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
     <h2 style="margin-bottom: 1.5rem;">Settings</h2>
 
     <!-- Rating Preferences Section -->
@@ -414,6 +420,63 @@
       </div>
     </div>
 
+    <!-- Backup & Export Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Backup & Export</h3>
+      <p class="settings-section-desc">Export your cellar data for backup or import from a previous backup.</p>
+
+      <!-- Backup Stats -->
+      <div class="backup-stats">
+        <div class="backup-stat">
+          <span class="backup-stat-value" id="backup-wines-count">-</span>
+          <span class="backup-stat-label">Wines</span>
+        </div>
+        <div class="backup-stat">
+          <span class="backup-stat-value" id="backup-bottles-count">-</span>
+          <span class="backup-stat-label">Bottles</span>
+        </div>
+        <div class="backup-stat">
+          <span class="backup-stat-value" id="backup-history-count">-</span>
+          <span class="backup-stat-label">History</span>
+        </div>
+      </div>
+
+      <!-- Export Options -->
+      <div class="backup-export-section">
+        <h4 class="settings-subsection-title">Export</h4>
+        <div class="backup-buttons">
+          <button class="btn btn-primary" id="export-json-btn">
+            <span>📦</span> Full Backup (JSON)
+          </button>
+          <button class="btn btn-secondary" id="export-csv-btn">
+            <span>📊</span> Wine List (CSV)
+          </button>
+        </div>
+        <p class="form-hint">JSON includes all data (wines, slots, history). CSV is for spreadsheet use.</p>
+      </div>
+
+      <!-- Import Options -->
+      <div class="backup-import-section">
+        <h4 class="settings-subsection-title">Import / Restore</h4>
+        <div class="import-options">
+          <div class="form-field">
+            <label for="import-backup-file">Select Backup File</label>
+            <input type="file" id="import-backup-file" accept=".json" />
+          </div>
+          <div class="form-field">
+            <label class="checkbox-label">
+              <input type="checkbox" id="import-merge-mode" />
+              Merge with existing data (uncheck to replace all)
+            </label>
+          </div>
+        </div>
+        <button class="btn btn-secondary" id="import-backup-btn" disabled>
+          <span>📥</span> Import Backup
+        </button>
+        <p class="form-hint">Warning: Replace mode will delete all existing data before importing.</p>
+      </div>
+    </div>
+
     <!-- About Section -->
     <div class="settings-section">
       <h3 class="settings-section-title">About</h3>
@@ -423,9 +486,10 @@
       </p>
     </div>
   </div>
+  </main>
 
   <!-- Wine Detail Modal -->
-  <div class="modal-overlay" id="modal-overlay">
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-wine-name">
     <div class="modal" id="wine-modal">
       <h2 id="modal-wine-name">Wine Name</h2>
       <div class="modal-subtitle" id="modal-wine-style">Style - Vintage</div>
@@ -541,7 +605,7 @@
   </div>
 
   <!-- Add/Edit Bottle Modal -->
-  <div class="modal-overlay" id="bottle-modal-overlay">
+  <div class="modal-overlay" id="bottle-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bottle-modal-title">
     <div class="modal" id="bottle-modal" style="max-width: 500px;">
       <h2 id="bottle-modal-title">Add New Bottle</h2>
       <div class="modal-subtitle" id="bottle-modal-subtitle">Adding to slot: R1C1</div>

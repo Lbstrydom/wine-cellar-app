@@ -12,6 +12,8 @@ import { initSettings, loadSettings } from './settings.js';
 import { initCellarAnalysis } from './cellarAnalysis.js';
 import { escapeHtml } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
+import { initGlobalSearch } from './globalSearch.js';
+import { initAccessibility } from './accessibility.js';
 
 /**
  * Application state.
@@ -329,11 +331,33 @@ function renderHistoryList(items) {
  * @param {string} viewName - View to switch to
  */
 function switchView(viewName) {
-  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  // Update view panels
+  document.querySelectorAll('.view').forEach(v => {
+    v.classList.remove('active');
+    v.hidden = true;
+  });
 
-  document.getElementById(`view-${viewName}`).classList.add('active');
-  document.querySelector(`[data-view="${viewName}"]`).classList.add('active');
+  // Update tab buttons with ARIA
+  document.querySelectorAll('.tab').forEach(t => {
+    t.classList.remove('active');
+    t.setAttribute('aria-selected', 'false');
+    t.setAttribute('tabindex', '-1');
+  });
+
+  // Activate selected view
+  const activeView = document.getElementById(`view-${viewName}`);
+  if (activeView) {
+    activeView.classList.add('active');
+    activeView.hidden = false;
+  }
+
+  // Activate selected tab
+  const activeTab = document.querySelector(`[data-view="${viewName}"]`);
+  if (activeTab) {
+    activeTab.classList.add('active');
+    activeTab.setAttribute('aria-selected', 'true');
+    activeTab.setAttribute('tabindex', '0');
+  }
 
   state.currentView = viewName;
 
@@ -386,6 +410,8 @@ async function init() {
   initSommelier();
   initSettings();
   initCellarAnalysis();
+  initGlobalSearch();
+  initAccessibility();
   await initBottles();
 
   // Load initial data
