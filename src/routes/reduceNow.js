@@ -304,4 +304,32 @@ router.post('/batch', (req, res) => {
   res.json({ message: `Added ${added} wines to reduce-now`, added });
 });
 
+/**
+ * Get AI-powered drink recommendations.
+ * @route GET /api/reduce-now/ai-recommendations
+ */
+router.get('/ai-recommendations', async (req, res) => {
+  try {
+    // Dynamic import to avoid issues if service not available
+    const { generateDrinkRecommendations } = await import('../services/drinkNowAI.js');
+
+    const context = {};
+    if (req.query.weather) context.weather = req.query.weather;
+    if (req.query.occasion) context.occasion = req.query.occasion;
+    if (req.query.food) context.food = req.query.food;
+
+    const limit = parseInt(req.query.limit, 10) || 5;
+
+    const recommendations = await generateDrinkRecommendations({
+      limit,
+      context: Object.keys(context).length > 0 ? context : null
+    });
+
+    res.json(recommendations);
+  } catch (error) {
+    console.error('AI recommendations error:', error);
+    res.status(500).json({ error: 'Failed to generate recommendations' });
+  }
+});
+
 export default router;

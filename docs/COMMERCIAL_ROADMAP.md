@@ -32,6 +32,13 @@
 | 3.2 Accessibility | ✅ Complete | ARIA labels, focus trapping, skip link, reduced motion support |
 | 3.3 Export/Import/Backup | ✅ Complete | JSON/CSV export, backup restore, UI in Settings |
 
+### Phase 4 Status: ✅ Complete
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 4.1 Drink-Now AI Recommendations | ✅ Complete | Claude-powered recommendations panel with context filters |
+| 4.2 Tasting Note Structured Descriptors | ✅ Complete | AI extraction with controlled vocabulary, fallback to deterministic |
+
 **Files Created (Phase 1)**:
 - `src/config/unifiedSources.js` - Single source of truth for all rating sources
 - `src/services/provenance.js` - Data provenance tracking service
@@ -65,6 +72,18 @@
 - `src/routes/backup.js` - JSON/CSV export endpoints, backup import with merge/replace modes
 - `public/js/settings.js` - Added backup section handlers (export/import UI)
 - `public/js/app.js` - Updated switchView() with ARIA tab selection
+
+**Files Created/Updated (Phase 4)**:
+- `src/services/drinkNowAI.js` - AI-powered drink recommendations using Claude API
+- `src/routes/reduceNow.js` - Added /ai-recommendations endpoint
+- `public/js/recommendations.js` - Recommendations panel UI handler
+- `public/index.html` - Added recommendations panel with context selectors
+- `public/css/styles.css` - Recommendation cards, loading states, urgency tags
+- `public/js/app.js` - Added initRecommendations() call
+- `src/config/tastingVocabulary.js` - Controlled vocabulary for tasting descriptors (170+ terms)
+- `src/services/tastingExtractor.js` - AI extraction with deterministic fallback, profile merging
+- `data/migrations/015_tasting_profiles.sql` - tasting_profile_json column + extraction history table
+- `src/routes/wines.js` - Added tasting-profile CRUD and extraction endpoints
 
 **Key Fixes Applied**:
 - Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching

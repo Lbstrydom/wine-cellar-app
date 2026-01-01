@@ -379,4 +379,152 @@ router.get('/:id/personal-rating', (req, res) => {
   res.json(wine);
 });
 
+/**
+ * Get tasting profile for a wine.
+ * @route GET /api/wines/:id/tasting-profile
+ */
+router.get('/:id/tasting-profile', (req, res) => {
+  const { id } = req.params;
+
+  const wine = db.prepare(`
+    SELECT id, wine_name, tasting_profile_json
+    FROM wines WHERE id = ?
+  `).get(id);
+
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  let profile = null;
+  if (wine.tasting_profile_json) {
+    try {
+      profile = JSON.parse(wine.tasting_profile_json);
+    } catch {
+      // Invalid JSON, return null
+    }
+  }
+
+  res.json({
+    wine_id: wine.id,
+    wine_name: wine.wine_name,
+    profile
+  });
+});
+
+/**
+ * Extract tasting profile from a note.
+ * @route POST /api/wines/:id/tasting-profile/extract
+ */
+router.post('/:id/tasting-profile/extract', async (req, res) => {
+  const { id } = req.params;
+  const { tasting_note, source_id = 'user' } = req.body;
+
+  if (!tasting_note) {
+    return res.status(400).json({ error: 'tasting_note is required' });
+  }
+
+  const wine = db.prepare(`
+    SELECT id, wine_name, colour, style
+    FROM wines WHERE id = ?
+  `).get(id);
+
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  try {
+    // Dynamic import to avoid issues if service not available
+    const { extractTastingProfile } = await import('../services/tastingExtractor.js');
+
+    const profile = await extractTastingProfile(tasting_note, {
+      sourceId: source_id,
+      wineInfo: {
+        colour: wine.colour,
+        style: wine.style
+      }
+    });
+
+    // Store extraction in history
+    try {
+      db.prepare(`
+        INSERT INTO tasting_profile_extractions
+        (wine_id, source_id, source_note, extraction_method, confidence, profile_json)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(
+        id,
+        source_id,
+        tasting_note,
+        profile.extraction?.method || 'unknown',
+        profile.extraction?.confidence || 0.5,
+        JSON.stringify(profile)
+      );
+    } catch (historyError) {
+      // Table might not exist yet, log but continue
+      console.warn('Could not save extraction history:', historyError.message);
+    }
+
+    res.json({
+      wine_id: wine.id,
+      wine_name: wine.wine_name,
+      profile
+    });
+  } catch (error) {
+    console.error('Tasting extraction error:', error);
+    res.status(500).json({ error: 'Failed to extract tasting profile' });
+  }
+});
+
+/**
+ * Save tasting profile to wine.
+ * @route PUT /api/wines/:id/tasting-profile
+ */
+router.put('/:id/tasting-profile', (req, res) => {
+  const { id } = req.params;
+  const { profile } = req.body;
+
+  if (!profile) {
+    return res.status(400).json({ error: 'profile is required' });
+  }
+
+  const wine = db.prepare('SELECT id FROM wines WHERE id = ?').get(id);
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  try {
+    const profileJson = JSON.stringify(profile);
+
+    db.prepare(`
+      UPDATE wines SET tasting_profile_json = ? WHERE id = ?
+    `).run(profileJson, id);
+
+    res.json({ message: 'Tasting profile saved', wine_id: id });
+  } catch (error) {
+    console.error('Save tasting profile error:', error);
+    res.status(500).json({ error: 'Failed to save tasting profile' });
+  }
+});
+
+/**
+ * Get extraction history for a wine.
+ * @route GET /api/wines/:id/tasting-profile/history
+ */
+router.get('/:id/tasting-profile/history', (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const history = db.prepare(`
+      SELECT id, source_id, extraction_method, confidence, extracted_at
+      FROM tasting_profile_extractions
+      WHERE wine_id = ?
+      ORDER BY extracted_at DESC
+    `).all(id);
+
+    res.json(history);
+  } catch (error) {
+    // Table might not exist
+    res.json([]);
+  }
+});
+
 export default router;

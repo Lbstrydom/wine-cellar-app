@@ -48,6 +48,50 @@
   <main id="main-content">
   <!-- Grid View -->
   <div class="view active" id="view-grid" role="tabpanel" aria-labelledby="tab-grid">
+    <!-- AI Drink Recommendations Panel -->
+    <section class="recommendation-panel" id="drink-tonight-panel">
+      <div class="recommendation-header">
+        <h2>Tonight's Recommendations</h2>
+        <div class="recommendation-actions">
+          <button class="btn btn-small btn-icon" id="refresh-recommendations" title="Get new suggestions">
+            <span class="refresh-icon">↻</span>
+          </button>
+          <button class="btn btn-small btn-icon" id="toggle-recommendations" title="Hide panel" aria-expanded="true">
+            <span class="toggle-icon">−</span>
+          </button>
+        </div>
+      </div>
+      <p class="recommendation-subtitle">AI-curated based on your cellar, drinking windows, and preferences</p>
+
+      <div class="recommendation-context" id="recommendation-context">
+        <span class="context-label">Context:</span>
+        <select id="rec-occasion" class="context-select">
+          <option value="">Any occasion</option>
+          <option value="casual dinner">Casual dinner</option>
+          <option value="special occasion">Special occasion</option>
+          <option value="party">Party</option>
+          <option value="solo relaxing">Solo relaxing</option>
+        </select>
+        <select id="rec-food" class="context-select">
+          <option value="">Any food</option>
+          <option value="red meat">Red meat</option>
+          <option value="poultry">Poultry</option>
+          <option value="seafood">Seafood</option>
+          <option value="pasta">Pasta</option>
+          <option value="cheese">Cheese</option>
+          <option value="no food">No food</option>
+        </select>
+        <input type="text" id="rec-food-detail" class="context-input" placeholder="Describe dish... e.g. barbecue chicken, salmon with lemon" />
+      </div>
+
+      <div class="recommendation-cards" id="recommendation-cards">
+        <div class="recommendation-loading">
+          <span class="loading-spinner"></span>
+          <span>Getting AI recommendations...</span>
+        </div>
+      </div>
+    </section>
+
     <div class="fridge-section zone">
       <div class="zone-header">
         <span class="zone-title">Fridge</span>

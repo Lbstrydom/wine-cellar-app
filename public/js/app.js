@@ -14,6 +14,7 @@ import { escapeHtml } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
 import { initGlobalSearch } from './globalSearch.js';
 import { initAccessibility } from './accessibility.js';
+import { initRecommendations } from './recommendations.js';
 
 /**
  * Application state.
@@ -412,6 +413,7 @@ async function init() {
   initCellarAnalysis();
   initGlobalSearch();
   initAccessibility();
+  initRecommendations();
   await initBottles();
 
   // Load initial data
