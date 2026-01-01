@@ -811,7 +811,7 @@ function salvagePartialJSON(text) {
       if (award.wine_name && award.award) {
         awards.push(award);
       }
-    } catch (e) {
+    } catch (_e) {
       // Skip malformed individual awards
       continue;
     }

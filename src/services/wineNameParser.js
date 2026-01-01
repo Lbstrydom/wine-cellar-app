@@ -170,10 +170,11 @@ export function parseWineName(wineName) {
   ];
 
   // Style detection patterns
+  // NOTE: Order matters! More specific patterns must come before general ones
   const stylePatterns = [
     { pattern: /\briserva\b/i, style: 'riserva' },
-    { pattern: /\breserva\b/i, style: 'reserva' },
     { pattern: /\bgran\s*reserva\b/i, style: 'gran_reserva' },
+    { pattern: /\breserva\b/i, style: 'reserva' },
     { pattern: /\bcrianza\b/i, style: 'crianza' },
     { pattern: /\bjoven\b/i, style: 'joven' },
     { pattern: /\bripasso\b/i, style: 'ripasso' },

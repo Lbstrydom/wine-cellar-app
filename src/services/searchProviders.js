@@ -3,7 +3,7 @@
  * @module services/searchProviders
  */
 
-import { getSourcesForCountry, SOURCE_REGISTRY, REGION_SOURCE_PRIORITY, LENS } from '../config/sourceRegistry.js';
+import { getSourcesForCountry, SOURCES as SOURCE_REGISTRY, REGION_SOURCE_PRIORITY, LENS } from '../config/unifiedSources.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
 import { decrypt } from './encryption.js';

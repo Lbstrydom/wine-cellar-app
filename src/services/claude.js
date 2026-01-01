@@ -5,7 +5,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from './searchProviders.js';
-import { LENS_CREDIBILITY, getSourceConfig } from '../config/sourceRegistry.js';
+import { LENS_CREDIBILITY, getSource as getSourceConfig } from '../config/unifiedSources.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
 

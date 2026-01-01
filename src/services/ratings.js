@@ -3,8 +3,7 @@
  * @module services/ratings
  */
 
-import { RATING_SOURCES } from '../config/ratingSources.js';
-import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
+import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
 import db from '../db/index.js';
 
 /**

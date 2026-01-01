@@ -5,8 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { RATING_SOURCES } from '../config/ratingSources.js';
-import { SOURCE_REGISTRY } from '../config/sourceRegistry.js';
+import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
 import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
 import { fetchWineRatings } from '../services/claude.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';

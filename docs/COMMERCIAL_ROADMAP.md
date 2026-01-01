@@ -4,6 +4,34 @@
 
 ---
 
+## Progress Tracking
+
+### Phase 1 Status: 🟢 In Progress (80% Complete)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 1.1 Unit Test Framework | ✅ Complete | Vitest configured, 249 tests passing, ~85% service coverage |
+| 1.2 DB Abstraction | ⏸️ Deferred | P3 - defer until cloud migration needed |
+| 1.3 Unify Configs | ✅ Complete | `src/config/unifiedSources.js` (900+ lines), 50+ sources consolidated |
+| 1.4 Data Provenance | ✅ Complete | `src/services/provenance.js` + migration 013 |
+| 1.5 Scraping Governance | ✅ Complete | Rate limiter, circuit breaker, governance wrapper |
+
+**Files Created (Phase 1)**:
+- `src/config/unifiedSources.js` - Single source of truth for all rating sources
+- `src/services/provenance.js` - Data provenance tracking service
+- `src/services/rateLimiter.js` - Per-source rate limiting with lens-based defaults
+- `src/services/circuitBreaker.js` - Circuit breaker pattern for failure protection
+- `src/services/scrapingGovernance.js` - Unified governance wrapper
+- `data/migrations/013_data_provenance.sql` - Provenance table schema
+- `tests/unit/**/*.test.js` - 249 unit tests covering services and config
+
+**Key Fixes Applied**:
+- Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching
+- Hash content: Handle empty strings correctly (not returning null)
+- Exports: Added missing `export const` for DEFAULT_RATE_LIMITS
+
+---
+
 ## Executive Summary
 
 This roadmap outlines the architectural changes and feature additions needed to commercialize the Wine Cellar App. The plan is organized into 5 phases, prioritized by dependency order and impact.
