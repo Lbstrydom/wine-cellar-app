@@ -14,10 +14,12 @@ const AWARDS_DB_PATH = path.join(__dirname, '..', '..', 'data', 'awards.db');
 
 const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Separate database for awards (shared/public data)
 const awardsDb = new Database(AWARDS_DB_PATH);
 awardsDb.pragma('journal_mode = WAL');
+awardsDb.pragma('foreign_keys = ON');
 
 /**
  * Run database migrations.
