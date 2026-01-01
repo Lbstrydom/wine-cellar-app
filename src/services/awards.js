@@ -31,11 +31,11 @@ export function normalizeWineName(name) {
   if (!name) return '';
   return name
     .toLowerCase()
-    .replace(/['']/g, "'")  // Normalize quotes
-    .replace(/[""]/g, '"')
-    .replace(/[\u2013\u2014]/g, '-')  // Normalize dashes
-    .replace(/\s+/g, ' ')  // Normalize whitespace
-    .replace(/[^\w\s'-]/g, '')  // Remove special chars except apostrophes and hyphens
+    .replaceAll(/['\u2018\u2019]/g, "'")  // Normalize quotes (', ', ')
+    .replaceAll(/["\u201C\u201D]/g, '"')  // Normalize quotes (", ", ")
+    .replaceAll(/[\u2013\u2014]/g, '-')  // Normalize dashes
+    .replaceAll(/\s+/g, ' ')  // Normalize whitespace
+    .replaceAll(/[^\w\s'-]/g, '')  // Remove special chars except apostrophes and hyphens
     .trim();
 }
 
@@ -85,7 +85,7 @@ export function calculateSimilarity(a, b) {
   const normA = normalizeWineName(a);
   const normB = normalizeWineName(b);
 
-  if (normA === normB) return 1.0;
+  if (normA === normB) return 1;
   if (!normA || !normB) return 0;
 
   const distance = levenshteinDistance(normA, normB);
@@ -224,7 +224,7 @@ function normalizeAward(award) {
     return `${pointMatch[1]}_points`;
   }
 
-  return lower.replace(/\s+/g, '_').substring(0, 30);
+  return lower.replaceAll(/\s+/g, '_').substring(0, 30);
 }
 
 /**
@@ -651,7 +651,7 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
       }
     }
 
-    if (parsed && parsed.awards && parsed.awards.length > 0) {
+    if (parsed?.awards?.length > 0) {
       allAwards.push(...parsed.awards);
     }
 
@@ -1100,7 +1100,7 @@ export function getKnownCompetitions() {
  * @returns {string} Competition ID
  */
 export function addCompetition(competition) {
-  const id = competition.id || competition.name.toLowerCase().replace(/\s+/g, '_');
+  const id = competition.id || competition.name.toLowerCase().replaceAll(/\s+/g, '_');
 
   awardsDb.prepare(`
     INSERT OR REPLACE INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)

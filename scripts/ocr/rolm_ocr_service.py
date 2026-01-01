@@ -56,7 +56,7 @@ def check_dependencies():
 
 def extract_text_with_pymupdf(pdf_path: str) -> dict:
     """Extract text from PDF using PyMuPDF (fast, for text-based PDFs)."""
-    print(f"[OCR] Using PyMuPDF for text extraction", file=sys.stderr)
+    print("[OCR] Using PyMuPDF for text extraction", file=sys.stderr)
 
     doc = fitz.open(pdf_path)
     pages = []
@@ -124,11 +124,11 @@ def extract_text_with_easyocr(pdf_path: str) -> dict:
     """Extract text from PDF using EasyOCR (for image-based PDFs)."""
     import numpy as np
 
-    print(f"[OCR] Using EasyOCR for image-based PDF", file=sys.stderr)
+    print("[OCR] Using EasyOCR for image-based PDF", file=sys.stderr)
 
     # Initialize EasyOCR reader (supports multiple languages)
     # Using GPU if available, otherwise CPU
-    print(f"[OCR] Initializing EasyOCR reader...", file=sys.stderr)
+    print("[OCR] Initializing EasyOCR reader...", file=sys.stderr)
     reader = easyocr.Reader(['en'], gpu=False)  # Start with CPU for reliability
 
     images = pdf_to_images(pdf_path)
