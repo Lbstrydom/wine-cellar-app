@@ -18,9 +18,11 @@ const anthropic = new Anthropic({
 const PDF_EXTRACTION_METHOD = process.env.PDF_OCR_METHOD || 'auto'; // 'local', 'claude', or 'auto'
 
 // Token limits for Claude API responses
-const MAX_TOKENS_PDF = 8192;   // For PDF extraction
-const MAX_TOKENS_TEXT = 8192;  // For text extraction
-const MAX_TOKENS_CHUNK = 8192; // For chunked extraction of large texts
+// Claude Opus 4 for award extraction - higher token limits, better accuracy for complex documents
+const AWARDS_MODEL = 'claude-opus-4-20250514';
+const MAX_TOKENS_PDF = 16000;   // For PDF extraction (Opus supports up to 32K output)
+const MAX_TOKENS_TEXT = 16000;  // For text extraction
+const MAX_TOKENS_CHUNK = 16000; // For chunked extraction of large texts
 
 /**
  * Normalize wine name for matching.
@@ -342,7 +344,7 @@ export async function extractFromWebpage(url, competitionId, year) {
   // Use streaming to avoid timeout errors for long-running requests
   let responseText = '';
   const stream = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: AWARDS_MODEL,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
     stream: true
@@ -377,7 +379,7 @@ async function extractFromPDFWithClaude(pdfBase64, competitionId, year) {
   // Use streaming to avoid timeout errors for long-running requests
   let responseText = '';
   const stream = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: AWARDS_MODEL,
     max_tokens: MAX_TOKENS_PDF,
     messages: [
       {
@@ -454,7 +456,7 @@ async function extractFromPDFWithLocalOCR(pdfBase64, competitionId, year) {
   // Use streaming to avoid timeout errors for long-running requests
   let responseText = '';
   const stream = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: AWARDS_MODEL,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
     stream: true
@@ -552,7 +554,7 @@ export async function extractFromText(text, competitionId, year) {
   // Use streaming to avoid timeout errors for long-running requests
   let responseText = '';
   const stream = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: AWARDS_MODEL,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
     stream: true
@@ -618,7 +620,7 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
 
         let responseText = '';
         const stream = await anthropic.messages.create({
-          model: 'claude-sonnet-4-5-20250929',
+          model: AWARDS_MODEL,
           max_tokens: currentMaxTokens,
           messages: [{ role: 'user', content: prompt }],
           stream: true
