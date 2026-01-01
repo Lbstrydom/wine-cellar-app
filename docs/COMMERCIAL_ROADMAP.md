@@ -6,7 +6,7 @@
 
 ## Progress Tracking
 
-### Phase 1 Status: 🟢 In Progress (80% Complete)
+### Phase 1 Status: ✅ Complete (80% - 1.2 deferred)
 
 | Item | Status | Notes |
 |------|--------|-------|
@@ -16,6 +16,14 @@
 | 1.4 Data Provenance | ✅ Complete | `src/services/provenance.js` + migration 013 |
 | 1.5 Scraping Governance | ✅ Complete | Rate limiter, circuit breaker, governance wrapper |
 
+### Phase 2 Status: 🟢 In Progress
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 2.1 FTS5 Full-Text Search | ✅ Complete | Migration 014, search routes with BM25 ranking, LIKE fallback |
+| 2.2 Virtual List Rendering | ⏳ Pending | |
+| 2.3 Refactor bottles.js | ⏳ Pending | |
+
 **Files Created (Phase 1)**:
 - `src/config/unifiedSources.js` - Single source of truth for all rating sources
 - `src/services/provenance.js` - Data provenance tracking service
@@ -24,6 +32,10 @@
 - `src/services/scrapingGovernance.js` - Unified governance wrapper
 - `data/migrations/013_data_provenance.sql` - Provenance table schema
 - `tests/unit/**/*.test.js` - 249 unit tests covering services and config
+
+**Files Created/Updated (Phase 2)**:
+- `data/migrations/014_fts5_search.sql` - FTS5 virtual table with Porter stemming + sync triggers
+- `src/routes/wines.js` - FTS5 search with BM25 ranking, global search endpoint for command palette
 
 **Key Fixes Applied**:
 - Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching

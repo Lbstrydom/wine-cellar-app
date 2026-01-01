@@ -18,24 +18,165 @@ router.get('/styles', (req, res) => {
 });
 
 /**
- * Search wines by name.
+ * Check if FTS5 table exists.
+ * @returns {boolean} True if wines_fts table exists
+ */
+function hasFTS5() {
+  try {
+    const result = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name='wines_fts'"
+    ).get();
+    return !!result;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Search wines using FTS5 full-text search (with LIKE fallback).
+ * FTS5 provides sub-millisecond search with relevance ranking.
  * @route GET /api/wines/search
  */
 router.get('/search', (req, res) => {
-  const { q } = req.query;
+  const { q, limit = 10 } = req.query;
   if (!q || q.length < 2) {
     return res.json([]);
   }
 
+  const searchLimit = Math.min(parseInt(limit) || 10, 50);
+
+  // Try FTS5 first (much faster for large datasets)
+  if (hasFTS5()) {
+    try {
+      // Escape special FTS5 characters and add prefix matching
+      const ftsQuery = q
+        .replace(/['"]/g, '')  // Remove quotes
+        .split(/\s+/)
+        .filter(term => term.length > 0)
+        .map(term => `${term}*`)  // Add prefix matching
+        .join(' ');
+
+      if (ftsQuery) {
+        const wines = db.prepare(`
+          SELECT
+            w.id, w.wine_name, w.vintage, w.style, w.colour,
+            w.vivino_rating, w.price_eur, w.country,
+            w.purchase_stars,
+            bm25(wines_fts, 10.0, 5.0, 1.0, 0.5) as relevance
+          FROM wines_fts
+          JOIN wines w ON wines_fts.rowid = w.id
+          WHERE wines_fts MATCH ?
+          ORDER BY relevance
+          LIMIT ?
+        `).all(ftsQuery, searchLimit);
+
+        return res.json(wines);
+      }
+    } catch (ftsError) {
+      // FTS5 query failed (malformed query), fall back to LIKE
+      console.warn('FTS5 search failed, falling back to LIKE:', ftsError.message);
+    }
+  }
+
+  // Fallback to LIKE search (slower but always works)
   const wines = db.prepare(`
-    SELECT id, wine_name, vintage, style, colour, vivino_rating, price_eur
+    SELECT id, wine_name, vintage, style, colour, vivino_rating, price_eur, country, purchase_stars
     FROM wines
-    WHERE wine_name LIKE ?
+    WHERE wine_name LIKE ? OR style LIKE ? OR country LIKE ?
     ORDER BY wine_name
-    LIMIT 10
-  `).all(`%${q}%`);
+    LIMIT ?
+  `).all(`%${q}%`, `%${q}%`, `%${q}%`, searchLimit);
 
   res.json(wines);
+});
+
+/**
+ * Global search across wines, producers, countries, and styles.
+ * Used by command palette / global search bar.
+ * @route GET /api/wines/global-search
+ */
+router.get('/global-search', (req, res) => {
+  const { q, limit = 5 } = req.query;
+  if (!q || q.length < 2) {
+    return res.json({ wines: [], producers: [], countries: [], styles: [] });
+  }
+
+  const searchLimit = Math.min(parseInt(limit) || 5, 20);
+  const likePattern = `%${q}%`;
+
+  // Search wines (with FTS5 if available)
+  let wines = [];
+  if (hasFTS5()) {
+    try {
+      const ftsQuery = q.split(/\s+/).filter(t => t).map(t => `${t}*`).join(' ');
+      if (ftsQuery) {
+        wines = db.prepare(`
+          SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
+                 COUNT(s.id) as bottle_count
+          FROM wines_fts
+          JOIN wines w ON wines_fts.rowid = w.id
+          LEFT JOIN slots s ON s.wine_id = w.id
+          WHERE wines_fts MATCH ?
+          GROUP BY w.id
+          ORDER BY bm25(wines_fts)
+          LIMIT ?
+        `).all(ftsQuery, searchLimit);
+      }
+    } catch {
+      // Fall through to LIKE
+    }
+  }
+  if (wines.length === 0) {
+    wines = db.prepare(`
+      SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
+             COUNT(s.id) as bottle_count
+      FROM wines w
+      LEFT JOIN slots s ON s.wine_id = w.id
+      WHERE w.wine_name LIKE ?
+      GROUP BY w.id
+      ORDER BY w.wine_name
+      LIMIT ?
+    `).all(likePattern, searchLimit);
+  }
+
+  // Search distinct producers (extracted from wine names - first part before vintage/year)
+  const producers = db.prepare(`
+    SELECT DISTINCT
+      CASE
+        WHEN wine_name LIKE '% 20%' THEN TRIM(SUBSTR(wine_name, 1, INSTR(wine_name || ' 20', ' 20') - 1))
+        WHEN wine_name LIKE '% 19%' THEN TRIM(SUBSTR(wine_name, 1, INSTR(wine_name || ' 19', ' 19') - 1))
+        ELSE wine_name
+      END as producer,
+      COUNT(*) as wine_count
+    FROM wines
+    WHERE wine_name LIKE ?
+    GROUP BY producer
+    HAVING producer != ''
+    ORDER BY wine_count DESC
+    LIMIT ?
+  `).all(likePattern, searchLimit);
+
+  // Search countries
+  const countries = db.prepare(`
+    SELECT country, COUNT(*) as wine_count
+    FROM wines
+    WHERE country LIKE ? AND country IS NOT NULL AND country != ''
+    GROUP BY country
+    ORDER BY wine_count DESC
+    LIMIT ?
+  `).all(likePattern, searchLimit);
+
+  // Search styles
+  const styles = db.prepare(`
+    SELECT style, COUNT(*) as wine_count
+    FROM wines
+    WHERE style LIKE ?
+    GROUP BY style
+    ORDER BY wine_count DESC
+    LIMIT ?
+  `).all(likePattern, searchLimit);
+
+  res.json({ wines, producers, countries, styles });
 });
 
 /**
