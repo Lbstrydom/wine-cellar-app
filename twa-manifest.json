@@ -1,0 +1,69 @@
+{
+  "packageId": "com.winecellar.app",
+  "host": "your-domain.com",
+  "name": "Wine Cellar",
+  "launcherName": "Wine Cellar",
+  "display": "standalone",
+  "themeColor": "#722F37",
+  "navigationColor": "#1a1a2e",
+  "navigationColorDark": "#1a1a2e",
+  "navigationDividerColor": "#1a1a2e",
+  "navigationDividerColorDark": "#1a1a2e",
+  "backgroundColor": "#1a1a2e",
+  "enableNotifications": true,
+  "startUrl": "/",
+  "iconUrl": "/images/icon-512.png",
+  "maskableIconUrl": "/images/icon-maskable-512.png",
+  "splashScreenFadeOutDuration": 300,
+  "signingKey": {
+    "path": "./wine-cellar.keystore",
+    "alias": "wine-cellar"
+  },
+  "appVersionCode": 1,
+  "appVersionName": "1.0.0",
+  "shortcuts": [
+    {
+      "name": "Add Wine",
+      "shortName": "Add",
+      "url": "/?action=add-wine",
+      "icons": [
+        {
+          "src": "/images/icon-add-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Tonight's Picks",
+      "shortName": "Tonight",
+      "url": "/?action=recommendations",
+      "icons": [
+        {
+          "src": "/images/icon-wine-96.png",
+          "sizes": "96x96"
+        }
+      ]
+    }
+  ],
+  "generatorApp": "bubblewrap-cli",
+  "webManifestUrl": "/manifest.json",
+  "fallbackType": "customtabs",
+  "features": {
+    "locationDelegation": {
+      "enabled": false
+    },
+    "playBilling": {
+      "enabled": false
+    }
+  },
+  "alphaDependencies": {
+    "enabled": false
+  },
+  "enableSiteSettingsShortcut": true,
+  "isChromeOSOnly": false,
+  "isMetaQuest": false,
+  "fullScopeUrl": true,
+  "minSdkVersion": 19,
+  "orientation": "portrait",
+  "fingerprints": []
+}

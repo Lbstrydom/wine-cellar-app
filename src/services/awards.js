@@ -18,9 +18,9 @@ const anthropic = new Anthropic({
 const PDF_EXTRACTION_METHOD = process.env.PDF_OCR_METHOD || 'auto'; // 'local', 'claude', or 'auto'
 
 // Token limits for Claude API responses
-const MAX_TOKENS_PDF = 16000;  // Increased for large PDFs with many awards
-const MAX_TOKENS_TEXT = 32000;  // For text extraction (increased to handle large award lists)
-const MAX_TOKENS_CHUNK = 32000; // For chunked extraction of large texts (each chunk needs room for ~250+ awards)
+const MAX_TOKENS_PDF = 8192;   // For PDF extraction
+const MAX_TOKENS_TEXT = 8192;  // For text extraction
+const MAX_TOKENS_CHUNK = 8192; // For chunked extraction of large texts
 
 /**
  * Normalize wine name for matching.

@@ -491,17 +491,27 @@ window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
   deferredPrompt = e;
 
-  // Show custom install button
+  // Show install section in settings
+  const installSection = document.getElementById('pwa-install-section');
   const installBtn = document.getElementById('install-app-btn');
+
+  if (installSection) {
+    installSection.style.display = 'block';
+  }
+
   if (installBtn) {
-    installBtn.style.display = 'block';
     installBtn.addEventListener('click', async () => {
       if (deferredPrompt) {
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
         console.log('[App] Install prompt outcome:', outcome);
-        deferredPrompt = null;
-        installBtn.style.display = 'none';
+
+        if (outcome === 'accepted') {
+          deferredPrompt = null;
+          if (installSection) {
+            installSection.style.display = 'none';
+          }
+        }
       }
     });
   }
@@ -510,7 +520,38 @@ window.addEventListener('beforeinstallprompt', (e) => {
 window.addEventListener('appinstalled', () => {
   console.log('[App] PWA was installed');
   deferredPrompt = null;
+
+  // Hide install section
+  const installSection = document.getElementById('pwa-install-section');
+  if (installSection) {
+    installSection.style.display = 'none';
+  }
+
+  // Update PWA status
+  updatePwaStatus();
 });
+
+/**
+ * Update PWA status display in settings.
+ */
+function updatePwaStatus() {
+  const statusEl = document.getElementById('pwa-status');
+  if (!statusEl) return;
+
+  if (window.matchMedia('(display-mode: standalone)').matches) {
+    statusEl.textContent = 'Installed App';
+    statusEl.style.color = 'var(--sparkling)';
+  } else if (navigator.standalone) {
+    // iOS Safari standalone mode
+    statusEl.textContent = 'Installed App (iOS)';
+    statusEl.style.color = 'var(--sparkling)';
+  } else {
+    statusEl.textContent = 'Web App';
+  }
+}
+
+// Check PWA status on load
+window.addEventListener('load', updatePwaStatus);
 
 // Start app when DOM ready
 document.addEventListener('DOMContentLoaded', () => {
