@@ -421,5 +421,99 @@ async function init() {
   await loadStats();
 }
 
+/**
+ * Register service worker for PWA functionality.
+ */
+async function registerServiceWorker() {
+  if ('serviceWorker' in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.register('/sw.js', {
+        scope: '/'
+      });
+
+      console.log('[App] Service Worker registered:', registration.scope);
+
+      // Check for updates periodically
+      setInterval(() => {
+        registration.update();
+      }, 60 * 60 * 1000); // Every hour
+
+      // Handle updates
+      registration.addEventListener('updatefound', () => {
+        const newWorker = registration.installing;
+        console.log('[App] Service Worker update found');
+
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version available
+            showUpdateNotification();
+          }
+        });
+      });
+
+    } catch (error) {
+      console.error('[App] Service Worker registration failed:', error);
+    }
+  }
+}
+
+/**
+ * Show notification when new version is available.
+ */
+function showUpdateNotification() {
+  const notification = document.createElement('div');
+  notification.className = 'update-notification';
+  notification.innerHTML = `
+    <span>A new version is available!</span>
+    <button id="update-app-btn" class="btn btn-small btn-primary">Update</button>
+    <button id="dismiss-update-btn" class="btn btn-small btn-secondary">Later</button>
+  `;
+  document.body.appendChild(notification);
+
+  document.getElementById('update-app-btn').addEventListener('click', () => {
+    // Tell service worker to skip waiting
+    navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' });
+    window.location.reload();
+  });
+
+  document.getElementById('dismiss-update-btn').addEventListener('click', () => {
+    notification.remove();
+  });
+}
+
+/**
+ * Handle PWA install prompt.
+ */
+let deferredPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent Chrome's default install prompt
+  e.preventDefault();
+  deferredPrompt = e;
+
+  // Show custom install button
+  const installBtn = document.getElementById('install-app-btn');
+  if (installBtn) {
+    installBtn.style.display = 'block';
+    installBtn.addEventListener('click', async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        console.log('[App] Install prompt outcome:', outcome);
+        deferredPrompt = null;
+        installBtn.style.display = 'none';
+      }
+    });
+  }
+});
+
+window.addEventListener('appinstalled', () => {
+  console.log('[App] PWA was installed');
+  deferredPrompt = null;
+});
+
 // Start app when DOM ready
-document.addEventListener('DOMContentLoaded', init);
+document.addEventListener('DOMContentLoaded', () => {
+  init();
+  registerServiceWorker();
+});

@@ -39,6 +39,14 @@
 | 4.1 Drink-Now AI Recommendations | ✅ Complete | Claude-powered recommendations panel with context filters |
 | 4.2 Tasting Note Structured Descriptors | ✅ Complete | AI extraction with controlled vocabulary, fallback to deterministic |
 
+### Phase 5 Status: ✅ Complete (5.1 PWA)
+
+| Item | Status | Notes |
+|------|--------|-------|
+| 5.1 Progressive Web App (PWA) | ✅ Complete | manifest.json, service worker, icons, offline support |
+| 5.2 Play Store Wrapper (TWA) | ⏸️ Pending | Ready when PWA audit passes |
+| 5.3 Cloud Backend | ⏸️ Future | After validating product-market fit |
+
 **Files Created (Phase 1)**:
 - `src/config/unifiedSources.js` - Single source of truth for all rating sources
 - `src/services/provenance.js` - Data provenance tracking service
@@ -84,6 +92,19 @@
 - `src/services/tastingExtractor.js` - AI extraction with deterministic fallback, profile merging
 - `data/migrations/015_tasting_profiles.sql` - tasting_profile_json column + extraction history table
 - `src/routes/wines.js` - Added tasting-profile CRUD and extraction endpoints
+
+**Files Created/Updated (Phase 5)**:
+- `public/manifest.json` - PWA manifest with app metadata, icons, shortcuts
+- `public/sw.js` - Service worker with cache-first/network-first strategies
+- `public/images/icon-*.png` - App icons in all required sizes (72-512px)
+- `public/images/icon-maskable-*.png` - Maskable icons for adaptive icon support
+- `public/images/apple-touch-icon.png` - Apple touch icon (180px)
+- `public/images/favicon-*.png` - Favicon images
+- `public/images/icon.svg` - Source SVG for icon generation
+- `scripts/generate-icons.js` - Icon generation script using Sharp
+- `public/index.html` - Added PWA meta tags, manifest link, favicons
+- `public/js/app.js` - Added service worker registration, update handling, install prompt
+- `public/css/styles.css` - Added PWA notification styles, safe-area support
 
 **Key Fixes Applied**:
 - Wine name parser: Reordered `gran_reserva` before `reserva` pattern for correct matching

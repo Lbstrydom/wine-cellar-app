@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="256" fill="#1a1a2e"/>
+
+  <!-- Wine glass silhouette -->
+  <g fill="#722F37">
+    <!-- Glass bowl -->
+    <path d="M256 80 c-80 0 -120 40 -120 100 c0 60 40 100 60 120 l0 80 c0 20 -40 20 -60 40 l0 20 l240 0 l0 -20 c-20 -20 -60 -20 -60 -40 l0 -80 c20 -20 60 -60 60 -120 c0 -60 -40 -100 -120 -100 z"/>
+  </g>
+
+  <!-- Wine level in glass -->
+  <path d="M256 120 c-60 0 -90 30 -90 70 c0 40 30 70 90 70 c60 0 90 -30 90 -70 c0 -40 -30 -70 -90 -70 z" fill="#9B2335"/>
+
+  <!-- Highlight on glass -->
+  <ellipse cx="200" cy="150" rx="15" ry="25" fill="rgba(255,255,255,0.2)"/>
+
+  <!-- Star accent -->
+  <polygon points="256,340 264,360 286,360 268,372 276,394 256,380 236,394 244,372 226,360 248,360" fill="#D4AF37"/>
+</svg>
