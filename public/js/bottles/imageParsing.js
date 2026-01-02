@@ -26,16 +26,12 @@ export function initImageParsing() {
   const photoBtn = document.getElementById('take-photo-btn');
 
   if (uploadArea) {
-    // Click on upload area opens file browser (on desktop) or shows options (handled by buttons)
+    // Click on upload area always opens file browser/gallery (not camera)
     uploadArea.addEventListener('click', (e) => {
       // Only trigger if clicking the upload prompt area, not the preview
       if (e.target.closest('#image-preview')) return;
-      // On mobile, prefer camera if available
-      if (isMobileDevice() && cameraInput) {
-        cameraInput.click();
-      } else {
-        fileInput?.click();
-      }
+      // Always use file input - "Take Photo" button is for camera
+      fileInput?.click();
     });
     uploadArea.addEventListener('dragover', handleImageDragOver);
     uploadArea.addEventListener('dragleave', handleImageDragLeave);
