@@ -64,8 +64,8 @@ export function initImageParsing() {
     });
   }
 
-  // Parse image button
-  document.getElementById('parse-image-btn')?.addEventListener('click', handleParseImage);
+  // Unified analyze wine button (handles both image and text)
+  document.getElementById('analyze-wine-btn')?.addEventListener('click', handleAnalyzeWine);
 
   // Paste handler for screenshots (on the modal)
   document.getElementById('bottle-modal')?.addEventListener('paste', handlePaste);
@@ -253,9 +253,6 @@ function showImagePreview(dataUrl) {
   previewDiv.style.display = 'block';
   uploadArea.classList.add('has-image');
 
-  // Show the parse image button
-  document.getElementById('parse-image-btn').style.display = 'inline-flex';
-
   // Add clear handler
   clearBtn.addEventListener('click', (e) => {
     e.stopPropagation();
@@ -279,35 +276,48 @@ export function clearUploadedImage() {
   }
   if (uploadArea) uploadArea.classList.remove('has-image');
   if (fileInput) fileInput.value = '';
-
-  // Hide the parse image button
-  const parseImageBtn = document.getElementById('parse-image-btn');
-  if (parseImageBtn) parseImageBtn.style.display = 'none';
 }
 
 /**
- * Handle parse image button click.
+ * Handle unified analyze wine button click.
+ * Analyzes image if uploaded, otherwise analyzes text.
  */
-async function handleParseImage() {
-  if (!bottleState.uploadedImage) {
-    showToast('Please upload an image first');
+async function handleAnalyzeWine() {
+  const btn = document.getElementById('analyze-wine-btn');
+  const resultsDiv = document.getElementById('parse-results');
+  const textInput = document.getElementById('wine-text-input');
+  const text = textInput?.value?.trim() || '';
+
+  // Determine what to analyze
+  const hasImage = !!bottleState.uploadedImage;
+  const hasText = text.length > 0;
+
+  if (!hasImage && !hasText) {
+    showToast('Please upload an image or enter text to analyze');
     return;
   }
 
-  const btn = document.getElementById('parse-image-btn');
-  const resultsDiv = document.getElementById('parse-results');
-
   btn.disabled = true;
   btn.innerHTML = '<span class="loading-spinner"></span> Analyzing...';
-  resultsDiv.innerHTML = '<p style="color: var(--text-muted);">Analyzing image...</p>';
+  resultsDiv.innerHTML = `<p style="color: var(--text-muted);">Analyzing ${hasImage ? 'image' : 'text'}...</p>`;
 
   try {
-    const result = await parseWineImage(bottleState.uploadedImage.base64, bottleState.uploadedImage.mediaType);
+    let result;
+
+    if (hasImage) {
+      // Prefer image analysis if available
+      result = await parseWineImage(bottleState.uploadedImage.base64, bottleState.uploadedImage.mediaType);
+    } else {
+      // Fall back to text analysis
+      const { parseWineText } = await import('../api.js');
+      result = await parseWineText(text);
+    }
+
     bottleState.parsedWines = result.wines || [];
     bottleState.selectedParsedIndex = 0;
 
     if (bottleState.parsedWines.length === 0) {
-      resultsDiv.innerHTML = '<p style="color: var(--text-muted);">No wines found in image.</p>';
+      resultsDiv.innerHTML = `<p style="color: var(--text-muted);">No wines found in ${hasImage ? 'image' : 'text'}.</p>`;
       return;
     }
 
@@ -317,7 +327,7 @@ async function handleParseImage() {
     resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Analyze Image';
+    btn.textContent = 'Analyze Wine';
   }
 }
 

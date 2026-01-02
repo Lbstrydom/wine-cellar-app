@@ -128,6 +128,10 @@ export function closeBottleModal() {
   // Reset form toggle visibility
   const formToggle = document.querySelector('.form-toggle');
   if (formToggle) formToggle.style.display = 'flex';
+
+  // Reset bottom buttons visibility (may have been hidden by parse results)
+  const modalActions = document.querySelector('#bottle-modal .modal-actions');
+  if (modalActions) modalActions.style.display = 'flex';
 }
 
 /**
@@ -148,4 +152,13 @@ export function setBottleFormMode(mode) {
   if (existingSection) existingSection.style.display = mode === 'existing' ? 'block' : 'none';
   if (newSection) newSection.style.display = mode === 'new' ? 'block' : 'none';
   if (parseSection) parseSection.style.display = mode === 'parse' ? 'block' : 'none';
+
+  // Restore bottom buttons when switching to non-parse modes
+  // (parse mode hides them when showing results)
+  if (mode !== 'parse') {
+    const quantitySection = document.getElementById('quantity-section');
+    const modalActions = document.querySelector('#bottle-modal .modal-actions');
+    if (quantitySection) quantitySection.style.display = 'block';
+    if (modalActions) modalActions.style.display = 'flex';
+  }
 }

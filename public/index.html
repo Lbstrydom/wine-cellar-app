@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260102">
+  <link rel="stylesheet" href="/css/styles.css?v=20260102b">
 </head>
 <body>
   <header>
@@ -721,10 +721,6 @@
             <button type="button" class="btn btn-secondary" id="take-photo-btn">Take Photo</button>
           </div>
 
-          <button type="button" class="btn btn-secondary" id="parse-image-btn" style="display: none; margin-top: 0.5rem;">
-            Analyze Image
-          </button>
-
           <div class="parse-divider">
             <span>or paste/type text</span>
           </div>
@@ -732,8 +728,9 @@
           <!-- Text input area -->
           <textarea id="wine-text-input" rows="3" placeholder="Paste wine description, order confirmation, or any text containing wine info..."></textarea>
 
-          <button type="button" class="btn btn-secondary" id="parse-text-btn" style="margin-top: 0.5rem;">
-            Parse Text
+          <!-- Single unified analyze button -->
+          <button type="button" class="btn btn-primary" id="analyze-wine-btn" style="margin-top: 1rem;">
+            Analyze Wine
           </button>
 
           <div id="parse-results" style="margin-top: 1rem;"></div>
@@ -847,6 +844,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260102"></script>
+  <script type="module" src="/js/app.js?v=20260102b"></script>
 </body>
 </html>

@@ -1,16 +1,19 @@
 /**
  * @fileoverview Vivino wine search service.
- * Uses Bright Data Web Unlocker to search Vivino for wine matches.
+ * Uses Google search (via Bright Data SERP API) to find Vivino wine pages,
+ * then fetches individual pages which have reliable __NEXT_DATA__.
  * @module services/vivinoSearch
  */
 
 import logger from '../utils/logger.js';
 
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
-const VIVINO_SEARCH_URL = 'https://www.vivino.com/search/wines';
+const BRIGHTDATA_SERP_URL = 'https://api.brightdata.com/serp/req';
 
 /**
  * Search Vivino for wines matching the given criteria.
+ * Strategy: Use Google SERP to find Vivino wine pages, then fetch top results
+ * to get wine details from __NEXT_DATA__.
  * @param {Object} params - Search parameters
  * @param {string} params.query - Wine name to search
  * @param {string} [params.producer] - Producer/winery name
@@ -19,19 +22,16 @@ const VIVINO_SEARCH_URL = 'https://www.vivino.com/search/wines';
  */
 export async function searchVivinoWines({ query, producer, vintage }) {
   const bdApiKey = process.env.BRIGHTDATA_API_KEY;
-  const bdZone = process.env.BRIGHTDATA_WEB_ZONE;
+  const bdWebZone = process.env.BRIGHTDATA_WEB_ZONE;
+  const bdSerpZone = process.env.BRIGHTDATA_SERP_ZONE;
 
-  if (!bdApiKey || !bdZone) {
-    logger.warn('VivinoSearch', 'Bright Data not configured');
+  if (!bdApiKey) {
+    logger.warn('VivinoSearch', 'Bright Data API key not configured');
     return { matches: [], error: 'Search service not configured' };
   }
 
-  // Build search query - use wine name directly (it usually contains producer)
-  // Don't combine producer + query as this causes duplication like
-  // "Nederburg Private Bin Nederburg Private Bin Two Centuries"
+  // Build search query
   let searchQuery = query?.trim() || '';
-
-  // If no query but have producer, use producer
   if (!searchQuery && producer) {
     searchQuery = producer.trim();
   }
@@ -40,70 +40,203 @@ export async function searchVivinoWines({ query, producer, vintage }) {
     return { matches: [], error: 'No search query provided' };
   }
 
-  // Simplify very long names - Vivino search works better with shorter queries
-  // Keep only the first ~5 significant words
+  // Simplify very long names
   const words = searchQuery.split(/\s+/).filter(w => w.length > 1);
   if (words.length > 5) {
     searchQuery = words.slice(0, 5).join(' ');
   }
 
-  // Build Vivino search URL
-  const searchUrl = `${VIVINO_SEARCH_URL}?q=${encodeURIComponent(searchQuery)}`;
   logger.info('VivinoSearch', `Searching: "${searchQuery}"${vintage ? ` (${vintage})` : ''}`);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 45000); // Vivino SPA needs time
+    // Step 1: Use Google SERP to find Vivino wine pages
+    const vivinoUrls = await searchGoogleForVivino(searchQuery, vintage, bdApiKey, bdSerpZone);
 
-    // Use x-unblock-expect header to wait for wine cards to render
-    // Vivino search results have wine cards with data-wine attributes
+    if (vivinoUrls.length === 0) {
+      logger.info('VivinoSearch', 'No Vivino URLs found in search results');
+      return { matches: [], error: null };
+    }
+
+    logger.info('VivinoSearch', `Found ${vivinoUrls.length} Vivino URLs, fetching details...`);
+
+    // Step 2: Fetch top 3 wine pages to get details
+    const matches = [];
+    for (const url of vivinoUrls.slice(0, 3)) {
+      const wine = await fetchVivinoWinePage(url, bdApiKey, bdWebZone);
+      if (wine) {
+        matches.push(wine);
+      }
+    }
+
+    // Sort by vintage relevance
+    const sortedMatches = sortByVintageRelevance(matches, vintage);
+    logger.info('VivinoSearch', `Found ${sortedMatches.length} wine matches`);
+
+    return { matches: sortedMatches, error: null };
+
+  } catch (error) {
+    const errorMsg = error.name === 'AbortError' ? 'Request timeout' : error.message;
+    logger.error('VivinoSearch', `Search failed: ${errorMsg}`);
+    return { matches: [], error: errorMsg };
+  }
+}
+
+/**
+ * Search Google for Vivino wine pages using SERP API.
+ * @param {string} query - Search query
+ * @param {number} vintage - Year
+ * @param {string} apiKey - Bright Data API key
+ * @param {string} serpZone - SERP zone name
+ * @returns {Promise<string[]>} Array of Vivino URLs
+ */
+async function searchGoogleForVivino(query, vintage, apiKey, serpZone) {
+  // Build Google search query targeting Vivino wine pages
+  const googleQuery = `site:vivino.com ${query} ${vintage || ''} wine`.trim();
+
+  logger.info('VivinoSearch', `Google query: "${googleQuery}"`);
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    // Use SERP API if zone is configured, otherwise fall back to Web Unlocker
+    let response;
+    if (serpZone) {
+      response = await fetch(BRIGHTDATA_SERP_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          zone: serpZone,
+          query: googleQuery,
+          country: 'us',
+          search_engine: 'google'
+        })
+      });
+    } else {
+      // Fall back to direct Google search via Web Unlocker
+      const bdWebZone = process.env.BRIGHTDATA_WEB_ZONE;
+      if (!bdWebZone) {
+        return [];
+      }
+      const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10`;
+      response = await fetch(BRIGHTDATA_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          zone: bdWebZone,
+          url: googleUrl,
+          format: 'raw'
+        })
+      });
+    }
+
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      logger.error('VivinoSearch', `SERP API returned ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json().catch(() => null);
+    const text = data ? null : await response.text();
+
+    // Extract Vivino URLs from results
+    const vivinoUrls = [];
+
+    if (data?.organic) {
+      // SERP API JSON response
+      for (const result of data.organic) {
+        if (result.url?.includes('vivino.com/w/') ||
+            result.link?.includes('vivino.com/w/')) {
+          vivinoUrls.push(result.url || result.link);
+        }
+      }
+    } else if (text) {
+      // HTML response - extract URLs
+      const urlPattern = /https?:\/\/(?:www\.)?vivino\.com\/[^"'\s]*\/w\/\d+[^"'\s]*/gi;
+      const matches = text.match(urlPattern) || [];
+      vivinoUrls.push(...new Set(matches));
+    }
+
+    return vivinoUrls;
+
+  } catch (error) {
+    logger.error('VivinoSearch', `SERP search failed: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Fetch a Vivino wine page and extract details from __NEXT_DATA__.
+ * @param {string} url - Vivino wine page URL
+ * @param {string} apiKey - Bright Data API key
+ * @param {string} webZone - Web Unlocker zone name
+ * @returns {Promise<Object|null>} Wine details or null
+ */
+async function fetchVivinoWinePage(url, apiKey, webZone) {
+  if (!webZone) {
+    // Try direct fetch if no Web Unlocker zone
+    logger.warn('VivinoSearch', 'No Web Unlocker zone, skipping page fetch');
+    return null;
+  }
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 25000);
+
     const response = await fetch(BRIGHTDATA_API_URL, {
       method: 'POST',
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${bdApiKey}`,
-        // Wait for wine card elements to appear (JS rendered content)
-        'x-unblock-expect': JSON.stringify({
-          element: '[data-testid="wineCard"], .wineCard, [class*="wineCard"], .search-results-list'
-        })
+        'Authorization': `Bearer ${apiKey}`
       },
       body: JSON.stringify({
-        zone: bdZone,
-        url: searchUrl,
-        format: 'raw'  // Get full HTML with rendered JS content
+        zone: webZone,
+        url: url,
+        format: 'raw'
       })
     });
 
     clearTimeout(timeout);
 
     if (!response.ok) {
-      logger.error('VivinoSearch', `API returned ${response.status}`);
-      return { matches: [], error: `Search failed (${response.status})` };
+      return null;
     }
 
     const html = await response.text();
 
-    // Check for blocked page
-    if (html.length < 1000 && (
-      html.toLowerCase().includes('captcha') ||
-      html.toLowerCase().includes('blocked') ||
-      html.toLowerCase().includes('access denied')
-    )) {
-      logger.warn('VivinoSearch', 'Request blocked by Vivino');
-      return { matches: [], error: 'Search temporarily unavailable' };
+    // Extract __NEXT_DATA__ JSON
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
+    if (!nextDataMatch) {
+      logger.warn('VivinoSearch', `No __NEXT_DATA__ in page: ${url}`);
+      return null;
     }
 
-    // Parse the HTML response
-    const matches = parseVivinoSearchResults(html, vintage);
-    logger.info('VivinoSearch', `Found ${matches.length} matches`);
+    const jsonData = JSON.parse(nextDataMatch[1]);
+    const pageProps = jsonData?.props?.pageProps;
 
-    return { matches, error: null };
+    // Try different paths for wine data
+    const vintage = pageProps?.vintage;
+    const wine = vintage?.wine || pageProps?.wine;
+
+    if (!wine) {
+      return null;
+    }
+
+    return extractWineFromVivinoData({ vintage, wine });
 
   } catch (error) {
-    const errorMsg = error.name === 'AbortError' ? 'Request timeout' : error.message;
-    logger.error('VivinoSearch', `Search failed: ${errorMsg}`);
-    return { matches: [], error: errorMsg };
+    logger.warn('VivinoSearch', `Failed to fetch ${url}: ${error.message}`);
+    return null;
   }
 }
 

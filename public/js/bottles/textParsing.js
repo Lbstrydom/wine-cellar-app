@@ -3,55 +3,16 @@
  * @module bottles/textParsing
  */
 
-import { parseWineText } from '../api.js';
-import { showToast, escapeHtml, WINE_COUNTRIES } from '../utils.js';
+import { escapeHtml, WINE_COUNTRIES } from '../utils.js';
 import { bottleState } from './state.js';
-import { setBottleFormMode } from './modal.js';
 import { submitParsedWine } from './form.js';
 
 /**
  * Initialize text parsing handlers.
+ * Note: The unified "Analyze Wine" button is handled in imageParsing.js
  */
 export function initTextParsing() {
-  document.getElementById('parse-text-btn')?.addEventListener('click', handleParseText);
-}
-
-/**
- * Handle parse text button click.
- */
-async function handleParseText() {
-  const textInput = document.getElementById('wine-text-input');
-  const text = textInput.value.trim();
-
-  if (!text) {
-    showToast('Please enter or paste wine text');
-    return;
-  }
-
-  const btn = document.getElementById('parse-text-btn');
-  const resultsDiv = document.getElementById('parse-results');
-
-  btn.disabled = true;
-  btn.innerHTML = '<span class="loading-spinner"></span> Parsing...';
-  resultsDiv.innerHTML = '<p style="color: var(--text-muted);">Analyzing text...</p>';
-
-  try {
-    const result = await parseWineText(text);
-    bottleState.parsedWines = result.wines || [];
-
-    if (bottleState.parsedWines.length === 0) {
-      resultsDiv.innerHTML = '<p style="color: var(--text-muted);">No wines found in text.</p>';
-      return;
-    }
-
-    renderParsedWines(result);
-
-  } catch (err) {
-    resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Parse Text';
-  }
+  // Text parsing is now handled by the unified analyze button in imageParsing.js
 }
 
 /**
@@ -147,6 +108,12 @@ export function renderParsedWines(result) {
   `;
 
   resultsDiv.innerHTML = html;
+
+  // Hide the bottom buttons when showing parse results (Add This Wine handles everything)
+  const quantitySection = document.getElementById('quantity-section');
+  const modalActions = document.querySelector('#bottle-modal .modal-actions');
+  if (quantitySection) quantitySection.style.display = 'none';
+  if (modalActions) modalActions.style.display = 'none';
 
   // Add click handlers for wine selection (if multiple wines)
   resultsDiv.querySelectorAll('.parsed-wine-item').forEach(item => {
