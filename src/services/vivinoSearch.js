@@ -55,17 +55,23 @@ export async function searchVivinoWines({ query, producer, vintage }) {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 45000); // Vivino SPA needs time
 
+    // Use x-unblock-expect header to wait for wine cards to render
+    // Vivino search results have wine cards with data-wine attributes
     const response = await fetch(BRIGHTDATA_API_URL, {
       method: 'POST',
       signal: controller.signal,
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${bdApiKey}`
+        'Authorization': `Bearer ${bdApiKey}`,
+        // Wait for wine card elements to appear (JS rendered content)
+        'x-unblock-expect': JSON.stringify({
+          element: '[data-testid="wineCard"], .wineCard, [class*="wineCard"], .search-results-list'
+        })
       },
       body: JSON.stringify({
         zone: bdZone,
         url: searchUrl,
-        format: 'raw'
+        format: 'raw'  // Get full HTML with rendered JS content
       })
     });
 
