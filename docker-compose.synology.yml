@@ -16,6 +16,17 @@ services:
       - BRIGHTDATA_API_KEY=${BRIGHTDATA_API_KEY}
       - BRIGHTDATA_SERP_ZONE=${BRIGHTDATA_SERP_ZONE}
       - BRIGHTDATA_WEB_ZONE=${BRIGHTDATA_WEB_ZONE}
+    # Explicit DNS servers to fix resolution issues on Synology
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+      - 1.1.1.1
+    dns_opt:
+      - use-vc
+      - no-tld-query
+    extra_hosts:
+      - "api.brightdata.com:3.232.71.244"
+      - "api.anthropic.com:104.18.16.99"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
       interval: 30s
