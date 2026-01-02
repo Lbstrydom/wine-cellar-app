@@ -260,6 +260,15 @@ export async function searchVivinoWines({ query, producer, vintage }) {
     return { matches: [], error: 'No search query provided' };
   }
 
+  // Sanitize query: remove apostrophes and special chars that cause SERP API issues
+  // Replace fancy quotes/apostrophes with nothing, keep accented letters
+  searchQuery = searchQuery
+    .replace(/[''`]/g, '')        // Remove apostrophes (L'Oratoire → LOratoire)
+    .replace(/[""]/g, '')          // Remove fancy quotes
+    .replace(/[^\w\s\u00C0-\u017F-]/g, ' ')  // Keep letters, numbers, spaces, accented chars, hyphens
+    .replace(/\s+/g, ' ')          // Collapse multiple spaces
+    .trim();
+
   // Simplify very long names
   const words = searchQuery.split(/\s+/).filter(w => w.length > 1);
   if (words.length > 5) {
