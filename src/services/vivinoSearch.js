@@ -116,8 +116,11 @@ export async function searchVivinoWines({ query, producer, vintage }) {
 
     logger.info('VivinoSearch', `Found ${vivinoUrls.length} Vivino URLs, fetching details via Puppeteer...`);
 
-    // Step 2: Use Puppeteer to scrape top wine pages (faster than Web Unlocker)
+    // Step 2: Try to use Puppeteer to scrape top wine pages
+    // If Puppeteer fails (not available in Docker), return basic matches from URLs
     const matches = [];
+    let puppeteerAvailable = true;
+
     for (const url of vivinoUrls.slice(0, 3)) {
       try {
         const wine = await scrapeVivinoPage(url);
@@ -126,6 +129,45 @@ export async function searchVivinoWines({ query, producer, vintage }) {
         }
       } catch (err) {
         logger.warn('VivinoSearch', `Failed to scrape ${url}: ${err.message}`);
+        // If Puppeteer times out or fails to initialize, mark as unavailable
+        if (err.message.includes('timed out') || err.message.includes('Failed to start')) {
+          puppeteerAvailable = false;
+          break;
+        }
+      }
+    }
+
+    // If Puppeteer isn't available, create basic matches from URLs
+    if (!puppeteerAvailable && matches.length === 0) {
+      logger.info('VivinoSearch', 'Puppeteer unavailable, returning URL-only matches');
+      for (const url of vivinoUrls.slice(0, 3)) {
+        // Extract wine ID and name hint from URL
+        const idMatch = url.match(/\/w\/(\d+)/);
+        const vivinoId = idMatch ? parseInt(idMatch[1], 10) : null;
+
+        // Extract name from URL slug
+        const slugMatch = url.match(/vivino\.com\/[^/]*\/([^/]+)\/w\//);
+        const nameFromSlug = slugMatch
+          ? slugMatch[1].replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+          : searchQuery;
+
+        matches.push({
+          vivinoId,
+          vintageId: null,
+          name: nameFromSlug,
+          vintage: vintage || null,
+          winery: { id: null, name: '' },
+          rating: null,
+          ratingCount: null,
+          region: '',
+          country: '',
+          grapeVariety: '',
+          wineType: 'unknown',
+          imageUrl: null,
+          price: null,
+          currency: null,
+          vivinoUrl: url
+        });
       }
     }
 

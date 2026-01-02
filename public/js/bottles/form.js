@@ -167,11 +167,14 @@ async function shouldShowConfirmation() {
 /**
  * Save wine with confirmed Vivino data.
  * @param {Object} formData - Original form data
- * @param {Object} confirmedWine - Confirmed wine from Vivino
- * @param {number} quantity - Number of bottles
+ * @param {Object} confirmedWine - Confirmed wine from Vivino (includes quantity)
+ * @param {number} [fallbackQuantity] - Fallback quantity if not in confirmedWine
  */
-async function saveWineWithConfirmation(formData, confirmedWine, quantity) {
+async function saveWineWithConfirmation(formData, confirmedWine, fallbackQuantity = 1) {
   try {
+    // Use quantity from confirmation modal, fall back to passed quantity
+    const quantity = confirmedWine.quantity || fallbackQuantity;
+
     // Merge confirmed Vivino data with form data
     const wineData = {
       ...formData,
@@ -201,7 +204,7 @@ async function saveWineWithConfirmation(formData, confirmedWine, quantity) {
 
     closeBottleModal();
     await refreshData();
-    showToast(`Added ${wineData.wine_name} (verified)`);
+    showToast(`Added ${quantity}x ${wineData.wine_name} (verified)`);
 
   } catch (err) {
     showToast('Error: ' + err.message);
@@ -211,9 +214,9 @@ async function saveWineWithConfirmation(formData, confirmedWine, quantity) {
 /**
  * Save wine without Vivino confirmation.
  * @param {Object} formData - Form data
- * @param {number} quantity - Number of bottles
+ * @param {number} quantity - Number of bottles (can come from confirmation modal)
  */
-async function saveWineWithoutConfirmation(formData, quantity) {
+async function saveWineWithoutConfirmation(formData, quantity = 1) {
   try {
     const result = await createWine(formData);
     const wineId = result.id;
@@ -225,7 +228,7 @@ async function saveWineWithoutConfirmation(formData, quantity) {
 
     closeBottleModal();
     await refreshData();
-    showToast(`Added ${formData.wine_name}`);
+    showToast(`Added ${quantity}x ${formData.wine_name}`);
 
   } catch (err) {
     showToast('Error: ' + err.message);

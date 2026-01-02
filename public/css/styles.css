@@ -4806,6 +4806,62 @@ textarea:focus-visible {
   color: var(--text);
 }
 
+.confirmation-quantity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+}
+
+.confirmation-quantity label {
+  font-size: 0.95rem;
+  color: var(--text-muted);
+}
+
+.confirmation-quantity .qty-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.confirmation-quantity .qty-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 1.2rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.confirmation-quantity .qty-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.confirmation-quantity input[type="number"] {
+  width: 50px;
+  text-align: center;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  color: var(--text);
+  border-radius: 6px;
+  font-size: 1rem;
+}
+
+.confirmation-quantity input[type="number"]::-webkit-inner-spin-button,
+.confirmation-quantity input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .confirmation-loading {
   text-align: center;
   padding: 3rem 1rem;
@@ -4927,6 +4983,22 @@ textarea:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.match-meta-link a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.match-meta-link a:hover {
+  text-decoration: underline;
+}
+
+.match-note {
+  margin: 0.25rem 0 0 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
 }
 
 .match-rating {
