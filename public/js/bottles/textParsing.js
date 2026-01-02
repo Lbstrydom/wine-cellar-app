@@ -49,7 +49,7 @@ async function handleParseText() {
     resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Extract Wine Details';
+    btn.textContent = 'Parse Text';
   }
 }
 

@@ -317,7 +317,7 @@ async function handleParseImage() {
     resultsDiv.innerHTML = `<p style="color: var(--priority-1);">Error: ${err.message}</p>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Extract Wine Details';
+    btn.textContent = 'Analyze Image';
   }
 }
 
