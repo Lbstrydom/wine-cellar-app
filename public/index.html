@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260102i">
+  <link rel="stylesheet" href="/css/styles.css?v=20260102j">
 </head>
 <body>
   <header>
@@ -707,8 +707,8 @@
 
           <!-- Image upload area -->
           <div class="image-upload-area" id="image-upload-area">
-            <!-- Gallery picker - use */* to show full file picker on mobile (not just camera) -->
-            <input type="file" id="image-file-input" accept="*/*" hidden />
+            <!-- Gallery picker - no accept attribute to let OS show full picker options -->
+            <input type="file" id="image-file-input" hidden />
             <!-- Camera capture - uses capture attribute to open camera directly -->
             <input type="file" id="camera-file-input" accept="image/*" capture="environment" hidden />
             <div class="upload-prompt">
@@ -846,6 +846,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260102i"></script>
+  <script type="module" src="/js/app.js?v=20260102j"></script>
 </body>
 </html>
