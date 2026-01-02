@@ -4,6 +4,10 @@ FROM node:20-alpine
 # Install dependencies for better-sqlite3
 RUN apk add --no-cache python3 make g++
 
+# Set UTF-8 locale for proper character handling
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+
 WORKDIR /app
 
 # Copy package files

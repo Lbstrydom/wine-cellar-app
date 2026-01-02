@@ -16,7 +16,7 @@ export const TIMEOUTS = {
   SEARCH_RESULTS_WAIT: 5000,    // Wait for search results to load
 
   // API request timeouts
-  SERP_API_TIMEOUT: 20000,      // Bright Data SERP API
+  SERP_API_TIMEOUT: 45000,      // Bright Data SERP API (increased for slow responses)
   WEB_UNLOCKER_TIMEOUT: 30000,  // Bright Data Web Unlocker
   VIVINO_FETCH_TIMEOUT: 45000,  // Vivino (needs JS rendering)
   STANDARD_FETCH_TIMEOUT: 10000, // Regular fetch requests

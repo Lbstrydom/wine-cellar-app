@@ -25,7 +25,6 @@ services:
       - use-vc
       - no-tld-query
     extra_hosts:
-      - "api.brightdata.com:3.232.71.244"
       - "api.anthropic.com:160.79.104.10"
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
