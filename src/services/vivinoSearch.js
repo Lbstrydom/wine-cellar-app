@@ -26,14 +26,25 @@ export async function searchVivinoWines({ query, producer, vintage }) {
     return { matches: [], error: 'Search service not configured' };
   }
 
-  // Build search query - combine producer and wine name
-  const searchTerms = [];
-  if (producer) searchTerms.push(producer);
-  if (query) searchTerms.push(query);
-  const searchQuery = searchTerms.join(' ').trim();
+  // Build search query - use wine name directly (it usually contains producer)
+  // Don't combine producer + query as this causes duplication like
+  // "Nederburg Private Bin Nederburg Private Bin Two Centuries"
+  let searchQuery = query?.trim() || '';
+
+  // If no query but have producer, use producer
+  if (!searchQuery && producer) {
+    searchQuery = producer.trim();
+  }
 
   if (!searchQuery) {
     return { matches: [], error: 'No search query provided' };
+  }
+
+  // Simplify very long names - Vivino search works better with shorter queries
+  // Keep only the first ~5 significant words
+  const words = searchQuery.split(/\s+/).filter(w => w.length > 1);
+  if (words.length > 5) {
+    searchQuery = words.slice(0, 5).join(' ');
   }
 
   // Build Vivino search URL
@@ -100,18 +111,29 @@ export async function searchVivinoWines({ query, producer, vintage }) {
 function parseVivinoSearchResults(html, vintage) {
   const matches = [];
 
+  // Log HTML length for debugging
+  logger.info('VivinoSearch', `Response HTML length: ${html.length} bytes`);
+
   try {
     // Try to extract __NEXT_DATA__ JSON (Vivino is a Next.js app)
     const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/i);
 
     if (nextDataMatch) {
+      logger.info('VivinoSearch', 'Found __NEXT_DATA__ block');
       const jsonData = JSON.parse(nextDataMatch[1]);
       const wines = extractWinesFromNextData(jsonData);
 
       if (wines.length > 0) {
         logger.info('VivinoSearch', `Extracted ${wines.length} wines from __NEXT_DATA__`);
         return sortByVintageRelevance(wines, vintage);
+      } else {
+        // Log the structure we found for debugging
+        const pageProps = jsonData?.props?.pageProps;
+        const keys = pageProps ? Object.keys(pageProps) : [];
+        logger.info('VivinoSearch', `pageProps keys: ${keys.slice(0, 10).join(', ')}`);
       }
+    } else {
+      logger.info('VivinoSearch', 'No __NEXT_DATA__ block found');
     }
 
     // Fallback: Try to extract from ld+json structured data
@@ -170,13 +192,21 @@ function extractWinesFromNextData(jsonData) {
     const pageProps = jsonData?.props?.pageProps;
 
     // Search results are typically in explore_vintage.matches or similar
+    // Vivino frequently changes their data structure, so check many paths
     const possiblePaths = [
       pageProps?.explore_vintage?.matches,
+      pageProps?.explore_vintage?.records,
       pageProps?.wines,
       pageProps?.results,
       pageProps?.searchResults?.matches,
+      pageProps?.searchResults?.records,
       pageProps?.data?.explore_vintage?.matches,
-      pageProps?.data?.wines
+      pageProps?.data?.explore_vintage?.records,
+      pageProps?.data?.wines,
+      pageProps?.vintages,
+      pageProps?.topLists?.[0]?.items,
+      // Apollo/GraphQL cache structure
+      jsonData?.props?.apolloState,
     ];
 
     for (const path of possiblePaths) {
@@ -184,6 +214,17 @@ function extractWinesFromNextData(jsonData) {
         for (const item of path) {
           const wine = extractWineFromVivinoData(item);
           if (wine) wines.push(wine);
+        }
+        if (wines.length > 0) break;
+      }
+      // Handle Apollo state which is an object with keys
+      if (path && typeof path === 'object' && !Array.isArray(path)) {
+        for (const key of Object.keys(path)) {
+          // Apollo stores wines with keys like "Wine:123456"
+          if (key.startsWith('Wine:') || key.startsWith('Vintage:')) {
+            const wine = extractWineFromVivinoData(path[key]);
+            if (wine) wines.push(wine);
+          }
         }
         if (wines.length > 0) break;
       }
@@ -195,11 +236,66 @@ function extractWinesFromNextData(jsonData) {
       if (wine) wines.push(wine);
     }
 
+    // Check pageProps deeply for any arrays that might contain wine data
+    if (wines.length === 0 && pageProps) {
+      findWinesInObject(pageProps, wines, 0);
+    }
+
   } catch (error) {
     logger.warn('VivinoSearch', `Next data extraction error: ${error.message}`);
   }
 
   return wines;
+}
+
+/**
+ * Recursively search an object for wine data.
+ * @param {Object} obj - Object to search
+ * @param {Array} wines - Array to add found wines to
+ * @param {number} depth - Current recursion depth
+ */
+function findWinesInObject(obj, wines, depth) {
+  // Limit recursion depth
+  if (depth > 5 || wines.length >= 10) return;
+
+  if (Array.isArray(obj)) {
+    for (const item of obj) {
+      // Check if this item looks like a wine object
+      if (item && typeof item === 'object') {
+        // Look for wine-like properties
+        if (item.wine || item.vintage || (item.id && item.name && (item.winery || item.region))) {
+          const wine = extractWineFromVivinoData(item);
+          if (wine) wines.push(wine);
+        } else {
+          findWinesInObject(item, wines, depth + 1);
+        }
+      }
+    }
+  } else if (obj && typeof obj === 'object') {
+    for (const key of Object.keys(obj)) {
+      // Skip circular refs and large props
+      if (key === '__typename' || key === 'dehydratedState') continue;
+
+      const value = obj[key];
+      // Look for arrays named like wine collections
+      if (Array.isArray(value) && value.length > 0 && value.length < 100) {
+        const matchLikeKey = /wine|vintage|match|record|result|item/i.test(key);
+        if (matchLikeKey) {
+          for (const item of value) {
+            if (item && typeof item === 'object') {
+              const wine = extractWineFromVivinoData(item);
+              if (wine) wines.push(wine);
+            }
+          }
+          if (wines.length > 0) return;
+        }
+      }
+      // Recurse into objects
+      if (value && typeof value === 'object') {
+        findWinesInObject(value, wines, depth + 1);
+      }
+    }
+  }
 }
 
 /**
