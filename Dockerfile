@@ -16,7 +16,7 @@ COPY package*.json ./
 # Install dependencies (ci for reproducible builds)
 RUN npm ci --only=production
 
-# Copy application code (cache bust: 2026-01-02-v2)
+# Copy application code (version: 2026-01-02-19:45)
 COPY src/ ./src/
 COPY public/ ./public/
 COPY data/schema.sql ./data/

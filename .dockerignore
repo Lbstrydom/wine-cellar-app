@@ -8,3 +8,6 @@ data/cellar.db
 data/cellar.db-wal
 data/cellar.db-shm
 .github
+# Make sure src and public are never ignored
+!src
+!public
