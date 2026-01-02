@@ -9,7 +9,6 @@ import logger from '../utils/logger.js';
 import { scrapeVivinoPage } from './puppeteerScraper.js';
 import { TIMEOUTS, GRAPE_KEYWORDS } from '../config/scraperConfig.js';
 
-const BRIGHTDATA_SERP_URL = 'https://api.brightdata.com/serp/req';
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
 
 // ============================================================================
@@ -163,8 +162,11 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
 
     // Use SERP API if zone is configured, otherwise fall back to Web Unlocker
     let response;
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10&hl=en&gl=us`;
+
     if (serpZone) {
-      response = await fetch(BRIGHTDATA_SERP_URL, {
+      // SERP API uses same /request endpoint with zone and URL
+      response = await fetch(BRIGHTDATA_API_URL, {
         method: 'POST',
         signal: controller.signal,
         headers: {
@@ -173,14 +175,12 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
         },
         body: JSON.stringify({
           zone: serpZone,
-          query: googleQuery,
-          country: 'us',
-          search_engine: 'google'
+          url: googleUrl,
+          format: 'raw'
         })
       });
     } else if (webZone) {
       // Fall back to direct Google search via Web Unlocker
-      const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10`;
       response = await fetch(BRIGHTDATA_API_URL, {
         method: 'POST',
         signal: controller.signal,

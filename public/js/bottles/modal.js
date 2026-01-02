@@ -153,11 +153,16 @@ export function setBottleFormMode(mode) {
   if (newSection) newSection.style.display = mode === 'new' ? 'block' : 'none';
   if (parseSection) parseSection.style.display = mode === 'parse' ? 'block' : 'none';
 
-  // Restore bottom buttons when switching to non-parse modes
-  // (parse mode hides them when showing results)
-  if (mode !== 'parse') {
-    const quantitySection = document.getElementById('quantity-section');
-    const modalActions = document.querySelector('#bottle-modal .modal-actions');
+  // Show/hide bottom buttons based on mode
+  const quantitySection = document.getElementById('quantity-section');
+  const modalActions = document.querySelector('#bottle-modal .modal-actions');
+
+  if (mode === 'parse') {
+    // Hide bottom buttons on parse tab - user needs to analyze first
+    if (quantitySection) quantitySection.style.display = 'none';
+    if (modalActions) modalActions.style.display = 'none';
+  } else {
+    // Show bottom buttons for existing/new modes
     if (quantitySection) quantitySection.style.display = 'block';
     if (modalActions) modalActions.style.display = 'flex';
   }
