@@ -152,11 +152,13 @@ async function handleBottleFormSubmit(e) {
  */
 async function shouldShowConfirmation() {
   try {
-    // Check if BRIGHTDATA_API_KEY is configured by trying to get settings
-    const settings = await getSettings();
-    // If we have any settings, assume API is available
-    // The actual check happens server-side when searching
-    return true;
+    // Check if BRIGHTDATA_API_KEY is configured by checking feature availability
+    const response = await fetch('/api/wine-search/status');
+    if (response.ok) {
+      const status = await response.json();
+      return status.available === true;
+    }
+    return false;
   } catch {
     return false;
   }
@@ -192,8 +194,8 @@ async function saveWineWithConfirmation(formData, confirmedWine, quantity) {
     const result = await createWine(wineData);
     const wineId = result.id;
 
-    // Add bottles
-    if (bottleState.mode === 'add') {
+    // Add bottles if we have a location (slot or 'smart')
+    if (bottleState.editingLocation && quantity > 0) {
       await addBottlesToSlots(wineId, quantity);
     }
 
@@ -216,8 +218,8 @@ async function saveWineWithoutConfirmation(formData, quantity) {
     const result = await createWine(formData);
     const wineId = result.id;
 
-    // Add bottles
-    if (bottleState.mode === 'add') {
+    // Add bottles if we have a location (slot or 'smart')
+    if (bottleState.editingLocation && quantity > 0) {
       await addBottlesToSlots(wineId, quantity);
     }
 

@@ -122,6 +122,18 @@ router.post('/', async (req, res) => {
 });
 
 /**
+ * Check if wine search feature is available.
+ * @route GET /api/wine-search/status
+ */
+router.get('/status', (req, res) => {
+  const available = !!process.env.BRIGHTDATA_API_KEY;
+  res.json({
+    available,
+    message: available ? 'Wine search is available' : 'BRIGHTDATA_API_KEY not configured'
+  });
+});
+
+/**
  * Get detailed wine info by Vivino ID.
  * @route GET /api/wine-search/vivino/:id
  */
