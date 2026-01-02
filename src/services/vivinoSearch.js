@@ -386,8 +386,8 @@ export async function searchVivinoWines({ query, producer, vintage }) {
       }
     }
 
-    // Sort by vintage relevance
-    const sortedMatches = sortByVintageRelevance(matches, vintage);
+    // Sort by name match + vintage relevance
+    const sortedMatches = sortByRelevance(matches, searchQuery, vintage);
     logger.info('VivinoSearch', `Found ${sortedMatches.length} wine matches`);
 
     return { matches: sortedMatches, error: null };
@@ -594,20 +594,90 @@ function extractWineryFromName(name) {
 }
 
 /**
- * Sort wines by relevance to requested vintage.
+ * Calculate name similarity score (0-1).
+ * Higher score = better match to the search query.
+ * @param {string} wineName - Wine name to check
+ * @param {string} searchQuery - Original search query
+ * @returns {number} Similarity score 0-1
+ */
+function calculateNameSimilarity(wineName, searchQuery) {
+  if (!wineName || !searchQuery) return 0;
+
+  const normalize = str => str
+    .toLowerCase()
+    .replace(/[''`]/g, '')
+    .replace(/[^\w\s\u00C0-\u017F]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  const wineNorm = normalize(wineName);
+  const queryNorm = normalize(searchQuery);
+
+  // Check for exact containment
+  if (wineNorm.includes(queryNorm)) return 1.0;
+  if (queryNorm.includes(wineNorm)) return 0.9;
+
+  // Token-based matching
+  const wineTokens = new Set(wineNorm.split(' ').filter(t => t.length > 2));
+  const queryTokens = queryNorm.split(' ').filter(t => t.length > 2);
+
+  if (queryTokens.length === 0) return 0;
+
+  let matchCount = 0;
+  for (const token of queryTokens) {
+    if (wineTokens.has(token)) {
+      matchCount++;
+    }
+  }
+
+  // Penalty for extra words not in query (like "Blanc", "Clos", etc.)
+  const extraWords = wineNorm.split(' ').filter(t =>
+    t.length > 2 && !queryTokens.includes(t) &&
+    !['ogier', 'domaine', 'chateau', 'wine'].includes(t) // Common producer prefixes OK
+  );
+
+  // Words that indicate a DIFFERENT wine (should strongly penalize)
+  const differentiatingWords = ['blanc', 'rose', 'rosé', 'clos', 'chorégies', 'choregies'];
+  const hasDifferentiator = extraWords.some(w => differentiatingWords.includes(w));
+
+  const baseScore = matchCount / queryTokens.length;
+
+  // Heavy penalty if wine has differentiating words not in query
+  if (hasDifferentiator) {
+    return baseScore * 0.5; // 50% penalty
+  }
+
+  return baseScore;
+}
+
+/**
+ * Sort wines by relevance to search query and vintage.
+ * Priority: 1) Name match, 2) Vintage match, 3) Rating count
  * @param {Array} wines - Wine matches
+ * @param {string} searchQuery - Original search query
  * @param {number} [preferredVintage] - Vintage to prioritize
  * @returns {Array} Sorted wines
  */
-function sortByVintageRelevance(wines, preferredVintage) {
-  if (!preferredVintage) return wines;
-
+function sortByRelevance(wines, searchQuery, preferredVintage) {
   return [...wines].sort((a, b) => {
-    const aMatch = a.vintage === preferredVintage;
-    const bMatch = b.vintage === preferredVintage;
-    if (aMatch && !bMatch) return -1;
-    if (!aMatch && bMatch) return 1;
+    // Primary: Name similarity (how well does wine name match search query)
+    const aNameScore = calculateNameSimilarity(a.name, searchQuery);
+    const bNameScore = calculateNameSimilarity(b.name, searchQuery);
 
+    // Significant name score difference takes priority
+    if (Math.abs(aNameScore - bNameScore) > 0.2) {
+      return bNameScore - aNameScore;
+    }
+
+    // Secondary: Vintage match
+    if (preferredVintage) {
+      const aVintageMatch = a.vintage === preferredVintage;
+      const bVintageMatch = b.vintage === preferredVintage;
+      if (aVintageMatch && !bVintageMatch) return -1;
+      if (!aVintageMatch && bVintageMatch) return 1;
+    }
+
+    // Tertiary: Rating count (more ratings = more reliable)
     const aCount = a.ratingCount || 0;
     const bCount = b.ratingCount || 0;
     return bCount - aCount;

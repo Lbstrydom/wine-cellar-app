@@ -100,17 +100,56 @@ router.post('/', async (req, res) => {
       query: wineName,
       producer: effectiveProducer,
       vintage: vintage ? parseInt(vintage) : null,
-      country: countryToCode(country)
+      country: countryToCode(country),
+      colour: colour?.toLowerCase()
     });
 
     if (vivinoResults.error) {
       console.warn('Wine search warning:', vivinoResults.error);
     }
 
+    // Filter by colour if specified
+    let filteredMatches = vivinoResults.matches;
+    if (colour) {
+      const colourLower = colour.toLowerCase();
+      filteredMatches = vivinoResults.matches.filter(wine => {
+        const wineName = (wine.name || '').toLowerCase();
+        const grape = (wine.grapeVariety || '').toLowerCase();
+
+        // White wine indicators
+        const isWhite = wineName.includes('blanc') ||
+          wineName.includes('white') ||
+          grape.includes('chardonnay') ||
+          grape.includes('sauvignon blanc') ||
+          grape.includes('riesling') ||
+          grape.includes('roussanne') ||
+          grape.includes('viognier') ||
+          grape.includes('chenin');
+
+        // Rosé wine indicators
+        const isRose = wineName.includes('rosé') ||
+          wineName.includes('rose') ||
+          grape.includes('rosé');
+
+        // Match logic
+        if (colourLower === 'white') return isWhite;
+        if (colourLower === 'rosé' || colourLower === 'rose') return isRose;
+        if (colourLower === 'red') return !isWhite && !isRose;
+
+        return true; // Unknown colour, include all
+      });
+
+      // If filtering removed all results, fall back to unfiltered
+      if (filteredMatches.length === 0) {
+        console.warn(`Colour filter (${colour}) removed all results, falling back to unfiltered`);
+        filteredMatches = vivinoResults.matches;
+      }
+    }
+
     // Format response
     res.json({
       query: { wineName, producer: effectiveProducer, vintage, country, colour },
-      matches: vivinoResults.matches.slice(0, 8),
+      matches: filteredMatches.slice(0, 8),
       searchedAt: new Date().toISOString(),
       error: vivinoResults.error
     });
