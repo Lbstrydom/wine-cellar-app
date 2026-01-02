@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260102f">
+  <link rel="stylesheet" href="/css/styles.css?v=20260102g">
 </head>
 <body>
   <header>
@@ -707,7 +707,9 @@
 
           <!-- Image upload area -->
           <div class="image-upload-area" id="image-upload-area">
-            <input type="file" id="image-file-input" accept="image/jpeg,image/png,image/webp,image/gif" hidden />
+            <!-- Gallery picker - explicit MIME types without capture to force gallery -->
+            <input type="file" id="image-file-input" accept=".jpg,.jpeg,.png,.webp,.gif,image/jpeg,image/png,image/webp,image/gif" hidden />
+            <!-- Camera capture - uses capture attribute to open camera directly -->
             <input type="file" id="camera-file-input" accept="image/*" capture="environment" hidden />
             <div class="upload-prompt">
               <span class="upload-icon">📷</span>
@@ -844,6 +846,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260102f"></script>
+  <script type="module" src="/js/app.js?v=20260102g"></script>
 </body>
 </html>
