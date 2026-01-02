@@ -26,7 +26,20 @@ async function handleResponse(res, defaultError = 'Request failed') {
       throw new Error(res.statusText || defaultError);
     }
   }
-  return res.json();
+
+  // Handle empty responses
+  const text = await res.text();
+  if (!text) {
+    // Empty response body - return empty object
+    return {};
+  }
+
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    console.error('Failed to parse response:', text.slice(0, 100));
+    throw new Error('Invalid server response');
+  }
 }
 
 /**
