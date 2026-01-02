@@ -756,3 +756,36 @@ export async function getWineAwards(wineId) {
   const res = await fetch(`${API_BASE}/api/awards/wine/${wineId}`);
   return handleResponse(res, 'Failed to fetch wine awards');
 }
+
+// ============================================
+// Wine Confirmation Search API (Vivino)
+// ============================================
+
+/**
+ * Search Vivino for wines (for confirmation workflow).
+ * @param {Object} params - Search parameters
+ * @param {string} params.wineName - Wine name
+ * @param {string} [params.producer] - Producer name
+ * @param {number} [params.vintage] - Vintage year
+ * @param {string} [params.country] - Country
+ * @param {string} [params.colour] - Wine colour
+ * @returns {Promise<{query: Object, matches: Array, error: string|null}>}
+ */
+export async function searchVivinoWines({ wineName, producer, vintage, country, colour }) {
+  const res = await fetch(`${API_BASE}/api/wine-search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wineName, producer, vintage, country, colour })
+  });
+  return handleResponse(res, 'Failed to search Vivino');
+}
+
+/**
+ * Get Vivino wine details by ID.
+ * @param {number} vivinoId - Vivino wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getVivinoWineDetails(vivinoId) {
+  const res = await fetch(`${API_BASE}/api/wine-search/vivino/${vivinoId}`);
+  return handleResponse(res, 'Failed to fetch Vivino wine details');
+}

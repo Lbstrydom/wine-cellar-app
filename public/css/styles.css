@@ -4763,3 +4763,311 @@ textarea:focus-visible {
     }
   }
 }
+
+/* ============================================
+   WINE CONFIRMATION MODAL
+   ============================================ */
+
+#wine-confirmation-modal {
+  z-index: 10001;
+}
+
+#wine-confirmation-modal .modal {
+  max-width: 650px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.wine-confirmation-modal .modal-content {
+  overflow-y: auto;
+  flex: 1;
+  padding: 1.5rem;
+}
+
+.confirmation-header {
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.confirmation-header h3 {
+  margin: 0 0 0.5rem 0;
+  font-size: 1.3rem;
+}
+
+.parsed-info {
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.parsed-info strong {
+  color: var(--text);
+}
+
+.confirmation-loading {
+  text-align: center;
+  padding: 3rem 1rem;
+}
+
+.confirmation-loading .spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  margin: 0 auto 1rem;
+  animation: spin 0.8s linear infinite;
+}
+
+.confirmation-loading p {
+  color: var(--text-muted);
+  margin: 0;
+}
+
+.confirmation-matches {
+  margin-bottom: 1.5rem;
+}
+
+.confirmation-matches h4 {
+  margin: 0 0 1rem 0;
+  font-size: 1rem;
+  color: var(--text-muted);
+}
+
+.no-matches {
+  text-align: center;
+  padding: 2rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.match-card {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+  gap: 1rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.match-card:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 176, 141, 87), 0.08);
+}
+
+.match-card.top-match {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 176, 141, 87), 0.12);
+}
+
+.match-card.top-match::before {
+  content: "Best Match";
+  position: absolute;
+  top: -8px;
+  left: 12px;
+  background: var(--accent);
+  color: var(--bg-dark);
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.match-image {
+  width: 60px;
+  min-height: 80px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.match-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.match-image .image-placeholder {
+  width: 30px;
+  height: 60px;
+  background: var(--border);
+  border-radius: 4px 4px 0 0;
+  opacity: 0.5;
+}
+
+.match-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.match-details h5 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1rem;
+  line-height: 1.3;
+  color: var(--text);
+}
+
+.match-meta {
+  margin: 0 0 0.35rem 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.match-rating {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.rating-stars {
+  letter-spacing: 1px;
+}
+
+.stars-filled {
+  color: var(--accent);
+}
+
+.stars-half {
+  color: var(--accent);
+  opacity: 0.6;
+}
+
+.stars-empty {
+  color: var(--border);
+}
+
+.rating-value {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rating-count {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.match-grape {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.match-action {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.btn-confirm {
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: var(--bg-dark);
+  border: none;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-confirm:hover {
+  background: var(--accent-hover);
+  transform: scale(1.02);
+}
+
+.confirmation-actions {
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+#confirmation-skip-btn {
+  padding: 0.6rem 1.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+#confirmation-skip-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
+}
+
+.confirmation-error {
+  text-align: center;
+  padding: 2rem;
+  background: rgba(var(--red-wine-rgb, 139, 69, 69), 0.15);
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+
+.confirmation-error p {
+  color: var(--text);
+  margin: 0;
+}
+
+/* Mobile adjustments for confirmation modal */
+@media (max-width: 600px) {
+  #wine-confirmation-modal .modal {
+    max-height: 90vh;
+    margin: 1rem;
+    border-radius: 12px;
+  }
+
+  .wine-confirmation-modal .modal-content {
+    padding: 1rem;
+  }
+
+  .match-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 0.75rem;
+  }
+
+  .match-image {
+    width: 50px;
+    min-height: 60px;
+    margin: 0 auto;
+  }
+
+  .match-details h5 {
+    font-size: 0.95rem;
+  }
+
+  .match-meta {
+    white-space: normal;
+  }
+
+  .match-action {
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+
+  .btn-confirm {
+    width: 100%;
+  }
+}

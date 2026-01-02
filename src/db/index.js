@@ -83,7 +83,11 @@ function runMigrations() {
     { name: 'purchase_stars', type: 'REAL' },
     { name: 'confidence_level', type: 'TEXT' },
     { name: 'ratings_updated_at', type: 'DATETIME' },
-    { name: 'tasting_notes', type: 'TEXT' }
+    { name: 'tasting_notes', type: 'TEXT' },
+    { name: 'vivino_id', type: 'INTEGER' },
+    { name: 'vivino_url', type: 'TEXT' },
+    { name: 'vivino_confirmed', type: 'INTEGER DEFAULT 0' },
+    { name: 'vivino_confirmed_at', type: 'DATETIME' }
   ];
 
   for (const col of newColumns) {

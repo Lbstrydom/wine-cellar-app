@@ -16,6 +16,7 @@ import drinkingWindowsRoutes from './drinkingWindows.js';
 import cellarRoutes from './cellar.js';
 import awardsRoutes from './awards.js';
 import backupRoutes from './backup.js';
+import wineSearchRoutes from './wineSearch.js';
 
 const router = Router();
 
@@ -32,5 +33,6 @@ router.use('/', drinkingWindowsRoutes);  // /wines/:wine_id/drinking-windows and
 router.use('/cellar', cellarRoutes);    // /cellar/analyse, /cellar/suggest-placement, etc.
 router.use('/awards', awardsRoutes);    // /awards/sources, /awards/import/*, /awards/wine/:id, etc.
 router.use('/backup', backupRoutes);    // /backup/export/json, /backup/export/csv, /backup/import
+router.use('/wine-search', wineSearchRoutes);  // /wine-search (POST), /wine-search/vivino/:id (GET)
 
 export default router;

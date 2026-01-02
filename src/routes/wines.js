@@ -306,39 +306,75 @@ router.get('/:id', (req, res) => {
  * @route POST /api/wines
  */
 router.post('/', (req, res) => {
-  const { style, colour, wine_name, vintage, vivino_rating, price_eur } = req.body;
+  const {
+    style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+    vivino_id, vivino_url, vivino_confirmed
+  } = req.body;
 
   const result = db.prepare(`
-    INSERT INTO wines (style, colour, wine_name, vintage, vivino_rating, price_eur)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null);
+    INSERT INTO wines (
+      style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+      vivino_id, vivino_url, vivino_confirmed, vivino_confirmed_at
+    )
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null, country || null,
+    vivino_id || null, vivino_url || null,
+    vivino_confirmed ? 1 : 0,
+    vivino_confirmed ? new Date().toISOString() : null
+  );
 
   res.status(201).json({ id: result.lastInsertRowid, message: 'Wine added' });
 });
 
 /**
- * Update wine including drink window.
+ * Update wine including drink window and Vivino reference.
  * @route PUT /api/wines/:id
  */
 router.put('/:id', (req, res) => {
   const {
     style, colour, wine_name, vintage, vivino_rating, price_eur, country,
-    drink_from, drink_peak, drink_until
+    drink_from, drink_peak, drink_until,
+    vivino_id, vivino_url, vivino_confirmed
   } = req.body;
 
-  db.prepare(`
-    UPDATE wines
-    SET style = ?, colour = ?, wine_name = ?, vintage = ?,
-        vivino_rating = ?, price_eur = ?, country = ?,
-        drink_from = ?, drink_peak = ?, drink_until = ?,
-        updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?
-  `).run(
+  // Build dynamic update based on what's provided
+  const updates = [];
+  const values = [];
+
+  // Always update these basic fields
+  updates.push('style = ?', 'colour = ?', 'wine_name = ?', 'vintage = ?');
+  updates.push('vivino_rating = ?', 'price_eur = ?', 'country = ?');
+  updates.push('drink_from = ?', 'drink_peak = ?', 'drink_until = ?');
+  values.push(
     style, colour, wine_name, vintage || null,
     vivino_rating || null, price_eur || null, country || null,
-    drink_from || null, drink_peak || null, drink_until || null,
-    req.params.id
+    drink_from || null, drink_peak || null, drink_until || null
   );
+
+  // Only update Vivino fields if explicitly provided
+  if (vivino_id !== undefined) {
+    updates.push('vivino_id = ?');
+    values.push(vivino_id || null);
+  }
+  if (vivino_url !== undefined) {
+    updates.push('vivino_url = ?');
+    values.push(vivino_url || null);
+  }
+  if (vivino_confirmed !== undefined) {
+    updates.push('vivino_confirmed = ?', 'vivino_confirmed_at = ?');
+    values.push(
+      vivino_confirmed ? 1 : 0,
+      vivino_confirmed ? new Date().toISOString() : null
+    );
+  }
+
+  updates.push('updated_at = CURRENT_TIMESTAMP');
+  values.push(req.params.id);
+
+  db.prepare(`
+    UPDATE wines SET ${updates.join(', ')} WHERE id = ?
+  `).run(...values);
 
   res.json({ message: 'Wine updated' });
 });
