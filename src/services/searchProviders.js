@@ -12,11 +12,324 @@ import {
   getCachedPage, cachePage
 } from './cacheService.js';
 import { getDomainIssue } from './fetchClassifier.js';
-import { searchDecanterWithPuppeteer } from './puppeteerScraper.js';
+import { searchDecanterWithPuppeteer, scrapeDecanterPage } from './puppeteerScraper.js';
 import { TIMEOUTS } from '../config/scraperConfig.js';
 
+// ============================================
+// Decanter Web Unlocker Functions
+// ============================================
+
+/**
+ * Extract wine review data from Decanter HTML.
+ * Works with Web Unlocker responses.
+ * @param {string} html - HTML content
+ * @param {string} url - Original URL
+ * @returns {Object|null} Review data or null
+ */
+function extractDecanterDataFromHtml(html, url) {
+  const data = { url };
+
+  // Try JSON embedded data first (current Decanter format has inline JSON)
+  const scoreMatch = html.match(/"score"\s*:\s*(\d{2,3})/);
+  if (scoreMatch) {
+    data.score = parseInt(scoreMatch[1], 10);
+  }
+
+  const drinkFromMatch = html.match(/"drink_from"\s*:\s*(\d{4})/);
+  const drinkToMatch = html.match(/"drink_to"\s*:\s*(\d{4})/);
+  if (drinkFromMatch && drinkToMatch) {
+    data.drinkFrom = parseInt(drinkFromMatch[1], 10);
+    data.drinkTo = parseInt(drinkToMatch[1], 10);
+  }
+
+  const reviewMatch = html.match(/"review"\s*:\s*"([^"]+)"/);
+  if (reviewMatch) {
+    data.tastingNotes = reviewMatch[1]
+      .replace(/\\n/g, ' ')
+      .replace(/\\u[\dA-Fa-f]{4}/g, (m) => String.fromCharCode(parseInt(m.slice(2), 16)))
+      .replace(/\\(.)/g, '$1')
+      .trim();
+  }
+
+  // Fallback: structured data
+  if (!data.score) {
+    const ratingMatch = html.match(/itemprop="ratingValue"\s*content="(\d+)"/);
+    if (ratingMatch) {
+      data.score = parseInt(ratingMatch[1], 10);
+    }
+  }
+
+  // Fallback: "XX points" pattern in text
+  if (!data.score) {
+    const pointsMatch = html.match(/(\d{2,3})\s*points/i);
+    if (pointsMatch) {
+      data.score = parseInt(pointsMatch[1], 10);
+    }
+  }
+
+  // Wine name from title
+  const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+  if (titleMatch) {
+    // Clean title: "Wine Name - Decanter" -> "Wine Name"
+    data.wineName = titleMatch[1].split(/\s*[-|]\s*Decanter/i)[0].trim();
+  }
+
+  // Validate score
+  if (!data.score || data.score < 50 || data.score > 100) {
+    return null;
+  }
+
+  return data;
+}
+
+/**
+ * Scrape a Decanter review page using Web Unlocker.
+ * @param {string} url - Decanter review URL
+ * @param {string} apiKey - Bright Data API key
+ * @param {string} webZone - Web Unlocker zone name
+ * @returns {Promise<Object|null>} Review data or null
+ */
+async function scrapeDecanterWithWebUnlocker(url, apiKey, webZone) {
+  logger.info('Decanter', `Fetching via Web Unlocker: ${url}`);
+
+  const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.WEB_UNLOCKER_TIMEOUT);
+
+  try {
+    const response = await fetch(BRIGHTDATA_API_URL, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`
+      },
+      body: JSON.stringify({
+        zone: webZone,
+        url,
+        format: 'raw'
+      })
+    });
+
+    cleanup();
+
+    if (!response.ok) {
+      logger.warn('Decanter', `Web Unlocker returned ${response.status}`);
+      return null;
+    }
+
+    const html = await response.text();
+    logger.info('Decanter', `Got ${html.length} bytes from Web Unlocker`);
+
+    const reviewData = extractDecanterDataFromHtml(html, url);
+
+    if (reviewData) {
+      logger.info('Decanter', `Web Unlocker extracted: ${reviewData.score} points${reviewData.drinkFrom ? ` (${reviewData.drinkFrom}-${reviewData.drinkTo})` : ''}`);
+    } else {
+      logger.warn('Decanter', 'Web Unlocker: Could not extract review data from HTML');
+    }
+
+    return reviewData;
+
+  } catch (error) {
+    cleanup();
+    if (error.name === 'AbortError') {
+      logger.warn('Decanter', 'Web Unlocker request timed out');
+    } else {
+      logger.warn('Decanter', `Web Unlocker error: ${error.message}`);
+    }
+    return null;
+  }
+}
+
+/**
+ * Search Google for Decanter reviews using SERP API.
+ * @param {string} wineName - Wine name
+ * @param {number} vintage - Vintage year
+ * @param {string} apiKey - Bright Data API key
+ * @param {string} serpZone - SERP zone name
+ * @param {string} webZone - Web Unlocker zone name (fallback)
+ * @returns {Promise<string[]>} Array of Decanter review URLs
+ */
+async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZone) {
+  // Extract key tokens from wine name
+  const tokens = wineName
+    .toLowerCase()
+    .replace(/[''`]/g, '')
+    .replace(/\([^)]+\)/g, ' ')
+    .replace(/[^\w\s-]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3)
+    .slice(0, 4);
+
+  const googleQuery = `site:decanter.com/wine-reviews ${tokens.join(' ')} ${vintage || ''} points`.trim();
+
+  logger.info('Decanter', `Google query: "${googleQuery}"`);
+
+  try {
+    const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.SERP_API_TIMEOUT);
+
+    let response;
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10&hl=en&gl=us`;
+
+    if (serpZone) {
+      response = await fetch(BRIGHTDATA_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          zone: serpZone,
+          url: googleUrl,
+          format: 'raw'
+        })
+      });
+    } else if (webZone) {
+      response = await fetch(BRIGHTDATA_API_URL, {
+        method: 'POST',
+        signal: controller.signal,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`
+        },
+        body: JSON.stringify({
+          zone: webZone,
+          url: googleUrl,
+          format: 'raw'
+        })
+      });
+    } else {
+      logger.warn('Decanter', 'No SERP or Web Unlocker zone configured');
+      return [];
+    }
+
+    cleanup();
+
+    if (!response.ok) {
+      logger.error('Decanter', `SERP API returned ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json().catch(() => null);
+    const text = data ? null : await response.text();
+
+    // Extract Decanter wine review URLs
+    const decanterUrls = [];
+
+    if (data?.organic) {
+      for (const result of data.organic) {
+        const url = result.url || result.link;
+        if (url?.includes('decanter.com/wine-reviews/') && url.match(/\d+$/)) {
+          decanterUrls.push(url);
+        }
+      }
+    } else if (text) {
+      // Parse HTML response for URLs
+      const urlPattern = /https?:\/\/(?:www\.)?decanter\.com\/wine-reviews\/[^"'\s]*\d+/gi;
+      const matches = text.match(urlPattern) || [];
+      decanterUrls.push(...new Set(matches));
+    }
+
+    // Score URLs by token matching in the slug
+    const scoredUrls = decanterUrls.map(url => {
+      const slug = url.split('/').pop().toLowerCase();
+      let score = 0;
+      let tokensMatched = 0;
+
+      for (const token of tokens) {
+        if (slug.includes(token)) {
+          score += 10;
+          tokensMatched++;
+        }
+      }
+
+      if (vintage && slug.includes(String(vintage))) {
+        score += 20;
+      }
+
+      return { url, score, tokensMatched };
+    });
+
+    // Sort by score and filter to require at least some token matches
+    scoredUrls.sort((a, b) => b.score - a.score);
+    const minTokens = Math.max(1, tokens.length - 2);
+
+    return scoredUrls
+      .filter(u => u.tokensMatched >= minTokens)
+      .slice(0, 3)
+      .map(u => u.url);
+
+  } catch (error) {
+    logger.error('Decanter', `SERP search failed: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Search Decanter for wine reviews using Web Unlocker.
+ * Uses Google SERP to find review URLs, then scrapes with Web Unlocker.
+ * Falls back to Puppeteer if Web Unlocker fails.
+ * @param {string} wineName - Wine name
+ * @param {number} vintage - Vintage year
+ * @returns {Promise<Object|null>} Review data or null
+ */
+async function searchDecanterWithWebUnlocker(wineName, vintage) {
+  const bdApiKey = process.env.BRIGHTDATA_API_KEY;
+  const bdSerpZone = process.env.BRIGHTDATA_SERP_ZONE;
+  const bdWebZone = process.env.BRIGHTDATA_WEB_ZONE;
+
+  if (!bdApiKey) {
+    logger.warn('Decanter', 'Bright Data API key not configured');
+    return null;
+  }
+
+  logger.info('Decanter', `Searching via Web Unlocker: ${wineName} ${vintage}`);
+
+  try {
+    // Step 1: Find Decanter review URLs via Google SERP
+    const reviewUrls = await searchGoogleForDecanter(wineName, vintage, bdApiKey, bdSerpZone, bdWebZone);
+
+    if (reviewUrls.length === 0) {
+      logger.info('Decanter', 'No review URLs found in search results');
+      return null;
+    }
+
+    logger.info('Decanter', `Found ${reviewUrls.length} review URL(s), fetching details...`);
+
+    // Step 2: Scrape the best matching review page
+    for (const url of reviewUrls) {
+      let reviewData = null;
+
+      // Try Web Unlocker first
+      if (bdWebZone) {
+        reviewData = await scrapeDecanterWithWebUnlocker(url, bdApiKey, bdWebZone);
+      }
+
+      // Fall back to Puppeteer if Web Unlocker fails
+      if (!reviewData) {
+        try {
+          logger.info('Decanter', `Trying Puppeteer fallback for: ${url}`);
+          reviewData = await scrapeDecanterPage(url);
+        } catch (err) {
+          logger.warn('Decanter', `Puppeteer fallback failed: ${err.message}`);
+        }
+      }
+
+      if (reviewData && reviewData.score) {
+        return reviewData;
+      }
+    }
+
+    return null;
+
+  } catch (error) {
+    logger.error('Decanter', `Web Unlocker search failed: ${error.message}`);
+    return null;
+  }
+}
+
 // Domains known to block standard scrapers - use Bright Data for these
-// Note: Vivino and Decanter now use Puppeteer via puppeteerScraper.js for reliable extraction
+// Note: Vivino and Decanter now use Web Unlocker (works in Docker) with Puppeteer fallback
 // Note: CellarTracker removed - their public pages work fine, and their API only searches personal cellars
 const BLOCKED_DOMAINS = [
   'wine-searcher.com', // Blocks direct scraping (403)
@@ -1683,48 +1996,58 @@ export function updateCredentialStatus(sourceId, status) {
 // CellarTracker ratings can still be found via web search snippets.
 
 /**
- * Fetch wine data from Decanter using Puppeteer.
- * Uses headless browser to handle JavaScript rendering and cookie consent.
+ * Fetch wine data from Decanter.
+ * Uses Web Unlocker (preferred - works in Docker) with Puppeteer fallback.
  * @param {string} wineName - Wine name to search
  * @param {string|number} vintage - Vintage year
  * @returns {Promise<Object|null>} Wine data or null
  */
 export async function fetchDecanterAuthenticated(wineName, vintage) {
-  logger.info('Decanter', `Searching with Puppeteer: ${wineName} ${vintage}`);
+  logger.info('Decanter', `Searching: ${wineName} ${vintage}`);
 
-  try {
-    const reviewData = await searchDecanterWithPuppeteer(wineName, vintage);
+  let reviewData = null;
 
-    if (!reviewData) {
-      logger.info('Decanter', 'No review found via Puppeteer');
-      return null;
+  // Try Web Unlocker first (preferred - works in Docker, faster)
+  const bdWebZone = process.env.BRIGHTDATA_WEB_ZONE;
+  if (bdWebZone) {
+    reviewData = await searchDecanterWithWebUnlocker(wineName, vintage);
+  }
+
+  // Fall back to Puppeteer for local development
+  if (!reviewData) {
+    try {
+      logger.info('Decanter', 'Trying Puppeteer fallback...');
+      reviewData = await searchDecanterWithPuppeteer(wineName, vintage);
+    } catch (err) {
+      logger.warn('Decanter', `Puppeteer fallback failed: ${err.message}`);
     }
+  }
 
-    const result = {
-      source: 'decanter',
-      lens: 'panel_guide',
-      score_type: 'points',
-      raw_score: String(reviewData.score),
-      rating_count: null,
-      wine_name: reviewData.wineName || wineName,
-      vintage_found: vintage,
-      source_url: reviewData.url,
-      drinking_window: reviewData.drinkFrom && reviewData.drinkTo ? {
-        drink_from_year: reviewData.drinkFrom,
-        drink_by_year: reviewData.drinkTo,
-        raw_text: `Drink ${reviewData.drinkFrom}-${reviewData.drinkTo}`
-      } : null,
-      tasting_notes: reviewData.tastingNotes || null,
-      match_confidence: 'high'
-    };
-
-    logger.info('Decanter', `Found: ${result.raw_score} points${result.drinking_window ? ` (${result.drinking_window.raw_text})` : ''}${result.tasting_notes ? ' [with notes]' : ''}`);
-    return result;
-
-  } catch (err) {
-    logger.error('Decanter', `Puppeteer fetch failed: ${err.message}`);
+  if (!reviewData) {
+    logger.info('Decanter', 'No review found');
     return null;
   }
+
+  const result = {
+    source: 'decanter',
+    lens: 'panel_guide',
+    score_type: 'points',
+    raw_score: String(reviewData.score),
+    rating_count: null,
+    wine_name: reviewData.wineName || wineName,
+    vintage_found: vintage,
+    source_url: reviewData.url,
+    drinking_window: reviewData.drinkFrom && reviewData.drinkTo ? {
+      drink_from_year: reviewData.drinkFrom,
+      drink_by_year: reviewData.drinkTo,
+      raw_text: `Drink ${reviewData.drinkFrom}-${reviewData.drinkTo}`
+    } : null,
+    tasting_notes: reviewData.tastingNotes || null,
+    match_confidence: 'high'
+  };
+
+  logger.info('Decanter', `Found: ${result.raw_score} points${result.drinking_window ? ` (${result.drinking_window.raw_text})` : ''}${result.tasting_notes ? ' [with notes]' : ''}`);
+  return result;
 }
 
 /**
