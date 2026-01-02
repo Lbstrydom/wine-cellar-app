@@ -4,6 +4,26 @@
  */
 
 /**
+ * Major wine producing countries (alphabetically sorted).
+ * Used for country dropdown selections.
+ */
+export const WINE_COUNTRIES = [
+  'Argentina',
+  'Australia',
+  'Austria',
+  'Chile',
+  'France',
+  'Germany',
+  'Greece',
+  'Italy',
+  'New Zealand',
+  'Portugal',
+  'South Africa',
+  'Spain',
+  'USA'
+];
+
+/**
  * Show a toast notification.
  * @param {string} message - Message to display
  * @param {number} [duration=3000] - Duration in milliseconds

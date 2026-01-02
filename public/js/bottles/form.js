@@ -22,6 +22,35 @@ export function initForm() {
 
   // Delete button
   document.getElementById('bottle-delete-btn')?.addEventListener('click', handleDeleteBottle);
+
+  // Country dropdown "Other" handler
+  const countrySelect = document.getElementById('wine-country');
+  const countryOther = document.getElementById('wine-country-other');
+  if (countrySelect && countryOther) {
+    countrySelect.addEventListener('change', () => {
+      countryOther.style.display = countrySelect.value === 'Other' ? 'block' : 'none';
+      if (countrySelect.value !== 'Other') {
+        countryOther.value = '';
+      }
+    });
+  }
+}
+
+/**
+ * Get the selected country value, handling "Other" option.
+ * @returns {string|null} Country value
+ */
+function getCountryValue() {
+  const countrySelect = document.getElementById('wine-country');
+  const countryOther = document.getElementById('wine-country-other');
+
+  if (!countrySelect) return null;
+
+  if (countrySelect.value === 'Other' && countryOther) {
+    return countryOther.value.trim() || null;
+  }
+
+  return countrySelect.value || null;
 }
 
 /**
@@ -36,7 +65,7 @@ function collectWineFormData() {
     style: document.getElementById('wine-style').value.trim() || null,
     vivino_rating: document.getElementById('wine-rating').value || null,
     price_eur: document.getElementById('wine-price').value || null,
-    country: document.getElementById('wine-country')?.value.trim() || null,
+    country: getCountryValue(),
     drink_from: document.getElementById('wine-drink-from')?.value || null,
     drink_peak: document.getElementById('wine-drink-peak')?.value || null,
     drink_until: document.getElementById('wine-drink-until')?.value || null
@@ -240,6 +269,44 @@ async function addBottlesToSlots(wineId, quantity) {
 function showSlotPickerModalForWine(wineId, wineName) {
   closeBottleModal();
   showSlotPickerModal(wineId, wineName);
+}
+
+/**
+ * Submit a parsed wine directly (skips form population step).
+ * Exported for use by textParsing.js and imageParsing.js
+ * @param {Object} wineData - Wine data from parsing
+ * @param {number} quantity - Number of bottles to add
+ */
+export async function submitParsedWine(wineData, quantity) {
+  if (!wineData.wine_name) {
+    showToast('Wine name is required');
+    return;
+  }
+
+  try {
+    // Check if we should show confirmation (for new wines)
+    const shouldConfirm = await shouldShowConfirmation();
+
+    if (shouldConfirm) {
+      // Show confirmation modal and wait for user choice
+      showWineConfirmation(
+        wineData,
+        // onConfirm - user selected a Vivino match
+        async (confirmedWine) => {
+          await saveWineWithConfirmation(wineData, confirmedWine, quantity);
+        },
+        // onSkip - user wants to add without verification
+        async () => {
+          await saveWineWithoutConfirmation(wineData, quantity);
+        }
+      );
+    } else {
+      // No confirmation - save directly
+      await saveWineWithoutConfirmation(wineData, quantity);
+    }
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
 }
 
 /**

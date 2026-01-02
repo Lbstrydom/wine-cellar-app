@@ -4,7 +4,7 @@
  */
 
 import { fetchWine } from '../api.js';
-import { showToast } from '../utils.js';
+import { showToast, WINE_COUNTRIES } from '../utils.js';
 import { state } from '../app.js';
 import { bottleState, resetBottleState } from './state.js';
 import { clearUploadedImage } from './imageParsing.js';
@@ -85,7 +85,24 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-style').value = wine.style || '';
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
-    document.getElementById('wine-country').value = wine.country || '';
+
+    // Handle country dropdown with "Other" option
+    const countrySelect = document.getElementById('wine-country');
+    const countryOther = document.getElementById('wine-country-other');
+    if (wine.country && WINE_COUNTRIES.includes(wine.country)) {
+      countrySelect.value = wine.country;
+      if (countryOther) countryOther.style.display = 'none';
+    } else if (wine.country) {
+      countrySelect.value = 'Other';
+      if (countryOther) {
+        countryOther.value = wine.country;
+        countryOther.style.display = 'block';
+      }
+    } else {
+      countrySelect.value = '';
+      if (countryOther) countryOther.style.display = 'none';
+    }
+
     document.getElementById('wine-drink-from').value = wine.drink_from || '';
     document.getElementById('wine-drink-peak').value = wine.drink_peak || '';
     document.getElementById('wine-drink-until').value = wine.drink_until || '';

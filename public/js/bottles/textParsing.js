@@ -4,9 +4,10 @@
  */
 
 import { parseWineText } from '../api.js';
-import { showToast, escapeHtml } from '../utils.js';
+import { showToast, escapeHtml, WINE_COUNTRIES } from '../utils.js';
 import { bottleState } from './state.js';
 import { setBottleFormMode } from './modal.js';
+import { submitParsedWine } from './form.js';
 
 /**
  * Initialize text parsing handlers.
@@ -129,7 +130,14 @@ export function renderParsedWines(result) {
         </div>
         <div class="parsed-field">
           <label for="parsed-country">Country</label>
-          <input type="text" id="parsed-country" value="${escapeHtml(wine.country) || ''}" />
+          <select id="parsed-country">
+            <option value="">Select country...</option>
+            ${WINE_COUNTRIES.map(c => `<option value="${c}" ${wine.country === c ? 'selected' : ''}>${c}</option>`).join('')}
+            <option value="Other" ${wine.country && !WINE_COUNTRIES.includes(wine.country) ? 'selected' : ''}>Other</option>
+          </select>
+          <input type="text" id="parsed-country-other" placeholder="Enter country name..."
+                 value="${wine.country && !WINE_COUNTRIES.includes(wine.country) ? escapeHtml(wine.country) : ''}"
+                 style="display: ${wine.country && !WINE_COUNTRIES.includes(wine.country) ? 'block' : 'none'}; margin-top: 0.5rem;" />
         </div>
       </div>
       <button type="button" class="btn btn-primary" id="use-parsed-btn" style="margin-top: 1rem;">
@@ -150,8 +158,26 @@ export function renderParsedWines(result) {
     });
   });
 
-  // Add handler for "Add This Wine" button
-  document.getElementById('use-parsed-btn')?.addEventListener('click', () => {
+  // Handle "Other" country dropdown
+  const parsedCountrySelect = document.getElementById('parsed-country');
+  const parsedCountryOther = document.getElementById('parsed-country-other');
+  if (parsedCountrySelect && parsedCountryOther) {
+    parsedCountrySelect.addEventListener('change', () => {
+      parsedCountryOther.style.display = parsedCountrySelect.value === 'Other' ? 'block' : 'none';
+      if (parsedCountrySelect.value !== 'Other') {
+        parsedCountryOther.value = '';
+      }
+    });
+  }
+
+  // Add handler for "Add This Wine" button - directly submit
+  document.getElementById('use-parsed-btn')?.addEventListener('click', async () => {
+    // Get country value (handle "Other" option)
+    let countryValue = document.getElementById('parsed-country')?.value || '';
+    if (countryValue === 'Other') {
+      countryValue = document.getElementById('parsed-country-other')?.value.trim() || '';
+    }
+
     // Get values from editable fields
     const editedWine = {
       wine_name: document.getElementById('parsed-name')?.value || '',
@@ -160,9 +186,14 @@ export function renderParsedWines(result) {
       style: document.getElementById('parsed-style')?.value || '',
       price_eur: document.getElementById('parsed-price')?.value || null,
       vivino_rating: document.getElementById('parsed-rating')?.value || null,
-      country: document.getElementById('parsed-country')?.value || ''
+      country: countryValue || null
     };
-    useParsedWine(editedWine);
+
+    // Get quantity from form
+    const quantity = Number.parseInt(document.getElementById('bottle-quantity')?.value, 10) || 1;
+
+    // Directly submit the wine
+    await submitParsedWine(editedWine, quantity);
   });
 }
 
@@ -174,34 +205,19 @@ function saveCurrentParsedEdits() {
 
   const nameInput = document.getElementById('parsed-name');
   if (nameInput) {
+    // Get country value (handle "Other" option)
+    let countryValue = document.getElementById('parsed-country')?.value || '';
+    if (countryValue === 'Other') {
+      countryValue = document.getElementById('parsed-country-other')?.value.trim() || '';
+    }
+
     bottleState.parsedWines[bottleState.selectedParsedIndex].wine_name = nameInput.value;
     bottleState.parsedWines[bottleState.selectedParsedIndex].vintage = document.getElementById('parsed-vintage')?.value || null;
     bottleState.parsedWines[bottleState.selectedParsedIndex].colour = document.getElementById('parsed-colour')?.value || 'white';
     bottleState.parsedWines[bottleState.selectedParsedIndex].style = document.getElementById('parsed-style')?.value || '';
     bottleState.parsedWines[bottleState.selectedParsedIndex].price_eur = document.getElementById('parsed-price')?.value || null;
     bottleState.parsedWines[bottleState.selectedParsedIndex].vivino_rating = document.getElementById('parsed-rating')?.value || null;
-    bottleState.parsedWines[bottleState.selectedParsedIndex].country = document.getElementById('parsed-country')?.value || '';
+    bottleState.parsedWines[bottleState.selectedParsedIndex].country = countryValue || '';
   }
 }
 
-/**
- * Populate form with parsed wine details.
- * @param {Object} wine - Parsed wine object
- */
-function useParsedWine(wine) {
-  // Switch to "New Wine" tab
-  setBottleFormMode('new');
-
-  // Populate fields
-  document.getElementById('wine-name').value = wine.wine_name || '';
-  document.getElementById('wine-vintage').value = wine.vintage || '';
-  document.getElementById('wine-colour').value = wine.colour || 'white';
-  document.getElementById('wine-style').value = wine.style || '';
-  document.getElementById('wine-rating').value = wine.vivino_rating || '';
-  document.getElementById('wine-price').value = wine.price_eur || '';
-
-  // Clear the selected wine ID since we're creating new
-  document.getElementById('selected-wine-id').value = '';
-
-  showToast('Details loaded - review and save');
-}
