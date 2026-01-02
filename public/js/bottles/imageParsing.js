@@ -49,7 +49,15 @@ export function initImageParsing() {
   if (fileInput) {
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files?.[0];
-      if (file) handleImageFile(file);
+      if (file) {
+        // Validate it's an image (since we use accept="*/*" to bypass mobile camera)
+        if (!file.type.startsWith('image/')) {
+          alert('Please select an image file (JPEG, PNG, WebP, GIF, or HEIC)');
+          fileInput.value = '';
+          return;
+        }
+        handleImageFile(file);
+      }
     });
   }
 
