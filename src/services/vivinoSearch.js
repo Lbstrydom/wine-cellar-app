@@ -17,6 +17,25 @@ const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
 // ============================================================================
 
 /**
+ * Decode HTML entities in a string.
+ * @param {string} str - String with HTML entities
+ * @returns {string} Decoded string
+ */
+function decodeHtmlEntities(str) {
+  if (!str) return str;
+  return str
+    .replace(/&#39;/g, "'")
+    .replace(/&#x27;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(code))
+    .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
+}
+
+/**
  * Transform raw scraped wine data to standard format.
  * @param {Object} rawData - Raw wine data from scraper
  * @param {Object} options - Additional options
@@ -32,20 +51,26 @@ function normalizeWineData(rawData, options = {}) {
     wineUrl = null
   } = options;
 
+  // Decode HTML entities in text fields
+  const wineName = decodeHtmlEntities(rawData.wineName) || '';
+  const winery = decodeHtmlEntities(rawData.winery) || extractWineryFromName(wineName) || '';
+  const region = decodeHtmlEntities(rawData.region) || '';
+  const grape = decodeHtmlEntities(rawData.grape) || '';
+
   return {
     vivinoId: rawData.vivinoId || vivinoId,
     vintageId: null,
-    name: rawData.wineName || '',
-    vintage: extractVintageFromName(rawData.wineName) || vintage || null,
+    name: wineName,
+    vintage: extractVintageFromName(wineName) || vintage || null,
     winery: {
       id: null,
-      name: rawData.winery || extractWineryFromName(rawData.wineName) || ''
+      name: winery
     },
     rating: rawData.rating || null,
     ratingCount: rawData.ratingCount || null,
-    region: rawData.region || '',
+    region: region,
     country: rawData.country || '',
-    grapeVariety: rawData.grape || '',
+    grapeVariety: grape,
     wineType: 'unknown',
     imageUrl: rawData.imageUrl || null,
     price: rawData.price || null,
