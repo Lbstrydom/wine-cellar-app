@@ -61,7 +61,7 @@ function normalizeWineData(rawData, options = {}) {
     vivinoId: rawData.vivinoId || vivinoId,
     vintageId: null,
     name: wineName,
-    vintage: extractVintageFromName(wineName) || vintage || null,
+    vintage: rawData.vintage || extractVintageFromName(wineName) || vintage || null,
     winery: {
       id: null,
       name: winery
@@ -97,21 +97,45 @@ function createTimeoutAbort(ms) {
  * Extract wine data from Vivino HTML using regex patterns.
  * Works with Web Unlocker responses where __NEXT_DATA__ may not be present.
  * @param {string} html - HTML content
- * @param {string} url - Original URL (for extracting wine ID)
+ * @param {string} url - Original URL (for extracting wine ID and year)
  * @returns {Object|null} Extracted wine data or null
  */
 function extractWineDataFromHtml(html, url) {
+  // Extract year from URL if present (?year=2023)
+  let urlVintage = null;
+  try {
+    const urlObj = new URL(url);
+    const yearParam = urlObj.searchParams.get('year');
+    if (yearParam) {
+      urlVintage = parseInt(yearParam, 10);
+    }
+  } catch {
+    // Invalid URL, ignore
+  }
+
   // Try __NEXT_DATA__ first (if page was server-rendered)
   const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([^<]+)<\/script>/);
   if (nextDataMatch) {
     try {
       const nextData = JSON.parse(nextDataMatch[1]);
       const pageProps = nextData?.props?.pageProps;
-      const wineData = pageProps?.vintage || pageProps?.wine;
+      const vintageData = pageProps?.vintage;
+      const wineData = vintageData || pageProps?.wine;
 
       if (wineData) {
+        // Extract vintage year - check multiple locations in the data
+        let vintage = null;
+        if (vintageData?.year) {
+          vintage = vintageData.year;
+        } else if (wineData.year) {
+          vintage = wineData.year;
+        } else if (urlVintage) {
+          vintage = urlVintage;
+        }
+
         return {
           wineName: wineData.wine?.name || wineData.name,
+          vintage,
           rating: wineData.statistics?.ratings_average || wineData.statistics?.wine_ratings_average,
           ratingCount: wineData.statistics?.ratings_count || wineData.statistics?.wine_ratings_count,
           winery: wineData.wine?.winery?.name || wineData.winery?.name,
@@ -150,6 +174,11 @@ function extractWineDataFromHtml(html, url) {
   const titleMatch = html.match(/<title>([^<]+)<\/title>/);
   const h1Match = html.match(/<h1[^>]*>([^<]+)</);
 
+  // Vintage patterns - look for year in page content
+  const vintageMatch = html.match(/"year"\s*:\s*(\d{4})/) ||
+                       html.match(/vintage[^>]*>\s*(\d{4})/i);
+  const regexVintage = vintageMatch ? parseInt(vintageMatch[1], 10) : null;
+
   // Extract wine ID from URL
   const idMatch = url.match(/\/w\/(\d+)/);
   const vivinoId = idMatch ? parseInt(idMatch[1], 10) : null;
@@ -182,8 +211,12 @@ function extractWineDataFromHtml(html, url) {
     return null;
   }
 
+  // Use regex-extracted vintage, then URL vintage as fallback
+  const vintage = regexVintage || urlVintage || null;
+
   return {
     wineName: h1Match?.[1]?.trim() || titleMatch?.[1]?.split('|')[0]?.trim() || jsonLdName,
+    vintage,
     rating,
     ratingCount: ratingCount ? parseInt(ratingCount.replace(/,/g, '')) : jsonLdCount,
     winery: wineryMatch?.[1]?.trim() || jsonLdWinery,
@@ -316,8 +349,15 @@ export async function searchVivinoWines({ query, producer, vintage }) {
     // Step 2: Scrape wine pages - try Web Unlocker first (works in Docker)
     const matches = [];
 
-    for (const url of vivinoUrls.slice(0, 3)) {
+    for (let url of vivinoUrls.slice(0, 3)) {
       let wineData = null;
+
+      // Append year parameter to URL for vintage-specific data
+      if (vintage) {
+        const urlObj = new URL(url);
+        urlObj.searchParams.set('year', vintage);
+        url = urlObj.toString();
+      }
 
       // Try Web Unlocker first (preferred - works in Docker, faster)
       if (bdWebZone) {

@@ -51,6 +51,13 @@ function extractDecanterDataFromHtml(html, url) {
       .trim();
   }
 
+  // Extract vintage year from JSON data
+  const vintageMatch = html.match(/"vintage"\s*:\s*(\d{4})/) ||
+                       html.match(/"year"\s*:\s*(\d{4})/);
+  if (vintageMatch) {
+    data.vintage = parseInt(vintageMatch[1], 10);
+  }
+
   // Fallback: structured data
   if (!data.score) {
     const ratingMatch = html.match(/itemprop="ratingValue"\s*content="(\d+)"/);
@@ -72,6 +79,27 @@ function extractDecanterDataFromHtml(html, url) {
   if (titleMatch) {
     // Clean title: "Wine Name - Decanter" -> "Wine Name"
     data.wineName = titleMatch[1].split(/\s*[-|]\s*Decanter/i)[0].trim();
+  }
+
+  // Extract vintage from title if not found in JSON (e.g., "Wine Name 2020 - Decanter")
+  if (!data.vintage && data.wineName) {
+    const titleVintageMatch = data.wineName.match(/\b(19|20)\d{2}\b/);
+    if (titleVintageMatch) {
+      data.vintage = parseInt(titleVintageMatch[0], 10);
+    }
+  }
+
+  // Extract vintage from URL as last resort (e.g., /wine-reviews/wine-name-2020-12345)
+  if (!data.vintage) {
+    const urlVintageMatch = url.match(/-(19|20\d{2})-\d+$/);
+    if (urlVintageMatch) {
+      data.vintage = parseInt(urlVintageMatch[1] === '19' ? `19${url.match(/-(19\d{2})-/)[1].slice(2)}` : urlVintageMatch[0].match(/20\d{2}/)[0], 10);
+    }
+    // Simpler URL pattern
+    const simpleUrlVintage = url.match(/\b(19|20)\d{2}\b/);
+    if (!data.vintage && simpleUrlVintage) {
+      data.vintage = parseInt(simpleUrlVintage[0], 10);
+    }
   }
 
   // Validate score
@@ -2028,6 +2056,9 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     return null;
   }
 
+  // Use extracted vintage from page, fall back to requested vintage
+  const foundVintage = reviewData.vintage || vintage;
+
   const result = {
     source: 'decanter',
     lens: 'panel_guide',
@@ -2035,7 +2066,8 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
     raw_score: String(reviewData.score),
     rating_count: null,
     wine_name: reviewData.wineName || wineName,
-    vintage_found: vintage,
+    vintage_found: foundVintage,
+    vintage_matches: reviewData.vintage ? reviewData.vintage === vintage : null,
     source_url: reviewData.url,
     drinking_window: reviewData.drinkFrom && reviewData.drinkTo ? {
       drink_from_year: reviewData.drinkFrom,
@@ -2043,7 +2075,7 @@ export async function fetchDecanterAuthenticated(wineName, vintage) {
       raw_text: `Drink ${reviewData.drinkFrom}-${reviewData.drinkTo}`
     } : null,
     tasting_notes: reviewData.tastingNotes || null,
-    match_confidence: 'high'
+    match_confidence: reviewData.vintage && reviewData.vintage === vintage ? 'high' : 'medium'
   };
 
   logger.info('Decanter', `Found: ${result.raw_score} points${result.drinking_window ? ` (${result.drinking_window.raw_text})` : ''}${result.tasting_notes ? ' [with notes]' : ''}`);
