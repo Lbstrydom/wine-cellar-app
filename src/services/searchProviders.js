@@ -12,13 +12,13 @@ import {
   getCachedPage, cachePage
 } from './cacheService.js';
 import { getDomainIssue } from './fetchClassifier.js';
+import { searchDecanterWithPuppeteer } from './puppeteerScraper.js';
+import { TIMEOUTS } from '../config/scraperConfig.js';
 
 // Domains known to block standard scrapers - use Bright Data for these
+// Note: Vivino and Decanter now use Puppeteer via puppeteerScraper.js for reliable extraction
 // Note: CellarTracker removed - their public pages work fine, and their API only searches personal cellars
-// Domains that require BrightData Web Unlocker (either SPA, blocks scrapers, or both)
 const BLOCKED_DOMAINS = [
-  'vivino.com',       // SPA requires JS rendering
-  'decanter.com',     // Blocks direct scraping
   'wine-searcher.com', // Blocks direct scraping (403)
   'danmurphys.com.au', // May block scrapers
   'bodeboca.com',      // May block scrapers
@@ -27,6 +27,20 @@ const BLOCKED_DOMAINS = [
 
 // Bright Data API endpoint
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/request';
+
+/**
+ * Create a timeout with AbortController.
+ * @param {number} ms - Timeout in milliseconds
+ * @returns {{controller: AbortController, cleanup: Function}} Controller and cleanup function
+ */
+function createTimeoutAbort(ms) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    controller,
+    cleanup: () => clearTimeout(timeoutId)
+  };
+}
 
 // ============================================
 // Country Inference from Style/Region
@@ -614,8 +628,7 @@ async function searchBrightDataSerp(query, domains = []) {
   logger.info('SERP', `Searching: "${query}" across ${domains.length} domains`);
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000);
+    const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.WEB_UNLOCKER_TIMEOUT);
 
     const response = await fetch(BRIGHTDATA_API_URL, {
       method: 'POST',
@@ -632,7 +645,7 @@ async function searchBrightDataSerp(query, domains = []) {
       })
     });
 
-    clearTimeout(timeout);
+    cleanup();
 
     if (!response.ok) {
       logger.error('SERP', `API returned ${response.status}`);
@@ -713,11 +726,12 @@ export async function fetchPageContent(url, maxLength = 8000) {
 
   try {
     let response;
-    const controller = new AbortController();
     // Vivino SPA needs longer timeout for JS rendering
     const isVivinoDomain = domain.includes('vivino.com');
-    const timeoutMs = isVivinoDomain ? 45000 : (useUnblocker ? 30000 : 10000);
-    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    const timeoutMs = isVivinoDomain
+      ? TIMEOUTS.VIVINO_FETCH_TIMEOUT
+      : (useUnblocker ? TIMEOUTS.WEB_UNLOCKER_TIMEOUT : TIMEOUTS.STANDARD_FETCH_TIMEOUT);
+    const { controller, cleanup } = createTimeoutAbort(timeoutMs);
 
     if (useUnblocker) {
       // Use Bright Data REST API with JavaScript rendering for SPAs
@@ -759,7 +773,7 @@ export async function fetchPageContent(url, maxLength = 8000) {
         }
       });
     }
-    clearTimeout(timeout);
+    cleanup();
 
     const status = response.status;
 
@@ -1669,310 +1683,46 @@ export function updateCredentialStatus(sourceId, status) {
 // CellarTracker ratings can still be found via web search snippets.
 
 /**
- * Fetch wine data from Decanter using credentials.
- * Decanter wine reviews have URLs like: /wine-reviews/region/producer-wine-vintage-XXXXX
+ * Fetch wine data from Decanter using Puppeteer.
+ * Uses headless browser to handle JavaScript rendering and cookie consent.
  * @param {string} wineName - Wine name to search
  * @param {string|number} vintage - Vintage year
  * @returns {Promise<Object|null>} Wine data or null
  */
 export async function fetchDecanterAuthenticated(wineName, vintage) {
-  const creds = getCredentials('decanter');
-  if (!creds) {
-    logger.info('Decanter', 'No credentials configured, skipping authenticated fetch');
-    return null;
-  }
-
-  logger.info('Decanter', `Attempting authenticated search for: ${wineName} ${vintage}`);
+  logger.info('Decanter', `Searching with Puppeteer: ${wineName} ${vintage}`);
 
   try {
-    // First, authenticate to get session cookies
-    const loginResponse = await fetch('https://www.decanter.com/wp-login.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: new URLSearchParams({
-        'log': creds.username,
-        'pwd': creds.password,
-        'wp-submit': 'Log In',
-        'redirect_to': 'https://www.decanter.com/'
-      }),
-      redirect: 'manual'
-    });
+    const reviewData = await searchDecanterWithPuppeteer(wineName, vintage);
 
-    // Check if login was successful (redirect)
-    if (loginResponse.status !== 302) {
-      updateCredentialStatus('decanter', 'failed');
-      logger.info('Decanter', 'Authentication failed');
+    if (!reviewData) {
+      logger.info('Decanter', 'No review found via Puppeteer');
       return null;
-    }
-
-    // Get ALL cookies from login response
-    let allCookies = [];
-    if (typeof loginResponse.headers.getSetCookie === 'function') {
-      allCookies = loginResponse.headers.getSetCookie();
-    } else if (typeof loginResponse.headers.raw === 'function') {
-      const rawHeaders = loginResponse.headers.raw();
-      allCookies = rawHeaders['set-cookie'] || [];
-    } else {
-      const singleCookie = loginResponse.headers.get('set-cookie');
-      if (singleCookie) allCookies = [singleCookie];
-    }
-
-    if (!allCookies || allCookies.length === 0) {
-      logger.info('Decanter', 'No session cookies received');
-      return null;
-    }
-
-    logger.info('Decanter', `Received ${allCookies.length} cookie(s) from login`);
-    const cookieString = allCookies.map(c => c.split(';')[0]).join('; ');
-    updateCredentialStatus('decanter', 'valid');
-
-    // Search Decanter with authenticated session
-    // Use the wine-reviews/search endpoint with producer filter (/2) for best results
-    // URL format: /wine-reviews/search/{search-term}/page/{page-num}/{filter-type}
-    // Filter types: /2 = producer, /3 = country, /6 = grape, /8 = colour
-    const searchTokens = extractSearchTokens(wineName);
-
-    // Use producer name as primary search term
-    // Producer is typically the FIRST significant word (at least 4 chars), not the longest
-    // e.g., "Gramona III Lustros Corpinnat" -> "Gramona" not "Corpinnat"
-    const producerToken = searchTokens.find(t => t.length >= 4) || searchTokens[0] || wineName.split(/\s+/)[0];
-    const searchTerm = encodeURIComponent(producerToken.toLowerCase());
-
-    // Use the /2 filter (producer) - most reliable for finding specific wines
-    const searchUrl = `https://www.decanter.com/wine-reviews/search/${searchTerm}/page/1/2`;
-    logger.info('Decanter', `Producer search: "${producerToken}" (vintage: ${vintage})`);
-
-    logger.info('Decanter', `Search URL: ${searchUrl}`);
-    const searchResponse = await fetch(searchUrl, {
-      headers: {
-        'Cookie': cookieString,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html'
-      }
-    });
-
-    if (!searchResponse.ok) {
-      logger.info('Decanter', `Search returned ${searchResponse.status}`);
-      return null;
-    }
-
-    const searchHtml = await searchResponse.text();
-
-    // Find wine review URLs in search results
-    // Decanter wine review URLs have format: /wine-reviews/region/producer-wine-name-vintage-NUMERIC_ID
-    // Examples:
-    //   /wine-reviews/south-africa/nederburg-two-centuries-cabernet-sauvignon-2019-95
-    //   /wine-reviews/france/chateau-margaux-2015-99
-    // EXCLUDE: /wine-reviews/search, /wine-reviews/images/, /wine-reviews/decanter-world-wine-awards/
-
-    // CRITICAL FIX: Collect ALL wine review URLs, then score them against the search query
-    // Previous bug: .match() only returned first URL which was often a sidebar/featured wine
-
-    // Extract tokens from wine name for matching
-    const wineTokens = extractSearchTokens(wineName);
-    const vintageStr = String(vintage || '');
-    logger.info('Decanter', `Search tokens: [${wineTokens.join(', ')}] vintage: ${vintageStr}`);
-
-    // Collect ALL wine review URLs from the page
-    // URL format: /wine-reviews/country/region/wine-name-vintage-ID (may have 2-3 path segments)
-    // Examples: /wine-reviews/italy/umbria/scacciadiavoli-montefalco-sagrantino-umbria-italy-2019-104323
-    const allUrls = [];
-    const urlPattern = /href="((?:https:\/\/www\.decanter\.com)?\/wine-reviews\/[a-z][a-z-]*(?:\/[a-z][a-z-]*)?\/[a-z0-9-]+-\d+)"/gi;
-    let urlMatch;
-    while ((urlMatch = urlPattern.exec(searchHtml)) !== null) {
-      const url = urlMatch[1];
-      // Skip non-review pages
-      if (url.includes('/images/') || url.includes('/search') || url.includes('/decanter-world-wine-awards/')) {
-        continue;
-      }
-      const fullUrl = url.startsWith('http') ? url : `https://www.decanter.com${url}`;
-      if (!allUrls.includes(fullUrl)) {
-        allUrls.push(fullUrl);
-      }
-    }
-
-    logger.info('Decanter', `Found ${allUrls.length} unique wine review URLs`);
-
-    // Score each URL based on how well it matches our wine
-    function scoreDecanterUrl(url) {
-      // Extract the wine name part from URL
-      // Format: /wine-reviews/country/region/wine-name-here-2019-104323
-      // or: /wine-reviews/country/wine-name-here-2019-104323
-      const urlParts = url.split('/wine-reviews/')[1];
-      if (!urlParts) return { url, score: 0, matches: [] };
-
-      const slugParts = urlParts.split('/');
-      // Wine slug is the LAST part (could be index 1 or 2 depending on structure)
-      const wineSlug = slugParts[slugParts.length - 1] || '';
-      const slugLower = wineSlug.toLowerCase();
-
-      let score = 0;
-      const matches = [];
-
-      // Check vintage match (important - +20 points)
-      if (vintageStr && slugLower.includes(vintageStr)) {
-        score += 20;
-        matches.push(`vintage:${vintageStr}`);
-      }
-
-      // Check each wine token (+10 per match)
-      for (const token of wineTokens) {
-        if (token.length >= 3 && slugLower.includes(token)) {
-          score += 10;
-          matches.push(token);
-        }
-      }
-
-      return { url, score, matches };
-    }
-
-    // Score and sort all URLs
-    const scoredUrls = allUrls.map(scoreDecanterUrl);
-    scoredUrls.sort((a, b) => b.score - a.score);
-
-    // Log top 3 for debugging
-    if (scoredUrls.length > 0) {
-      logger.info('Decanter', `Top URLs by score: ${scoredUrls.slice(0, 3).map(u => `${u.score}pts [${u.matches.join(',')}] ${u.url.split('/').pop()}`).join(' | ')}`);
-    }
-
-    // Select best URL - must have at least 1 token match or vintage match
-    let reviewUrl = null;
-    const bestMatch = scoredUrls[0];
-    if (bestMatch && bestMatch.score >= 10) {
-      reviewUrl = bestMatch.url;
-    }
-
-    if (!reviewUrl) {
-      // Debug: log what wine-review links we DID find, if any
-      if (allUrls.length > 0) {
-        logger.info('Decanter', `Found ${allUrls.length} wine-review URLs but none matched query tokens`);
-      } else {
-        // Check if there's any content indicating results
-        const hasResults = searchHtml.includes('search-results') || searchHtml.includes('wine-card') || searchHtml.includes('wine-item');
-        logger.info('Decanter', `No wine review links found in search results (hasResults indicators: ${hasResults})`);
-      }
-      return null;
-    }
-    logger.info('Decanter', `Selected review URL (score ${bestMatch.score}): ${reviewUrl}`);
-
-    // Fetch the actual review page
-    const reviewResponse = await fetch(reviewUrl, {
-      headers: {
-        'Cookie': cookieString,
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html'
-      }
-    });
-
-    if (!reviewResponse.ok) {
-      logger.info('Decanter', `Review page returned ${reviewResponse.status}`);
-      return null;
-    }
-
-    const reviewHtml = await reviewResponse.text();
-
-    // Look for rating in various formats on Decanter review pages
-    // Decanter uses JSON data embedded in the page, e.g., "score":92, "drink_from":2025, "drink_to":2046
-    let score = null;
-    let drinkingWindow = null;
-
-    // Primary: Extract from embedded JSON data (current Decanter format)
-    const jsonScoreMatch = reviewHtml.match(/"score"\s*:\s*(\d{2,3})/);
-    if (jsonScoreMatch) {
-      score = parseInt(jsonScoreMatch[1], 10);
-    }
-
-    // Fallback: Try structured data
-    if (!score) {
-      const ratingValueMatch = reviewHtml.match(/itemprop="ratingValue"[^>]*content="(\d+)"/i) ||
-                               reviewHtml.match(/content="(\d+)"[^>]*itemprop="ratingValue"/i);
-      if (ratingValueMatch) {
-        score = parseInt(ratingValueMatch[1], 10);
-      }
-    }
-
-    // Fallback: data-rating attribute
-    if (!score) {
-      const dataRatingMatch = reviewHtml.match(/data-rating="(\d+)"/i);
-      if (dataRatingMatch) score = parseInt(dataRatingMatch[1], 10);
-    }
-
-    // Fallback: class="rating" spans
-    if (!score) {
-      const ratingClassMatch = reviewHtml.match(/class="[^"]*rating[^"]*"[^>]*>(\d{2,3})/i);
-      if (ratingClassMatch) score = parseInt(ratingClassMatch[1], 10);
-    }
-
-    // Fallback: "XX points" pattern
-    if (!score) {
-      const pointsMatch = reviewHtml.match(/(\d{2,3})\s*points/i);
-      if (pointsMatch) score = parseInt(pointsMatch[1], 10);
-    }
-
-    // Look for drinking window - primary: JSON format (drink_from, drink_to)
-    const drinkFromMatch = reviewHtml.match(/"drink_from"\s*:\s*(\d{4})/);
-    const drinkToMatch = reviewHtml.match(/"drink_to"\s*:\s*(\d{4})/);
-    if (drinkFromMatch && drinkToMatch) {
-      drinkingWindow = {
-        drink_from_year: parseInt(drinkFromMatch[1], 10),
-        drink_by_year: parseInt(drinkToMatch[1], 10),
-        raw_text: `Drink ${drinkFromMatch[1]}-${drinkToMatch[1]}`
-      };
-    }
-
-    // Fallback: text-based drinking window
-    if (!drinkingWindow) {
-      const windowMatch = reviewHtml.match(/drink[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i) ||
-                          reviewHtml.match(/drinking\s+window[:\s]+(\d{4})\s*[-–]\s*(\d{4})/i);
-      if (windowMatch) {
-        drinkingWindow = {
-          drink_from_year: parseInt(windowMatch[1], 10),
-          drink_by_year: parseInt(windowMatch[2], 10),
-          raw_text: windowMatch[0]
-        };
-      }
-    }
-
-    if (!score || score < 50 || score > 100) {
-      logger.info('Decanter', `No valid score found (got: ${score})`);
-      return null;
-    }
-
-    // Extract tasting notes from "review" JSON field
-    let tastingNotes = null;
-    const reviewMatch = reviewHtml.match(/"review"\s*:\s*"([^"]+)"/);
-    if (reviewMatch) {
-      // Unescape JSON string (handle \n, \u0027, etc.)
-      tastingNotes = reviewMatch[1]
-        .replace(/\\n/g, ' ')
-        .replace(/\\u[\dA-Fa-f]{4}/g, (match) =>
-          String.fromCharCode(parseInt(match.slice(2), 16)))
-        .replace(/\\(.)/g, '$1')
-        .trim();
     }
 
     const result = {
       source: 'decanter',
       lens: 'panel_guide',
       score_type: 'points',
-      raw_score: String(score),
+      raw_score: String(reviewData.score),
       rating_count: null,
-      wine_name: wineName,
+      wine_name: reviewData.wineName || wineName,
       vintage_found: vintage,
-      source_url: reviewUrl,
-      drinking_window: drinkingWindow,
-      tasting_notes: tastingNotes,
-      match_confidence: 'high' // Higher confidence since we found actual review page
+      source_url: reviewData.url,
+      drinking_window: reviewData.drinkFrom && reviewData.drinkTo ? {
+        drink_from_year: reviewData.drinkFrom,
+        drink_by_year: reviewData.drinkTo,
+        raw_text: `Drink ${reviewData.drinkFrom}-${reviewData.drinkTo}`
+      } : null,
+      tasting_notes: reviewData.tastingNotes || null,
+      match_confidence: 'high'
     };
 
-    logger.info('Decanter', `Found: ${result.raw_score} points${drinkingWindow ? ` (${drinkingWindow.raw_text})` : ''}${tastingNotes ? ' [with notes]' : ''}`);
+    logger.info('Decanter', `Found: ${result.raw_score} points${result.drinking_window ? ` (${result.drinking_window.raw_text})` : ''}${result.tasting_notes ? ' [with notes]' : ''}`);
     return result;
 
   } catch (err) {
-    logger.error('Decanter', `Authenticated fetch failed: ${err.message}`);
+    logger.error('Decanter', `Puppeteer fetch failed: ${err.message}`);
     return null;
   }
 }

@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "pdf-reader": {
+      "type": "stdio",
+      "command": "npx -y @sylphx/pdf-reader-mcp",
+      "args": [],
+      "env": {}
+    },
+    "sqlite": {
+      "type": "stdio",
+      "command": "npx -y mcp-sqlite --db-path data/cellar.db",
+      "args": [],
+      "env": {}
+    }
+  }
+}

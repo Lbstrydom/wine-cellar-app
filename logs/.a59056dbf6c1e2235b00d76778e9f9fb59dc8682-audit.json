@@ -1,0 +1,15 @@
+{
+    "keep": {
+        "days": true,
+        "amount": 14
+    },
+    "auditLog": "c:\\GIT\\wine-cellar-app\\logs\\.a59056dbf6c1e2235b00d76778e9f9fb59dc8682-audit.json",
+    "files": [
+        {
+            "date": 1767354885531,
+            "name": "c:\\GIT\\wine-cellar-app\\logs\\mcp-puppeteer-2026-01-02.log",
+            "hash": "03f784574cc185b77fafd076c9b6e71b48800e874bbe9a9889589216702a6837"
+        }
+    ],
+    "hashType": "sha256"
+}
