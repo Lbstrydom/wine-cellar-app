@@ -27,7 +27,8 @@ function addVintageToUrl(url, vintage) {
 }
 
 const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
+  apiKey: process.env.ANTHROPIC_API_KEY,
+  timeout: 120000 // 2 minute timeout for API calls
 });
 
 /**
