@@ -1730,6 +1730,28 @@ header .search-trigger {
   z-index: 100;
 }
 
+/* Touch drag styles for mobile */
+.slot.touch-dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+  z-index: 100;
+}
+
+.touch-drag-ghost {
+  background: var(--bg-card);
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .slot.drag-over {
   background: var(--accent) !important;
   opacity: 0.7;

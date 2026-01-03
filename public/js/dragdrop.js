@@ -1,5 +1,6 @@
 /**
  * @fileoverview Drag and drop functionality for bottle movement.
+ * Supports both mouse (HTML5 drag-drop) and touch (mobile) interactions.
  * @module dragdrop
  */
 
@@ -8,6 +9,17 @@ import { showToast } from './utils.js';
 import { refreshData } from './app.js';
 
 let draggedSlot = null;
+
+// Touch drag state
+let touchDragState = {
+  active: false,
+  sourceSlot: null,
+  sourceElement: null,
+  ghostElement: null,
+  startX: 0,
+  startY: 0,
+  currentTarget: null
+};
 
 // Swap mode state
 let swapMode = {
@@ -29,8 +41,15 @@ export function setupDragAndDrop() {
       slot.setAttribute('draggable', 'true');
       slot.classList.add('draggable');
 
+      // Desktop drag events
       slot.addEventListener('dragstart', handleDragStart);
       slot.addEventListener('dragend', handleDragEnd);
+
+      // Touch events for mobile
+      slot.addEventListener('touchstart', handleTouchStart, { passive: false });
+      slot.addEventListener('touchmove', handleTouchMove, { passive: false });
+      slot.addEventListener('touchend', handleTouchEnd);
+      slot.addEventListener('touchcancel', handleTouchCancel);
     }
 
     // All slots can be drop targets
@@ -253,4 +272,213 @@ export function isDragging() {
  */
 export function isSwapModeActive() {
   return swapMode.active;
+}
+
+// ============== Touch Event Handlers for Mobile ==============
+
+/**
+ * Handle touch start - begin drag on mobile.
+ * @param {TouchEvent} e
+ */
+function handleTouchStart(e) {
+  // Cancel any active swap mode
+  if (swapMode.active) {
+    cancelSwapMode();
+  }
+
+  // Only handle single touch
+  if (e.touches.length !== 1) return;
+
+  const touch = e.touches[0];
+  const slot = e.currentTarget;
+
+  // Start touch drag
+  touchDragState = {
+    active: true,
+    sourceSlot: slot.dataset.location,
+    sourceElement: slot,
+    ghostElement: null,
+    startX: touch.clientX,
+    startY: touch.clientY,
+    currentTarget: null
+  };
+
+  // Visual feedback - mark as dragging after a short delay to avoid accidental drags
+  slot.classList.add('touch-dragging');
+
+  // Create ghost element for visual feedback
+  createTouchGhost(slot, touch.clientX, touch.clientY);
+
+  // Highlight valid drop targets
+  document.querySelectorAll('.slot').forEach(s => {
+    if (s !== slot) {
+      s.classList.add('drag-target');
+    }
+  });
+
+  // Prevent default to avoid scrolling while dragging
+  e.preventDefault();
+}
+
+/**
+ * Create a ghost element that follows the touch.
+ * @param {HTMLElement} slot - The slot being dragged
+ * @param {number} x - Touch X coordinate
+ * @param {number} y - Touch Y coordinate
+ */
+function createTouchGhost(slot, x, y) {
+  const ghost = document.createElement('div');
+  ghost.className = 'touch-drag-ghost';
+
+  // Copy wine name from slot
+  const wineName = slot.querySelector('.wine-name')?.textContent ||
+    slot.dataset.wineName || 'Wine';
+  ghost.textContent = wineName;
+
+  // Position at touch point
+  ghost.style.position = 'fixed';
+  ghost.style.left = `${x - 40}px`;
+  ghost.style.top = `${y - 20}px`;
+  ghost.style.zIndex = '10000';
+  ghost.style.pointerEvents = 'none';
+
+  document.body.appendChild(ghost);
+  touchDragState.ghostElement = ghost;
+}
+
+/**
+ * Handle touch move - update ghost position and find target.
+ * @param {TouchEvent} e
+ */
+function handleTouchMove(e) {
+  if (!touchDragState.active) return;
+
+  // Only handle single touch
+  if (e.touches.length !== 1) return;
+
+  const touch = e.touches[0];
+
+  // Update ghost position
+  if (touchDragState.ghostElement) {
+    touchDragState.ghostElement.style.left = `${touch.clientX - 40}px`;
+    touchDragState.ghostElement.style.top = `${touch.clientY - 20}px`;
+  }
+
+  // Find element under touch point
+  // Temporarily hide ghost to find element beneath
+  if (touchDragState.ghostElement) {
+    touchDragState.ghostElement.style.display = 'none';
+  }
+
+  const elementBelow = document.elementFromPoint(touch.clientX, touch.clientY);
+
+  if (touchDragState.ghostElement) {
+    touchDragState.ghostElement.style.display = '';
+  }
+
+  // Find the slot element (could be the slot or a child element)
+  const targetSlot = elementBelow?.closest('.slot');
+
+  // Clear previous target highlight
+  if (touchDragState.currentTarget && touchDragState.currentTarget !== targetSlot) {
+    touchDragState.currentTarget.classList.remove('drag-over', 'drag-over-swap');
+  }
+
+  // Highlight new target
+  if (targetSlot && targetSlot !== touchDragState.sourceElement) {
+    touchDragState.currentTarget = targetSlot;
+    const isEmpty = targetSlot.classList.contains('empty');
+
+    if (isEmpty) {
+      targetSlot.classList.add('drag-over');
+      targetSlot.classList.remove('drag-over-swap');
+    } else {
+      targetSlot.classList.add('drag-over-swap');
+      targetSlot.classList.remove('drag-over');
+    }
+  } else {
+    touchDragState.currentTarget = null;
+  }
+
+  // Prevent scrolling
+  e.preventDefault();
+}
+
+/**
+ * Handle touch end - complete the drag.
+ * @param {TouchEvent} e
+ */
+async function handleTouchEnd(e) {
+  if (!touchDragState.active) return;
+
+  const targetSlot = touchDragState.currentTarget;
+  const fromLocation = touchDragState.sourceSlot;
+
+  // Clean up visual elements
+  cleanupTouchDrag();
+
+  // If we have a valid target, perform the move/swap
+  if (targetSlot && fromLocation) {
+    const toLocation = targetSlot.dataset.location;
+    const isEmpty = targetSlot.classList.contains('empty');
+
+    if (isEmpty) {
+      // Simple move to empty slot
+      try {
+        await moveBottle(fromLocation, toLocation);
+        showToast(`Moved to ${toLocation}`);
+        await refreshData();
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      }
+    } else {
+      // Target is occupied - enter swap mode
+      enterSwapMode(fromLocation, toLocation, targetSlot);
+    }
+  }
+}
+
+/**
+ * Handle touch cancel - abort the drag.
+ */
+function handleTouchCancel() {
+  cleanupTouchDrag();
+}
+
+/**
+ * Clean up touch drag state and visual elements.
+ */
+function cleanupTouchDrag() {
+  // Remove ghost element
+  if (touchDragState.ghostElement) {
+    touchDragState.ghostElement.remove();
+  }
+
+  // Remove visual feedback
+  if (touchDragState.sourceElement) {
+    touchDragState.sourceElement.classList.remove('touch-dragging');
+  }
+
+  // Clear target highlight
+  if (touchDragState.currentTarget) {
+    touchDragState.currentTarget.classList.remove('drag-over', 'drag-over-swap');
+  }
+
+  // Clear all drag targets (unless in swap mode)
+  if (!swapMode.active) {
+    document.querySelectorAll('.slot').forEach(slot => {
+      slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+    });
+  }
+
+  // Reset state
+  touchDragState = {
+    active: false,
+    sourceSlot: null,
+    sourceElement: null,
+    ghostElement: null,
+    startX: 0,
+    startY: 0,
+    currentTarget: null
+  };
 }
