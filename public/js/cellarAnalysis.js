@@ -1007,19 +1007,24 @@ function formatZoneChatResponse(result) {
  */
 function renderReclassificationActions(reclassifications) {
   let html = '<div class="zone-chat-actions">';
-  html += '<p class="actions-title">Suggested changes:</p>';
+  html += '<p class="actions-title">Suggested zone changes:</p>';
 
-  reclassifications.forEach((r, idx) => {
+  reclassifications.forEach((r) => {
+    // Escape reason for use in onclick attribute
+    const escapedReason = (r.reason || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
     html += `
-      <div class="reclassification-item">
-        <span class="wine-name">${escapeHtml(r.wineName)}</span>
-        <span class="zone-change">${r.currentZone} → ${r.suggestedZone}</span>
-        <button class="btn btn-small btn-primary" onclick="window.cellarAnalysis.applyReclassification(${r.wineId}, '${r.suggestedZone}', '${escapeHtml(r.reason || '')}')">Apply</button>
+      <div class="reclassification-item" data-wine-id="${r.wineId}">
+        <div class="reclassification-info">
+          <span class="wine-name">${escapeHtml(r.wineName)}</span>
+          <span class="zone-change">${escapeHtml(r.currentZone)} → ${escapeHtml(r.suggestedZone)}</span>
+          ${r.reason ? `<span class="reclassification-reason">${escapeHtml(r.reason)}</span>` : ''}
+        </div>
+        <button class="btn btn-small btn-primary apply-btn" onclick="window.cellarAnalysis.applyReclassification(${r.wineId}, '${r.suggestedZone}', '${escapedReason}', this)">Apply</button>
       </div>
     `;
   });
 
-  html += `<button class="btn btn-secondary" onclick="window.cellarAnalysis.applyAllReclassifications()">Apply All</button>`;
+  html += `<button class="btn btn-secondary apply-all-btn" onclick="window.cellarAnalysis.applyAllReclassifications()">Apply All (${reclassifications.length})</button>`;
   html += '</div>';
 
   return html;
@@ -1027,19 +1032,59 @@ function renderReclassificationActions(reclassifications) {
 
 /**
  * Apply a single reclassification.
+ * @param {number} wineId - Wine ID
+ * @param {string} newZoneId - New zone ID
+ * @param {string} reason - Reason for change
+ * @param {HTMLElement} buttonEl - The button that was clicked
  */
-async function applyReclassification(wineId, newZoneId, reason) {
+async function applyReclassification(wineId, newZoneId, reason, buttonEl) {
   try {
     const result = await reassignWineZone(wineId, newZoneId, reason);
-    showToast(`Moved ${result.wineName} to ${result.newZone}`);
+    showToast(`Reclassified "${result.wineName}" to ${result.newZone} zone`);
+
+    // Mark this item as applied in the UI
+    if (buttonEl) {
+      const itemEl = buttonEl.closest('.reclassification-item');
+      if (itemEl) {
+        itemEl.classList.add('applied');
+        buttonEl.textContent = 'Applied';
+        buttonEl.disabled = true;
+      }
+    }
+
+    // Update "Apply All" button count
+    updateApplyAllCount();
 
     // Refresh analysis if we have one
     if (currentProposal) {
       currentProposal = await getZoneLayoutProposal();
-      document.getElementById('zone-proposal-list').innerHTML = renderZoneProposal(currentProposal);
+      const proposalEl = document.getElementById('zone-proposal-list');
+      if (proposalEl) {
+        proposalEl.innerHTML = renderZoneProposal(currentProposal);
+      }
     }
   } catch (err) {
     showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Update the "Apply All" button to reflect remaining items.
+ */
+function updateApplyAllCount() {
+  const actionsEl = document.querySelector('.zone-chat-actions');
+  if (!actionsEl) return;
+
+  const remaining = actionsEl.querySelectorAll('.reclassification-item:not(.applied)').length;
+  const applyAllBtn = actionsEl.querySelector('.apply-all-btn');
+
+  if (applyAllBtn) {
+    if (remaining === 0) {
+      applyAllBtn.textContent = 'All Applied';
+      applyAllBtn.disabled = true;
+    } else {
+      applyAllBtn.textContent = `Apply All (${remaining})`;
+    }
   }
 }
 
@@ -1059,18 +1104,48 @@ async function applyAllReclassifications() {
 
   try {
     const parsed = JSON.parse(jsonMatch[1]);
-    if (!parsed.reclassifications) return;
-
-    for (const r of parsed.reclassifications) {
-      await reassignWineZone(r.wineId, r.suggestedZone, r.reason || 'Chat suggestion');
+    if (!parsed.reclassifications || parsed.reclassifications.length === 0) {
+      showToast('No reclassifications to apply');
+      return;
     }
 
-    showToast(`Applied ${parsed.reclassifications.length} reclassifications`);
+    let applied = 0;
+    for (const r of parsed.reclassifications) {
+      try {
+        await reassignWineZone(r.wineId, r.suggestedZone, r.reason || 'Chat suggestion');
+        applied++;
+
+        // Mark item as applied in UI
+        const itemEl = document.querySelector(`.reclassification-item[data-wine-id="${r.wineId}"]`);
+        if (itemEl) {
+          itemEl.classList.add('applied');
+          const btn = itemEl.querySelector('.apply-btn');
+          if (btn) {
+            btn.textContent = 'Applied';
+            btn.disabled = true;
+          }
+        }
+      } catch (itemErr) {
+        console.error(`Failed to reclassify wine ${r.wineId}:`, itemErr);
+      }
+    }
+
+    showToast(`Reclassified ${applied} wine${applied !== 1 ? 's' : ''}`);
+
+    // Update Apply All button
+    const applyAllBtn = document.querySelector('.apply-all-btn');
+    if (applyAllBtn) {
+      applyAllBtn.textContent = 'All Applied';
+      applyAllBtn.disabled = true;
+    }
 
     // Refresh proposal if showing
     if (currentProposal) {
       currentProposal = await getZoneLayoutProposal();
-      document.getElementById('zone-proposal-list').innerHTML = renderZoneProposal(currentProposal);
+      const proposalEl = document.getElementById('zone-proposal-list');
+      if (proposalEl) {
+        proposalEl.innerHTML = renderZoneProposal(currentProposal);
+      }
     }
   } catch (err) {
     showToast(`Error: ${err.message}`);

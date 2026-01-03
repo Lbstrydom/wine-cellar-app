@@ -5722,11 +5722,24 @@ textarea:focus-visible {
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.5rem;
+  padding: 0.5rem 0.75rem;
   background: var(--bg-slot);
   border-radius: 6px;
   margin-bottom: 0.5rem;
   font-size: 0.85rem;
+  transition: opacity 0.3s, background-color 0.3s;
+}
+
+.reclassification-item.applied {
+  opacity: 0.6;
+  background: rgba(76, 175, 80, 0.1);
+}
+
+.reclassification-item .reclassification-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 
 .reclassification-item .wine-info {
@@ -5742,9 +5755,28 @@ textarea:focus-visible {
   font-size: 0.8rem;
 }
 
+.reclassification-item .reclassification-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .reclassification-item .btn-small {
   padding: 0.25rem 0.5rem;
   font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.reclassification-item .btn-small:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.zone-chat-actions .actions-title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+  color: var(--text);
 }
 
 .apply-all-btn {
@@ -5791,6 +5823,11 @@ textarea:focus-visible {
 
   .reclassification-item {
     flex-wrap: wrap;
+  }
+
+  .reclassification-item .reclassification-info {
+    width: 100%;
+    margin-bottom: 0.5rem;
   }
 
   .reclassification-item .wine-info {
