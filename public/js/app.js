@@ -382,32 +382,18 @@ function initMobileMenu() {
   const tabsContainer = document.getElementById('tabs-container');
 
   if (menuBtn && tabsContainer) {
-    // Track if touch event fired to prevent double-toggle
-    let touchFired = false;
-
-    const toggleMenu = () => {
+    const toggleMenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
     };
 
-    // Touch event for mobile - fires first
-    menuBtn.addEventListener('touchend', (e) => {
-      e.preventDefault();
-      touchFired = true;
-      toggleMenu();
-      // Reset flag after a short delay
-      setTimeout(() => { touchFired = false; }, 300);
-    }, { passive: false });
-
-    // Click event for desktop - skip if touch already fired
-    menuBtn.addEventListener('click', (e) => {
-      if (touchFired) return;
-      e.preventDefault();
-      toggleMenu();
-    });
+    // Use pointerdown - works for both touch and mouse, fires once
+    menuBtn.addEventListener('pointerdown', toggleMenu);
 
     // Close menu when clicking/touching outside
-    document.addEventListener('click', (e) => {
+    document.addEventListener('pointerdown', (e) => {
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;

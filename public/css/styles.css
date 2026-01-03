@@ -3719,6 +3719,7 @@ body.slot-picker-mode .slot.picker-placed::after {
   height: 2px;
   background: var(--text);
   transition: all 0.2s;
+  pointer-events: none; /* Ensure clicks go to parent button */
 }
 
 .tabs-container {
