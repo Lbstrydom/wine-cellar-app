@@ -149,10 +149,32 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
   // Enrich recommendations with wine data including ID for clickable links
   if (parsed.recommendations) {
     parsed.recommendations = parsed.recommendations.map(rec => {
-      const wine = wines.find(w =>
+      // Try exact match first
+      let wine = wines.find(w =>
         w.wine_name === rec.wine_name &&
         (w.vintage === rec.vintage || (!w.vintage && !rec.vintage))
       );
+
+      // If no exact match, try case-insensitive and trimmed match
+      if (!wine) {
+        const recNameNorm = (rec.wine_name || '').toLowerCase().trim();
+        wine = wines.find(w => {
+          const wNameNorm = (w.wine_name || '').toLowerCase().trim();
+          const vintageMatch = w.vintage === rec.vintage || (!w.vintage && !rec.vintage);
+          return wNameNorm === recNameNorm && vintageMatch;
+        });
+      }
+
+      // If still no match, try partial match (wine name contains or is contained)
+      if (!wine) {
+        const recNameNorm = (rec.wine_name || '').toLowerCase().trim();
+        wine = wines.find(w => {
+          const wNameNorm = (w.wine_name || '').toLowerCase().trim();
+          const vintageMatch = w.vintage === rec.vintage || (!w.vintage && !rec.vintage);
+          return vintageMatch && (wNameNorm.includes(recNameNorm) || recNameNorm.includes(wNameNorm));
+        });
+      }
+
       return {
         ...rec,
         wine_id: wine?.id || null,
@@ -924,10 +946,32 @@ export async function continueSommelierChat(db, followUp, context) {
       // Enrich recommendations with wine data
       if (parsed.recommendations && context.wines) {
         parsed.recommendations = parsed.recommendations.map(rec => {
-          const wine = context.wines.find(w =>
+          // Try exact match first
+          let wine = context.wines.find(w =>
             w.wine_name === rec.wine_name &&
             (w.vintage === rec.vintage || (!w.vintage && !rec.vintage))
           );
+
+          // If no exact match, try case-insensitive and trimmed match
+          if (!wine) {
+            const recNameNorm = (rec.wine_name || '').toLowerCase().trim();
+            wine = context.wines.find(w => {
+              const wNameNorm = (w.wine_name || '').toLowerCase().trim();
+              const vintageMatch = w.vintage === rec.vintage || (!w.vintage && !rec.vintage);
+              return wNameNorm === recNameNorm && vintageMatch;
+            });
+          }
+
+          // If still no match, try partial match (wine name contains or is contained)
+          if (!wine) {
+            const recNameNorm = (rec.wine_name || '').toLowerCase().trim();
+            wine = context.wines.find(w => {
+              const wNameNorm = (w.wine_name || '').toLowerCase().trim();
+              const vintageMatch = w.vintage === rec.vintage || (!w.vintage && !rec.vintage);
+              return vintageMatch && (wNameNorm.includes(recNameNorm) || recNameNorm.includes(wNameNorm));
+            });
+          }
+
           return {
             ...rec,
             wine_id: wine?.id || null,
