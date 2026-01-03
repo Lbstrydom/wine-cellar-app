@@ -1184,6 +1184,78 @@ header .search-trigger {
   margin: 0;
 }
 
+/* Serving Temperature Display */
+.serving-temp-field {
+  background: rgba(var(--accent-rgb, 139, 92, 246), 0.08);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.serving-temp-info {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.serving-temp-info .temp-range {
+  font-size: 1.2rem;
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.serving-temp-info .temp-fahrenheit {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.serving-temp-info .temp-wine-type {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding-left: 0.5rem;
+  border-left: 1px solid var(--border);
+}
+
+.temp-notes {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin: 0.5rem 0 0 0;
+  line-height: 1.4;
+}
+
+.temp-confidence {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-top: 0.5rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.temp-confidence.high {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+
+.temp-confidence.medium {
+  background: rgba(234, 179, 8, 0.15);
+  color: #ca8a04;
+}
+
+.temp-confidence.low {
+  background: rgba(156, 163, 175, 0.15);
+  color: var(--text-muted);
+}
+
+.serving-temp-field .no-data {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .modal-actions {
   display: flex;
   gap: 0.5rem;

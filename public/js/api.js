@@ -891,3 +891,18 @@ export async function getVivinoWineDetails(vivinoId) {
   const res = await fetch(`${API_BASE}/api/wine-search/vivino/${vivinoId}`);
   return handleResponse(res, 'Failed to fetch Vivino wine details');
 }
+
+// ============================================
+// Serving Temperature API
+// ============================================
+
+/**
+ * Get serving temperature recommendation for a wine.
+ * @param {number} wineId - Wine ID
+ * @param {string} [unit='celsius'] - Temperature unit ('celsius' or 'fahrenheit')
+ * @returns {Promise<Object>} Temperature recommendation
+ */
+export async function getServingTemperature(wineId, unit = 'celsius') {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/serving-temperature?unit=${unit}`);
+  return handleResponse(res, 'Failed to fetch serving temperature');
+}

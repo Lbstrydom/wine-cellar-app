@@ -3,7 +3,7 @@
  * @module modals
  */
 
-import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow } from './api.js';
+import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
@@ -109,6 +109,9 @@ export async function showWineModal(slot) {
 
   // Load drinking windows
   await loadDrinkingWindows(slot.wine_id);
+
+  // Load serving temperature
+  await loadServingTemperature(slot.wine_id);
 
   document.getElementById('modal-overlay').classList.add('active');
 }
@@ -387,6 +390,48 @@ async function handleDeleteWindow(wineId, source) {
     await loadDrinkingWindows(wineId);
   } catch (_err) {
     showToast('Error removing window');
+  }
+}
+
+/**
+ * Load and display serving temperature recommendation.
+ * @param {number} wineId - Wine ID
+ */
+async function loadServingTemperature(wineId) {
+  if (!wineId) return;
+
+  const container = document.getElementById('serving-temp-display');
+  if (!container) return;
+
+  try {
+    const data = await getServingTemperature(wineId);
+
+    if (!data.recommendation) {
+      container.innerHTML = '<span class="no-data">No temperature data</span>';
+      container.closest('.modal-field')?.classList.remove('has-temp');
+      return;
+    }
+
+    const rec = data.recommendation;
+    const confidence = rec.confidence || 0;
+    const confidenceClass = confidence >= 0.6 ? 'high' : confidence >= 0.3 ? 'medium' : 'low';
+
+    container.innerHTML = `
+      <div class="serving-temp-info">
+        <span class="temp-range">${escapeHtml(rec.temp_celsius)}°C</span>
+        <span class="temp-fahrenheit">(${escapeHtml(rec.temp_fahrenheit)}°F)</span>
+        ${rec.wine_type ? `<span class="temp-wine-type">${escapeHtml(rec.wine_type)}</span>` : ''}
+      </div>
+      ${rec.notes ? `<p class="temp-notes">${escapeHtml(rec.notes)}</p>` : ''}
+      <div class="temp-confidence ${confidenceClass}" title="Match confidence: ${Math.round(confidence * 100)}%">
+        ${confidence >= 0.6 ? 'Good match' : confidence >= 0.3 ? 'Approximate' : 'General'}
+      </div>
+    `;
+    container.closest('.modal-field')?.classList.add('has-temp');
+
+  } catch (_err) {
+    container.innerHTML = '<span class="no-data">Could not load temperature</span>';
+    container.closest('.modal-field')?.classList.remove('has-temp');
   }
 }
 

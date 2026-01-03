@@ -563,4 +563,54 @@ router.get('/:id/tasting-profile/history', (req, res) => {
   }
 });
 
+/**
+ * Get serving temperature recommendation for a wine.
+ * @route GET /api/wines/:id/serving-temperature
+ */
+router.get('/:id/serving-temperature', async (req, res) => {
+  const { id } = req.params;
+  const { unit = 'celsius' } = req.query;
+
+  const wine = db.prepare(`
+    SELECT id, wine_name, style, colour, grapes, sweetness, winemaking
+    FROM wines WHERE id = ?
+  `).get(id);
+
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  try {
+    const { findServingTemperature, formatTemperature } = await import('../services/servingTemperature.js');
+    const temp = findServingTemperature(wine);
+
+    if (!temp) {
+      return res.json({
+        wine_id: wine.id,
+        wine_name: wine.wine_name,
+        recommendation: null,
+        message: 'No serving temperature data available'
+      });
+    }
+
+    res.json({
+      wine_id: wine.id,
+      wine_name: wine.wine_name,
+      recommendation: {
+        wine_type: temp.wine_type,
+        category: temp.category,
+        body: temp.body,
+        temp_celsius: `${temp.temp_min_celsius}-${temp.temp_max_celsius}`,
+        temp_fahrenheit: `${temp.temp_min_fahrenheit}-${temp.temp_max_fahrenheit}`,
+        temp_display: formatTemperature(temp, unit),
+        notes: temp.notes,
+        confidence: temp.match_confidence
+      }
+    });
+  } catch (error) {
+    console.error('Serving temperature lookup error:', error);
+    res.status(500).json({ error: 'Failed to get serving temperature' });
+  }
+});
+
 export default router;
