@@ -3,12 +3,22 @@
  * @module cellarAnalysis
  */
 
-import { analyseCellar, analyseCellarAI, executeCellarMoves } from './api.js';
+import {
+  analyseCellar,
+  analyseCellarAI,
+  executeCellarMoves,
+  getZoneLayoutProposal,
+  confirmZoneLayout,
+  getConsolidationMoves
+} from './api.js';
 import { showToast } from './utils.js';
 import { refreshLayout } from './app.js';
 
 let currentAnalysis = null;
 let analysisLoaded = false;
+let currentProposal = null;
+let currentZoneMoves = null;
+let currentZoneIndex = 0;
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -17,14 +27,12 @@ export function initCellarAnalysis() {
   const refreshBtn = document.getElementById('refresh-analysis-btn');
   const executeAllBtn = document.getElementById('execute-all-moves-btn');
   const getAIAdviceBtn = document.getElementById('get-ai-advice-btn');
-
-  console.log('[CellarAnalysis] Init - refreshBtn:', !!refreshBtn, 'getAIAdviceBtn:', !!getAIAdviceBtn);
+  const setupZonesBtn = document.getElementById('setup-zones-btn');
+  const confirmLayoutBtn = document.getElementById('confirm-layout-btn');
+  const cancelSetupBtn = document.getElementById('cancel-setup-btn');
 
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', () => {
-      console.log('[CellarAnalysis] Refresh clicked');
-      loadAnalysis();
-    });
+    refreshBtn.addEventListener('click', loadAnalysis);
   }
 
   if (executeAllBtn) {
@@ -32,10 +40,19 @@ export function initCellarAnalysis() {
   }
 
   if (getAIAdviceBtn) {
-    getAIAdviceBtn.addEventListener('click', () => {
-      console.log('[CellarAnalysis] AI Advice clicked');
-      handleGetAIAdvice();
-    });
+    getAIAdviceBtn.addEventListener('click', handleGetAIAdvice);
+  }
+
+  if (setupZonesBtn) {
+    setupZonesBtn.addEventListener('click', startZoneSetup);
+  }
+
+  if (confirmLayoutBtn) {
+    confirmLayoutBtn.addEventListener('click', handleConfirmLayout);
+  }
+
+  if (cancelSetupBtn) {
+    cancelSetupBtn.addEventListener('click', cancelZoneSetup);
   }
 }
 
@@ -511,26 +528,16 @@ async function handleExecuteAllMoves() {
  * Get AI advice for cellar organisation.
  */
 async function handleGetAIAdvice() {
-  console.log('[CellarAnalysis] handleGetAIAdvice called');
   const adviceEl = document.getElementById('analysis-ai-advice');
-  console.log('[CellarAnalysis] adviceEl found:', !!adviceEl);
-
-  if (!adviceEl) {
-    console.error('[CellarAnalysis] advice element not found!');
-    return;
-  }
+  if (!adviceEl) return;
 
   adviceEl.style.display = 'block';
-  adviceEl.innerHTML = '<div class="analysis-loading">Getting AI advice...</div>';
-  console.log('[CellarAnalysis] Set loading state, calling API...');
+  adviceEl.innerHTML = '<div class="analysis-loading">Getting AI advice... (this may take up to 2 minutes)</div>';
 
   try {
     const result = await analyseCellarAI();
-    console.log('[CellarAnalysis] API result:', result);
     adviceEl.innerHTML = formatAIAdvice(result.aiAdvice);
-    console.log('[CellarAnalysis] Rendered advice');
   } catch (err) {
-    console.error('[CellarAnalysis] API error:', err);
     adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
   }
 }
@@ -597,9 +604,308 @@ function formatAIAdvice(advice) {
   return html;
 }
 
+// ============================================================
+// Zone Setup Wizard Functions
+// ============================================================
+
+/**
+ * Start the zone setup wizard.
+ */
+async function startZoneSetup() {
+  const wizard = document.getElementById('zone-setup-wizard');
+  const proposalList = document.getElementById('zone-proposal-list');
+  const step1 = document.getElementById('wizard-step-1');
+  const step2 = document.getElementById('wizard-step-2');
+
+  if (!wizard || !proposalList) return;
+
+  // Show wizard, hide other sections
+  wizard.style.display = 'block';
+  step1.style.display = 'block';
+  step2.style.display = 'none';
+  document.getElementById('analysis-fridge')?.style.setProperty('display', 'none');
+  document.getElementById('analysis-zones')?.style.setProperty('display', 'none');
+  document.getElementById('analysis-moves')?.style.setProperty('display', 'none');
+  document.getElementById('analysis-ai-advice')?.style.setProperty('display', 'none');
+
+  proposalList.innerHTML = '<div class="analysis-loading">Generating zone layout proposal...</div>';
+
+  try {
+    currentProposal = await getZoneLayoutProposal();
+    proposalList.innerHTML = renderZoneProposal(currentProposal);
+  } catch (err) {
+    proposalList.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+  }
+}
+
+/**
+ * Render zone layout proposal as HTML.
+ */
+function renderZoneProposal(proposal) {
+  if (!proposal.proposals || proposal.proposals.length === 0) {
+    return '<p>No zones to configure - your cellar appears to be empty.</p>';
+  }
+
+  let html = `
+    <div class="proposal-summary">
+      <strong>${proposal.totalBottles} bottles</strong> across <strong>${proposal.proposals.length} zones</strong>
+      using <strong>${proposal.totalRows} rows</strong>
+    </div>
+    <div class="proposal-zones">
+  `;
+
+  proposal.proposals.forEach((zone, idx) => {
+    html += `
+      <div class="proposal-zone-card">
+        <div class="zone-card-header">
+          <span class="zone-order">${idx + 1}</span>
+          <span class="zone-name">${zone.displayName}</span>
+          <span class="zone-rows">${zone.assignedRows.join(', ')}</span>
+        </div>
+        <div class="zone-card-stats">
+          <span>${zone.bottleCount} bottles</span>
+          <span>${zone.totalCapacity} slots</span>
+          <span>${zone.utilizationPercent}% full</span>
+        </div>
+        <div class="zone-card-wines">
+          ${zone.wines.slice(0, 3).map(w => `<small>${w.name} ${w.vintage || ''}</small>`).join(', ')}
+          ${zone.wines.length > 3 ? `<small>+${zone.wines.length - 3} more</small>` : ''}
+        </div>
+      </div>
+    `;
+  });
+
+  html += '</div>';
+
+  if (proposal.unassignedRows?.length > 0) {
+    html += `<p class="proposal-note">Unassigned rows: ${proposal.unassignedRows.join(', ')} (available for future growth)</p>`;
+  }
+
+  return html;
+}
+
+/**
+ * Handle confirming the zone layout.
+ */
+async function handleConfirmLayout() {
+  if (!currentProposal?.proposals) {
+    showToast('No proposal to confirm');
+    return;
+  }
+
+  const assignments = currentProposal.proposals.map(p => ({
+    zoneId: p.zoneId,
+    assignedRows: p.assignedRows,
+    bottleCount: p.bottleCount
+  }));
+
+  try {
+    await confirmZoneLayout(assignments);
+    showToast('Zone layout confirmed! Generating moves...');
+
+    // Move to step 2
+    document.getElementById('wizard-step-1').style.display = 'none';
+    document.getElementById('wizard-step-2').style.display = 'block';
+
+    await loadZoneMoves();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Load and display zone consolidation moves.
+ */
+async function loadZoneMoves() {
+  const movesContainer = document.getElementById('zone-moves-wizard');
+  if (!movesContainer) return;
+
+  movesContainer.innerHTML = '<div class="analysis-loading">Calculating moves...</div>';
+
+  try {
+    currentZoneMoves = await getConsolidationMoves();
+    currentZoneIndex = 0;
+    renderZoneMovesList();
+  } catch (err) {
+    movesContainer.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+  }
+}
+
+/**
+ * Render the zone-by-zone moves interface.
+ */
+function renderZoneMovesList() {
+  const container = document.getElementById('zone-moves-wizard');
+  if (!container || !currentZoneMoves) return;
+
+  const { movesByZone, totalMoves } = currentZoneMoves;
+  const zoneIds = Object.keys(movesByZone);
+
+  if (totalMoves === 0) {
+    container.innerHTML = `
+      <div class="moves-complete">
+        <h4>All bottles are already in their correct zones!</h4>
+        <p>No moves needed. Your cellar is organized.</p>
+        <button class="btn btn-primary" onclick="window.cellarAnalysis.finishZoneSetup()">Finish</button>
+      </div>
+    `;
+    return;
+  }
+
+  let html = `
+    <div class="moves-summary">
+      <strong>${totalMoves} moves</strong> needed across <strong>${zoneIds.length} zones</strong>
+    </div>
+    <div class="zone-moves-list">
+  `;
+
+  zoneIds.forEach((zoneId, idx) => {
+    const moves = movesByZone[zoneId];
+    const isActive = idx === currentZoneIndex;
+    const isComplete = idx < currentZoneIndex;
+
+    html += `
+      <div class="zone-moves-section ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}" data-zone="${zoneId}">
+        <div class="zone-moves-header" onclick="window.cellarAnalysis.expandZone('${zoneId}', ${idx})">
+          <span class="zone-status-icon">${isComplete ? '✓' : isActive ? '→' : '○'}</span>
+          <span class="zone-name">${zoneId}</span>
+          <span class="zone-move-count">${moves.length} moves</span>
+        </div>
+        <div class="zone-moves-body" style="display: ${isActive ? 'block' : 'none'}">
+          ${moves.map((m, mIdx) => `
+            <div class="move-item" data-move-idx="${mIdx}">
+              <span class="move-wine">${m.wineName} ${m.vintage || ''}</span>
+              <span class="move-arrow">→</span>
+              <span class="move-from">${m.fromSlot}</span>
+              <span class="move-to">${m.toSlot}</span>
+              <button class="btn btn-small btn-primary" onclick="window.cellarAnalysis.executeZoneMove('${zoneId}', ${mIdx})">Move</button>
+            </div>
+          `).join('')}
+          <div class="zone-moves-actions">
+            <button class="btn btn-primary" onclick="window.cellarAnalysis.executeAllZoneMoves('${zoneId}')">Execute All ${moves.length} Moves</button>
+            <button class="btn btn-secondary" onclick="window.cellarAnalysis.skipZone()">Skip Zone</button>
+          </div>
+        </div>
+      </div>
+    `;
+  });
+
+  html += `
+    </div>
+    <div class="wizard-footer">
+      <button class="btn btn-secondary" onclick="window.cellarAnalysis.finishZoneSetup()">Finish Setup</button>
+    </div>
+  `;
+
+  container.innerHTML = html;
+}
+
+/**
+ * Execute a single move within a zone.
+ */
+async function executeZoneMove(zoneId, moveIdx) {
+  const moves = currentZoneMoves?.movesByZone?.[zoneId];
+  if (!moves || !moves[moveIdx]) return;
+
+  const move = moves[moveIdx];
+
+  try {
+    await executeCellarMoves([{
+      wineId: move.wineId,
+      from: move.fromSlot,
+      to: move.toSlot,
+      zoneId: move.zoneId
+    }]);
+
+    // Remove from list
+    moves.splice(moveIdx, 1);
+    currentZoneMoves.totalMoves--;
+
+    showToast(`Moved ${move.wineName} to ${move.toSlot}`);
+    renderZoneMovesList();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Execute all moves for a zone.
+ */
+async function executeAllZoneMoves(zoneId) {
+  const moves = currentZoneMoves?.movesByZone?.[zoneId];
+  if (!moves || moves.length === 0) return;
+
+  const movesToExecute = moves.map(m => ({
+    wineId: m.wineId,
+    from: m.fromSlot,
+    to: m.toSlot,
+    zoneId: m.zoneId
+  }));
+
+  try {
+    const result = await executeCellarMoves(movesToExecute);
+    showToast(`Executed ${result.moved} moves for ${zoneId}`);
+
+    // Clear moves and advance
+    currentZoneMoves.totalMoves -= moves.length;
+    currentZoneMoves.movesByZone[zoneId] = [];
+    currentZoneIndex++;
+
+    renderZoneMovesList();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Skip to next zone.
+ */
+function skipZone() {
+  const zoneIds = Object.keys(currentZoneMoves?.movesByZone || {});
+  if (currentZoneIndex < zoneIds.length - 1) {
+    currentZoneIndex++;
+    renderZoneMovesList();
+  }
+}
+
+/**
+ * Expand a specific zone section.
+ */
+function expandZone(zoneId, idx) {
+  currentZoneIndex = idx;
+  renderZoneMovesList();
+}
+
+/**
+ * Cancel zone setup and return to normal view.
+ */
+function cancelZoneSetup() {
+  document.getElementById('zone-setup-wizard').style.display = 'none';
+  currentProposal = null;
+  loadAnalysis();
+}
+
+/**
+ * Finish zone setup wizard.
+ */
+function finishZoneSetup() {
+  document.getElementById('zone-setup-wizard').style.display = 'none';
+  currentProposal = null;
+  currentZoneMoves = null;
+  showToast('Zone setup complete!');
+  loadAnalysis();
+}
+
 // Expose functions for inline onclick handlers
 window.cellarAnalysis = {
   executeMove,
   dismissMove,
-  moveFridgeCandidate
+  moveFridgeCandidate,
+  executeZoneMove,
+  executeAllZoneMoves,
+  skipZone,
+  expandZone,
+  finishZoneSetup
 };

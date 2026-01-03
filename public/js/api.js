@@ -600,18 +600,26 @@ export async function analyseCellar() {
 
 /**
  * Get AI-enhanced cellar analysis.
+ * AI analysis can take 60-120 seconds, so we use a long timeout.
  * @returns {Promise<Object>}
  */
 export async function analyseCellarAI() {
-  console.log('[API] analyseCellarAI - starting fetch...');
+  // Use cache: 'no-store' to bypass service worker caching
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+
   try {
-    const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`);
-    console.log('[API] analyseCellarAI - fetch complete, status:', res.status);
-    const result = await handleResponse(res, 'Failed to get AI analysis');
-    console.log('[API] analyseCellarAI - response parsed');
-    return result;
+    const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`, {
+      cache: 'no-store',
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return handleResponse(res, 'Failed to get AI analysis');
   } catch (err) {
-    console.error('[API] analyseCellarAI - error:', err);
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('AI analysis timed out. Please try again.');
+    }
     throw err;
   }
 }
@@ -643,6 +651,47 @@ export async function assignWineToZone(wineId, zoneId) {
     body: JSON.stringify({ wineId, zoneId, confidence: 'manual' })
   });
   return handleResponse(res, 'Failed to assign zone');
+}
+
+/**
+ * Get proposed zone layout based on collection.
+ * @returns {Promise<Object>}
+ */
+export async function getZoneLayoutProposal() {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-layout/propose`);
+  return handleResponse(res, 'Failed to get zone layout proposal');
+}
+
+/**
+ * Get current saved zone layout.
+ * @returns {Promise<Object>}
+ */
+export async function getZoneLayout() {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-layout`);
+  return handleResponse(res, 'Failed to get zone layout');
+}
+
+/**
+ * Confirm and save zone layout.
+ * @param {Array} assignments - Array of { zoneId, assignedRows, bottleCount }
+ * @returns {Promise<Object>}
+ */
+export async function confirmZoneLayout(assignments) {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-layout/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ assignments })
+  });
+  return handleResponse(res, 'Failed to confirm zone layout');
+}
+
+/**
+ * Get consolidation moves for confirmed zone layout.
+ * @returns {Promise<Object>}
+ */
+export async function getConsolidationMoves() {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-layout/moves`);
+  return handleResponse(res, 'Failed to get consolidation moves');
 }
 
 // ============================================

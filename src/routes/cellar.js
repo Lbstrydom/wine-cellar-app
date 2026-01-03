@@ -539,4 +539,93 @@ router.get('/zones-needing-review', (_req, res) => {
   }
 });
 
+// ============================================================
+// Zone Layout Setup Endpoints
+// ============================================================
+
+import {
+  proposeZoneLayout,
+  saveZoneLayout,
+  getSavedZoneLayout,
+  generateConsolidationMoves
+} from '../services/zoneLayoutProposal.js';
+
+/**
+ * GET /api/cellar/zone-layout/propose
+ * Get AI-proposed zone layout based on current collection.
+ */
+router.get('/zone-layout/propose', (_req, res) => {
+  try {
+    const proposal = proposeZoneLayout();
+    res.json({ success: true, ...proposal });
+  } catch (err) {
+    console.error('[CellarAPI] Zone layout propose error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zone-layout
+ * Get current saved zone layout.
+ */
+router.get('/zone-layout', (_req, res) => {
+  try {
+    const layout = getSavedZoneLayout();
+    res.json({
+      success: true,
+      configured: layout.length > 0,
+      layout
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Get zone layout error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/zone-layout/confirm
+ * Save confirmed zone layout.
+ */
+router.post('/zone-layout/confirm', (req, res) => {
+  try {
+    const { assignments } = req.body;
+
+    if (!Array.isArray(assignments) || assignments.length === 0) {
+      return res.status(400).json({ error: 'Assignments array required' });
+    }
+
+    saveZoneLayout(assignments);
+
+    res.json({
+      success: true,
+      message: `Saved layout with ${assignments.length} zones`
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Confirm zone layout error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zone-layout/moves
+ * Generate moves needed to consolidate wines into assigned zones.
+ */
+router.get('/zone-layout/moves', (_req, res) => {
+  try {
+    const result = generateConsolidationMoves();
+
+    if (result.error) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Generate moves error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

@@ -136,6 +136,7 @@
       <div class="analysis-actions">
         <button class="btn btn-primary" id="refresh-analysis-btn">Refresh Analysis</button>
         <button class="btn btn-secondary" id="get-ai-advice-btn">Get AI Advice</button>
+        <button class="btn btn-secondary" id="setup-zones-btn">Setup Zones</button>
       </div>
     </div>
 
@@ -143,6 +144,34 @@
       <div class="analysis-loading">Loading analysis...</div>
     </div>
     <div class="analysis-alerts" id="analysis-alerts"></div>
+
+    <!-- Zone Setup Wizard -->
+    <div class="zone-setup-wizard" id="zone-setup-wizard" style="display: none;">
+      <div class="wizard-header">
+        <h3>Zone Setup Wizard</h3>
+        <p class="wizard-subtitle">Review and confirm the proposed zone layout for your cellar</p>
+      </div>
+
+      <div class="wizard-step" id="wizard-step-1">
+        <h4>Step 1: Review Proposed Layout</h4>
+        <p>Based on your 122 bottles, here's the suggested zone arrangement:</p>
+        <div class="zone-proposal-list" id="zone-proposal-list">
+          <div class="analysis-loading">Generating proposal...</div>
+        </div>
+        <div class="wizard-actions">
+          <button class="btn btn-primary" id="confirm-layout-btn">Confirm Layout</button>
+          <button class="btn btn-secondary" id="cancel-setup-btn">Cancel</button>
+        </div>
+      </div>
+
+      <div class="wizard-step" id="wizard-step-2" style="display: none;">
+        <h4>Step 2: Execute Moves</h4>
+        <p>Now let's move your bottles to their designated zones. Work through zone by zone:</p>
+        <div class="zone-moves-wizard" id="zone-moves-wizard">
+          <div class="analysis-loading">Generating moves...</div>
+        </div>
+      </div>
+    </div>
 
     <!-- Fridge Status Section -->
     <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
