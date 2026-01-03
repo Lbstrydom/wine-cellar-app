@@ -370,9 +370,17 @@ function switchView(viewName) {
   if (viewName === 'settings') loadSettings();
   if (viewName === 'analysis') {
     // Import and load analysis when tab is opened
-    import('./cellarAnalysis.js').then(module => {
-      module.loadAnalysis();
-    });
+    import('./cellarAnalysis.js')
+      .then(module => {
+        module.loadAnalysis();
+      })
+      .catch(err => {
+        console.error('[App] Failed to load analysis module:', err);
+        const summaryEl = document.getElementById('analysis-summary');
+        if (summaryEl) {
+          summaryEl.innerHTML = `<div class="analysis-loading">Error loading analysis: ${err.message}</div>`;
+        }
+      });
   }
 }
 
