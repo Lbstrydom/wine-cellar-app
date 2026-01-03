@@ -33,7 +33,8 @@ export function analyseCellar(wines) {
     overflowAnalysis: [],
     misplacedWines: [],
     suggestedMoves: [],
-    alerts: []
+    alerts: [],
+    needsZoneSetup: false
   };
 
   const zoneMap = getActiveZoneMap();
@@ -50,58 +51,104 @@ export function analyseCellar(wines) {
   // Track which zones have wines
   const zoneWineMap = new Map();
 
-  // Analyse each active zone
-  for (const [rowId, zoneInfo] of Object.entries(zoneMap)) {
-    const zone = getZoneById(zoneInfo.zoneId);
-    if (!zone) continue;
+  // Check if we have zone allocations
+  const hasZoneAllocations = Object.keys(zoneMap).length > 0;
+  const cellarBottleCount = wines.filter(w => {
+    const slotId = w.slot_id || w.location_code;
+    return slotId && slotId.startsWith('R');
+  }).length;
 
-    const zoneWines = getWinesInRows([rowId], slotToWine);
+  if (!hasZoneAllocations && cellarBottleCount > 0) {
+    // No zones configured but we have bottles - show setup prompt
+    report.needsZoneSetup = true;
+    report.alerts.push({
+      type: 'zones_not_configured',
+      severity: 'warning',
+      message: `Cellar zones not configured. Click "Get AI Advice" to have AI propose a zone structure for your ${cellarBottleCount} bottles.`
+    });
 
-    // Track wines per zone for narrative
-    if (!zoneWineMap.has(zone.id)) {
-      zoneWineMap.set(zone.id, { zone, rows: [], wines: [] });
-    }
-    const zoneData = zoneWineMap.get(zone.id);
-    zoneData.rows.push(rowId);
-    zoneData.wines.push(...zoneWines);
+    // Still generate zone narratives based on what wines WOULD go where
+    const cellarWines = wines.filter(w => {
+      const slotId = w.slot_id || w.location_code;
+      return slotId && slotId.startsWith('R');
+    });
 
-    // Handle buffer/fallback zones differently
-    if (zone.isBufferZone || zone.isFallbackZone) {
-      if (zoneWines.length > 0) {
-        report.overflowAnalysis.push({
-          zoneId: zone.id,
-          displayName: zone.displayName,
-          row: rowId,
-          bottleCount: zoneWines.length,
-          isBufferZone: zone.isBufferZone,
-          isFallbackZone: zone.isFallbackZone,
-          wines: zoneWines.map(w => ({
-            wineId: w.id,
-            name: w.wine_name,
-            slot: w.slot_id || w.location_code,
-            assignedZone: w.zone_id
-          }))
-        });
+    for (const wine of cellarWines) {
+      const bestZone = findBestZone(wine);
+      const zoneId = bestZone.zoneId;
+      const zone = getZoneById(zoneId);
+
+      if (!zone) continue;
+
+      if (!zoneWineMap.has(zoneId)) {
+        zoneWineMap.set(zoneId, { zone, rows: [], wines: [] });
       }
-      continue;
+      const zoneData = zoneWineMap.get(zoneId);
+      zoneData.wines.push(wine);
+
+      const slotId = wine.slot_id || wine.location_code;
+      const parsed = parseSlot(slotId);
+      if (parsed) {
+        const rowId = `R${parsed.row}`;
+        if (!zoneData.rows.includes(rowId)) {
+          zoneData.rows.push(rowId);
+        }
+      }
     }
 
-    const analysis = analyseZone(zone, zoneWines, rowId);
-    report.zoneAnalysis.push(analysis);
+    report.summary.zonesUsed = zoneWineMap.size;
+  } else if (hasZoneAllocations) {
+    // Zones are configured - analyse as normal
+    for (const [rowId, zoneInfo] of Object.entries(zoneMap)) {
+      const zone = getZoneById(zoneInfo.zoneId);
+      if (!zone) continue;
 
-    if (analysis.misplaced.length > 0) {
-      report.misplacedWines.push(...analysis.misplaced);
-      report.summary.misplacedBottles += analysis.misplaced.length;
-    }
-    report.summary.correctlyPlaced += analysis.correctlyPlaced.length;
+      const zoneWines = getWinesInRows([rowId], slotToWine);
 
-    if (analysis.isOverflowing) {
-      report.summary.overflowingZones.push(zone.displayName);
+      if (!zoneWineMap.has(zone.id)) {
+        zoneWineMap.set(zone.id, { zone, rows: [], wines: [] });
+      }
+      const zoneData = zoneWineMap.get(zone.id);
+      zoneData.rows.push(rowId);
+      zoneData.wines.push(...zoneWines);
+
+      if (zone.isBufferZone || zone.isFallbackZone) {
+        if (zoneWines.length > 0) {
+          report.overflowAnalysis.push({
+            zoneId: zone.id,
+            displayName: zone.displayName,
+            row: rowId,
+            bottleCount: zoneWines.length,
+            isBufferZone: zone.isBufferZone,
+            isFallbackZone: zone.isFallbackZone,
+            wines: zoneWines.map(w => ({
+              wineId: w.id,
+              name: w.wine_name,
+              slot: w.slot_id || w.location_code,
+              assignedZone: w.zone_id
+            }))
+          });
+        }
+        continue;
+      }
+
+      const analysis = analyseZone(zone, zoneWines, rowId);
+      report.zoneAnalysis.push(analysis);
+
+      if (analysis.misplaced.length > 0) {
+        report.misplacedWines.push(...analysis.misplaced);
+        report.summary.misplacedBottles += analysis.misplaced.length;
+      }
+      report.summary.correctlyPlaced += analysis.correctlyPlaced.length;
+
+      if (analysis.isOverflowing) {
+        report.summary.overflowingZones.push(zone.displayName);
+      }
+      if (analysis.fragmentationScore > REORG_THRESHOLDS.minFragmentationScore) {
+        report.summary.fragmentedZones.push(zone.displayName);
+      }
+      report.summary.zonesUsed++;
     }
-    if (analysis.fragmentationScore > REORG_THRESHOLDS.minFragmentationScore) {
-      report.summary.fragmentedZones.push(zone.displayName);
-    }
-    report.summary.zonesUsed++;
   }
 
   // Generate zone narratives
@@ -128,7 +175,7 @@ export function analyseCellar(wines) {
     (report.summary.totalBottles > 0 &&
       (report.summary.misplacedBottles / report.summary.totalBottles * 100) >= REORG_THRESHOLDS.minMisplacedPercent);
 
-  if (shouldReorg) {
+  if (shouldReorg && hasZoneAllocations) {
     report.alerts.push({
       type: 'reorganisation_recommended',
       severity: 'info',

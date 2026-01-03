@@ -19,9 +19,25 @@ export function categoriseWine(wine) {
   const style = (wine.style || '').toLowerCase();
   const winemaking = (wine.winemaking || '').toLowerCase();
 
+  // SPARKLING CHECK FIRST - keywords override colour
+  // Many sparkling wines are stored with colour: white but should be sparkling
+  const sparklingKeywords = [
+    'champagne', 'prosecco', 'cava', 'crémant', 'cremant',
+    'sparkling', 'brut', 'spumante', 'sekt', 'cap classique',
+    'method cap classique', 'mcc', 'méthode traditionnelle',
+    'methode cap classique', 'mousseux', 'franciacorta', 'asti'
+  ];
+  const isSparklingByKeyword = sparklingKeywords.some(k =>
+    wineName.includes(k) || style.includes(k)
+  );
+  if (isSparklingByKeyword || colour === 'sparkling') {
+    return 'sparkling';
+  }
+
   // Check each category in priority order
   for (const [category, config] of Object.entries(FRIDGE_PAR_LEVELS)) {
     if (category === 'flex') continue; // Flex matches everything
+    if (category === 'sparkling') continue; // Already handled above
 
     const rules = config.matchRules;
     if (!rules || Object.keys(rules).length === 0) continue;
