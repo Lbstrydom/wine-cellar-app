@@ -511,14 +511,26 @@ async function handleExecuteAllMoves() {
  * Get AI advice for cellar organisation.
  */
 async function handleGetAIAdvice() {
+  console.log('[CellarAnalysis] handleGetAIAdvice called');
   const adviceEl = document.getElementById('analysis-ai-advice');
+  console.log('[CellarAnalysis] adviceEl found:', !!adviceEl);
+
+  if (!adviceEl) {
+    console.error('[CellarAnalysis] advice element not found!');
+    return;
+  }
+
   adviceEl.style.display = 'block';
   adviceEl.innerHTML = '<div class="analysis-loading">Getting AI advice...</div>';
+  console.log('[CellarAnalysis] Set loading state, calling API...');
 
   try {
     const result = await analyseCellarAI();
+    console.log('[CellarAnalysis] API result:', result);
     adviceEl.innerHTML = formatAIAdvice(result.aiAdvice);
+    console.log('[CellarAnalysis] Rendered advice');
   } catch (err) {
+    console.error('[CellarAnalysis] API error:', err);
     adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
   }
 }
