@@ -5,7 +5,7 @@
  */
 
 import db from '../db/index.js';
-import { CELLAR_ZONES } from '../config/cellarZones.js';
+import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../config/cellarZones.js';
 
 // Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
 const CELLAR_LAYOUT = {
@@ -52,7 +52,7 @@ function getBottlesByZone() {
 }
 
 /**
- * Classify a wine into a zone based on rules.
+ * Classify a wine into a zone based on rules, using priority order.
  * @param {Object} wine - Wine object
  * @returns {string} Zone ID
  */
@@ -64,9 +64,44 @@ function classifyWine(wine) {
   const wineName = (wine.wine_name || '').toLowerCase();
   const region = (wine.region || '').toLowerCase();
   const winemaking = (wine.winemaking || '').toLowerCase();
+  const sweetness = (wine.sweetness || '').toLowerCase();
+  const searchText = `${wineName} ${style} ${region} ${winemaking}`;
 
-  for (const zone of CELLAR_ZONES.zones) {
+  // Use priority order for classification
+  for (const zoneId of ZONE_PRIORITY_ORDER) {
+    const zone = getZoneById(zoneId);
+    if (!zone) continue;
+
     const rules = zone.rules || {};
+
+    // Special handling for dessert/fortified - require explicit markers
+    if (zoneId === 'dessert_fortified') {
+      // Must have dessert/fortified color, explicit sweetness, or very specific keywords
+      const isDessertColour = colour === 'dessert' || colour === 'fortified';
+      const hasExplicitSweetness = sweetness && (sweetness.includes('sweet') || sweetness.includes('dessert'));
+      const hasFortifiedKeyword = ['port', 'porto', 'sherry', 'madeira', 'marsala', 'sauternes', 'tokaji', 'ice wine', 'eiswein', 'pedro ximénez', ' px ']
+        .some(k => searchText.includes(k));
+
+      if (isDessertColour || hasExplicitSweetness || hasFortifiedKeyword) {
+        return zone.id;
+      }
+      // Skip this zone for normal dry wines
+      continue;
+    }
+
+    // Check exclude keywords first (skip zone if any match)
+    if (rules.excludeKeywords?.length > 0) {
+      if (rules.excludeKeywords.some(k => searchText.includes(k.toLowerCase()))) {
+        continue; // Skip this zone
+      }
+    }
+
+    // Check winemaking match (high priority for appassimento, etc.)
+    if (rules.winemaking?.length > 0) {
+      if (rules.winemaking.some(w => winemaking.includes(w.toLowerCase()) || searchText.includes(w.toLowerCase()))) {
+        return zone.id;
+      }
+    }
 
     // Check grape match
     if (rules.grapes?.length > 0) {
@@ -77,14 +112,13 @@ function classifyWine(wine) {
 
     // Check keyword match
     if (rules.keywords?.length > 0) {
-      const searchText = `${wineName} ${style} ${region} ${winemaking}`;
       if (rules.keywords.some(k => searchText.includes(k.toLowerCase()))) {
         return zone.id;
       }
     }
 
-    // Check country match
-    if (rules.countries?.length > 0) {
+    // Check country match (only if it's a primary rule, not just supporting)
+    if (rules.countries?.length > 0 && !rules.grapes?.length && !rules.keywords?.length) {
       if (rules.countries.some(c => country.includes(c.toLowerCase()))) {
         return zone.id;
       }
