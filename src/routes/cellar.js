@@ -653,7 +653,11 @@ router.post('/zone-chat', async (req, res) => {
     }
 
     // Get current wine data for context
-    const wines = getAllWinesWithSlots().filter(w => w.location_code?.startsWith('R'));
+    // Note: getAllWinesWithSlots returns slot_id (from location_code alias)
+    const wines = getAllWinesWithSlots().filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot?.startsWith('R');
+    });
 
     const result = await discussZoneClassification(message, wines, context);
 

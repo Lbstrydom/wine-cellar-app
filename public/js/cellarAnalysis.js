@@ -927,7 +927,7 @@ function toggleZoneChat() {
 async function sendZoneChatMessage() {
   const input = document.getElementById('zone-chat-input');
   const messagesEl = document.getElementById('zone-chat-messages');
-  const sendBtn = document.getElementById('zone-chat-send');
+  const sendBtn = input?.nextElementSibling; // Get the send button next to input
 
   if (!input || !messagesEl) return;
 
@@ -935,41 +935,54 @@ async function sendZoneChatMessage() {
   if (!message) return;
 
   // Add user message to chat
-  messagesEl.innerHTML += `<div class="zone-chat-msg user">${escapeHtml(message)}</div>`;
+  const userMsg = document.createElement('div');
+  userMsg.className = 'chat-message user';
+  userMsg.innerHTML = `<div class="chat-content">${escapeHtml(message)}</div>`;
+  messagesEl.appendChild(userMsg);
+
   input.value = '';
   input.disabled = true;
-  sendBtn.disabled = true;
+  if (sendBtn) sendBtn.disabled = true;
 
   // Add thinking indicator
-  messagesEl.innerHTML += `<div class="zone-chat-msg assistant thinking">Thinking...</div>`;
+  const thinkingMsg = document.createElement('div');
+  thinkingMsg.className = 'chat-message assistant thinking';
+  thinkingMsg.innerHTML = '<div class="chat-content"><div class="chat-typing"><span></span><span></span><span></span></div></div>';
+  messagesEl.appendChild(thinkingMsg);
   messagesEl.scrollTop = messagesEl.scrollHeight;
 
   try {
     const result = await zoneChatMessage(message, zoneChatContext);
 
     // Remove thinking indicator
-    const thinking = messagesEl.querySelector('.thinking');
-    if (thinking) thinking.remove();
+    thinkingMsg.remove();
 
     // Add AI response
-    messagesEl.innerHTML += `<div class="zone-chat-msg assistant">${formatZoneChatResponse(result)}</div>`;
+    const aiMsg = document.createElement('div');
+    aiMsg.className = 'chat-message assistant';
+    aiMsg.innerHTML = `<div class="chat-content">${formatZoneChatResponse(result)}</div>`;
+    messagesEl.appendChild(aiMsg);
 
     // Store context for follow-up
     zoneChatContext = result.context;
 
     // If there are reclassifications, show action buttons
     if (result.reclassifications && result.reclassifications.length > 0) {
-      messagesEl.innerHTML += renderReclassificationActions(result.reclassifications);
+      const actionsEl = document.createElement('div');
+      actionsEl.innerHTML = renderReclassificationActions(result.reclassifications);
+      messagesEl.appendChild(actionsEl.firstElementChild);
     }
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
   } catch (err) {
-    const thinking = messagesEl.querySelector('.thinking');
-    if (thinking) thinking.remove();
-    messagesEl.innerHTML += `<div class="zone-chat-msg error">Error: ${escapeHtml(err.message)}</div>`;
+    thinkingMsg.remove();
+    const errMsg = document.createElement('div');
+    errMsg.className = 'chat-message assistant error';
+    errMsg.innerHTML = `<div class="chat-content">Error: ${escapeHtml(err.message)}</div>`;
+    messagesEl.appendChild(errMsg);
   } finally {
     input.disabled = false;
-    sendBtn.disabled = false;
+    if (sendBtn) sendBtn.disabled = false;
     input.focus();
   }
 }

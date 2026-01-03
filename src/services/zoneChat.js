@@ -179,7 +179,7 @@ function groupWinesByZone(wines) {
       style: w.style,
       grapes: w.grapes,
       country: w.country,
-      slot: w.location_code
+      slot: w.slot_id || w.location_code
     });
   });
   return grouped;
