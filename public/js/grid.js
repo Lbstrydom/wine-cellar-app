@@ -58,12 +58,41 @@ export async function renderCellar() {
   // Calculate row heights for zone labels alignment
   const rowHeight = 55; // slot height (52px) + gap (3px)
 
+  // Build zone spans - group consecutive rows with same zone
+  const zoneSpans = [];
+  let currentSpan = null;
+
+  state.layout.cellar.rows.forEach((row, index) => {
+    const rowId = `R${row.row}`;
+    const zoneInfo = zoneMapCache[rowId];
+    const zoneId = zoneInfo?.zoneId || 'not-configured';
+
+    if (currentSpan && currentSpan.zoneId === zoneId) {
+      // Extend current span
+      currentSpan.rowCount++;
+    } else {
+      // Start new span
+      if (currentSpan) {
+        zoneSpans.push(currentSpan);
+      }
+      currentSpan = {
+        zoneId,
+        zoneInfo,
+        rowCount: 1,
+        startIndex: index
+      };
+    }
+  });
+  if (currentSpan) {
+    zoneSpans.push(currentSpan);
+  }
+
+  // Render grid rows
   state.layout.cellar.rows.forEach((row) => {
     const rowEl = document.createElement('div');
     rowEl.className = 'cellar-row';
 
     const rowId = `R${row.row}`;
-    const zoneInfo = zoneMapCache[rowId];
 
     // Add row label inside the row
     const label = document.createElement('div');
@@ -76,19 +105,21 @@ export async function renderCellar() {
     });
 
     grid.appendChild(rowEl);
+  });
 
-    // Add zone label to sidebar
-    if (zoneLabelsEl) {
+  // Render zone labels spanning multiple rows
+  if (zoneLabelsEl) {
+    zoneSpans.forEach(span => {
       const zoneLabel = document.createElement('div');
       zoneLabel.className = 'zone-label';
-      zoneLabel.style.height = `${rowHeight}px`;
+      zoneLabel.style.height = `${rowHeight * span.rowCount}px`;
 
-      if (zoneInfo && hasZoneConfig) {
-        zoneLabel.textContent = zoneInfo.displayName;
-        zoneLabel.title = `${zoneInfo.displayName} (${zoneInfo.wineCount || 0} bottles)`;
+      if (span.zoneInfo && hasZoneConfig) {
+        zoneLabel.textContent = span.zoneInfo.displayName;
+        zoneLabel.title = `${span.zoneInfo.displayName} (${span.zoneInfo.wineCount || 0} bottles)`;
         // Add health status class if available
-        if (zoneInfo.status) {
-          zoneLabel.classList.add(zoneInfo.status);
+        if (span.zoneInfo.status) {
+          zoneLabel.classList.add(span.zoneInfo.status);
         }
       } else {
         zoneLabel.textContent = 'Not configured';
@@ -96,8 +127,8 @@ export async function renderCellar() {
       }
 
       zoneLabelsEl.appendChild(zoneLabel);
-    }
-  });
+    });
+  }
 
   setupInteractions();
 }
