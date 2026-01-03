@@ -39,11 +39,17 @@ export function initImageParsing() {
   }
 
   if (browseBtn) {
-    browseBtn.addEventListener('click', () => fileInput?.click());
+    browseBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent upload area click from also firing
+      fileInput?.click();
+    });
   }
 
   if (photoBtn) {
-    photoBtn.addEventListener('click', () => cameraInput?.click());
+    photoBtn.addEventListener('click', (e) => {
+      e.stopPropagation(); // Prevent upload area click from also firing
+      cameraInput?.click();
+    });
   }
 
   if (fileInput) {
