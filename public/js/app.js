@@ -392,15 +392,27 @@ function initMobileMenu() {
   const tabsContainer = document.getElementById('tabs-container');
 
   if (menuBtn && tabsContainer) {
-    menuBtn.addEventListener('click', () => {
-      tabsContainer.classList.toggle('open');
-    });
+    // Use both click and touchend for reliable mobile support
+    const toggleMenu = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const isOpen = tabsContainer.classList.toggle('open');
+      menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      console.log('[App] Menu toggled:', isOpen ? 'open' : 'closed');
+    };
+
+    menuBtn.addEventListener('click', toggleMenu);
+    // Touch event for better mobile responsiveness
+    menuBtn.addEventListener('touchend', toggleMenu, { passive: false });
 
     // Close menu when clicking outside
     document.addEventListener('click', (e) => {
-      if (!e.target.closest('.tabs')) {
-        tabsContainer.classList.remove('open');
-      }
+      // Don't close if clicking the menu button (handled above)
+      if (e.target.closest('.mobile-menu-btn')) return;
+      // Don't close if clicking inside the menu
+      if (e.target.closest('.tabs-container')) return;
+      tabsContainer.classList.remove('open');
+      menuBtn.setAttribute('aria-expanded', 'false');
     });
   }
 }
@@ -459,11 +471,16 @@ async function registerServiceWorker() {
 
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // New version available
-            showUpdateNotification();
+            // New version available - pass the registration so we can message waiting worker
+            showUpdateNotification(registration);
           }
         });
       });
+
+      // Also check if there's already a waiting worker on page load
+      if (registration.waiting) {
+        showUpdateNotification(registration);
+      }
 
     } catch (error) {
       console.error('[App] Service Worker registration failed:', error);
@@ -473,8 +490,12 @@ async function registerServiceWorker() {
 
 /**
  * Show notification when new version is available.
+ * @param {ServiceWorkerRegistration} registration - The SW registration
  */
-function showUpdateNotification() {
+function showUpdateNotification(registration) {
+  // Don't show duplicate notifications
+  if (document.querySelector('.update-notification')) return;
+
   const notification = document.createElement('div');
   notification.className = 'update-notification';
   notification.innerHTML = `
@@ -485,9 +506,20 @@ function showUpdateNotification() {
   document.body.appendChild(notification);
 
   document.getElementById('update-app-btn').addEventListener('click', () => {
-    // Tell service worker to skip waiting
-    navigator.serviceWorker.controller?.postMessage({ type: 'SKIP_WAITING' });
-    window.location.reload();
+    console.log('[App] Triggering service worker update...');
+    // Tell the WAITING service worker to skip waiting and activate
+    if (registration.waiting) {
+      registration.waiting.postMessage({ type: 'SKIP_WAITING' });
+    }
+    // Listen for the controller to change, then reload
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      console.log('[App] Controller changed, reloading...');
+      window.location.reload();
+    });
+    // Fallback reload after short delay if controllerchange doesn't fire
+    setTimeout(() => {
+      window.location.reload();
+    }, 1000);
   });
 
   document.getElementById('dismiss-update-btn').addEventListener('click', () => {
