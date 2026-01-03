@@ -9,7 +9,7 @@ import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
 import { initSettings, loadSettings } from './settings.js';
-import { initCellarAnalysis } from './cellarAnalysis.js';
+import { initCellarAnalysis, loadAnalysis } from './cellarAnalysis.js';
 import { escapeHtml } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
 import { initGlobalSearch } from './globalSearch.js';
@@ -369,18 +369,8 @@ function switchView(viewName) {
   if (viewName === 'history') loadHistory();
   if (viewName === 'settings') loadSettings();
   if (viewName === 'analysis') {
-    // Import and load analysis when tab is opened
-    import('./cellarAnalysis.js')
-      .then(module => {
-        module.loadAnalysis();
-      })
-      .catch(err => {
-        console.error('[App] Failed to load analysis module:', err);
-        const summaryEl = document.getElementById('analysis-summary');
-        if (summaryEl) {
-          summaryEl.innerHTML = `<div class="analysis-loading">Error loading analysis: ${err.message}</div>`;
-        }
-      });
+    // Load analysis when tab is opened
+    loadAnalysis();
   }
 }
 
