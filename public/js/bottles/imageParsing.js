@@ -40,14 +40,16 @@ export function initImageParsing() {
 
   if (browseBtn) {
     browseBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent upload area click from also firing
+      e.preventDefault();
+      e.stopPropagation();
       fileInput?.click();
     });
   }
 
   if (photoBtn) {
     photoBtn.addEventListener('click', (e) => {
-      e.stopPropagation(); // Prevent upload area click from also firing
+      e.preventDefault();
+      e.stopPropagation();
       cameraInput?.click();
     });
   }
@@ -55,11 +57,12 @@ export function initImageParsing() {
   if (fileInput) {
     fileInput.addEventListener('change', (e) => {
       const file = e.target.files?.[0];
+      // Reset input immediately to allow re-selection and prevent double triggers
+      fileInput.value = '';
       if (file) {
         // Validate it's an image (since we use accept="*/*" to bypass mobile camera)
         if (!file.type.startsWith('image/')) {
           alert('Please select an image file (JPEG, PNG, WebP, GIF, or HEIC)');
-          fileInput.value = '';
           return;
         }
         handleImageFile(file);
@@ -70,6 +73,8 @@ export function initImageParsing() {
   if (cameraInput) {
     cameraInput.addEventListener('change', (e) => {
       const file = e.target.files?.[0];
+      // Reset input immediately to allow re-selection and prevent double triggers
+      cameraInput.value = '';
       if (file) handleImageFile(file);
     });
   }
