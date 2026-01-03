@@ -18,8 +18,13 @@ export function initCellarAnalysis() {
   const executeAllBtn = document.getElementById('execute-all-moves-btn');
   const getAIAdviceBtn = document.getElementById('get-ai-advice-btn');
 
+  console.log('[CellarAnalysis] Init - refreshBtn:', !!refreshBtn, 'getAIAdviceBtn:', !!getAIAdviceBtn);
+
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', loadAnalysis);
+    refreshBtn.addEventListener('click', () => {
+      console.log('[CellarAnalysis] Refresh clicked');
+      loadAnalysis();
+    });
   }
 
   if (executeAllBtn) {
@@ -27,7 +32,10 @@ export function initCellarAnalysis() {
   }
 
   if (getAIAdviceBtn) {
-    getAIAdviceBtn.addEventListener('click', handleGetAIAdvice);
+    getAIAdviceBtn.addEventListener('click', () => {
+      console.log('[CellarAnalysis] AI Advice clicked');
+      handleGetAIAdvice();
+    });
   }
 }
 
