@@ -603,8 +603,17 @@ export async function analyseCellar() {
  * @returns {Promise<Object>}
  */
 export async function analyseCellarAI() {
-  const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`);
-  return handleResponse(res, 'Failed to get AI analysis');
+  console.log('[API] analyseCellarAI - starting fetch...');
+  try {
+    const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`);
+    console.log('[API] analyseCellarAI - fetch complete, status:', res.status);
+    const result = await handleResponse(res, 'Failed to get AI analysis');
+    console.log('[API] analyseCellarAI - response parsed');
+    return result;
+  } catch (err) {
+    console.error('[API] analyseCellarAI - error:', err);
+    throw err;
+  }
 }
 
 /**
