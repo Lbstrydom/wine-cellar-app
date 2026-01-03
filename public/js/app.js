@@ -382,18 +382,25 @@ function initMobileMenu() {
   const tabsContainer = document.getElementById('tabs-container');
 
   if (menuBtn && tabsContainer) {
+    let justOpened = false;
+
     const toggleMenu = (e) => {
       e.preventDefault();
       e.stopPropagation();
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      if (isOpen) {
+        justOpened = true;
+        setTimeout(() => { justOpened = false; }, 100);
+      }
     };
 
-    // Use pointerdown - works for both touch and mouse, fires once
-    menuBtn.addEventListener('pointerdown', toggleMenu);
+    // Use click for toggle - more reliable across devices
+    menuBtn.addEventListener('click', toggleMenu);
 
-    // Close menu when clicking/touching outside
-    document.addEventListener('pointerdown', (e) => {
+    // Close menu when clicking outside
+    document.addEventListener('click', (e) => {
+      if (justOpened) return;
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;
