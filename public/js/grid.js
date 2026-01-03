@@ -40,6 +40,7 @@ export function renderFridge() {
  */
 export async function renderCellar() {
   const grid = document.getElementById('cellar-grid');
+  const zoneLabelsEl = document.getElementById('zone-labels');
   if (!grid || !state.layout) return;
 
   // Fetch zone map for row labels
@@ -49,7 +50,13 @@ export async function renderCellar() {
     zoneMapCache = {};
   }
 
+  const hasZoneConfig = Object.keys(zoneMapCache).length > 0;
+
   grid.innerHTML = '';
+  if (zoneLabelsEl) zoneLabelsEl.innerHTML = '';
+
+  // Calculate row heights for zone labels alignment
+  const rowHeight = 55; // slot height (52px) + gap (3px)
 
   state.layout.cellar.rows.forEach((row) => {
     const rowEl = document.createElement('div');
@@ -58,19 +65,10 @@ export async function renderCellar() {
     const rowId = `R${row.row}`;
     const zoneInfo = zoneMapCache[rowId];
 
+    // Add row label inside the row
     const label = document.createElement('div');
     label.className = 'row-label';
-    if (zoneInfo) {
-      label.classList.add('zone-active');
-      label.dataset.zoneId = zoneInfo.zoneId;
-      label.innerHTML = `
-        <span class="zone-name">${zoneInfo.displayName}</span>
-        <span class="row-id">${rowId}</span>
-      `;
-      label.title = `${zoneInfo.displayName} (${zoneInfo.wineCount} bottles)`;
-    } else {
-      label.textContent = rowId;
-    }
+    label.textContent = rowId;
     rowEl.appendChild(label);
 
     row.slots.forEach(slot => {
@@ -78,6 +76,27 @@ export async function renderCellar() {
     });
 
     grid.appendChild(rowEl);
+
+    // Add zone label to sidebar
+    if (zoneLabelsEl) {
+      const zoneLabel = document.createElement('div');
+      zoneLabel.className = 'zone-label';
+      zoneLabel.style.height = `${rowHeight}px`;
+
+      if (zoneInfo && hasZoneConfig) {
+        zoneLabel.textContent = zoneInfo.displayName;
+        zoneLabel.title = `${zoneInfo.displayName} (${zoneInfo.wineCount || 0} bottles)`;
+        // Add health status class if available
+        if (zoneInfo.status) {
+          zoneLabel.classList.add(zoneInfo.status);
+        }
+      } else {
+        zoneLabel.textContent = 'Not configured';
+        zoneLabel.classList.add('not-configured');
+      }
+
+      zoneLabelsEl.appendChild(zoneLabel);
+    }
   });
 
   setupInteractions();

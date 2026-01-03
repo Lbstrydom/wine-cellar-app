@@ -368,6 +368,12 @@ function switchView(viewName) {
   if (viewName === 'wines') loadWineList();
   if (viewName === 'history') loadHistory();
   if (viewName === 'settings') loadSettings();
+  if (viewName === 'analysis') {
+    // Import and load analysis when tab is opened
+    import('./cellarAnalysis.js').then(module => {
+      module.loadAnalysis();
+    });
+  }
 }
 
 /**

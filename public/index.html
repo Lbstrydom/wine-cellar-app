@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260103b">
+  <link rel="stylesheet" href="/css/styles.css?v=20260103c">
 </head>
 <body>
   <header>
@@ -59,9 +59,10 @@
     </button>
     <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Views">
       <button class="tab active" data-view="grid" role="tab" aria-selected="true" aria-controls="view-grid" id="tab-grid">Cellar Grid</button>
+      <button class="tab" data-view="analysis" role="tab" aria-selected="false" aria-controls="view-analysis" id="tab-analysis">Cellar Analysis</button>
+      <button class="tab" data-view="pairing" role="tab" aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Find Pairing</button>
       <button class="tab" data-view="wines" role="tab" aria-selected="false" aria-controls="view-wines" id="tab-wines">Wine List</button>
       <button class="tab" data-view="history" role="tab" aria-selected="false" aria-controls="view-history" id="tab-history">History</button>
-      <button class="tab" data-view="pairing" role="tab" aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Find Pairing</button>
       <button class="tab" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" id="tab-settings">Settings</button>
     </div>
   </nav>
@@ -120,42 +121,52 @@
     <div class="zone">
       <div class="zone-header">
         <span class="zone-title">Cellar</span>
-        <button class="btn btn-secondary btn-small" id="analyse-cellar-btn">Analyse Organisation</button>
       </div>
-      <div class="cellar-grid" id="cellar-grid"></div>
+      <div class="cellar-container">
+        <div class="zone-labels" id="zone-labels"></div>
+        <div class="cellar-grid" id="cellar-grid"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Analysis View -->
+  <div class="view" id="view-analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden>
+    <div class="analysis-view-header">
+      <h2>Cellar Analysis</h2>
+      <div class="analysis-actions">
+        <button class="btn btn-primary" id="refresh-analysis-btn">Refresh Analysis</button>
+        <button class="btn btn-secondary" id="get-ai-advice-btn">Get AI Advice</button>
+      </div>
     </div>
 
-    <!-- Cellar Analysis Panel -->
-    <div class="cellar-analysis-panel" id="cellar-analysis-panel" style="display: none;">
-      <div class="analysis-header">
-        <h3>Cellar Analysis</h3>
-        <button class="btn btn-secondary btn-small" id="close-analysis-btn">×</button>
-      </div>
-      <div class="analysis-summary" id="analysis-summary"></div>
-      <div class="analysis-alerts" id="analysis-alerts"></div>
-
-      <!-- Fridge Status Section -->
-      <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
-        <h4>Fridge Status</h4>
-        <div class="fridge-status-content" id="fridge-status-content"></div>
-      </div>
-
-      <!-- Zone Narratives Section -->
-      <div class="analysis-zones" id="analysis-zones" style="display: none;">
-        <h4>Zone Overview</h4>
-        <div class="zone-cards-grid" id="zone-cards-grid"></div>
-      </div>
-
-      <div class="analysis-moves" id="analysis-moves">
-        <h4>Suggested Moves</h4>
-        <div class="moves-list" id="moves-list"></div>
-        <div class="moves-actions" id="moves-actions" style="display: none;">
-          <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
-          <button class="btn btn-secondary btn-small" id="get-ai-advice-btn">Get AI Advice</button>
-        </div>
-      </div>
-      <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
+    <div class="analysis-summary" id="analysis-summary">
+      <div class="analysis-loading">Loading analysis...</div>
     </div>
+    <div class="analysis-alerts" id="analysis-alerts"></div>
+
+    <!-- Fridge Status Section -->
+    <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
+      <h3>Fridge Status</h3>
+      <div class="fridge-status-content" id="fridge-status-content"></div>
+    </div>
+
+    <!-- Zone Narratives Section -->
+    <div class="analysis-zones" id="analysis-zones" style="display: none;">
+      <h3>Zone Overview</h3>
+      <div class="zone-cards-grid" id="zone-cards-grid"></div>
+    </div>
+
+    <!-- Suggested Moves Section -->
+    <div class="analysis-moves" id="analysis-moves">
+      <h3>Suggested Moves</h3>
+      <div class="moves-list" id="moves-list"></div>
+      <div class="moves-actions" id="moves-actions" style="display: none;">
+        <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
+      </div>
+    </div>
+
+    <!-- AI Advice Section -->
+    <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
   </div>
 
   <!-- Wine List View (merged Reduce Now + All Wines) -->
@@ -859,6 +870,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260103b"></script>
+  <script type="module" src="/js/app.js?v=20260103c"></script>
 </body>
 </html>

@@ -8,22 +8,18 @@ import { showToast } from './utils.js';
 import { refreshLayout } from './app.js';
 
 let currentAnalysis = null;
+let analysisLoaded = false;
 
 /**
  * Initialize cellar analysis UI handlers.
  */
 export function initCellarAnalysis() {
-  const analyseBtn = document.getElementById('analyse-cellar-btn');
-  const closeBtn = document.getElementById('close-analysis-btn');
+  const refreshBtn = document.getElementById('refresh-analysis-btn');
   const executeAllBtn = document.getElementById('execute-all-moves-btn');
   const getAIAdviceBtn = document.getElementById('get-ai-advice-btn');
 
-  if (analyseBtn) {
-    analyseBtn.addEventListener('click', handleAnalyseClick);
-  }
-
-  if (closeBtn) {
-    closeBtn.addEventListener('click', hideAnalysisPanel);
+  if (refreshBtn) {
+    refreshBtn.addEventListener('click', loadAnalysis);
   }
 
   if (executeAllBtn) {
@@ -36,17 +32,16 @@ export function initCellarAnalysis() {
 }
 
 /**
- * Handle analyse button click.
+ * Load analysis when tab is opened.
+ * Called by app.js when switching to analysis tab.
  */
-async function handleAnalyseClick() {
-  const panel = document.getElementById('cellar-analysis-panel');
+export async function loadAnalysis() {
   const summaryEl = document.getElementById('analysis-summary');
   const alertsEl = document.getElementById('analysis-alerts');
   const movesListEl = document.getElementById('moves-list');
   const movesActionsEl = document.getElementById('moves-actions');
 
-  // Show panel with loading state
-  panel.style.display = 'block';
+  // Show loading state
   summaryEl.innerHTML = '<div class="analysis-loading">Analysing cellar organisation...</div>';
   alertsEl.innerHTML = '';
   movesListEl.innerHTML = '';
@@ -55,6 +50,7 @@ async function handleAnalyseClick() {
   try {
     const response = await analyseCellar();
     currentAnalysis = response.report;
+    analysisLoaded = true;
     renderAnalysis(currentAnalysis);
   } catch (err) {
     summaryEl.innerHTML = `<div class="analysis-loading">Error: ${err.message}</div>`;
@@ -62,23 +58,62 @@ async function handleAnalyseClick() {
 }
 
 /**
+ * Check if analysis has been loaded.
+ */
+export function isAnalysisLoaded() {
+  return analysisLoaded;
+}
+
+/**
+ * Get current analysis data.
+ */
+export function getCurrentAnalysis() {
+  return currentAnalysis;
+}
+
+/**
  * Render analysis results.
  * @param {Object} analysis - Analysis report from API
  */
 function renderAnalysis(analysis) {
-  renderSummary(analysis.summary);
+  renderSummary(analysis.summary, analysis.needsZoneSetup);
   renderAlerts(analysis.alerts);
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
-  renderMoves(analysis.suggestedMoves);
+  renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup);
 }
 
 /**
  * Render summary statistics.
  * @param {Object} summary
+ * @param {boolean} needsZoneSetup
  */
-function renderSummary(summary) {
+function renderSummary(summary, needsZoneSetup) {
   const el = document.getElementById('analysis-summary');
+
+  // When zones aren't configured, show different stats
+  if (needsZoneSetup) {
+    el.innerHTML = `
+      <div class="summary-stat">
+        <div class="value">${summary.totalBottles}</div>
+        <div class="label">Total Bottles</div>
+      </div>
+      <div class="summary-stat warning">
+        <div class="value">-</div>
+        <div class="label">Correctly Placed</div>
+      </div>
+      <div class="summary-stat warning">
+        <div class="value">-</div>
+        <div class="label">Misplaced</div>
+      </div>
+      <div class="summary-stat">
+        <div class="value">${summary.zonesUsed}</div>
+        <div class="label">Zones Detected</div>
+      </div>
+    `;
+    return;
+  }
+
   const misplacedClass = summary.misplacedBottles > 5 ? 'bad' : summary.misplacedBottles > 0 ? 'warning' : 'good';
   const correctPct = summary.totalBottles > 0
     ? Math.round((summary.correctlyPlaced / summary.totalBottles) * 100)
@@ -319,9 +354,7 @@ async function moveFridgeCandidate(index) {
     showToast(`Moved ${candidate.wineName} to ${targetSlot}`);
 
     // Re-analyse to show updated state
-    const response = await analyseCellar();
-    currentAnalysis = response.report;
-    renderAnalysis(currentAnalysis);
+    await loadAnalysis();
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -331,10 +364,23 @@ async function moveFridgeCandidate(index) {
 /**
  * Render suggested moves.
  * @param {Array} moves
+ * @param {boolean} needsZoneSetup
  */
-function renderMoves(moves) {
+function renderMoves(moves, needsZoneSetup) {
   const listEl = document.getElementById('moves-list');
   const actionsEl = document.getElementById('moves-actions');
+
+  // When zones aren't configured, show explanation
+  if (needsZoneSetup) {
+    listEl.innerHTML = `
+      <div class="no-moves">
+        <p>Zone allocations haven't been configured yet.</p>
+        <p>Click <strong>"Get AI Advice"</strong> to have AI propose a zone structure based on your collection.</p>
+      </div>
+    `;
+    actionsEl.style.display = 'none';
+    return;
+  }
 
   if (!moves || moves.length === 0) {
     listEl.innerHTML = '<div class="no-moves">All bottles are well-organised!</div>';
@@ -404,7 +450,7 @@ async function executeMove(index) {
 
     // Remove move from list and refresh
     currentAnalysis.suggestedMoves.splice(index, 1);
-    renderMoves(currentAnalysis.suggestedMoves);
+    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup);
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -419,7 +465,7 @@ function dismissMove(index) {
   if (!currentAnalysis?.suggestedMoves?.[index]) return;
 
   currentAnalysis.suggestedMoves.splice(index, 1);
-  renderMoves(currentAnalysis.suggestedMoves);
+  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup);
 }
 
 /**
@@ -446,9 +492,7 @@ async function handleExecuteAllMoves() {
     showToast(`Executed ${result.executed} moves`);
 
     // Re-analyse to show updated state
-    const response = await analyseCellar();
-    currentAnalysis = response.report;
-    renderAnalysis(currentAnalysis);
+    await loadAnalysis();
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -484,15 +528,6 @@ function formatAIAdvice(advice) {
     .split('\n\n')
     .map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`)
     .join('');
-}
-
-/**
- * Hide the analysis panel.
- */
-function hideAnalysisPanel() {
-  const panel = document.getElementById('cellar-analysis-panel');
-  panel.style.display = 'none';
-  currentAnalysis = null;
 }
 
 // Expose functions for inline onclick handlers
