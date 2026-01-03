@@ -20,7 +20,10 @@ const anthropic = new Anthropic({
  * @param {Object} context - Previous conversation context
  * @returns {Promise<Object>} AI response with suggestions
  */
-export async function discussZoneClassification(message, wines, context = {}) {
+export async function discussZoneClassification(message, wines, context) {
+  // Ensure context is an object (frontend may pass null)
+  context = context || {};
+
   // Build zone summary for context
   const zoneSummary = buildZoneSummary(wines);
 
