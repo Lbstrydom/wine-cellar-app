@@ -628,4 +628,67 @@ router.get('/zone-layout/moves', (_req, res) => {
   }
 });
 
+// ============================================================
+// Zone Classification Chat Endpoints
+// ============================================================
+
+import { discussZoneClassification, reassignWineZone } from '../services/zoneChat.js';
+
+/**
+ * POST /api/cellar/zone-chat
+ * Chat about wine zone classifications with AI sommelier.
+ */
+router.post('/zone-chat', async (req, res) => {
+  try {
+    const { message, context } = req.body;
+
+    if (!message || message.trim().length === 0) {
+      return res.status(400).json({ error: 'Message required' });
+    }
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      return res.status(503).json({
+        error: 'AI features require API key configuration'
+      });
+    }
+
+    // Get current wine data for context
+    const wines = getAllWinesWithSlots().filter(w => w.location_code?.startsWith('R'));
+
+    const result = await discussZoneClassification(message, wines, context);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Zone chat error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/zone-reassign
+ * Reassign a wine to a different zone (user override).
+ */
+router.post('/zone-reassign', (req, res) => {
+  try {
+    const { wineId, newZoneId, reason } = req.body;
+
+    if (!wineId || !newZoneId) {
+      return res.status(400).json({ error: 'wineId and newZoneId required' });
+    }
+
+    const result = reassignWineZone(wineId, newZoneId, reason);
+
+    res.json({
+      success: true,
+      ...result
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Zone reassign error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

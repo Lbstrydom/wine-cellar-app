@@ -9,9 +9,11 @@ import {
   executeCellarMoves,
   getZoneLayoutProposal,
   confirmZoneLayout,
-  getConsolidationMoves
+  getConsolidationMoves,
+  zoneChatMessage,
+  reassignWineZone
 } from './api.js';
-import { showToast } from './utils.js';
+import { showToast, escapeHtml } from './utils.js';
 import { refreshLayout } from './app.js';
 
 let currentAnalysis = null;
@@ -19,6 +21,7 @@ let analysisLoaded = false;
 let currentProposal = null;
 let currentZoneMoves = null;
 let currentZoneIndex = 0;
+let zoneChatContext = null;
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -898,6 +901,180 @@ function finishZoneSetup() {
   loadAnalysis();
 }
 
+// ============================================================
+// Zone Classification Chat Functions
+// ============================================================
+
+/**
+ * Toggle zone chat panel visibility.
+ */
+function toggleZoneChat() {
+  const chatPanel = document.getElementById('zone-chat-panel');
+  if (!chatPanel) return;
+
+  const isVisible = chatPanel.style.display !== 'none';
+  chatPanel.style.display = isVisible ? 'none' : 'block';
+
+  if (!isVisible) {
+    // Focus input when opening
+    document.getElementById('zone-chat-input')?.focus();
+  }
+}
+
+/**
+ * Send a zone chat message.
+ */
+async function sendZoneChatMessage() {
+  const input = document.getElementById('zone-chat-input');
+  const messagesEl = document.getElementById('zone-chat-messages');
+  const sendBtn = document.getElementById('zone-chat-send');
+
+  if (!input || !messagesEl) return;
+
+  const message = input.value.trim();
+  if (!message) return;
+
+  // Add user message to chat
+  messagesEl.innerHTML += `<div class="zone-chat-msg user">${escapeHtml(message)}</div>`;
+  input.value = '';
+  input.disabled = true;
+  sendBtn.disabled = true;
+
+  // Add thinking indicator
+  messagesEl.innerHTML += `<div class="zone-chat-msg assistant thinking">Thinking...</div>`;
+  messagesEl.scrollTop = messagesEl.scrollHeight;
+
+  try {
+    const result = await zoneChatMessage(message, zoneChatContext);
+
+    // Remove thinking indicator
+    const thinking = messagesEl.querySelector('.thinking');
+    if (thinking) thinking.remove();
+
+    // Add AI response
+    messagesEl.innerHTML += `<div class="zone-chat-msg assistant">${formatZoneChatResponse(result)}</div>`;
+
+    // Store context for follow-up
+    zoneChatContext = result.context;
+
+    // If there are reclassifications, show action buttons
+    if (result.reclassifications && result.reclassifications.length > 0) {
+      messagesEl.innerHTML += renderReclassificationActions(result.reclassifications);
+    }
+
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+  } catch (err) {
+    const thinking = messagesEl.querySelector('.thinking');
+    if (thinking) thinking.remove();
+    messagesEl.innerHTML += `<div class="zone-chat-msg error">Error: ${escapeHtml(err.message)}</div>`;
+  } finally {
+    input.disabled = false;
+    sendBtn.disabled = false;
+    input.focus();
+  }
+}
+
+/**
+ * Format zone chat response for display.
+ * @param {Object} result - Chat result
+ * @returns {string} Formatted HTML
+ */
+function formatZoneChatResponse(result) {
+  // Convert newlines to <br> and paragraphs
+  return result.response
+    .split('\n\n')
+    .map(p => `<p>${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
+    .join('');
+}
+
+/**
+ * Render reclassification action buttons.
+ * @param {Array} reclassifications - Suggested reclassifications
+ * @returns {string} HTML
+ */
+function renderReclassificationActions(reclassifications) {
+  let html = '<div class="zone-chat-actions">';
+  html += '<p class="actions-title">Suggested changes:</p>';
+
+  reclassifications.forEach((r, idx) => {
+    html += `
+      <div class="reclassification-item">
+        <span class="wine-name">${escapeHtml(r.wineName)}</span>
+        <span class="zone-change">${r.currentZone} → ${r.suggestedZone}</span>
+        <button class="btn btn-small btn-primary" onclick="window.cellarAnalysis.applyReclassification(${r.wineId}, '${r.suggestedZone}', '${escapeHtml(r.reason || '')}')">Apply</button>
+      </div>
+    `;
+  });
+
+  html += `<button class="btn btn-secondary" onclick="window.cellarAnalysis.applyAllReclassifications()">Apply All</button>`;
+  html += '</div>';
+
+  return html;
+}
+
+/**
+ * Apply a single reclassification.
+ */
+async function applyReclassification(wineId, newZoneId, reason) {
+  try {
+    const result = await reassignWineZone(wineId, newZoneId, reason);
+    showToast(`Moved ${result.wineName} to ${result.newZone}`);
+
+    // Refresh analysis if we have one
+    if (currentProposal) {
+      currentProposal = await getZoneLayoutProposal();
+      document.getElementById('zone-proposal-list').innerHTML = renderZoneProposal(currentProposal);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Apply all suggested reclassifications.
+ */
+async function applyAllReclassifications() {
+  // Extract reclassifications from last chat message
+  if (!zoneChatContext?.history) return;
+
+  // Get the last assistant message with reclassifications
+  const lastMsg = [...zoneChatContext.history].reverse().find(m => m.role === 'assistant');
+  if (!lastMsg) return;
+
+  const jsonMatch = lastMsg.content.match(/```json\s*([\s\S]*?)\s*```/);
+  if (!jsonMatch) return;
+
+  try {
+    const parsed = JSON.parse(jsonMatch[1]);
+    if (!parsed.reclassifications) return;
+
+    for (const r of parsed.reclassifications) {
+      await reassignWineZone(r.wineId, r.suggestedZone, r.reason || 'Chat suggestion');
+    }
+
+    showToast(`Applied ${parsed.reclassifications.length} reclassifications`);
+
+    // Refresh proposal if showing
+    if (currentProposal) {
+      currentProposal = await getZoneLayoutProposal();
+      document.getElementById('zone-proposal-list').innerHTML = renderZoneProposal(currentProposal);
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Clear zone chat history.
+ */
+function clearZoneChat() {
+  const messagesEl = document.getElementById('zone-chat-messages');
+  if (messagesEl) {
+    messagesEl.innerHTML = '<div class="zone-chat-welcome">Ask me about wine zone classifications. For example: "Why is my Appassimento in the dessert zone?" or "Move Cabernet wines to a different zone."</div>';
+  }
+  zoneChatContext = null;
+}
+
 // Expose functions for inline onclick handlers
 window.cellarAnalysis = {
   executeMove,
@@ -907,5 +1084,10 @@ window.cellarAnalysis = {
   executeAllZoneMoves,
   skipZone,
   expandZone,
-  finishZoneSetup
+  finishZoneSetup,
+  toggleZoneChat,
+  sendZoneChatMessage,
+  applyReclassification,
+  applyAllReclassifications,
+  clearZoneChat
 };

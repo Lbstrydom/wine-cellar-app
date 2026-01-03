@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260103g">
+  <link rel="stylesheet" href="/css/styles.css?v=20260103h">
 </head>
 <body>
   <header>
@@ -150,6 +150,36 @@
       <div class="wizard-header">
         <h3>Zone Setup Wizard</h3>
         <p class="wizard-subtitle">Review and confirm the proposed zone layout for your cellar</p>
+        <button class="btn btn-small btn-secondary" id="toggle-zone-chat-btn" onclick="window.cellarAnalysis.toggleZoneChat()">
+          💬 Chat About Zones
+        </button>
+      </div>
+
+      <!-- Zone Chat Panel -->
+      <div class="zone-chat-panel" id="zone-chat-panel" style="display: none;">
+        <div class="zone-chat-header">
+          <span>Zone Classification Chat</span>
+          <button class="btn-icon" onclick="window.cellarAnalysis.toggleZoneChat()" title="Close chat">✕</button>
+        </div>
+        <div class="zone-chat-messages" id="zone-chat-messages">
+          <div class="chat-message assistant">
+            <div class="chat-content">
+              <p>I'm here to help you review and adjust zone classifications. You can:</p>
+              <ul>
+                <li>Ask why a specific wine is in a certain zone</li>
+                <li>Challenge a classification you disagree with</li>
+                <li>Request reclassification of wines</li>
+                <li>Ask about zone boundaries and rules</li>
+              </ul>
+              <p>Try asking: "Why is [wine name] in the dessert zone?" or "Move my Amarone to the appassimento zone"</p>
+            </div>
+          </div>
+        </div>
+        <div class="zone-chat-input-container">
+          <input type="text" id="zone-chat-input" placeholder="Ask about zone classifications..."
+                 onkeypress="if(event.key==='Enter') window.cellarAnalysis.sendZoneChatMessage()">
+          <button class="btn btn-primary btn-small" onclick="window.cellarAnalysis.sendZoneChatMessage()">Send</button>
+        </div>
       </div>
 
       <div class="wizard-step" id="wizard-step-1">
@@ -899,6 +929,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260103g"></script>
+  <script type="module" src="/js/app.js?v=20260103h"></script>
 </body>
 </html>

@@ -694,6 +694,37 @@ export async function getConsolidationMoves() {
   return handleResponse(res, 'Failed to get consolidation moves');
 }
 
+/**
+ * Send zone classification chat message.
+ * @param {string} message - User message
+ * @param {Object} context - Previous chat context
+ * @returns {Promise<Object>} AI response
+ */
+export async function zoneChatMessage(message, context = null) {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, context })
+  });
+  return handleResponse(res, 'Failed to send zone chat message');
+}
+
+/**
+ * Reassign a wine to a different zone.
+ * @param {number} wineId - Wine ID
+ * @param {string} newZoneId - New zone ID
+ * @param {string} reason - Reason for reassignment
+ * @returns {Promise<Object>}
+ */
+export async function reassignWineZone(wineId, newZoneId, reason = '') {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-reassign`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wineId, newZoneId, reason })
+  });
+  return handleResponse(res, 'Failed to reassign wine zone');
+}
+
 // ============================================
 // Awards Database API
 // ============================================
