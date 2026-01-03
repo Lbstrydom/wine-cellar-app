@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260103a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260103b">
 </head>
 <body>
   <header>
@@ -133,6 +133,19 @@
       </div>
       <div class="analysis-summary" id="analysis-summary"></div>
       <div class="analysis-alerts" id="analysis-alerts"></div>
+
+      <!-- Fridge Status Section -->
+      <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
+        <h4>Fridge Status</h4>
+        <div class="fridge-status-content" id="fridge-status-content"></div>
+      </div>
+
+      <!-- Zone Narratives Section -->
+      <div class="analysis-zones" id="analysis-zones" style="display: none;">
+        <h4>Zone Overview</h4>
+        <div class="zone-cards-grid" id="zone-cards-grid"></div>
+      </div>
+
       <div class="analysis-moves" id="analysis-moves">
         <h4>Suggested Moves</h4>
         <div class="moves-list" id="moves-list"></div>
@@ -846,6 +859,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260103a"></script>
+  <script type="module" src="/js/app.js?v=20260103b"></script>
 </body>
 </html>

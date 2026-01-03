@@ -653,6 +653,234 @@ header .search-trigger {
   font-style: italic;
 }
 
+/* Fridge Status Section */
+.analysis-fridge {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+  border-left: 3px solid var(--fridge-bg, #2d4a5e);
+}
+
+.analysis-fridge h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.fridge-status-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.fridge-capacity-bar {
+  flex: 1;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.fridge-capacity-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s;
+}
+
+.fridge-capacity-text {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.fridge-mix-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.fridge-category {
+  padding: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+  text-align: center;
+  font-size: 0.8rem;
+}
+
+.fridge-category .count {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.fridge-category.has-gap .count {
+  color: #ff9800;
+}
+
+.fridge-category .name {
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.fridge-gaps {
+  margin-bottom: 1rem;
+}
+
+.fridge-gaps h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: #ff9800;
+}
+
+.fridge-gap-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.4rem 0.6rem;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: 4px;
+  margin-bottom: 0.3rem;
+  font-size: 0.85rem;
+}
+
+.fridge-gap-item .need {
+  color: #ff9800;
+  font-weight: 500;
+}
+
+.fridge-candidates {
+  margin-top: 1rem;
+}
+
+.fridge-candidates h5 {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.fridge-candidate {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem;
+  background: var(--bg-card);
+  border-radius: 4px;
+  margin-bottom: 0.4rem;
+}
+
+.fridge-candidate-info {
+  flex: 1;
+}
+
+.fridge-candidate-name {
+  font-weight: 500;
+  font-size: 0.9rem;
+}
+
+.fridge-candidate-reason {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.fridge-candidate .btn {
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+/* Zone Narratives Section */
+.analysis-zones {
+  margin-bottom: 1.5rem;
+}
+
+.analysis-zones h4 {
+  margin: 0 0 0.75rem 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.zone-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 0.75rem;
+}
+
+.zone-card {
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
+
+.zone-card.healthy { border-left-color: #4caf50; }
+.zone-card.crowded { border-left-color: #ff9800; }
+.zone-card.sparse { border-left-color: #2196f3; }
+.zone-card.fragmented { border-left-color: #9c27b0; }
+
+.zone-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.zone-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.zone-card-status {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  font-weight: 500;
+}
+
+.zone-card-status.healthy { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+.zone-card-status.crowded { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
+.zone-card-status.sparse { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
+.zone-card-status.fragmented { background: rgba(156, 39, 176, 0.2); color: #9c27b0; }
+
+.zone-card-purpose {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+  font-style: italic;
+}
+
+.zone-card-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.zone-card-stats span {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.zone-card-composition {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.zone-card-pairing {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.4rem;
+}
+
+.zone-card-pairing strong {
+  color: var(--text);
+}
+
 /* Fridge grid */
 .fridge-section {
   background: var(--fridge-bg);

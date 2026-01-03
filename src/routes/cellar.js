@@ -15,12 +15,22 @@ import {
   getAllZoneAllocations,
   updateZoneWineCount
 } from '../services/cellarAllocation.js';
+import {
+  getZoneMetadata,
+  getAllZoneMetadata,
+  getZoneWithIntent,
+  getAllZonesWithIntent,
+  updateZoneMetadata,
+  confirmZoneMetadata,
+  getZonesNeedingReview
+} from '../services/zoneMetadata.js';
+import { analyseFridge, getFridgeStatus } from '../services/fridgeStocking.js';
 
 const router = express.Router();
 
 /**
- * Get all wines with their slot assignments.
- * @returns {Array} Wines with location data
+ * Get all wines with their slot assignments and drinking windows.
+ * @returns {Array} Wines with location data and drink_by_year
  */
 function getAllWinesWithSlots() {
   return db.prepare(`
@@ -40,9 +50,13 @@ function getAllWinesWithSlots() {
       w.zone_confidence,
       w.drink_from,
       w.drink_until,
-      s.location_code as slot_id
+      s.location_code as slot_id,
+      dw.drink_by_year,
+      dw.drink_from_year,
+      dw.peak_year
     FROM wines w
     LEFT JOIN slots s ON s.wine_id = w.id
+    LEFT JOIN drinking_windows dw ON dw.wine_id = w.id
   `).all();
 }
 
@@ -195,15 +209,26 @@ router.get('/suggest-placement/:wineId', (req, res) => {
 
 /**
  * GET /api/cellar/analyse
- * Get full cellar analysis.
+ * Get full cellar analysis with fridge status.
  */
 router.get('/analyse', (_req, res) => {
   try {
     const wines = getAllWinesWithSlots();
     const report = analyseCellar(wines);
 
-    // Add fridge candidates
+    // Add fridge candidates (legacy)
     report.fridgeCandidates = getFridgeCandidates(wines);
+
+    // Add fridge status with par-levels
+    const fridgeWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('F');
+    });
+    const cellarWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('R');
+    });
+    report.fridgeStatus = analyseFridge(fridgeWines, cellarWines);
 
     res.json({
       success: true,
@@ -225,8 +250,19 @@ router.get('/analyse/ai', async (req, res) => {
     const wines = getAllWinesWithSlots();
     const report = analyseCellar(wines);
 
-    // Add fridge candidates
+    // Add fridge candidates (legacy)
     report.fridgeCandidates = getFridgeCandidates(wines);
+
+    // Add fridge status with par-levels
+    const fridgeWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('F');
+    });
+    const cellarWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('R');
+    });
+    report.fridgeStatus = analyseFridge(fridgeWines, cellarWines);
 
     const aiResult = await getCellarOrganisationAdvice(report);
 
@@ -387,6 +423,118 @@ router.post('/update-wine-attributes', (req, res) => {
     });
   } catch (err) {
     console.error('[CellarAPI] Update attributes error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Zone Metadata Endpoints
+// ============================================================
+
+/**
+ * GET /api/cellar/zone-metadata
+ * Get all zone metadata with intent descriptions.
+ */
+router.get('/zone-metadata', (_req, res) => {
+  try {
+    const metadata = getAllZoneMetadata();
+    res.json({ success: true, metadata });
+  } catch (err) {
+    console.error('[CellarAPI] Zone metadata error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zone-metadata/:zoneId
+ * Get metadata for a specific zone.
+ */
+router.get('/zone-metadata/:zoneId', (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const metadata = getZoneMetadata(zoneId);
+
+    if (!metadata) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    res.json({ success: true, metadata });
+  } catch (err) {
+    console.error('[CellarAPI] Zone metadata error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zones-with-intent
+ * Get all zones with merged code config and database metadata.
+ */
+router.get('/zones-with-intent', (_req, res) => {
+  try {
+    const zones = getAllZonesWithIntent();
+    res.json({ success: true, zones });
+  } catch (err) {
+    console.error('[CellarAPI] Zones with intent error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * PUT /api/cellar/zone-metadata/:zoneId
+ * Update zone metadata (user edit).
+ */
+router.put('/zone-metadata/:zoneId', (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const updates = req.body;
+
+    if (!updates || Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No updates provided' });
+    }
+
+    const metadata = updateZoneMetadata(zoneId, updates, false);
+
+    if (!metadata) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    res.json({ success: true, metadata });
+  } catch (err) {
+    console.error('[CellarAPI] Update zone metadata error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/zone-metadata/:zoneId/confirm
+ * Confirm zone metadata (mark as user-reviewed).
+ */
+router.post('/zone-metadata/:zoneId/confirm', (req, res) => {
+  try {
+    const { zoneId } = req.params;
+    const metadata = confirmZoneMetadata(zoneId);
+
+    if (!metadata) {
+      return res.status(404).json({ error: 'Zone not found' });
+    }
+
+    res.json({ success: true, metadata });
+  } catch (err) {
+    console.error('[CellarAPI] Confirm zone metadata error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/zones-needing-review
+ * Get zones with AI suggestions that haven't been confirmed.
+ */
+router.get('/zones-needing-review', (_req, res) => {
+  try {
+    const zones = getZonesNeedingReview();
+    res.json({ success: true, zones });
+  } catch (err) {
+    console.error('[CellarAPI] Zones needing review error:', err);
     res.status(500).json({ error: err.message });
   }
 });

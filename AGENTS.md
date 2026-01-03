@@ -406,21 +406,46 @@ refactor/modular-structure
 
 ## Deployment
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
+The app is deployed to a Synology NAS using Git and local Docker builds. This approach is faster and more reliable than pulling pre-built images from GitHub Container Registry.
+
+### Git-Based Deployment (Preferred)
+
+Deploy changes by pushing to GitHub, then pulling and rebuilding on Synology:
+
+```bash
+# 1. Commit and push changes
+git add -A && git commit -m "your message" && git push
+
+# 2. SSH to Synology and deploy (single command)
+ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git reset --hard origin/main && /usr/local/bin/docker-compose down && /usr/local/bin/docker-compose build --no-cache && /usr/local/bin/docker-compose up -d"
+```
+
+Or as separate steps:
+```bash
+# SSH to Synology
+ssh lstrydom@192.168.86.31
+
+# On Synology:
+cd ~/Apps/wine-cellar-app
+git fetch origin
+git reset --hard origin/main
+/usr/local/bin/docker-compose down
+/usr/local/bin/docker-compose build --no-cache
+/usr/local/bin/docker-compose up -d
+```
 
 ### Quick Reference
 
 | Action | Command |
 |--------|---------|
-| Full deploy | `.\scripts\deploy.ps1` |
-| Deploy existing image | `.\scripts\deploy.ps1 -SkipPush` |
-| Update config only | `.\scripts\deploy.ps1 -UpdateConfig` |
-| Clean deploy | `.\scripts\deploy.ps1 -SkipPush -Clean` |
+| Deploy to Synology | See git-based deployment above |
 | Download production DB | `.\scripts\sync-db.ps1 -Download` |
 | Upload local DB | `.\scripts\sync-db.ps1 -Upload` |
 | Setup SSH key auth | `.\scripts\setup-ssh-key.ps1` |
 | SSH to Synology | `ssh lstrydom@192.168.86.31` |
-| View container logs | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar"` |
+| View container logs | `ssh lstrydom@192.168.86.31 "/usr/local/bin/docker logs wine-cellar"` |
+| Check container status | `ssh lstrydom@192.168.86.31 "/usr/local/bin/docker ps \| grep wine"` |
+| Test API | `curl -s https://ds223j.tailf6bfbc.ts.net/api/stats` |
 
 ### Key Paths on Synology
 
@@ -428,17 +453,42 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for complete deployment procedures.
 |------|------|
 | App directory | `~/Apps/wine-cellar-app/` |
 | Database | `~/Apps/wine-cellar-app/data/cellar.db` |
-| Production URL | http://192.168.86.31:3000 |
+| Docker binary | `/usr/local/bin/docker` |
+| Docker Compose | `/usr/local/bin/docker-compose` |
+| Production URL (local) | http://192.168.86.31:3000 |
+| Production URL (Tailscale) | https://ds223j.tailf6bfbc.ts.net |
 
 ### First-Time Synology Setup
 
 1. **Setup SSH key auth**: `.\scripts\setup-ssh-key.ps1`
-2. **Configure docker access** (on Synology via SSH):
+2. **Clone the repo on Synology**:
+   ```bash
+   ssh lstrydom@192.168.86.31
+   mkdir -p ~/Apps && cd ~/Apps
+   git clone https://github.com/Lbstrydom/wine-cellar-app.git
+   cd wine-cellar-app
+   cp .env.example .env
+   # Edit .env with your API keys
+   ```
+3. **Configure docker access** (on Synology via SSH):
    ```bash
    sudo chgrp administrators /var/run/docker.sock
    sudo chmod 660 /var/run/docker.sock
    ```
-3. **Make docker permissions persistent**: Create triggered task in DSM Task Scheduler (Boot-up, root user) with command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
+4. **Make docker permissions persistent**: Create triggered task in DSM Task Scheduler (Boot-up, root user) with command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
+5. **Initial build and start**:
+   ```bash
+   /usr/local/bin/docker-compose build --no-cache
+   /usr/local/bin/docker-compose up -d
+   ```
+
+### Cache Busting
+
+When updating frontend files, bump the cache version in two places:
+1. `public/index.html` - Update `?v=YYYYMMDDX` in CSS and JS imports
+2. `public/sw.js` - Update `CACHE_VERSION` constant
+
+This forces browsers to reload fresh assets instead of using cached versions
 
 ---
 

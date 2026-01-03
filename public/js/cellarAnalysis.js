@@ -68,6 +68,8 @@ async function handleAnalyseClick() {
 function renderAnalysis(analysis) {
   renderSummary(analysis.summary);
   renderAlerts(analysis.alerts);
+  renderFridgeStatus(analysis.fridgeStatus);
+  renderZoneNarratives(analysis.zoneNarratives);
   renderMoves(analysis.suggestedMoves);
 }
 
@@ -123,6 +125,207 @@ function renderAlerts(alerts) {
       </div>
     `;
   }).join('');
+}
+
+/**
+ * Render fridge status with par-level gaps and candidates.
+ * @param {Object} fridgeStatus
+ */
+function renderFridgeStatus(fridgeStatus) {
+  const container = document.getElementById('analysis-fridge');
+  const contentEl = document.getElementById('fridge-status-content');
+
+  if (!fridgeStatus) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+  const fillPercent = Math.round((fridgeStatus.occupied / fridgeStatus.capacity) * 100);
+
+  // Build current mix display
+  const categories = ['sparkling', 'crispWhite', 'aromaticWhite', 'textureWhite', 'rose', 'chillableRed', 'flex'];
+  const categoryLabels = {
+    sparkling: 'Sparkling',
+    crispWhite: 'Crisp White',
+    aromaticWhite: 'Aromatic',
+    textureWhite: 'Oaked White',
+    rose: 'Rosé',
+    chillableRed: 'Light Red',
+    flex: 'Flex'
+  };
+
+  const mixHtml = categories.map(cat => {
+    const count = fridgeStatus.currentMix?.[cat] || 0;
+    const hasGap = fridgeStatus.parLevelGaps?.[cat];
+    return `
+      <div class="fridge-category ${hasGap ? 'has-gap' : ''}">
+        <div class="count">${count}</div>
+        <div class="name">${categoryLabels[cat]}</div>
+      </div>
+    `;
+  }).join('');
+
+  // Build gaps display
+  let gapsHtml = '';
+  if (fridgeStatus.hasGaps && Object.keys(fridgeStatus.parLevelGaps).length > 0) {
+    const gapItems = Object.entries(fridgeStatus.parLevelGaps)
+      .sort((a, b) => a[1].priority - b[1].priority)
+      .map(([cat, gap]) => `
+        <div class="fridge-gap-item">
+          <span>${categoryLabels[cat] || cat}: ${gap.description}</span>
+          <span class="need">Need ${gap.need}</span>
+        </div>
+      `).join('');
+
+    gapsHtml = `
+      <div class="fridge-gaps">
+        <h5>Par-Level Gaps</h5>
+        ${gapItems}
+      </div>
+    `;
+  }
+
+  // Build candidates display
+  let candidatesHtml = '';
+  if (fridgeStatus.candidates && fridgeStatus.candidates.length > 0) {
+    const candidateItems = fridgeStatus.candidates.slice(0, 5).map((c, i) => `
+      <div class="fridge-candidate">
+        <div class="fridge-candidate-info">
+          <div class="fridge-candidate-name">${c.wineName} ${c.vintage || ''}</div>
+          <div class="fridge-candidate-reason">${c.reason}</div>
+        </div>
+        <button class="btn btn-secondary btn-small" onclick="window.cellarAnalysis.moveFridgeCandidate(${i})">
+          Add
+        </button>
+      </div>
+    `).join('');
+
+    candidatesHtml = `
+      <div class="fridge-candidates">
+        <h5>Suggested Additions</h5>
+        ${candidateItems}
+      </div>
+    `;
+  }
+
+  contentEl.innerHTML = `
+    <div class="fridge-status-header">
+      <div class="fridge-capacity-bar">
+        <div class="fridge-capacity-fill" style="width: ${fillPercent}%"></div>
+      </div>
+      <div class="fridge-capacity-text">${fridgeStatus.occupied}/${fridgeStatus.capacity} slots</div>
+    </div>
+    <div class="fridge-mix-grid">${mixHtml}</div>
+    ${gapsHtml}
+    ${candidatesHtml}
+  `;
+}
+
+/**
+ * Render zone narratives as cards.
+ * @param {Array} narratives
+ */
+function renderZoneNarratives(narratives) {
+  const container = document.getElementById('analysis-zones');
+  const gridEl = document.getElementById('zone-cards-grid');
+
+  if (!narratives || narratives.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+
+  const cards = narratives.map(zone => {
+    const status = zone.health?.status || 'healthy';
+    const purpose = zone.intent?.purpose || 'Mixed wines';
+    const pairingHints = zone.intent?.pairingHints?.slice(0, 3) || [];
+    const rows = zone.rows?.join(', ') || 'N/A';
+    const bottles = zone.currentComposition?.bottleCount || 0;
+    const utilization = zone.health?.utilizationPercent || 0;
+    const topGrapes = zone.currentComposition?.topGrapes?.slice(0, 2) || [];
+    const topCountries = zone.currentComposition?.topCountries?.slice(0, 2) || [];
+
+    // Only show zones with bottles
+    if (bottles === 0) return '';
+
+    const compositionParts = [];
+    if (topGrapes.length > 0) compositionParts.push(topGrapes.join(', '));
+    if (topCountries.length > 0 && topCountries[0] !== 'Unknown') {
+      compositionParts.push(`from ${topCountries.join(', ')}`);
+    }
+
+    return `
+      <div class="zone-card ${status}">
+        <div class="zone-card-header">
+          <span class="zone-card-title">${zone.displayName}</span>
+          <span class="zone-card-status ${status}">${status}</span>
+        </div>
+        <div class="zone-card-purpose">${purpose}</div>
+        <div class="zone-card-stats">
+          <span>${bottles} bottles</span>
+          <span>${utilization}% full</span>
+          <span>Rows: ${rows}</span>
+        </div>
+        ${compositionParts.length > 0 ? `
+          <div class="zone-card-composition">
+            Currently: ${compositionParts.join(' ')}
+          </div>
+        ` : ''}
+        ${pairingHints.length > 0 ? `
+          <div class="zone-card-pairing">
+            <strong>Pairs with:</strong> ${pairingHints.join(', ')}
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).filter(Boolean).join('');
+
+  gridEl.innerHTML = cards || '<p class="no-moves">No zones with bottles found.</p>';
+}
+
+/**
+ * Move a fridge candidate to the fridge.
+ * @param {number} index - Candidate index
+ */
+async function moveFridgeCandidate(index) {
+  if (!currentAnalysis?.fridgeStatus?.candidates?.[index]) return;
+
+  const candidate = currentAnalysis.fridgeStatus.candidates[index];
+  const emptySlots = currentAnalysis.fridgeStatus.emptySlots;
+
+  if (emptySlots <= 0) {
+    showToast('No empty fridge slots available');
+    return;
+  }
+
+  // Find an empty fridge slot
+  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+  const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
+  const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
+
+  if (!targetSlot) {
+    showToast('No empty fridge slots available');
+    return;
+  }
+
+  try {
+    await executeCellarMoves([{
+      wineId: candidate.wineId,
+      from: candidate.fromSlot,
+      to: targetSlot
+    }]);
+    showToast(`Moved ${candidate.wineName} to ${targetSlot}`);
+
+    // Re-analyse to show updated state
+    const response = await analyseCellar();
+    currentAnalysis = response.report;
+    renderAnalysis(currentAnalysis);
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
 }
 
 /**
@@ -295,5 +498,6 @@ function hideAnalysisPanel() {
 // Expose functions for inline onclick handlers
 window.cellarAnalysis = {
   executeMove,
-  dismissMove
+  dismissMove,
+  moveFridgeCandidate
 };

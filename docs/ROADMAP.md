@@ -1,11 +1,11 @@
 # Wine Cellar App - Commercial Roadmap (Future Work)
-## Updated: 2 January 2026
+## Updated: 3 January 2026
 
 ---
 
 ## Progress Summary
 
-### Phases 1-5: ✅ COMPLETE
+### Phases 1-6: ✅ COMPLETE | Phase 7: 🚧 IN PROGRESS
 
 | Phase | Status | Completion Date |
 |-------|--------|-----------------|
@@ -15,6 +15,7 @@
 | **Phase 4**: AI Enhancements | ✅ Complete | Jan 2026 |
 | **Phase 5**: PWA & Deployment | ✅ Complete | Jan 2026 |
 | **Phase 6**: MCP Integration | ✅ Complete | Jan 2026 |
+| **Phase 7**: Sommelier-Grade Cellar Organisation | 🚧 In Progress | - |
 
 **What Was Accomplished**:
 - 249 unit tests with 85% service coverage
@@ -35,6 +36,323 @@
 - **MCP PDF Reader** for awards import
 - **MCP SQLite** for direct database queries
 - **Award Extractor Skill** for structured PDF processing
+
+---
+
+## Phase 7: Sommelier-Grade Cellar Organisation
+
+**Status**: 🚧 In Progress (Started: 3 January 2026)
+
+**Goal**: Transform cellar organisation from "misplaced bottles" to proper sommelier advice with zone narratives, AI-suggested definitions, and proactive fridge stocking.
+
+### Core Features (7.1-7.6)
+
+#### 7.1 Fix Drinking Window Field Mismatch
+
+**Problem**: `getFridgeCandidates()` uses `wine.drink_until` but reduce-now uses `drink_by_year` from drinking_windows table.
+
+**Files**:
+- `src/services/cellarAnalysis.js` (lines 339-380)
+- `src/routes/cellar.js`
+
+**Changes**:
+- LEFT JOIN drinking_windows and return `drink_by_year`
+- Check BOTH `drink_by_year` (preferred) and `drink_until` (fallback)
+- Add helper `getEffectiveDrinkByYear(wine)`
+
+---
+
+#### 7.2 Zone Intent Metadata (Database)
+
+**Problem**: Zones have matching rules but no human-readable "why" text.
+
+**Key Workflow**:
+1. **AI Suggests** - When cellar analysed or new wines added, AI suggests zone definitions
+2. **User Confirms/Edits** - User reviews and can modify suggestions
+3. **Stored in DB** - Persisted for future use
+4. **Re-evaluated on Change** - When collection shifts, AI suggests updates
+
+**New Migration**: `data/migrations/017_zone_metadata.sql`
+
+```sql
+CREATE TABLE IF NOT EXISTS zone_metadata (
+  zone_id TEXT PRIMARY KEY,
+  display_name TEXT NOT NULL,
+  purpose TEXT,                    -- "Crisp whites for weeknight cooking"
+  style_range TEXT,                -- "Light to medium body, high acid, minimal oak"
+  serving_temp TEXT,               -- "Well chilled (7-10°C)"
+  aging_advice TEXT,               -- "Drink within 2-3 years of vintage"
+  pairing_hints TEXT,              -- JSON array: ["Seafood", "Salads", "Light pasta"]
+  example_wines TEXT,              -- JSON array: ["Sancerre", "Marlborough Sauvignon"]
+  family TEXT,                     -- "white_crisp", "red_mediterranean", etc.
+  seasonal_notes TEXT,             -- "More popular in summer"
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**New Files**:
+- `src/services/zoneMetadata.js` - Access layer for zone metadata
+- `src/routes/cellar.js` - GET/PUT `/api/cellar/zone-metadata/:zoneId`
+
+---
+
+#### 7.3 Upgrade Analysis Reporting
+
+**Problem**: Report is row-centric, excludes buffer zones, lacks "zone story".
+
+**Changes**:
+- Include buffer/fallback zones (mark as "overflow zone")
+- Add zone narratives with composition and health status
+- Add fridge status to report
+
+**Zone Narrative Structure**:
+```javascript
+{
+  zoneId, displayName, intent,
+  rows: ["R5", "R6"],
+  currentComposition: {
+    topGrapes: ["Cabernet", "Merlot"],
+    topCountries: ["France", "SA"],
+    vintageRange: [2015, 2021],
+    bottleCount: 14
+  },
+  health: {
+    utilizationPercent: 78,
+    fragmentationScore: 15,
+    misplacedCount: 2,
+    status: 'healthy' // or 'crowded', 'sparse', 'fragmented'
+  },
+  drift: { /* zone intent vs actual composition */ }
+}
+```
+
+---
+
+#### 7.4 Enhance AI Context
+
+**Problem**: Claude only sees summary + limited wine lists, not zone definitions.
+
+**Add to Prompt**:
+- Zone definitions (purpose, style range, pairing hints)
+- Current composition per zone (top grapes, countries, health)
+- Fridge context (current mix, gaps, top candidates)
+
+**New Output Fields**:
+```javascript
+{
+  layoutNarrative: "Your cellar is organized into...",
+  zoneHealth: [{ zone, status, recommendation }],
+  fridgePlan: {
+    toAdd: [{ wineId, reason, category }],
+    toRemove: [{ wineId, reason }],
+    coverageAfter: { sparkling: 1, crispWhite: 2, ... }
+  }
+}
+```
+
+---
+
+#### 7.5 Fridge Par-Level System
+
+**Problem**: No proactive fridge stocking or coverage-based selection.
+
+**User Preferences**:
+- Fridge mix: Balanced with 1 sparkling (not 2)
+- Show gaps only, let user decide what to move
+
+**New File**: `src/config/fridgeParLevels.js`
+
+```javascript
+export const FRIDGE_PAR_LEVELS = {
+  sparkling:     { min: 1, max: 1, priority: 1, description: "Celebration-ready bubbles" },
+  crispWhite:    { min: 2, max: 2, priority: 2, description: "High-acid whites for seafood" },
+  aromaticWhite: { min: 1, max: 1, priority: 3, description: "Off-dry for spicy food" },
+  textureWhite:  { min: 1, max: 1, priority: 4, description: "Fuller whites for creamy dishes" },
+  rose:          { min: 1, max: 1, priority: 5, description: "Versatile weeknight option" },
+  chillableRed:  { min: 1, max: 1, priority: 6, description: "Light red for charcuterie" },
+  flex:          { min: 0, max: 1, priority: 7, description: "Any wine to drink soon" }
+};
+// Total: 1+2+1+1+1+1+1 = 8 slots, leaving 1 flex
+```
+
+**New File**: `src/services/fridgeStocking.js`
+- `calculateParLevelGaps(fridgeWines)` - What's missing
+- `selectFridgeFillCandidates(cellarWines, gaps)` - What to move
+
+---
+
+#### 7.6 Frontend Updates
+
+**Files**:
+- `public/js/cellarAnalysis.js`
+- `public/css/styles.css`
+
+**New UI Sections**:
+- Zone narrative cards (purpose, health status, composition)
+- Fridge status panel (current mix, gaps, candidates)
+
+---
+
+### Extended Features (7.7-7.12)
+
+#### 7.7 AI Safety & Reliability
+
+**Changes**:
+- Sanitise all AI inputs (wine names can contain injection attacks)
+- Schema validation for responses (not just JSON parse)
+- Persist chat sessions to database (survive restarts)
+- Configurable model selection via environment
+
+**New Files**:
+- `data/migrations/018_chat_sessions.sql`
+- `src/config/aiModels.js`
+- `src/services/responseValidator.js`
+
+---
+
+#### 7.8 Hybrid Pairing Engine
+
+**Problem**: Pure AI can hallucinate; pure deterministic lacks explanation.
+
+**Solution**: Deterministic shortlist → AI selects + explains from shortlist only.
+
+```javascript
+// 1. Deterministic: score all wines, apply diversity constraint
+const shortlist = generatePairingShortlist(wines, dish, preferences);
+
+// 2. AI: explain why each works (can't hallucinate wines not in list)
+const prompt = `From the shortlist ONLY, select top 3 and explain why...`;
+```
+
+**User-Tunable House Style**:
+- `acid_preference`, `oak_preference`, `tannin_preference`, `adventure_level`
+
+---
+
+#### 7.9 Personalisation Loop (Palate Profile)
+
+**Goal**: Learn user preferences from behaviour.
+
+**New Migration**: `data/migrations/019_palate_profile.sql`
+
+```sql
+CREATE TABLE consumption_feedback (
+  wine_id INTEGER,
+  would_buy_again BOOLEAN,
+  paired_with TEXT,           -- JSON array of food tags
+  rating INTEGER,             -- 1-5 personal rating
+  finished_at DATETIME
+);
+
+CREATE TABLE palate_profile (
+  preference_key TEXT UNIQUE, -- e.g., "grape:cabernet", "country:france"
+  preference_value REAL,      -- weighted score
+  confidence REAL
+);
+```
+
+**Post-Bottle Feedback**: Quick modal after marking "finished":
+- "Would you buy this again?"
+- "What did you eat with it?" (quick tags)
+
+---
+
+#### 7.10 Move Optimisation
+
+**Problem**: Current moves are greedy (high-confidence first), not effort-minimised.
+
+**Optimisation Goals**:
+1. Minimise total number of moves
+2. Prefer single-step moves over swaps
+3. Batch moves by row for efficiency
+
+**New File**: `src/services/movePlanner.js`
+
+---
+
+#### 7.11 Acquisition Workflow
+
+**Goal**: Scan → Confirm → Place in one smooth flow.
+
+**Workflow**:
+1. **Scan** - Camera capture label/receipt
+2. **Extract** - Claude Vision with confidence per field
+3. **Confirm** - User only edits uncertain fields (highlighted)
+4. **Enrich** - Auto-fetch drinking windows, Vivino rating
+5. **Place** - Auto-suggest zone + fridge (if fits par-level gaps)
+6. **Zone Review** - If wine doesn't fit zones, suggest zone update
+
+---
+
+#### 7.12 Cellar Health Dashboard
+
+**Metrics**:
+1. Drinking Window Risk (bottles near/past drink-by)
+2. Style Coverage (do you have needed whites/sparkling?)
+3. Duplication Risk (too many similar wines)
+4. Event Readiness (can you host 6 people with variety?)
+5. Fridge Gaps (missing par-level categories)
+
+**One-Click Actions**:
+- "Fill Fridge" - Move suitable wines to fill gaps
+- "Build Weeknight Shortlist" - Quick-drink options
+- "Generate Shopping List" - Missing roles/styles
+- "Review At-Risk Wines" - Focus on drink-soon bottles
+
+---
+
+### Implementation Order
+
+| Sub-Phase | Priority | Complexity | Dependencies |
+|-----------|----------|------------|--------------|
+| 7.1 Fix drink_until bug | HIGH | Low | None |
+| 7.2 Zone intent metadata (DB) | HIGH | Medium | None |
+| 7.3 Upgrade analysis | MEDIUM | Medium | 7.2 |
+| 7.4 Enhance AI context | MEDIUM | Medium | 7.2, 7.3 |
+| 7.5 Fridge par-levels | MEDIUM | Medium | 7.1 |
+| 7.6 Frontend updates | LOW | Low | 7.3, 7.4, 7.5 |
+| 7.7 AI safety & reliability | HIGH | Medium | None |
+| 7.8 Hybrid pairing engine | MEDIUM | Medium | 7.7 |
+| 7.9 Personalisation loop | LOW | Medium | 7.8 |
+| 7.10 Move optimisation | LOW | Medium | 7.3 |
+| 7.11 Acquisition workflow | MEDIUM | High | 7.2, 7.7 |
+| 7.12 Cellar health dashboard | LOW | Medium | 7.5, 7.10 |
+
+---
+
+### Files to Create
+
+**Core (7.1-7.6)**:
+- `data/migrations/017_zone_metadata.sql`
+- `src/config/fridgeParLevels.js`
+- `src/services/fridgeStocking.js`
+- `src/services/zoneMetadata.js`
+
+**Extended (7.7-7.12)**:
+- `data/migrations/018_chat_sessions.sql`
+- `data/migrations/019_palate_profile.sql`
+- `src/config/aiModels.js`
+- `src/services/responseValidator.js`
+- `src/services/pairingEngine.js`
+- `src/services/palateProfile.js`
+- `src/services/movePlanner.js`
+
+### Files to Modify
+
+**Core (7.1-7.6)**:
+- `src/services/cellarAnalysis.js` - Fix drink_until, add narratives, include buffer zones
+- `src/services/cellarAI.js` - Expand prompt context
+- `src/routes/cellar.js` - Update queries, add zone-metadata endpoints
+- `src/db/index.js` - Add zone metadata queries
+- `public/js/cellarAnalysis.js` - New UI sections
+- `public/css/styles.css` - Zone cards, fridge status styling
+
+**Extended (7.7-7.12)**:
+- `src/services/claude.js` - Sanitise inputs, configurable models
+- `src/services/pairing.js` - Integrate hybrid engine
+- `src/routes/pairing.js` - Persist chat sessions
+- `public/js/bottles/form.js` - Acquisition workflow
+- `public/js/app.js` - Health dashboard integration
 
 ---
 
@@ -294,6 +612,7 @@ Claude: Uses sqlite MCP → SELECT w.* FROM wines w
 |---------|----------|--------|
 | **MCP Puppeteer Automation** | P1 | ✅ Complete |
 | **MCP Servers & Skills** | P1 | ✅ Complete |
+| **Phase 7: Sommelier-Grade Organisation** | P1 | 🚧 In Progress |
 | **Wine Confirmation Modal** | P2 | Planned |
 | **Play Store Release (TWA)** | P3 | Ready when needed |
 | **Cloud Backend** | P4 | Deferred |
@@ -380,5 +699,5 @@ See also:
 
 ---
 
-*Last updated: 2 January 2026*
-*Status: Phases 1-6 complete, full MCP integration with PDF Reader, SQLite, and Skills*
+*Last updated: 3 January 2026*
+*Status: Phases 1-6 complete, Phase 7 (Sommelier-Grade Organisation) in progress*

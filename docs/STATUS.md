@@ -998,7 +998,7 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 
 See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 
-**Current Status**: Phases 1-6 complete!
+**Current Status**: Phases 1-6 complete! Phase 7 (Sommelier-Grade Cellar Organisation) in planning.
 
 ### Completed Phases:
 - ✅ **Phase 1**: Testing infrastructure, unified configs, provenance, governance
@@ -1007,6 +1007,26 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 - ✅ **Phase 4**: AI drink recommendations, structured tasting profiles
 - ✅ **Phase 5**: PWA with Tailscale HTTPS
 - ✅ **Phase 6**: MCP Integration (Puppeteer, PDF Reader, SQLite, Skills)
+
+### Phase 7: Sommelier-Grade Cellar Organisation (Planned)
+
+**Goal**: Transform cellar organisation from "misplaced bottles" to proper sommelier advice.
+
+**Core Features:**
+1. Fix drinking window field mismatch (`drink_until` vs `drink_by_year`)
+2. Zone intent metadata (DB) - AI-suggested, user-editable descriptions
+3. Upgrade analysis from row-centric to zone-narrative with health status
+4. Enhance Claude context with zone definitions + composition
+5. Fridge par-level system (show gaps for 8 categories)
+6. Frontend zone cards and fridge status display
+
+**Extended Features:**
+7. AI safety (sanitise inputs, validate responses, persist chat)
+8. Hybrid pairing engine (deterministic shortlist + AI explanation)
+9. Palate profile from user behaviour
+10. Move optimisation (batch by row, minimise effort)
+11. Acquisition workflow (scan → confirm → place)
+12. Cellar health dashboard with one-click actions
 
 ### Remaining Future Work:
 - Wine confirmation modal (from WINE_CONFIRMATION_PLAN.md)
