@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 2 January 2026
+## 5 January 2026
 
 ---
 
@@ -194,7 +194,9 @@ CREATE TABLE data_provenance (
 
 **Interactions**:
 - Drag-and-drop bottle movement between slots
-- 3-way swap when target slot is occupied
+- **Direct swap** ✨ NEW: Drop wine onto occupied slot → confirmation dialog → swap positions
+- **Auto-scroll during drag** ✨ NEW: Page auto-scrolls when dragging near viewport edges
+- Mobile touch drag support with ghost element feedback
 - Consecutive slot filling for bulk additions
 - Visual zone allocation indicators
 - Mobile-responsive horizontal scrolling
@@ -596,7 +598,8 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/slots/move` | Move bottle |
-| POST | `/api/slots/swap` | Swap bottles |
+| POST | `/api/slots/swap` | 3-way swap bottles |
+| POST | `/api/slots/direct-swap` | **✨ NEW** Direct swap two bottles |
 | POST | `/api/slots/drink` | Log consumption |
 | POST | `/api/bottles/add` | Add bottles |
 
@@ -799,6 +802,18 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### UX & Bug Fixes - 5 January 2026
+- **Direct Wine Swap**: Drag wine onto occupied slot → confirmation dialog → swap positions
+- **Auto-Scroll During Drag**: Page scrolls automatically when dragging near viewport edges
+- **Zone Classification Fix**: Fixed Portuguese wines being misclassified as "Dessert & Fortified"
+  - Bug: `/port/` regex matched "Portugal", "Portuguese", "Porto"
+  - Fix: Word-boundary regex patterns (`\bport\b`) to match only "Port" wine style
+  - Affected wines: Coutada Velha Signature, Baia de Troia Castelao, R de Romaneira
+
+### Deploy Script Improvements - 5 January 2026
+- **SSH Key + Sudo Fix**: Deploy script now pipes password for sudo commands even when using SSH key authentication
+- **Warning Filter**: Suppresses irrelevant SSH warnings (post-quantum, password prompt noise)
 
 ### Security & Code Quality - January 2026
 - **CSP Headers**: Content Security Policy middleware with production/dev modes
@@ -1091,5 +1106,5 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 
 ---
 
-*Last updated: 2 January 2026*
-*Version: 2.1 (MCP Integration)*
+*Last updated: 5 January 2026*
+*Version: 2.2 (UX Polish + Zone Fix)*
