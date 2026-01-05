@@ -1,8 +1,8 @@
 # Wine Cellar App - Docker Image
 FROM node:20-alpine
 
-# Install dependencies for better-sqlite3
-RUN apk add --no-cache python3 make g++
+# Install dependencies for better-sqlite3 and dos2unix for line ending conversion
+RUN apk add --no-cache python3 make g++ dos2unix
 
 # Set UTF-8 locale for proper character handling
 ENV LANG=C.UTF-8
@@ -25,9 +25,9 @@ COPY data/migrations/ ./data/migrations/
 # Create data directory (will be overridden by volume mount on Fly.io)
 RUN mkdir -p /app/data
 
-# Copy startup script for Fly.io
+# Copy startup script for Fly.io and fix line endings
 COPY scripts/start.sh ./scripts/
-RUN chmod +x ./scripts/start.sh
+RUN dos2unix ./scripts/start.sh && chmod +x ./scripts/start.sh
 
 # Expose port
 EXPOSE 3000
