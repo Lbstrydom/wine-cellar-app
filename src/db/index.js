@@ -25,6 +25,57 @@ awardsDb.pragma('journal_mode = WAL');
 awardsDb.pragma('foreign_keys = ON');
 
 /**
+ * Initialize database schema if tables don't exist.
+ * @private
+ */
+function initSchema() {
+  // Check if wines table exists
+  const tableExists = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name='wines'"
+  ).get();
+
+  if (tableExists) {
+    return; // Schema already initialized
+  }
+
+  console.log('[DB] Initializing database schema...');
+
+  // Find schema.sql - try DATA_DIR first, then app bundled location
+  let schemaPath = path.join(DATA_DIR, 'schema.sql');
+  if (!fs.existsSync(schemaPath)) {
+    schemaPath = path.join(__dirname, '..', '..', 'data', 'schema.sql');
+  }
+
+  if (!fs.existsSync(schemaPath)) {
+    throw new Error(`Schema file not found at ${schemaPath}`);
+  }
+
+  const schema = fs.readFileSync(schemaPath, 'utf-8');
+
+  // Execute schema (split by semicolon, skip comments)
+  const statements = schema
+    .split('\n')
+    .filter(line => !line.trim().startsWith('--'))
+    .join('\n')
+    .split(';')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+
+  for (const stmt of statements) {
+    try {
+      db.exec(stmt);
+    } catch (err) {
+      console.error(`[DB] Schema error: ${err.message}`);
+    }
+  }
+
+  console.log('[DB] Schema initialized successfully');
+}
+
+// Initialize schema before anything else
+initSchema();
+
+/**
  * Run database migrations.
  * @private
  */

@@ -1,8 +1,8 @@
 # Fly.io configuration for Wine Cellar App
 # See https://fly.io/docs/reference/configuration/
 
-app = 'wine-cellar'
-primary_region = 'lhr'  # London - closest to South Africa
+app = 'wine-cellar-app'
+primary_region = 'ams'  # Amsterdam
 
 [build]
   dockerfile = 'Dockerfile'
