@@ -470,6 +470,7 @@ ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git
 | Database | `~/Apps/wine-cellar-app/data/cellar.db` |
 | Docker binary | `/usr/local/bin/docker` |
 | Docker Compose | `/usr/local/bin/docker-compose` |
+| Production URL (Cloudflare) | https://cellar.creathyst.com |
 | Production URL (local) | http://192.168.86.31:3000 |
 | Production URL (Tailscale) | https://ds223j.tailf6bfbc.ts.net |
 

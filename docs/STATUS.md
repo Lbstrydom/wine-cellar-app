@@ -82,7 +82,8 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Shortcuts for quick actions (Add Wine, Sommelier, Settings)
 
 **Access Methods**:
-- **Tailscale HTTPS**: https://ds223j.tailf6bfbc.ts.net (secure, works anywhere on tailnet)
+- **Cloudflare Tunnel**: https://cellar.creathyst.com (PWA install, public internet)
+- **Tailscale HTTPS**: https://ds223j.tailf6bfbc.ts.net (tailnet only)
 - **Local Network**: http://192.168.86.31:3000 (fastest when at home)
 
 **Files**:
@@ -798,6 +799,32 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### Security & Code Quality - January 2026
+- **CSP Headers**: Content Security Policy middleware with production/dev modes
+- **Rate Limiting**: In-memory rate limiter (100 req/15min general, 10 req/1min for AI)
+- **Error Boundary**: Global frontend error handling with user-friendly toasts
+- **Database Transactions**: Atomic operations for slot moves, swaps, and bottle additions
+- **Prepared Statement Cache**: Reusable queries for common database operations
+- **ESLint Cleanup**: Fixed all 25 lint warnings (unused variables, prefer-const)
+- **Integration Tests**: API endpoint tests for wines, slots, pairing, rate limiting
+
+### Deployment Automation - January 2026
+- **Deploy Script**: `.\scripts\deploy.ps1` with pre-flight checks
+  - Runs ESLint before deployment
+  - Runs tests if configured
+  - Prompts for uncommitted changes
+  - Git push → SSH pull → Docker build/up
+  - Verifies container and tests API
+- **Options**: `-Quick` (fast deploy), `-SkipTests`, `-Logs`
+
+### Cloudflare Tunnel Setup - January 2026
+- **Custom Domain**: `https://cellar.creathyst.com` for PWA installation
+- **Architecture**: Browser → Cloudflare → Tunnel → Synology → App (port 3000)
+- **Why Not Tailscale Funnel**: Rejects proxied connections, serves `*.ts.net` certs only
+- **Setup**: Docker container `cloudflared` with token-based authentication
+- **Config**: Public hostname `cellar.creathyst.com` → `192.168.86.31:3000`
+- **Documentation**: `docs/cloudflare_tunnel_setup.md`
 
 ### MCP Integration - January 2026
 - Puppeteer MCP for Vivino/Decanter scraping with full JS rendering
