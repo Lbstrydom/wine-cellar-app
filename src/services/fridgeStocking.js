@@ -4,7 +4,7 @@
  * @module services/fridgeStocking
  */
 
-import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY, getCategoriesInPriorityOrder } from '../config/fridgeParLevels.js';
+import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../config/fridgeParLevels.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 
 /**

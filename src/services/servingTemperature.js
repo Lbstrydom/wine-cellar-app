@@ -195,7 +195,7 @@ export function findServingTemperature(wine) {
  * @param {string} colour - Wine colour
  * @returns {Object} Fallback temperature recommendation
  */
-function getFallbackTemperature(category, colour) {
+function getFallbackTemperature(category, _colour) {
   // Generic recommendations by category
   const fallbacks = {
     sparkling: {

@@ -3,7 +3,7 @@
  * @module bottles/form
  */
 
-import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement, getSettings } from '../api.js';
+import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement } from '../api.js';
 import { showToast } from '../utils.js';
 import { refreshData } from '../app.js';
 import { bottleState } from './state.js';

@@ -15,14 +15,24 @@ import jobQueue from './services/jobQueue.js';
 import handleRatingFetch from './jobs/ratingFetchJob.js';
 import handleBatchFetch from './jobs/batchFetchJob.js';
 import { purgeExpiredCache } from './services/cacheService.js';
+import { generalRateLimiter } from './middleware/rateLimiter.js';
+import { cspMiddleware, cspDevMiddleware } from './middleware/csp.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 
+// Security headers (CSP)
+const isDevelopment = process.env.NODE_ENV !== 'production';
+app.use(isDevelopment ? cspDevMiddleware() : cspMiddleware());
+
 // Middleware
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Increased for base64 image uploads
+
+// Apply rate limiting to API routes
+app.use('/api', generalRateLimiter());
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // API routes

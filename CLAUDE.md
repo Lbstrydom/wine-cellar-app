@@ -1,4 +1,4 @@
-# AGENTS.md - AI Assistant Guidelines
+# CLAUDE.md - AI Assistant Guidelines
 
 This document defines coding standards and conventions for AI assistants working on the Wine Cellar App.
 

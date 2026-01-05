@@ -15,6 +15,7 @@ import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtua
 import { initGlobalSearch } from './globalSearch.js';
 import { initAccessibility } from './accessibility.js';
 import { initRecommendations } from './recommendations.js';
+import { initErrorBoundary } from './errorBoundary.js';
 
 /**
  * Application state.
@@ -594,6 +595,10 @@ window.addEventListener('load', updatePwaStatus);
 
 // Start app when DOM ready
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize error boundary first
+  initErrorBoundary();
+  
+  // Then initialize app
   init();
   registerServiceWorker();
 });

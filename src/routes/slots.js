@@ -28,8 +28,13 @@ router.post('/move', (req, res) => {
     return res.status(400).json({ error: 'Target slot is occupied' });
   }
 
-  db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from_location);
-  db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(sourceSlot.wine_id, to_location);
+  // Wrap in transaction to ensure atomic operation
+  const moveTransaction = db.transaction(() => {
+    db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from_location);
+    db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(sourceSlot.wine_id, to_location);
+  });
+
+  moveTransaction();
 
   res.json({ message: 'Bottle moved' });
 });
@@ -94,22 +99,29 @@ router.post('/:location/drink', (req, res) => {
     return res.status(400).json({ error: 'Slot is empty' });
   }
 
-  // Log consumption
-  db.prepare(`
-    INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
-    VALUES (?, ?, ?, ?, ?, ?)
-  `).run(slot.wine_id, location, occasion || null, pairing_dish || null, rating || null, notes || null);
+  // Wrap in transaction to ensure atomic logging and slot clearing
+  const drinkTransaction = db.transaction(() => {
+    // Log consumption
+    db.prepare(`
+      INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(slot.wine_id, location, occasion || null, pairing_dish || null, rating || null, notes || null);
 
-  // Clear slot
-  db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
+    // Clear slot
+    db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
 
-  // Check remaining bottles
-  const remaining = db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?').get(slot.wine_id);
+    // Check remaining bottles
+    const remaining = db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?').get(slot.wine_id);
 
-  // Remove from reduce_now if no bottles left
-  if (remaining.count === 0) {
-    db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(slot.wine_id);
-  }
+    // Remove from reduce_now if no bottles left
+    if (remaining.count === 0) {
+      db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(slot.wine_id);
+    }
+
+    return remaining;
+  });
+
+  const remaining = drinkTransaction();
 
   res.json({
     message: 'Bottle consumed and logged',

@@ -520,15 +520,16 @@ function executeAction(action) {
       });
       break;
 
-    case 'showSommelier':
+    case 'showSommelier': {
       const pairingTab = document.querySelector('[data-view="pairing"]');
       if (pairingTab) pairingTab.click();
       setTimeout(() => {
         document.getElementById('dish-input')?.focus();
       }, 100);
       break;
+    }
 
-    case 'showReduceNow':
+    case 'showReduceNow': {
       const winesTab = document.querySelector('[data-view="wines"]');
       if (winesTab) winesTab.click();
       setTimeout(() => {
@@ -538,6 +539,7 @@ function executeAction(action) {
         }
       }, 100);
       break;
+    }
   }
 }
 

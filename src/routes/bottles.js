@@ -76,15 +76,21 @@ router.post('/add', (req, res) => {
 
   // Fill slots
   const slotsToFill = emptySlots.slice(0, quantity);
-  const updateStmt = db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?');
+  
+  // Wrap in transaction to ensure all bottles are added atomically
+  const addBottlesTransaction = db.transaction(() => {
+    const updateStmt = db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?');
+    for (const loc of slotsToFill) {
+      updateStmt.run(wine_id, loc);
+    }
+    return slotsToFill;
+  });
 
-  for (const loc of slotsToFill) {
-    updateStmt.run(wine_id, loc);
-  }
+  const addedLocations = addBottlesTransaction();
 
   res.json({
-    message: `Added ${slotsToFill.length} bottle(s)`,
-    locations: slotsToFill
+    message: `Added ${addedLocations.length} bottle(s)`,
+    locations: addedLocations
   });
 });
 

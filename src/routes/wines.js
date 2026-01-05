@@ -557,7 +557,7 @@ router.get('/:id/tasting-profile/history', (req, res) => {
     `).all(id);
 
     res.json(history);
-  } catch (error) {
+  } catch (_error) {
     // Table might not exist
     res.json([]);
   }

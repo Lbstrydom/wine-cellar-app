@@ -38,6 +38,7 @@ const STATIC_ASSETS = [
   '/js/accessibility.js',
   '/js/cellarAnalysis.js',
   '/js/recommendations.js',
+  '/js/errorBoundary.js',
   '/manifest.json'
 ];
 

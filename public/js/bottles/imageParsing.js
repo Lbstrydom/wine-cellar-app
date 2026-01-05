@@ -90,7 +90,7 @@ export function initImageParsing() {
  * Detect if running on a mobile device.
  * @returns {boolean} True if mobile device
  */
-function isMobileDevice() {
+function _isMobileDevice() {
   return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
     || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
 }

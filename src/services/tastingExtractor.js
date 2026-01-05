@@ -233,7 +233,7 @@ export function extractTastingProfileDeterministic(tastingNote, wineInfo = {}) {
   };
 
   // Match fruit descriptors
-  for (const [category, terms] of Object.entries(FRUIT_DESCRIPTORS)) {
+  for (const [, terms] of Object.entries(FRUIT_DESCRIPTORS)) {
     for (const term of terms) {
       const searchTerm = term.replace(/_/g, ' ');
       if (note.includes(searchTerm)) {
@@ -243,7 +243,7 @@ export function extractTastingProfileDeterministic(tastingNote, wineInfo = {}) {
   }
 
   // Match secondary descriptors
-  for (const [category, terms] of Object.entries(SECONDARY_DESCRIPTORS)) {
+  for (const [, terms] of Object.entries(SECONDARY_DESCRIPTORS)) {
     for (const term of terms) {
       const searchTerm = term.replace(/_/g, ' ');
       if (note.includes(searchTerm)) {
@@ -253,7 +253,7 @@ export function extractTastingProfileDeterministic(tastingNote, wineInfo = {}) {
   }
 
   // Match tertiary descriptors
-  for (const [category, terms] of Object.entries(TERTIARY_DESCRIPTORS)) {
+  for (const [, terms] of Object.entries(TERTIARY_DESCRIPTORS)) {
     for (const term of terms) {
       const searchTerm = term.replace(/_/g, ' ');
       if (note.includes(searchTerm)) {

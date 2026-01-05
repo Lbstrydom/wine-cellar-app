@@ -408,7 +408,7 @@ function handleTouchMove(e) {
  * Handle touch end - complete the drag.
  * @param {TouchEvent} e
  */
-async function handleTouchEnd(e) {
+async function handleTouchEnd(_e) {
   if (!touchDragState.active) return;
 
   const targetSlot = touchDragState.currentTarget;

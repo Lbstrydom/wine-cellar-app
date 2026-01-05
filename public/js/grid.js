@@ -14,6 +14,7 @@ let zoneMapCache = null;
 
 /**
  * Render the fridge grid.
+ * Populates the fridge-grid element with slot elements based on current layout.
  */
 export function renderFridge() {
   const grid = document.getElementById('fridge-grid');
@@ -37,6 +38,8 @@ export function renderFridge() {
 
 /**
  * Render the cellar grid.
+ * Populates the cellar-grid element with slot elements and zone labels.
+ * @returns {Promise<void>}
  */
 export async function renderCellar() {
   const grid = document.getElementById('cellar-grid');
@@ -135,6 +138,7 @@ export async function renderCellar() {
 
 /**
  * Setup click handlers and drag-drop after rendering.
+ * Attaches event listeners to all slot elements for interaction.
  */
 function setupInteractions() {
   // Setup drag and drop

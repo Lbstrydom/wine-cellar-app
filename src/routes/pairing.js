@@ -8,6 +8,7 @@ import { randomUUID } from 'crypto';
 import db from '../db/index.js';
 import { getSommelierRecommendation, continueSommelierChat } from '../services/claude.js';
 import { scorePairing } from '../services/pairing.js';
+import { strictRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -51,9 +52,10 @@ router.post('/suggest', (req, res) => {
 
 /**
  * Natural language pairing via Claude.
+ * Rate limited to prevent abuse of AI API.
  * @route POST /api/pairing/natural
  */
-router.post('/natural', async (req, res) => {
+router.post('/natural', strictRateLimiter(), async (req, res) => {
   const { dish, source = 'all', colour = 'any' } = req.body;
 
   if (!dish || dish.trim().length === 0) {
@@ -95,9 +97,10 @@ router.post('/natural', async (req, res) => {
 
 /**
  * Continue sommelier conversation with follow-up question.
+ * Rate limited to prevent abuse of AI API.
  * @route POST /api/pairing/chat
  */
-router.post('/chat', async (req, res) => {
+router.post('/chat', strictRateLimiter(), async (req, res) => {
   const { chatId, message } = req.body;
 
   if (!chatId || !message || message.trim().length === 0) {

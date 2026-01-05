@@ -36,7 +36,7 @@ async function handleResponse(res, defaultError = 'Request failed') {
 
   try {
     return JSON.parse(text);
-  } catch (e) {
+  } catch (_e) {
     console.error('Failed to parse response:', text.slice(0, 100));
     throw new Error('Invalid server response');
   }

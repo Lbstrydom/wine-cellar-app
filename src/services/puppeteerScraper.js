@@ -6,7 +6,7 @@
 
 import { spawn } from 'child_process';
 import logger from '../utils/logger.js';
-import { TIMEOUTS, COOKIE_CONSENT_SELECTORS, VIVINO_SELECTORS } from '../config/scraperConfig.js';
+import { TIMEOUTS, COOKIE_CONSENT_SELECTORS } from '../config/scraperConfig.js';
 
 /**
  * Simple MCP client that communicates with puppeteer-mcp-server via JSON-RPC over stdio.
@@ -453,7 +453,7 @@ export async function scrapeVivinoPage(url) {
  * @param {number} [params.vintage] - Vintage year
  * @returns {Promise<{matches: Array, error: string|null}>}
  */
-export async function searchVivinoWithPuppeteer({ query, producer, vintage }) {
+export async function searchVivinoWithPuppeteer({ query: _query, producer: _producer, vintage: _vintage }) {
   // Vivino blocks headless browsers on search pages (HTTP 405)
   // We need to use a different approach - search via Google or Bright Data
   logger.warn('Puppeteer', 'Vivino search pages are blocked for headless browsers');

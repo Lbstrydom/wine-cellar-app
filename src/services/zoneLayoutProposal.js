@@ -171,8 +171,7 @@ export function proposeZoneLayout() {
 
     // Calculate rows needed (round up)
     let slotsNeeded = bottleCount;
-    let rowsNeeded = 0;
-    let assignedRows = [];
+    const assignedRows = [];
     let totalCapacity = 0;
 
     while (slotsNeeded > 0 && currentRow <= CELLAR_LAYOUT.totalRows) {
@@ -180,7 +179,6 @@ export function proposeZoneLayout() {
       assignedRows.push(`R${currentRow}`);
       totalCapacity += capacity;
       slotsNeeded -= capacity;
-      rowsNeeded++;
       currentRow++;
     }
 

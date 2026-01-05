@@ -18,13 +18,12 @@ import {
 import {
   getZoneMetadata,
   getAllZoneMetadata,
-  getZoneWithIntent,
   getAllZonesWithIntent,
   updateZoneMetadata,
   confirmZoneMetadata,
   getZonesNeedingReview
 } from '../services/zoneMetadata.js';
-import { analyseFridge, getFridgeStatus } from '../services/fridgeStocking.js';
+import { analyseFridge } from '../services/fridgeStocking.js';
 
 const router = express.Router();
 

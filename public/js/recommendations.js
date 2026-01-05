@@ -49,7 +49,7 @@ export function initRecommendations() {
   }
 
   // Debounce text input to avoid too many API calls
-  let debounceTimer = null;
+  const debounceTimer = null;
   if (foodDetailInput) {
     // Only trigger on Enter key - don't auto-load on every keystroke
     foodDetailInput.addEventListener('keydown', (e) => {

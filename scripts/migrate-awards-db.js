@@ -7,9 +7,9 @@
  */
 
 import Database from 'libsql';
-import path from 'path';
-import fs from 'fs';
-import { fileURLToPath } from 'url';
+import path from 'node:path';
+import fs from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
@@ -70,7 +70,7 @@ if (fs.existsSync(awardsFile)) {
     try {
       awardsDb.exec(stmt);
     } catch (err) {
-      // Ignore errors (table already exists, etc.)
+      console.warn('Migration warning (likely already applied):', err.message);
     }
   }
   console.log('Schema applied.\n');
@@ -97,7 +97,7 @@ try {
     console.log(`  ✓ Migrated ${competitions.length} competitions`);
   }
 } catch (err) {
-  console.log('  No known_competitions to migrate or already migrated');
+  console.log('  No known_competitions to migrate or already migrated:', err.message);
 }
 
 // Migrate award_sources

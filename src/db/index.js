@@ -165,5 +165,39 @@ function runAwardsMigrations() {
 runMigrations();
 runAwardsMigrations();
 
+/**
+ * Cached prepared statements for frequently used queries.
+ * Better-sqlite3 already caches statements internally, but this provides
+ * a convenient API and ensures statements are reused efficiently.
+ */
+export const preparedStatements = {
+  // Wine queries
+  getWineById: db.prepare('SELECT * FROM wines WHERE id = ?'),
+  getAllWines: db.prepare('SELECT * FROM wines ORDER BY colour, style, wine_name'),
+  getWinesByColour: db.prepare('SELECT * FROM wines WHERE colour = ? ORDER BY style, wine_name'),
+  
+  // Slot queries
+  getSlotByLocation: db.prepare('SELECT * FROM slots WHERE location_code = ?'),
+  getAllSlots: db.prepare('SELECT * FROM slots ORDER BY zone, row_num, col_num'),
+  getSlotsByWineId: db.prepare('SELECT * FROM slots WHERE wine_id = ? ORDER BY location_code'),
+  
+  // Ratings queries
+  getRatingsByWineId: db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ? ORDER BY fetched_at DESC'),
+  
+  // Reduce now queries
+  getReduceNowByWineId: db.prepare('SELECT * FROM reduce_now WHERE wine_id = ?'),
+  
+  // Bottle count queries
+  getBottleCount: db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?'),
+  
+  // Settings queries
+  getSetting: db.prepare('SELECT value FROM user_settings WHERE key = ?'),
+  upsertSetting: db.prepare(`
+    INSERT INTO user_settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `)
+};
+
 export default db;
 export { awardsDb };

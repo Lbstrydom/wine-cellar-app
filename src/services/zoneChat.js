@@ -6,7 +6,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
-import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../config/cellarZones.js';
+import { CELLAR_ZONES, getZoneById } from '../config/cellarZones.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,

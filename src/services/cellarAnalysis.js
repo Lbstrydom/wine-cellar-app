@@ -4,7 +4,7 @@
  * @module services/cellarAnalysis
  */
 
-import { getZoneById, CELLAR_ZONES } from '../config/cellarZones.js';
+import { getZoneById } from '../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../config/cellarThresholds.js';
 import { findBestZone, findAvailableSlot } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
@@ -530,7 +530,7 @@ function getZoneHealthStatus(count, capacity, fragmentationScore) {
  * @param {Object|null} intent - Zone intent from database
  * @returns {Object|null} Drift analysis or null if no drift
  */
-function detectZoneDrift(zone, wines, intent) {
+function detectZoneDrift(zone, wines, _intent) {
   if (!zone.rules || !wines.length) return null;
 
   const drift = {
