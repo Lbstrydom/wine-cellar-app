@@ -462,6 +462,23 @@ ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git
 | Check container status | `ssh lstrydom@192.168.86.31 "docker ps \| grep wine"` |
 | Test API | `curl -s http://192.168.86.31:3000/api/stats` |
 
+### Claude Code SSH Note
+
+**IMPORTANT**: When running SSH commands from Claude Code's Bash tool, always use native `ssh` instead of `plink.exe`. The Bash tool runs through a Unix-like shell (Git Bash/MSYS) which mangles Windows paths with spaces.
+
+```bash
+# CORRECT - use native ssh
+ssh lstrydom@192.168.86.31 "/usr/local/bin/docker ps"
+
+# WRONG - plink paths get mangled by the shell
+"C:\Program Files\PuTTY\plink.exe" ...  # Results in "sh: C:Program: command not found"
+```
+
+For full deployments, use the PowerShell deploy script which handles Windows paths correctly:
+```bash
+powershell -File scripts/deploy.ps1
+```
+
 ### Key Paths on Synology
 
 | Item | Path |
