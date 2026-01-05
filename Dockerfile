@@ -16,14 +16,18 @@ COPY package*.json ./
 # Install dependencies (ci for reproducible builds)
 RUN npm ci --only=production
 
-# Copy application code (version: 2026-01-02-19:45)
+# Copy application code
 COPY src/ ./src/
 COPY public/ ./public/
 COPY data/schema.sql ./data/
 COPY data/migrations/ ./data/migrations/
 
-# Create data directory for database
+# Create data directory (will be overridden by volume mount on Fly.io)
 RUN mkdir -p /app/data
+
+# Copy startup script for Fly.io
+COPY scripts/start.sh ./scripts/
+RUN chmod +x ./scripts/start.sh
 
 # Expose port
 EXPOSE 3000
@@ -32,5 +36,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/stats || exit 1
 
-# Start the application
-CMD ["node", "src/server.js"]
+# Start the application (use script for Fly.io compatibility)
+CMD ["./scripts/start.sh"]
