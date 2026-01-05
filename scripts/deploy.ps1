@@ -122,7 +122,15 @@ function Invoke-Remote($command) {
 
     if ($script:UseNativeSSH) {
         if ($command -match "docker" -and $script:NeedsSudo) {
-            $output = ssh "${SynologyUser}@${SynologyIP}" "sudo $command" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+            # Need to pipe password for sudo even with SSH key auth
+            if ($SynologyPassword) {
+                $escapedPw = $SynologyPassword -replace "'", "'\''"
+                $sshCmd = "echo '${escapedPw}' | sudo -S $command 2>&1"
+                $output = ssh "${SynologyUser}@${SynologyIP}" "$sshCmd" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+            } else {
+                # No password available, try interactive sudo (will likely fail in non-interactive mode)
+                $output = ssh "${SynologyUser}@${SynologyIP}" "sudo $command" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+            }
         } else {
             $output = ssh "${SynologyUser}@${SynologyIP}" "$command" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
         }
