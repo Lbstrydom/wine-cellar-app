@@ -406,46 +406,61 @@ refactor/modular-structure
 
 ## Deployment
 
-The app is deployed to a Synology NAS using Git and local Docker builds. This approach is faster and more reliable than pulling pre-built images from GitHub Container Registry.
+The app is deployed to a Synology NAS using Git and local Docker builds.
 
-### Git-Based Deployment (Preferred)
+### Deploy Script (Recommended)
 
-Deploy changes by pushing to GitHub, then pulling and rebuilding on Synology:
+Use the deployment script for reliable, automated deployment:
 
-```bash
-# 1. Commit and push changes
-git add -A && git commit -m "your message" && git push
+```powershell
+# Full deploy with lint and tests
+.\scripts\deploy.ps1
 
-# 2. SSH to Synology and deploy (single command)
-ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git reset --hard origin/main && /usr/local/bin/docker-compose down && /usr/local/bin/docker-compose build --no-cache && /usr/local/bin/docker-compose up -d"
+# Quick deploy (skip tests, no rebuild)
+.\scripts\deploy.ps1 -Quick
+
+# Skip pre-flight checks
+.\scripts\deploy.ps1 -SkipTests
+
+# Deploy and show logs
+.\scripts\deploy.ps1 -Logs
 ```
 
-Or as separate steps:
-```bash
-# SSH to Synology
-ssh lstrydom@192.168.86.31
+The script performs:
+1. Run ESLint
+2. Run tests (if configured)
+3. Check for uncommitted changes (prompts to commit)
+4. Git push to GitHub
+5. SSH to Synology: git pull
+6. Docker compose down/build/up
+7. Verify container is running
+8. Test API endpoint
 
-# On Synology:
-cd ~/Apps/wine-cellar-app
-git fetch origin
-git reset --hard origin/main
-/usr/local/bin/docker-compose down
-/usr/local/bin/docker-compose build --no-cache
-/usr/local/bin/docker-compose up -d
+### Manual Deployment
+
+If you need to deploy manually:
+
+```bash
+# 1. Commit and push
+git add -A && git commit -m "your message" && git push
+
+# 2. Deploy on Synology (single command via SSH)
+ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git reset --hard origin/main && /usr/local/bin/docker-compose down && /usr/local/bin/docker-compose up -d --build"
 ```
 
 ### Quick Reference
 
 | Action | Command |
 |--------|---------|
-| Deploy to Synology | See git-based deployment above |
+| Deploy to Synology | `.\scripts\deploy.ps1` |
+| Quick deploy | `.\scripts\deploy.ps1 -Quick` |
 | Download production DB | `.\scripts\sync-db.ps1 -Download` |
 | Upload local DB | `.\scripts\sync-db.ps1 -Upload` |
 | Setup SSH key auth | `.\scripts\setup-ssh-key.ps1` |
 | SSH to Synology | `ssh lstrydom@192.168.86.31` |
-| View container logs | `ssh lstrydom@192.168.86.31 "/usr/local/bin/docker logs wine-cellar"` |
-| Check container status | `ssh lstrydom@192.168.86.31 "/usr/local/bin/docker ps \| grep wine"` |
-| Test API | `curl -s https://ds223j.tailf6bfbc.ts.net/api/stats` |
+| View container logs | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar --tail 50"` |
+| Check container status | `ssh lstrydom@192.168.86.31 "docker ps \| grep wine"` |
+| Test API | `curl -s http://192.168.86.31:3000/api/stats` |
 
 ### Key Paths on Synology
 

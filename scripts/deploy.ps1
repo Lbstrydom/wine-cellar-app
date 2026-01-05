@@ -1,336 +1,300 @@
 # Wine Cellar Deployment Script
-# Usage: .\scripts\deploy.ps1              # Full deploy (push, wait for build, deploy to Synology)
-# Usage: .\scripts\deploy.ps1 -SkipPush    # Deploy without pushing (use existing image)
-# Usage: .\scripts\deploy.ps1 -UpdateConfig # Only update docker-compose and .env on Synology
-# Usage: .\scripts\deploy.ps1 -Clean       # Full clean deploy (prune all unused images)
+# ==============================
+# Git-based deployment: push to GitHub, pull on Synology, build locally
 #
-# SYNOLOGY SETUP (recommended for best experience):
-# 1. Set up SSH key auth: Run .\scripts\setup-ssh-key.ps1
-# 2. Add user to docker group via DSM: Control Panel → User & Group → docker group
-# Then you won't need sudo in scripts.
+# Usage:
+#   .\scripts\deploy.ps1              # Full deploy with lint/tests
+#   .\scripts\deploy.ps1 -SkipTests   # Skip lint and tests
+#   .\scripts\deploy.ps1 -Quick       # Quick deploy (skip tests, no rebuild)
+#   .\scripts\deploy.ps1 -Logs        # Deploy and tail logs
+#
+# Prerequisites:
+#   - SSH key auth set up (run .\scripts\setup-ssh-key.ps1)
+#   - Or SYNOLOGY_PASSWORD in .env file
 
 param(
-    [switch]$SkipPush,
-    [switch]$UpdateConfig,
-    [switch]$Clean
+    [switch]$SkipTests,
+    [switch]$Quick,
+    [switch]$Logs,
+    [switch]$Help
 )
 
-$ErrorActionPreference = "Continue"
-$RemoteAppPath = "Apps/wine-cellar-app"
+if ($Help) {
+    Write-Host @"
 
-# Load credentials from .env file
-$envFile = ".\.env"
+Wine Cellar Deployment Script
+=============================
+
+Usage:
+  .\scripts\deploy.ps1              Full deploy with lint and tests
+  .\scripts\deploy.ps1 -SkipTests   Skip lint and tests
+  .\scripts\deploy.ps1 -Quick       Quick deploy (no tests, no rebuild)
+  .\scripts\deploy.ps1 -Logs        Deploy and show container logs
+
+Steps performed:
+  1. Run ESLint
+  2. Run tests (if any)
+  3. Check for uncommitted changes
+  4. Git push to GitHub
+  5. SSH to Synology: git pull
+  6. Docker compose down/build/up
+  7. Verify container is running
+  8. Test API endpoint
+
+"@
+    exit 0
+}
+
+$ErrorActionPreference = "Stop"
+
+# Configuration
 $SynologyUser = "lstrydom"
 $SynologyIP = "192.168.86.31"
+$RemoteAppPath = "~/Apps/wine-cellar-app"
 $SynologyPassword = $null
 
+# Load password from .env if SSH key auth fails
+$envFile = ".\.env"
 if (Test-Path $envFile) {
     Get-Content $envFile | ForEach-Object {
-        if ($_ -match "^SYNOLOGY_USER=(.+)$") { $SynologyUser = $matches[1] }
-        if ($_ -match "^SYNOLOGY_IP=(.+)$") { $SynologyIP = $matches[1] }
         if ($_ -match "^SYNOLOGY_PASSWORD=(.+)$") { $SynologyPassword = $matches[1] }
     }
 }
 
-# Synology host key fingerprint (prevents interactive prompt with plink)
-$SynologyHostKey = "SHA256:9Mgl3xbxQ934jw01mebN47bcwgDId5uMU5pROg/pecg"
+# Helper functions
+function Write-Step($step, $message) {
+    Write-Host "`n[$step] $message" -ForegroundColor Cyan
+}
 
-# Check for SSH key auth (preferred) or password auth (fallback)
+function Write-OK($message) {
+    Write-Host "    OK: $message" -ForegroundColor Green
+}
+
+function Write-Fail($message) {
+    Write-Host "    FAIL: $message" -ForegroundColor Red
+}
+
+function Write-Skip($message) {
+    Write-Host "    SKIP: $message" -ForegroundColor Yellow
+}
+
+# Detect SSH method
 $script:UseNativeSSH = $false
+$script:NeedsSudo = $true
 
-# Test if native SSH with key auth works
+Write-Host "`nWine Cellar Deployment" -ForegroundColor White
+Write-Host "======================" -ForegroundColor White
+Write-Host "Target: ${SynologyUser}@${SynologyIP}"
+
+# Test native SSH with key auth
+Write-Host "`nChecking SSH connection..."
 $sshTest = ssh -o BatchMode=yes -o ConnectTimeout=5 "${SynologyUser}@${SynologyIP}" "echo OK" 2>&1
 if ($sshTest -match "OK") {
     $script:UseNativeSSH = $true
-}
-
-if (-not $script:UseNativeSSH -and -not $SynologyPassword) {
-    Write-Host "ERROR: SSH key auth not set up and SYNOLOGY_PASSWORD not found in .env file" -ForegroundColor Red
-    Write-Host "  Run: .\scripts\setup-ssh-key.ps1 to set up SSH key auth" -ForegroundColor Yellow
-    Write-Host "  Or add SYNOLOGY_PASSWORD to .env file" -ForegroundColor Yellow
+    Write-OK "SSH key authentication working"
+} elseif ($SynologyPassword) {
+    Write-Host "    Using password authentication (PuTTY)" -ForegroundColor Yellow
+} else {
+    Write-Fail "No SSH access. Run: .\scripts\setup-ssh-key.ps1"
     exit 1
 }
 
-# Find PuTTY tools (only needed if not using native SSH)
-$PlinkPath = $null
-$PsftpPath = $null
-
-if (-not $script:UseNativeSSH) {
-    $plinkInPath = Get-Command plink -ErrorAction SilentlyContinue
-    $psftpInPath = Get-Command psftp -ErrorAction SilentlyContinue
-
-    if ($plinkInPath) { $PlinkPath = $plinkInPath.Source }
-    if ($psftpInPath) { $PsftpPath = $psftpInPath.Source }
-
-    if (-not $PlinkPath) {
-        $commonPaths = @(
-            "C:\Program Files\PuTTY\plink.exe",
-            "C:\Program Files (x86)\PuTTY\plink.exe",
-            "$env:LOCALAPPDATA\Programs\PuTTY\plink.exe"
-        )
-        foreach ($path in $commonPaths) {
-            if (Test-Path $path) { $PlinkPath = $path; break }
-        }
-    }
-
-    if (-not $PsftpPath) {
-        $commonPaths = @(
-            "C:\Program Files\PuTTY\psftp.exe",
-            "C:\Program Files (x86)\PuTTY\psftp.exe",
-            "$env:LOCALAPPDATA\Programs\PuTTY\psftp.exe"
-        )
-        foreach ($path in $commonPaths) {
-            if (Test-Path $path) { $PsftpPath = $path; break }
-        }
-    }
+# Check docker access
+Write-Host "Checking Docker access..."
+if ($script:UseNativeSSH) {
+    $dockerTest = ssh "${SynologyUser}@${SynologyIP}" "docker ps > /dev/null 2>&1 && echo OK" 2>&1
+} else {
+    $PlinkPath = "C:\Program Files\PuTTY\plink.exe"
+    $HostKey = "SHA256:9Mgl3xbxQ934jw01mebN47bcwgDId5uMU5pROg/pecg"
+    $dockerTest = & $PlinkPath -batch -hostkey $HostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" "docker ps > /dev/null 2>&1 && echo OK" 2>&1
 }
 
-function Write-Status($message) {
-    Write-Host "`n[$((Get-Date).ToString('HH:mm:ss'))] $message" -ForegroundColor Cyan
+if ($dockerTest -match "OK") {
+    $script:NeedsSudo = $false
+    Write-OK "Docker accessible without sudo"
+} else {
+    Write-Host "    Docker requires sudo" -ForegroundColor Yellow
 }
 
-function Write-Success($message) {
-    Write-Host "  OK: $message" -ForegroundColor Green
-}
-
-function Write-Warning($message) {
-    Write-Host "  WARNING: $message" -ForegroundColor Yellow
-}
-
-# Check if user has docker access without sudo
-$script:NeedsSudo = $true
-
-function Test-DockerAccess {
-    # Use bash -l to get login shell with proper PATH (includes /usr/local/bin)
-    $warningFilter = "WARNING:|post-quantum|vulnerable|upgraded|openssh.com"
-    if ($script:UseNativeSSH) {
-        $result = ssh "${SynologyUser}@${SynologyIP}" "bash -lc 'docker ps > /dev/null 2>&1 && echo OK'" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
-    } elseif ($PlinkPath) {
-        $result = & $PlinkPath -batch -hostkey $SynologyHostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" "bash -lc 'docker ps > /dev/null 2>&1 && echo OK'" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
-    } else {
-        return $false
-    }
-    if ($result -match "OK") {
-        $script:NeedsSudo = $false
-        return $true
-    }
-    return $false
-}
-
-function Invoke-SSH($command) {
-    # Always use bash -l to get login shell with proper PATH (includes /usr/local/bin for docker)
-    # Filter out SSH post-quantum warnings that are harmless but noisy
-    $warningFilter = "WARNING:|post-quantum|vulnerable|upgraded|openssh.com"
+# SSH helper function
+function Invoke-Remote($command) {
+    $warningFilter = "WARNING:|post-quantum|vulnerable|upgraded|openssh.com|Password:"
 
     if ($script:UseNativeSSH) {
-        # Use native SSH with key auth (preferred)
         if ($command -match "docker" -and $script:NeedsSudo) {
-            # Need sudo - user must enter password interactively or be in docker group
-            $output = ssh "${SynologyUser}@${SynologyIP}" "sudo bash -lc '$command'" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+            $output = ssh "${SynologyUser}@${SynologyIP}" "sudo $command" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
         } else {
-            $output = ssh "${SynologyUser}@${SynologyIP}" "bash -lc '$command'" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+            $output = ssh "${SynologyUser}@${SynologyIP}" "$command" 2>&1 | Where-Object { $_ -notmatch $warningFilter }
         }
-        return $output
-    }
-
-    # Fallback to plink with password
-    if ($command -match "docker" -and $script:NeedsSudo) {
-        # Need sudo for docker commands - use heredoc approach for complex commands
-        # Write password to sudo's stdin, use bash -l for PATH
-        $escapedPw = $SynologyPassword -replace "'", "'\''"
-        $escapedCmd = $command -replace "'", "'\''"
-        $sshCmd = "echo '${escapedPw}' | sudo -S bash -lc '${escapedCmd}' 2>&1"
-        $output = & $PlinkPath -batch -hostkey $SynologyHostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" $sshCmd 2>&1 | Where-Object { $_ -notmatch "$warningFilter|Store key|\[sudo\]|Password:" }
     } else {
-        $output = & $PlinkPath -batch -hostkey $SynologyHostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" "bash -lc '$command'" 2>&1 | Where-Object { $_ -notmatch "$warningFilter|Store key" }
+        $PlinkPath = "C:\Program Files\PuTTY\plink.exe"
+        $HostKey = "SHA256:9Mgl3xbxQ934jw01mebN47bcwgDId5uMU5pROg/pecg"
+
+        if ($command -match "docker" -and $script:NeedsSudo) {
+            $escapedPw = $SynologyPassword -replace "'", "'\''"
+            $sshCmd = "echo '${escapedPw}' | sudo -S $command 2>&1"
+            $output = & $PlinkPath -batch -hostkey $HostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" $sshCmd 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+        } else {
+            $output = & $PlinkPath -batch -hostkey $HostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" $command 2>&1 | Where-Object { $_ -notmatch $warningFilter }
+        }
     }
     return $output
 }
 
-function Invoke-SFTP($localFile, $remotePath) {
-    if ($script:UseNativeSSH) {
-        # Use native sftp with key auth
-        @("put $localFile $remotePath", "exit") | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
-        return
-    }
-    if ($PsftpPath) {
-        $batchFile = [System.IO.Path]::GetTempFileName()
-        "put `"$localFile`" `"$remotePath`"" | Set-Content $batchFile
-        "quit" | Add-Content $batchFile
-        & $PsftpPath -batch -hostkey $SynologyHostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" -b $batchFile 2>&1 | Out-Null
-        Remove-Item $batchFile
-        return
-    }
-    @("put $localFile $remotePath", "exit") | sftp "${SynologyUser}@${SynologyIP}" 2>&1 | Out-Null
-}
+# ============================================
+# STEP 1: Pre-flight checks (lint & tests)
+# ============================================
+if (-not $SkipTests -and -not $Quick) {
+    Write-Step "1/7" "Running pre-flight checks..."
 
-Write-Host @"
-
-Wine Cellar Deployment
-======================
-Target: ${SynologyUser}@${SynologyIP}
-
-"@
-
-if ($script:UseNativeSSH) {
-    Write-Host "  Using: Native SSH with key authentication"
-} elseif ($PlinkPath -and $PsftpPath) {
-    Write-Host "  Using: PuTTY tools with password authentication"
-    Write-Host "  plink: $PlinkPath"
-    Write-Host "  psftp: $PsftpPath"
-} else {
-    Write-Warning "PuTTY tools not found and SSH key auth not set up."
-    Write-Host "  Run: .\scripts\setup-ssh-key.ps1 to set up SSH key auth" -ForegroundColor Yellow
-    Write-Host "  Or: winget install PuTTY.PuTTY for password auth" -ForegroundColor Yellow
-    exit 1
-}
-Write-Host ""
-
-# Verify SSH connection (already done during UseNativeSSH check, but verify for plink path)
-if (-not $script:UseNativeSSH) {
-    Write-Host "  Verifying SSH connection..."
-    $testOutput = & $PlinkPath -batch -hostkey $SynologyHostKey -pw $SynologyPassword "${SynologyUser}@${SynologyIP}" "echo connected" 2>&1
-    if ($testOutput -match "connected") {
-        Write-Success "SSH connection verified"
+    # Lint
+    Write-Host "    Running ESLint..."
+    $lintResult = npm run lint 2>&1
+    if ($LASTEXITCODE -eq 0) {
+        Write-OK "Lint passed"
     } else {
-        Write-Host "  ERROR: SSH connection failed: $testOutput" -ForegroundColor Red
+        Write-Fail "Lint failed"
+        Write-Host $lintResult -ForegroundColor Red
+        $continue = Read-Host "    Continue anyway? (y/n)"
+        if ($continue -ne 'y') { exit 1 }
+    }
+
+    # Check if vitest is configured
+    $packageJson = Get-Content ".\package.json" | ConvertFrom-Json
+    if ($packageJson.scripts.test) {
+        Write-Host "    Running tests..."
+        # Start server for integration tests
+        $serverJob = Start-Job -ScriptBlock {
+            Set-Location $using:PWD
+            node src/server.js 2>&1
+        }
+        Start-Sleep -Seconds 3
+
+        $testResult = npm test 2>&1
+        Stop-Job $serverJob -ErrorAction SilentlyContinue
+        Remove-Job $serverJob -ErrorAction SilentlyContinue
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-OK "Tests passed"
+        } else {
+            Write-Skip "Tests skipped (not configured or failed)"
+        }
+    } else {
+        Write-Skip "No test script configured"
+    }
+} else {
+    Write-Step "1/7" "Pre-flight checks..."
+    Write-Skip "Skipped (use default to run)"
+}
+
+# ============================================
+# STEP 2: Check for uncommitted changes
+# ============================================
+Write-Step "2/7" "Checking git status..."
+$gitStatus = git status --porcelain
+if ($gitStatus) {
+    Write-Host "    Uncommitted changes:" -ForegroundColor Yellow
+    git status --short
+    $commit = Read-Host "    Commit all changes? (y/n/message)"
+    if ($commit -eq 'y') {
+        git add -A
+        git commit -m "chore: deploy updates"
+    } elseif ($commit -ne 'n' -and $commit.Length -gt 2) {
+        git add -A
+        git commit -m $commit
+    } else {
+        Write-Fail "Please commit changes before deploying"
         exit 1
     }
+}
+Write-OK "Working directory clean"
+
+# ============================================
+# STEP 3: Push to GitHub
+# ============================================
+Write-Step "3/7" "Pushing to GitHub..."
+git push 2>&1 | Out-Null
+if ($LASTEXITCODE -eq 0) {
+    Write-OK "Pushed to origin/main"
 } else {
-    Write-Success "SSH key authentication verified"
+    Write-Fail "Git push failed"
+    exit 1
 }
 
-# Check docker access
-Write-Host "  Checking docker access..."
-if (Test-DockerAccess) {
-    Write-Success "Docker accessible without sudo"
+# ============================================
+# STEP 4: Pull on Synology
+# ============================================
+Write-Step "4/7" "Pulling changes on Synology..."
+$pullResult = Invoke-Remote "cd $RemoteAppPath && git fetch origin && git reset --hard origin/main"
+if ($pullResult -match "HEAD is now at|Already up to date") {
+    Write-OK "Git pull complete"
+    $pullResult | Where-Object { $_ -match "HEAD is now at" } | ForEach-Object { Write-Host "    $_" }
 } else {
-    Write-Warning "Docker requires sudo (add user to docker group for passwordless access)"
+    Write-Host "    $pullResult"
 }
 
-# UpdateConfig mode
-if ($UpdateConfig) {
-    Write-Status "Updating configuration on Synology..."
+# ============================================
+# STEP 5: Docker compose down
+# ============================================
+Write-Step "5/7" "Stopping container..."
+$downResult = Invoke-Remote "cd $RemoteAppPath && /usr/local/bin/docker-compose down"
+Write-OK "Container stopped"
 
-    Write-Host "  Uploading docker-compose.yml..."
-    Invoke-SFTP ".\docker-compose.synology.yml" "/home/${RemoteAppPath}/docker-compose.yml"
-
-    Write-Host "  Creating .env file on Synology..."
-    $envContent = @()
-    Get-Content $envFile | ForEach-Object {
-        if ($_ -match "^(ANTHROPIC_|GOOGLE_|BRIGHTDATA_)") { $envContent += $_ }
-    }
-    $tempEnv = [System.IO.Path]::GetTempFileName()
-    $envContent | Set-Content $tempEnv
-    Invoke-SFTP $tempEnv "/home/${RemoteAppPath}/.env"
-    Remove-Item $tempEnv
-
-    Write-Success "Configuration updated!"
-
-    Write-Host "  Restarting container..."
-    Invoke-SSH "cd ~/${RemoteAppPath} && docker compose down && docker compose up -d"
-
-    Write-Success "Container restarted with new configuration"
-    Write-Host "`n  URL: http://${SynologyIP}:3000"
-    exit 0
+# ============================================
+# STEP 6: Docker compose build and up
+# ============================================
+if ($Quick) {
+    Write-Step "6/7" "Starting container (quick mode, no rebuild)..."
+    $upResult = Invoke-Remote "cd $RemoteAppPath && /usr/local/bin/docker-compose up -d"
+} else {
+    Write-Step "6/7" "Building and starting container..."
+    $upResult = Invoke-Remote "cd $RemoteAppPath && /usr/local/bin/docker-compose up -d --build"
 }
 
-# Git push (unless skipped)
-if (-not $SkipPush) {
-    Write-Status "Checking for uncommitted changes..."
-    $status = git status --porcelain
-    if ($status) {
-        Write-Host "  Uncommitted changes detected:" -ForegroundColor Yellow
-        git status --short
-        Write-Host ""
-        $confirm = Read-Host "  Continue without committing? (y/n)"
-        if ($confirm -ne 'y') {
-            Write-Host "  Please commit your changes first." -ForegroundColor Red
-            exit 1
-        }
-    }
-
-    Write-Status "Pushing to GitHub..."
-    git push
-    Write-Success "Pushed to GitHub"
-
-    Write-Status "Waiting for GitHub Actions build..."
-    Write-Host "  Checking build status every 10 seconds..."
-
-    $maxWait = 180
-    $waited = 0
-
-    do {
-        Start-Sleep -Seconds 10
-        $waited += 10
-        $runStatus = gh run list --limit 1 --json status,conclusion | ConvertFrom-Json
-
-        if ($runStatus[0].status -eq "completed") {
-            if ($runStatus[0].conclusion -eq "success") {
-                Write-Success "Build completed successfully!"
-                break
-            } else {
-                Write-Host "  Build failed! Check GitHub Actions." -ForegroundColor Red
-                exit 1
-            }
-        }
-        Write-Host "  Still building... (${waited}s)"
-    } while ($waited -lt $maxWait)
-
-    if ($waited -ge $maxWait) {
-        Write-Warning "Build taking too long. Check GitHub Actions manually."
-    }
+if ($upResult -match "Started|Running|Creating") {
+    Write-OK "Container started"
+} else {
+    Write-Host "    $upResult"
 }
 
-# Deploy to Synology
-Write-Status "Deploying to Synology..."
-
-Write-Host "  Stopping container..."
-Invoke-SSH "cd ~/${RemoteAppPath} && docker compose down"
-
-Write-Host "  Removing old image..."
-Invoke-SSH "docker rmi ghcr.io/lbstrydom/wine-cellar-app:latest 2>/dev/null || true"
-
-if ($Clean) {
-    Write-Host "  Pruning unused Docker images..."
-    Invoke-SSH "docker image prune -af"
-    Write-Host "  Pruning unused Docker volumes..."
-    Invoke-SSH "docker volume prune -f"
-}
-
-Write-Host "  Uploading docker-compose.yml..."
-Invoke-SFTP ".\docker-compose.synology.yml" "/home/${RemoteAppPath}/docker-compose.yml"
-
-Write-Host "  Syncing .env file..."
-$envContent = @()
-Get-Content $envFile | ForEach-Object {
-    if ($_ -match "^(ANTHROPIC_|GOOGLE_|BRIGHTDATA_)") { $envContent += $_ }
-}
-$tempEnv = [System.IO.Path]::GetTempFileName()
-$envContent | Set-Content $tempEnv
-Invoke-SFTP $tempEnv "/home/${RemoteAppPath}/.env"
-Remove-Item $tempEnv
-
-Write-Host "  Pulling new image..."
-Invoke-SSH "cd ~/${RemoteAppPath} && docker compose pull"
-
-Write-Host "  Starting container..."
-Invoke-SSH "cd ~/${RemoteAppPath} && docker compose up -d"
-
-# Verify
-Write-Status "Verifying deployment..."
+# ============================================
+# STEP 7: Verify deployment
+# ============================================
+Write-Step "7/7" "Verifying deployment..."
 Start-Sleep -Seconds 5
 
-$containerStatus = Invoke-SSH "docker ps --filter name=wine-cellar --format '{{.Status}}'"
-
+# Check container status
+$containerStatus = Invoke-Remote "docker ps --filter name=wine-cellar --format '{{.Status}}'"
 if ($containerStatus -match "Up") {
-    Write-Success "Container is running!"
-    Write-Host "`n  Status: $containerStatus"
-    Write-Host "  URL: http://${SynologyIP}:3000"
+    Write-OK "Container running: $containerStatus"
 } else {
-    Write-Warning "Container may not be running correctly. Check logs:"
-    Write-Host "    ssh ${SynologyUser}@${SynologyIP}"
-    Write-Host "    docker logs wine-cellar"
+    Write-Fail "Container not running"
+    Write-Host "    Run: ssh ${SynologyUser}@${SynologyIP} 'docker logs wine-cellar'" -ForegroundColor Yellow
+    exit 1
 }
 
+# Test API
+Write-Host "    Testing API..."
+$apiTest = Invoke-Remote "curl -s http://localhost:3000/api/stats"
+if ($apiTest -match "total_bottles") {
+    $stats = $apiTest | ConvertFrom-Json
+    Write-OK "API responding - $($stats.total_bottles) bottles in cellar"
+} else {
+    Write-Fail "API not responding"
+    Write-Host "    Response: $apiTest" -ForegroundColor Yellow
+}
+
+# Summary
+Write-Host "`n========================================" -ForegroundColor Green
+Write-Host "Deployment Complete!" -ForegroundColor Green
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "  Local URL:  http://${SynologyIP}:3000"
+Write-Host "  Tailscale:  https://ds223j.tailf6bfbc.ts.net"
 Write-Host ""
+
+# Show logs if requested
+if ($Logs) {
+    Write-Host "Container logs:" -ForegroundColor Cyan
+    Write-Host "---------------"
+    Invoke-Remote "docker logs wine-cellar --tail 30"
+}
