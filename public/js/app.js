@@ -396,8 +396,12 @@ function initMobileMenu() {
       }
     };
 
-    // Use click for toggle - more reliable across devices
+    // Use both click and touchend for reliable mobile handling
     menuBtn.addEventListener('click', toggleMenu);
+    menuBtn.addEventListener('touchend', (e) => {
+      e.preventDefault(); // Prevent ghost click
+      toggleMenu(e);
+    }, { passive: false });
 
     // Close menu when clicking outside
     document.addEventListener('click', (e) => {
