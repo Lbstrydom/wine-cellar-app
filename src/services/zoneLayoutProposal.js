@@ -79,8 +79,31 @@ function classifyWine(wine) {
       // Must have dessert/fortified color, explicit sweetness, or very specific keywords
       const isDessertColour = colour === 'dessert' || colour === 'fortified';
       const hasExplicitSweetness = sweetness && (sweetness.includes('sweet') || sweetness.includes('dessert'));
-      const hasFortifiedKeyword = ['port', 'porto', 'sherry', 'madeira', 'marsala', 'sauternes', 'tokaji', 'ice wine', 'eiswein', 'pedro ximénez', ' px ']
-        .some(k => searchText.includes(k));
+
+      // Use word boundary regex to avoid false positives like "Portugal" matching "port"
+      // Each keyword must be a complete word, not a substring
+      const fortifiedPatterns = [
+        /\bport\b/i,           // Port wine (not Portugal/Portuguese/Porto)
+        /\btawny\b/i,          // Tawny Port
+        /\bruby\b/i,           // Ruby Port (be careful, could match other things)
+        /\blbv\b/i,            // Late Bottled Vintage
+        /\bvintage\s+port\b/i, // Vintage Port
+        /\bsherry\b/i,
+        /\bmadeira\b/i,
+        /\bmarsala\b/i,
+        /\bsauternes\b/i,
+        /\btokaji\b/i,
+        /\bice\s*wine\b/i,
+        /\beiswein\b/i,
+        /\bpedro\s+xim[eé]nez\b/i,
+        /\b(?:^|\s)px(?:\s|$)/i,  // PX as standalone
+        /\blate\s+harvest\b/i,
+        /\bbotrytis\b/i,
+        /\bvin\s+santo\b/i,
+        /\bmoscatel\b/i,        // Sweet Moscatel (different from dry Moscato)
+        /\bpassito\b/i          // Italian dried grape sweet wines
+      ];
+      const hasFortifiedKeyword = fortifiedPatterns.some(pattern => pattern.test(searchText));
 
       if (isDessertColour || hasExplicitSweetness || hasFortifiedKeyword) {
         return zone.id;
