@@ -4,8 +4,8 @@
  * @module dragdrop
  */
 
-import { moveBottle, swapBottles } from './api.js';
-import { showToast } from './utils.js';
+import { moveBottle, directSwapBottles } from './api.js';
+import { showToast, showConfirmDialog } from './utils.js';
 import { refreshData } from './app.js';
 
 let draggedSlot = null;
@@ -21,13 +21,14 @@ let touchDragState = {
   currentTarget: null
 };
 
-// Swap mode state
-let swapMode = {
-  active: false,
-  sourceSlot: null,      // Where the dragged bottle came from
-  targetSlot: null,      // The occupied slot it was dropped on
-  displacedWineName: null // Name of wine being displaced
+// Auto-scroll configuration
+const AUTO_SCROLL_CONFIG = {
+  edgeThreshold: 80,      // Pixels from viewport edge to trigger scroll
+  scrollSpeed: 15,        // Pixels per frame
+  scrollInterval: 16      // ~60fps
 };
+
+let autoScrollInterval = null;
 
 /**
  * Setup drag and drop on all slots.
@@ -56,10 +57,40 @@ export function setupDragAndDrop() {
     slot.addEventListener('dragover', handleDragOver);
     slot.addEventListener('dragleave', handleDragLeave);
     slot.addEventListener('drop', handleDrop);
-
-    // Click handler for swap mode
-    slot.addEventListener('click', handleSlotClick);
   });
+}
+
+/**
+ * Start auto-scrolling when dragging near viewport edges.
+ * @param {number} clientY - Mouse Y position
+ */
+function startAutoScroll(clientY) {
+  stopAutoScroll();
+
+  const viewportHeight = window.innerHeight;
+  let scrollDirection = 0;
+
+  if (clientY < AUTO_SCROLL_CONFIG.edgeThreshold) {
+    scrollDirection = -1; // Scroll up
+  } else if (clientY > viewportHeight - AUTO_SCROLL_CONFIG.edgeThreshold) {
+    scrollDirection = 1; // Scroll down
+  }
+
+  if (scrollDirection !== 0) {
+    autoScrollInterval = setInterval(() => {
+      window.scrollBy(0, scrollDirection * AUTO_SCROLL_CONFIG.scrollSpeed);
+    }, AUTO_SCROLL_CONFIG.scrollInterval);
+  }
+}
+
+/**
+ * Stop auto-scrolling.
+ */
+function stopAutoScroll() {
+  if (autoScrollInterval) {
+    clearInterval(autoScrollInterval);
+    autoScrollInterval = null;
+  }
 }
 
 /**
@@ -67,11 +98,6 @@ export function setupDragAndDrop() {
  * @param {DragEvent} e
  */
 function handleDragStart(e) {
-  // Cancel any active swap mode
-  if (swapMode.active) {
-    cancelSwapMode();
-  }
-
   draggedSlot = this;
   this.classList.add('dragging');
   e.dataTransfer.effectAllowed = 'move';
@@ -83,6 +109,9 @@ function handleDragStart(e) {
       slot.classList.add('drag-target');
     }
   });
+
+  // Add document-level drag listener for auto-scroll
+  document.addEventListener('dragover', handleDocumentDragOver);
 }
 
 /**
@@ -92,12 +121,22 @@ function handleDragEnd() {
   this.classList.remove('dragging');
   draggedSlot = null;
 
-  // Remove drag indicators (but not swap mode indicators)
-  if (!swapMode.active) {
-    document.querySelectorAll('.slot').forEach(slot => {
-      slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
-    });
-  }
+  // Stop auto-scrolling
+  stopAutoScroll();
+  document.removeEventListener('dragover', handleDocumentDragOver);
+
+  // Remove drag indicators
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+  });
+}
+
+/**
+ * Handle document-level dragover for auto-scroll.
+ * @param {DragEvent} e
+ */
+function handleDocumentDragOver(e) {
+  startAutoScroll(e.clientY);
 }
 
 /**
@@ -143,6 +182,7 @@ async function handleDrop(e) {
   const fromLocation = draggedSlot.dataset.location;
   const toLocation = this.dataset.location;
   const isEmpty = this.classList.contains('empty');
+  const targetElement = this;
 
   // Clear drag indicators
   document.querySelectorAll('.slot').forEach(slot => {
@@ -159,102 +199,40 @@ async function handleDrop(e) {
       showToast('Error: ' + err.message);
     }
   } else {
-    // Target is occupied - enter swap mode
-    enterSwapMode(fromLocation, toLocation, this);
+    // Target is occupied - show swap confirmation dialog
+    const sourceWineName = draggedSlot.querySelector('.wine-name')?.textContent ||
+      draggedSlot.dataset.wineName || 'Wine A';
+    const targetWineName = targetElement.querySelector('.wine-name')?.textContent ||
+      targetElement.dataset.wineName || 'Wine B';
+
+    showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName);
   }
 }
 
 /**
- * Enter swap mode - user needs to select where to put the displaced bottle.
- * @param {string} sourceSlot - Where the dragged bottle came from
- * @param {string} targetSlot - The occupied slot it was dropped on
- * @param {HTMLElement} targetElement - The target slot element
+ * Show confirmation dialog for swapping two wines.
+ * @param {string} fromLocation - Source slot location
+ * @param {string} toLocation - Target slot location
+ * @param {string} sourceWineName - Name of wine being dragged
+ * @param {string} targetWineName - Name of wine in target slot
  */
-function enterSwapMode(sourceSlot, targetSlot, targetElement) {
-  const displacedWineName = targetElement.querySelector('.wine-name')?.textContent ||
-    targetElement.dataset.wineName || 'bottle';
-
-  swapMode = {
-    active: true,
-    sourceSlot,
-    targetSlot,
-    displacedWineName
-  };
-
-  // Visual feedback
-  document.body.classList.add('swap-mode-active');
-
-  // Highlight empty slots as valid destinations
-  document.querySelectorAll('.slot.empty').forEach(slot => {
-    slot.classList.add('swap-destination');
+async function showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName) {
+  const result = await showConfirmDialog({
+    title: 'Swap Wines?',
+    message: `Swap positions of these wines?\n\n` +
+      `"${sourceWineName}" (${fromLocation})\n↔\n"${targetWineName}" (${toLocation})`,
+    confirmText: 'Swap',
+    cancelText: 'Cancel'
   });
 
-  // Highlight the target slot being swapped
-  targetElement.classList.add('swap-target');
-
-  // Show instruction toast
-  showToast(`Click an empty slot to place "${displacedWineName}"`, 'info');
-
-  // Add escape key listener
-  document.addEventListener('keydown', handleSwapModeKeydown);
-}
-
-/**
- * Cancel swap mode.
- */
-function cancelSwapMode() {
-  swapMode = {
-    active: false,
-    sourceSlot: null,
-    targetSlot: null,
-    displacedWineName: null
-  };
-
-  document.body.classList.remove('swap-mode-active');
-
-  document.querySelectorAll('.slot').forEach(slot => {
-    slot.classList.remove('swap-destination', 'swap-target', 'drag-target');
-  });
-
-  document.removeEventListener('keydown', handleSwapModeKeydown);
-}
-
-/**
- * Handle keydown during swap mode.
- * @param {KeyboardEvent} e
- */
-function handleSwapModeKeydown(e) {
-  if (e.key === 'Escape') {
-    cancelSwapMode();
-    showToast('Swap cancelled');
-  }
-}
-
-/**
- * Handle slot click (for swap mode destination selection).
- * @param {MouseEvent} e
- */
-async function handleSlotClick(e) {
-  if (!swapMode.active) return;
-
-  const slot = e.currentTarget;
-  const isEmpty = slot.classList.contains('empty');
-  const location = slot.dataset.location;
-
-  if (!isEmpty) {
-    showToast('Select an empty slot for the displaced bottle');
-    return;
-  }
-
-  // Perform the swap
-  try {
-    await swapBottles(swapMode.sourceSlot, swapMode.targetSlot, location);
-    showToast(`Swapped! "${swapMode.displacedWineName}" moved to ${location}`);
-    cancelSwapMode();
-    await refreshData();
-  } catch (err) {
-    showToast('Error: ' + err.message);
-    cancelSwapMode();
+  if (result) {
+    try {
+      await directSwapBottles(fromLocation, toLocation);
+      showToast(`Swapped ${fromLocation} ↔ ${toLocation}`);
+      await refreshData();
+    } catch (err) {
+      showToast('Error: ' + err.message);
+    }
   }
 }
 
@@ -266,14 +244,6 @@ export function isDragging() {
   return draggedSlot !== null;
 }
 
-/**
- * Check if swap mode is active.
- * @returns {boolean}
- */
-export function isSwapModeActive() {
-  return swapMode.active;
-}
-
 // ============== Touch Event Handlers for Mobile ==============
 
 /**
@@ -281,11 +251,6 @@ export function isSwapModeActive() {
  * @param {TouchEvent} e
  */
 function handleTouchStart(e) {
-  // Cancel any active swap mode
-  if (swapMode.active) {
-    cancelSwapMode();
-  }
-
   // Only handle single touch
   if (e.touches.length !== 1) return;
 
@@ -400,7 +365,10 @@ function handleTouchMove(e) {
     touchDragState.currentTarget = null;
   }
 
-  // Prevent scrolling
+  // Auto-scroll when near viewport edges
+  startAutoScroll(touch.clientY);
+
+  // Prevent default scrolling (we handle it ourselves via auto-scroll)
   e.preventDefault();
 }
 
@@ -413,6 +381,10 @@ async function handleTouchEnd(_e) {
 
   const targetSlot = touchDragState.currentTarget;
   const fromLocation = touchDragState.sourceSlot;
+  const sourceElement = touchDragState.sourceElement;
+
+  // Stop auto-scrolling
+  stopAutoScroll();
 
   // Clean up visual elements
   cleanupTouchDrag();
@@ -432,8 +404,13 @@ async function handleTouchEnd(_e) {
         showToast('Error: ' + err.message);
       }
     } else {
-      // Target is occupied - enter swap mode
-      enterSwapMode(fromLocation, toLocation, targetSlot);
+      // Target is occupied - show swap confirmation dialog
+      const sourceWineName = sourceElement?.querySelector('.wine-name')?.textContent ||
+        sourceElement?.dataset?.wineName || 'Wine A';
+      const targetWineName = targetSlot.querySelector('.wine-name')?.textContent ||
+        targetSlot.dataset.wineName || 'Wine B';
+
+      showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName);
     }
   }
 }
@@ -464,12 +441,10 @@ function cleanupTouchDrag() {
     touchDragState.currentTarget.classList.remove('drag-over', 'drag-over-swap');
   }
 
-  // Clear all drag targets (unless in swap mode)
-  if (!swapMode.active) {
-    document.querySelectorAll('.slot').forEach(slot => {
-      slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
-    });
-  }
+  // Clear all drag targets
+  document.querySelectorAll('.slot').forEach(slot => {
+    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+  });
 
   // Reset state
   touchDragState = {

@@ -130,6 +130,21 @@ export async function swapBottles(slotA, slotB, displacedTo) {
 }
 
 /**
+ * Direct swap between two occupied slots.
+ * @param {string} slotA - First slot
+ * @param {string} slotB - Second slot
+ * @returns {Promise<Object>}
+ */
+export async function directSwapBottles(slotA, slotB) {
+  const res = await fetch(`${API_BASE}/api/slots/direct-swap`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ slot_a: slotA, slot_b: slotB })
+  });
+  return handleResponse(res, 'Swap failed');
+}
+
+/**
  * Drink bottle from slot.
  * @param {string} location - Slot location
  * @param {Object} details - Consumption details

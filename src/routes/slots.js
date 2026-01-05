@@ -87,6 +87,49 @@ router.post('/swap', (req, res) => {
 });
 
 /**
+ * Direct swap between two occupied slots.
+ * @route POST /api/slots/direct-swap
+ */
+router.post('/direct-swap', (req, res) => {
+  const { slot_a, slot_b } = req.body;
+
+  if (!slot_a || !slot_b) {
+    return res.status(400).json({ error: 'Both slot_a and slot_b are required' });
+  }
+
+  // Get wine IDs from both slots
+  const slotA = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
+  const slotB = db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_b);
+
+  if (!slotA) {
+    return res.status(404).json({ error: `Slot ${slot_a} not found` });
+  }
+  if (!slotB) {
+    return res.status(404).json({ error: `Slot ${slot_b} not found` });
+  }
+  if (!slotA.wine_id) {
+    return res.status(400).json({ error: `Slot ${slot_a} is empty` });
+  }
+  if (!slotB.wine_id) {
+    return res.status(400).json({ error: `Slot ${slot_b} is empty - use move instead` });
+  }
+
+  // Perform the direct swap in a transaction
+  const directSwapTransaction = db.transaction(() => {
+    // Swap the wine IDs between the two slots
+    db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, slot_a);
+    db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
+  });
+
+  directSwapTransaction();
+
+  res.json({
+    message: 'Bottles swapped',
+    swap: { slot_a, slot_b }
+  });
+});
+
+/**
  * Drink bottle (log consumption and clear slot).
  * @route POST /api/slots/:location/drink
  */
