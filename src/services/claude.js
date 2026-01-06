@@ -52,7 +52,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        GROUP_CONCAT(DISTINCT s.location_code) as locations,
+        ${process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)'} as locations,
         rn.priority, rn.reduce_reason
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
@@ -69,7 +69,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        GROUP_CONCAT(DISTINCT s.location_code) as locations
+        ${process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)'} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       WHERE 1=1

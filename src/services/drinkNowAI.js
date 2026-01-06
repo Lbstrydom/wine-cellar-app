@@ -56,6 +56,8 @@ Guidelines:
  */
 function getUrgentWines() {
   const currentYear = new Date().getFullYear();
+  // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
+  const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
   return db.prepare(`
     SELECT
@@ -73,7 +75,7 @@ function getUrgentWines() {
       w.personal_rating,
       w.tasting_notes,
       COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations,
+      ${aggFunc} as locations,
       rn.priority as reduce_priority,
       rn.reduce_reason,
       CASE

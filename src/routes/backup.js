@@ -92,6 +92,8 @@ router.get('/export/json', (req, res) => {
  */
 router.get('/export/csv', (req, res) => {
   try {
+    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
+    const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(s.location_code, ',')" : 'GROUP_CONCAT(s.location_code)';
     const wines = db.prepare(`
       SELECT
         w.id,
@@ -109,7 +111,7 @@ router.get('/export/csv', (req, res) => {
         w.drink_until,
         w.purchase_stars,
         COUNT(s.id) as bottle_count,
-        GROUP_CONCAT(s.location_code) as locations
+        ${aggFunc} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       GROUP BY w.id

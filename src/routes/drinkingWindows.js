@@ -118,12 +118,14 @@ router.get('/drinking-windows/urgent', (req, res) => {
     const urgencyMonths = parseInt(req.query.months) || 12;
     const currentYear = new Date().getFullYear();
     const urgencyYear = currentYear + Math.ceil(urgencyMonths / 12);
+    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
+    const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
     const urgent = db.prepare(`
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        GROUP_CONCAT(DISTINCT s.location_code) as locations,
+        ${aggFunc} as locations,
         dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,
         (dw.drink_by_year - ?) as years_remaining
       FROM wines w
@@ -132,7 +134,7 @@ router.get('/drinking-windows/urgent', (req, res) => {
       WHERE dw.drink_by_year IS NOT NULL
         AND dw.drink_by_year <= ?
       GROUP BY w.id, dw.id
-      HAVING bottle_count > 0
+      HAVING COUNT(s.id) > 0
       ORDER BY dw.drink_by_year ASC
     `).all(currentYear, urgencyYear);
 

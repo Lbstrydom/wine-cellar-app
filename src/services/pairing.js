@@ -13,6 +13,8 @@
  */
 export function scorePairing(db, signals, preferReduceNow, limit) {
   const placeholders = signals.map(() => '?').join(',');
+  // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
+  const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
   const styleScores = db.prepare(`
     SELECT
@@ -37,7 +39,7 @@ export function scorePairing(db, signals, preferReduceNow, limit) {
       w.vintage,
       w.vivino_rating,
       COUNT(s.id) as bottle_count,
-      GROUP_CONCAT(DISTINCT s.location_code) as locations,
+      ${aggFunc} as locations,
       MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,
       CASE WHEN rn.id IS NOT NULL THEN rn.priority ELSE 99 END as reduce_priority,
       rn.reduce_reason
@@ -45,7 +47,7 @@ export function scorePairing(db, signals, preferReduceNow, limit) {
     JOIN slots s ON s.wine_id = w.id
     LEFT JOIN reduce_now rn ON w.id = rn.wine_id
     GROUP BY w.id
-    HAVING bottle_count > 0
+    HAVING COUNT(s.id) > 0
     ORDER BY ${preferReduceNow ? 'reduce_priority ASC,' : ''} w.vivino_rating DESC
   `).all();
 
