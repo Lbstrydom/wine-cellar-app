@@ -96,16 +96,16 @@ CREATE TABLE IF NOT EXISTS zone_metadata (
 
 ---
 
-#### 7.3 Upgrade Analysis Reporting
+#### 7.3 Upgrade Analysis Reporting ✅
 
-**Problem**: Report is row-centric, excludes buffer zones, lacks "zone story".
+**Status**: COMPLETE (pre-existing implementation discovered 6 January 2026)
 
-**Changes**:
-- Include buffer/fallback zones (mark as "overflow zone")
-- Add zone narratives with composition and health status
-- Add fridge status to report
+**Implemented**:
+- ✅ Buffer/fallback zones included in `overflowAnalysis` array (marks as buffer/fallback zone)
+- ✅ Zone narratives generated via `generateZoneNarratives()` in `cellarAnalysis.js`
+- ✅ Fridge status added to analysis report via `analyseFridge()`
 
-**Zone Narrative Structure**:
+**Zone Narrative Structure** (implemented in `cellarAnalysis.js:410-458`):
 ```javascript
 {
   zoneId, displayName, intent,
@@ -119,25 +119,26 @@ CREATE TABLE IF NOT EXISTS zone_metadata (
   health: {
     utilizationPercent: 78,
     fragmentationScore: 15,
-    misplacedCount: 2,
+    bottleCount: 14,
+    capacity: 18,
     status: 'healthy' // or 'crowded', 'sparse', 'fragmented'
   },
-  drift: { /* zone intent vs actual composition */ }
+  drift: { hasDrift, issues, unexpectedItems }
 }
 ```
 
 ---
 
-#### 7.4 Enhance AI Context
+#### 7.4 Enhance AI Context ✅
 
-**Problem**: Claude only sees summary + limited wine lists, not zone definitions.
+**Status**: COMPLETE (pre-existing implementation discovered 6 January 2026)
 
-**Add to Prompt**:
-- Zone definitions (purpose, style range, pairing hints)
-- Current composition per zone (top grapes, countries, health)
-- Fridge context (current mix, gaps, top candidates)
+**Implemented** in `cellarAI.js:78-180`:
+- ✅ Zone definitions in `<ZONE_DEFINITIONS>` block (purpose, rows, health, top grapes)
+- ✅ Current composition per zone (from `zoneNarratives`)
+- ✅ Fridge context in `<FRIDGE_STATUS>` block (currentMix, gaps, top candidates)
 
-**New Output Fields**:
+**Output Fields** (implemented in `validateAdviceSchema()`):
 ```javascript
 {
   layoutNarrative: "Your cellar is organized into...",
@@ -152,32 +153,32 @@ CREATE TABLE IF NOT EXISTS zone_metadata (
 
 ---
 
-#### 7.5 Fridge Par-Level System
+#### 7.5 Fridge Par-Level System ✅
 
-**Problem**: No proactive fridge stocking or coverage-based selection.
+**Status**: COMPLETE (pre-existing implementation discovered 6 January 2026)
 
-**User Preferences**:
-- Fridge mix: Balanced with 1 sparkling (not 2)
-- Show gaps only, let user decide what to move
+**Implemented**:
+- ✅ `src/config/fridgeParLevels.js` - Full category definitions with match rules
+- ✅ `src/services/fridgeStocking.js` - Gap detection and candidate selection
 
-**New File**: `src/config/fridgeParLevels.js`
-
+**Par-Level Config** (from `fridgeParLevels.js`):
 ```javascript
 export const FRIDGE_PAR_LEVELS = {
-  sparkling:     { min: 1, max: 1, priority: 1, description: "Celebration-ready bubbles" },
-  crispWhite:    { min: 2, max: 2, priority: 2, description: "High-acid whites for seafood" },
-  aromaticWhite: { min: 1, max: 1, priority: 3, description: "Off-dry for spicy food" },
-  textureWhite:  { min: 1, max: 1, priority: 4, description: "Fuller whites for creamy dishes" },
-  rose:          { min: 1, max: 1, priority: 5, description: "Versatile weeknight option" },
-  chillableRed:  { min: 1, max: 1, priority: 6, description: "Light red for charcuterie" },
-  flex:          { min: 0, max: 1, priority: 7, description: "Any wine to drink soon" }
+  sparkling:     { min: 1, max: 1, priority: 1, description: "Celebration-ready bubbles", matchRules: {...} },
+  crispWhite:    { min: 2, max: 2, priority: 2, description: "High-acid whites for seafood", matchRules: {...} },
+  aromaticWhite: { min: 1, max: 1, priority: 3, description: "Off-dry for spicy food", matchRules: {...} },
+  textureWhite:  { min: 1, max: 1, priority: 4, description: "Fuller whites for creamy dishes", matchRules: {...} },
+  rose:          { min: 1, max: 1, priority: 5, description: "Versatile weeknight option", matchRules: {...} },
+  chillableRed:  { min: 1, max: 1, priority: 6, description: "Light red for charcuterie", matchRules: {...} },
+  flex:          { min: 0, max: 1, priority: 7, optional: true, description: "Any wine to drink soon" }
 };
-// Total: 1+2+1+1+1+1+1 = 8 slots, leaving 1 flex
+// Total: 1+2+1+1+1+1 = 7 slots + 1 flex = 8 (capacity 9)
 ```
 
-**New File**: `src/services/fridgeStocking.js`
-- `calculateParLevelGaps(fridgeWines)` - What's missing
-- `selectFridgeFillCandidates(cellarWines, gaps)` - What to move
+**Key Functions** (from `fridgeStocking.js`):
+- `calculateParLevelGaps(fridgeWines)` - Returns gaps by category with need count
+- `selectFridgeFillCandidates(cellarWines, gaps, emptySlots)` - Prioritized fill suggestions
+- `analyseFridge(fridgeWines, cellarWines)` - Complete fridge analysis with candidates
 
 ---
 
@@ -332,9 +333,9 @@ CREATE TABLE palate_profile (
 |-----------|----------|------------|--------|
 | 7.1 Fix drink_until bug | HIGH | Low | ✅ COMPLETE |
 | 7.2 Zone intent metadata (DB) | HIGH | Medium | ✅ COMPLETE |
-| 7.3 Upgrade analysis | MEDIUM | Medium | Pending |
-| 7.4 Enhance AI context | MEDIUM | Medium | Pending |
-| 7.5 Fridge par-levels | MEDIUM | Medium | Pending |
+| 7.3 Upgrade analysis | MEDIUM | Medium | ✅ COMPLETE |
+| 7.4 Enhance AI context | MEDIUM | Medium | ✅ COMPLETE |
+| 7.5 Fridge par-levels | MEDIUM | Medium | ✅ COMPLETE |
 | 7.6 Frontend updates | LOW | Low | Pending |
 | 7.7 AI safety & reliability | HIGH | Medium | ✅ COMPLETE |
 | 7.8 Hybrid pairing engine | MEDIUM | Medium | Pending |
@@ -349,7 +350,7 @@ CREATE TABLE palate_profile (
 
 **Core (7.1-7.6)**:
 - ✅ `data/migrations/017_zone_metadata.sql` - Created
-- `src/config/fridgeParLevels.js` - Pending
+- ✅ `src/config/fridgeParLevels.js` - Created (pre-existing)
 - ✅ `src/services/fridgeStocking.js` - Created (pre-existing)
 - ✅ `src/services/zoneMetadata.js` - Created (pre-existing)
 
@@ -373,12 +374,12 @@ CREATE TABLE palate_profile (
 - ✅ `src/services/zoneChat.js` - Model config and message sanitization
 - ✅ `src/services/tastingExtractor.js` - Model config and note sanitization
 
-**Core (7.1-7.6)** - Still Pending:
-- `src/services/cellarAnalysis.js` - Add narratives, include buffer zones
-- `src/services/cellarAI.js` - Expand prompt context
-- `src/routes/cellar.js` - Add zone-metadata endpoints
-- `public/js/cellarAnalysis.js` - New UI sections
-- `public/css/styles.css` - Zone cards, fridge status styling
+**Core (7.1-7.6)** - Completed (pre-existing):
+- ✅ `src/services/cellarAnalysis.js` - Zone narratives with composition/health, buffer zone analysis
+- ✅ `src/services/cellarAI.js` - Zone definitions and fridge context in prompt
+- ✅ `src/routes/cellar.js` - Zone-metadata endpoints, fridge status in /analyse
+- `public/js/cellarAnalysis.js` - UI improvements (7.6 - LOW priority, pending)
+- `public/css/styles.css` - Zone cards styling (7.6 - LOW priority, pending)
 
 **Extended (7.8-7.12)** - Still Pending:
 - `src/services/pairing.js` - Integrate hybrid engine
@@ -732,4 +733,4 @@ See also:
 ---
 
 *Last updated: 6 January 2026*
-*Status: Phases 1-6 complete, Phase 7.1, 7.2, 7.7 complete (AI Safety & High Priority Items)*
+*Status: Phases 1-6 complete, Phase 7.1-7.5, 7.7 complete (Core features done, frontend polish remaining)*
