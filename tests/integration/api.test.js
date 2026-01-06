@@ -1,23 +1,40 @@
 /**
  * Integration tests for Wine Cellar API.
  * Tests real API endpoints with a test database.
+ *
+ * Requires server to be running: npm run dev
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import fetch from 'node-fetch';
 
+// Node.js 18+ has native fetch, no need for node-fetch
 const API_BASE = process.env.TEST_API_URL || 'http://localhost:3000/api';
 
 describe('Wine API Integration Tests', () => {
   let testWineId;
 
   describe('GET /api/wines', () => {
-    it('should return list of wines', async () => {
+    it('should return paginated list of wines', async () => {
       const response = await fetch(`${API_BASE}/wines`);
       expect(response.status).toBe(200);
-      
-      const wines = await response.json();
-      expect(Array.isArray(wines)).toBe(true);
+
+      const result = await response.json();
+      expect(result).toHaveProperty('data');
+      expect(result).toHaveProperty('pagination');
+      expect(Array.isArray(result.data)).toBe(true);
+      expect(result.pagination).toHaveProperty('total');
+      expect(result.pagination).toHaveProperty('limit');
+      expect(result.pagination).toHaveProperty('offset');
+      expect(result.pagination).toHaveProperty('hasMore');
+    });
+
+    it('should support pagination parameters', async () => {
+      const response = await fetch(`${API_BASE}/wines?limit=5&offset=0`);
+      expect(response.status).toBe(200);
+
+      const result = await response.json();
+      expect(result.pagination.limit).toBe(5);
+      expect(result.pagination.offset).toBe(0);
     });
   });
 
@@ -53,7 +70,11 @@ describe('Wine API Integration Tests', () => {
         body: JSON.stringify({})
       });
 
-      expect(response.status).toBe(500); // SQLite constraint error
+      // Zod validation returns 400 with error details
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(result.error).toBeDefined();
+      expect(result.error.code).toBe('VALIDATION_ERROR');
     });
   });
 
@@ -187,16 +208,113 @@ describe('Pairing API Integration Tests', () => {
 describe('Rate Limiting', () => {
   it('should enforce rate limits on API endpoints', async () => {
     const requests = [];
-    
+
     // Make 150 requests (exceeds 100 limit)
     for (let i = 0; i < 150; i++) {
       requests.push(fetch(`${API_BASE}/stats`));
     }
 
     const responses = await Promise.all(requests);
-    
+
     // Should have some 429 responses
     const rateLimited = responses.filter(r => r.status === 429);
     expect(rateLimited.length).toBeGreaterThan(0);
   }, 30000); // Increase timeout for this test
+});
+
+describe('Health Check Endpoints (Phase 8.2)', () => {
+  const HEALTH_BASE = process.env.TEST_API_URL?.replace('/api', '/health') || 'http://localhost:3000/health';
+
+  describe('GET /health', () => {
+    it('should return basic health status', async () => {
+      const response = await fetch(HEALTH_BASE);
+      expect(response.status).toBe(200);
+
+      const health = await response.json();
+      expect(health).toHaveProperty('status');
+      expect(health.status).toBe('healthy');
+    });
+  });
+
+  describe('GET /health/live', () => {
+    it('should return liveness status', async () => {
+      const response = await fetch(`${HEALTH_BASE}/live`);
+      expect(response.status).toBe(200);
+
+      const health = await response.json();
+      expect(health.status).toBe('alive');
+    });
+  });
+
+  describe('GET /health/ready', () => {
+    it('should return readiness status', async () => {
+      const response = await fetch(`${HEALTH_BASE}/ready`);
+      // Status depends on database connection
+      expect([200, 503]).toContain(response.status);
+
+      const health = await response.json();
+      expect(health).toHaveProperty('status');
+      expect(health).toHaveProperty('checks');
+    });
+  });
+});
+
+describe('Metrics Endpoint (Phase 8.10)', () => {
+  const METRICS_URL = process.env.TEST_API_URL?.replace('/api', '/metrics') || 'http://localhost:3000/metrics';
+
+  describe('GET /metrics', () => {
+    it('should return Prometheus-formatted metrics', async () => {
+      const response = await fetch(METRICS_URL);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('content-type')).toContain('text/plain');
+
+      const text = await response.text();
+      expect(text).toContain('http_requests_total');
+      expect(text).toContain('app_uptime_seconds');
+    });
+
+    it('should return JSON metrics when requested', async () => {
+      const response = await fetch(`${METRICS_URL}?format=json`);
+      expect(response.status).toBe(200);
+
+      const metrics = await response.json();
+      expect(metrics).toHaveProperty('uptime_seconds');
+      expect(metrics).toHaveProperty('requests');
+      expect(metrics).toHaveProperty('database');
+    });
+  });
+});
+
+describe('Input Validation (Phase 8.4)', () => {
+  describe('POST /api/slots/move', () => {
+    it('should validate location format', async () => {
+      const response = await fetch(`${API_BASE}/slots/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from_location: 'invalid',
+          to_location: 'R1C1'
+        })
+      });
+
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(result.error.code).toBe('VALIDATION_ERROR');
+    });
+
+    it('should reject identical source and target', async () => {
+      const response = await fetch(`${API_BASE}/slots/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from_location: 'R1C1',
+          to_location: 'R1C1'
+        })
+      });
+
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(result.error.code).toBe('VALIDATION_ERROR');
+    });
+  });
 });
