@@ -17,6 +17,7 @@ import handleBatchFetch from './jobs/batchFetchJob.js';
 import { purgeExpiredCache } from './services/cacheService.js';
 import { generalRateLimiter } from './middleware/rateLimiter.js';
 import { cspMiddleware, cspDevMiddleware } from './middleware/csp.js';
+import healthRoutes from './routes/health.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -34,6 +35,9 @@ app.use(express.json({ limit: '10mb' })); // Increased for base64 image uploads
 app.use('/api', generalRateLimiter());
 
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Health check routes (no rate limiting for load balancer probes)
+app.use('/health', healthRoutes);
 
 // API routes
 app.use('/api', routes);
@@ -59,7 +63,39 @@ setInterval(() => {
 
 // Start server
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`Wine cellar app running on http://0.0.0.0:${PORT}`);
   console.log('[Jobs] Job queue started');
 });
+
+// Graceful shutdown handling
+let isShuttingDown = false;
+
+async function gracefulShutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  console.log(`\n[Server] ${signal} received, starting graceful shutdown...`);
+
+  // Stop accepting new connections
+  server.close(() => {
+    console.log('[Server] HTTP server closed');
+  });
+
+  try {
+    // Stop job queue (let current jobs finish)
+    console.log('[Jobs] Stopping job queue...');
+    jobQueue.stop();
+    console.log('[Jobs] Job queue stopped');
+
+    console.log('[Server] Graceful shutdown complete');
+    process.exit(0);
+  } catch (err) {
+    console.error('[Server] Error during shutdown:', err);
+    process.exit(1);
+  }
+}
+
+// Handle shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

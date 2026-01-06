@@ -5,7 +5,7 @@
 
 ## Progress Summary
 
-### Phases 1-7: ✅ ALL COMPLETE
+### Phases 1-7: ✅ COMPLETE | Phase 8: 🚧 IN PROGRESS
 
 | Phase | Status | Completion Date |
 |-------|--------|-----------------|
@@ -16,6 +16,7 @@
 | **Phase 5**: PWA & Deployment | ✅ Complete | Jan 2026 |
 | **Phase 6**: MCP Integration | ✅ Complete | Jan 2026 |
 | **Phase 7**: Sommelier-Grade Cellar Organisation | ✅ Complete | Jan 2026 |
+| **Phase 8**: Production Hardening | 🚧 In Progress | - |
 
 **What Was Accomplished**:
 - 249 unit tests with 85% service coverage
@@ -888,5 +889,355 @@ See also:
 
 ---
 
+---
+
+## Phase 8: Production Hardening
+
+**Status**: 🚧 IN PROGRESS
+**Goal**: Address commercial-grade quality gaps identified in comprehensive audit. Focus on data safety, security, reliability, and observability.
+
+### Risk Assessment
+
+| Category | Current Risk | Target | Priority |
+|----------|--------------|--------|----------|
+| Data Safety | HIGH (race conditions) | LOW | CRITICAL |
+| Security | MEDIUM (no auth) | LOW | HIGH |
+| Reliability | MEDIUM (no graceful shutdown) | LOW | HIGH |
+| Observability | HIGH (console.log only) | LOW | MEDIUM |
+| Testing | MEDIUM (85% services) | LOW | MEDIUM |
+
+---
+
+### 8.1 Transaction Safety (Data Integrity) - CRITICAL
+
+**Problem**: Slot move/swap operations are NOT atomic. Race conditions can cause bottles to disappear or duplicate.
+
+**Files to Fix**:
+- `src/routes/slots.js` - Move and swap operations (lines 32-35, 73-77)
+- `src/routes/cellar.js` - Execute moves endpoint
+
+**Solution**: Implement PostgreSQL transactions for all multi-step operations.
+
+```javascript
+// Before (dangerous):
+await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from);
+await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(wineId, to);
+
+// After (safe):
+await db.prepare('BEGIN').run();
+try {
+  await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from);
+  await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(wineId, to);
+  await db.prepare('COMMIT').run();
+} catch (err) {
+  await db.prepare('ROLLBACK').run();
+  throw err;
+}
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.2 Health & Graceful Shutdown - CRITICAL
+
+**Problem**: No health endpoint for load balancers; SIGTERM kills active requests.
+
+**Files to Create/Modify**:
+- `src/routes/health.js` - Health check endpoint
+- `src/server.js` - Graceful shutdown handler
+
+**Health Endpoint**:
+```javascript
+// GET /api/health
+{
+  status: "healthy",
+  timestamp: "2026-01-06T...",
+  uptime: 3600,
+  database: "connected",
+  version: "1.0.0"
+}
+```
+
+**Graceful Shutdown**:
+```javascript
+process.on('SIGTERM', async () => {
+  console.log('Shutdown signal received');
+  await jobQueue.stop();
+  server.close(() => {
+    console.log('Server closed');
+    process.exit(0);
+  });
+});
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.3 Chat Context Memory Leak Fix - CRITICAL
+
+**Problem**: `pairing.js` stores chat contexts in-memory with flawed TTL logic.
+
+**File**: `src/routes/pairing.js` (lines 17-29)
+
+**Current Bug**:
+```javascript
+// Wrong: operator precedence issue
+if (now - ctx.createdAt > CONTEXT_TTL) // Always true due to precedence
+```
+
+**Fix Options**:
+1. Fix parentheses: `if ((now - ctx.createdAt) > CONTEXT_TTL)`
+2. Move to database: Use `chat_sessions` table (already exists from 7.7)
+3. Use Redis for production scalability
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.4 Input Validation - HIGH
+
+**Problem**: No schema validation on POST/PUT requests. Invalid data reaches database.
+
+**Solution**: Add Zod schema validation middleware.
+
+**Files to Create**:
+- `src/middleware/validate.js` - Validation middleware
+- `src/schemas/` - Zod schemas for each entity
+
+**Example Schema**:
+```javascript
+import { z } from 'zod';
+
+export const moveBottleSchema = z.object({
+  from: z.string().regex(/^[RF]\d+C?\d*$/),
+  to: z.string().regex(/^[RF]\d+C?\d*$/),
+});
+
+export const createWineSchema = z.object({
+  wine_name: z.string().min(1).max(200),
+  vintage: z.number().int().min(1900).max(2100).nullable(),
+  colour: z.enum(['red', 'white', 'rose', 'sparkling', 'dessert', 'fortified']),
+  // ...
+});
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.5 Error Response Standardization - HIGH
+
+**Problem**: 362 different error response formats across routes.
+
+**Solution**: Create error handler utility with consistent format.
+
+**File to Create**: `src/utils/errorResponse.js`
+
+```javascript
+export class AppError extends Error {
+  constructor(message, statusCode = 500, code = 'INTERNAL_ERROR') {
+    super(message);
+    this.statusCode = statusCode;
+    this.code = code;
+  }
+}
+
+export function errorHandler(err, req, res, next) {
+  const statusCode = err.statusCode || 500;
+  res.status(statusCode).json({
+    error: {
+      code: err.code || 'INTERNAL_ERROR',
+      message: err.message,
+      ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    }
+  });
+}
+```
+
+**Standard Error Codes**:
+- `NOT_FOUND` - Resource doesn't exist (404)
+- `VALIDATION_ERROR` - Invalid input (400)
+- `CONFLICT` - Resource conflict (409)
+- `UNAUTHORIZED` - Not authenticated (401)
+- `FORBIDDEN` - Not authorized (403)
+- `INTERNAL_ERROR` - Server error (500)
+- `SERVICE_UNAVAILABLE` - Dependency down (503)
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.6 Frontend Event Listener Cleanup - HIGH
+
+**Problem**: 153 event listeners never cleaned up, causing memory leaks.
+
+**Files to Modify**:
+- `public/js/app.js` - Add cleanup coordination
+- `public/js/modals.js` - Cleanup on modal close
+- `public/js/grid.js` - Cleanup on view change
+- `public/js/dragdrop.js` - Cleanup handlers
+
+**Solution**: Add `cleanup()` functions to each module.
+
+```javascript
+// Pattern for each module
+const listeners = [];
+
+export function init() {
+  const handler = (e) => { /* ... */ };
+  document.addEventListener('click', handler);
+  listeners.push(['click', handler, document]);
+}
+
+export function cleanup() {
+  listeners.forEach(([event, handler, target]) => {
+    target.removeEventListener(event, handler);
+  });
+  listeners.length = 0;
+}
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.7 Structured Logging - MEDIUM
+
+**Problem**: 120+ console.log calls with no levels, filtering, or aggregation.
+
+**Solution**: Create logger service with Winston.
+
+**File to Create**: `src/utils/logger.js`
+
+```javascript
+import winston from 'winston';
+
+const logger = winston.createLogger({
+  level: process.env.LOG_LEVEL || 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console({
+      format: winston.format.simple()
+    })
+  ]
+});
+
+export default logger;
+```
+
+**Log Levels**:
+- `error` - Errors requiring attention
+- `warn` - Warnings (degraded service)
+- `info` - Normal operations
+- `debug` - Detailed debugging (disabled in prod)
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.8 API Pagination - MEDIUM
+
+**Problem**: GET endpoints return all records; large cellars cause performance issues.
+
+**Files to Modify**:
+- `src/routes/wines.js` - Add pagination to GET /wines
+- `src/routes/consumption.js` - Add pagination to history
+
+**Standard Pagination Format**:
+```javascript
+// GET /api/wines?limit=50&offset=0
+{
+  data: [...],
+  pagination: {
+    total: 250,
+    limit: 50,
+    offset: 0,
+    hasMore: true
+  }
+}
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.9 Security Headers - MEDIUM
+
+**Problem**: Missing HSTS header; CSP unsafe-eval in dev mode risk.
+
+**File to Modify**: `src/middleware/csp.js`
+
+**Add**:
+```javascript
+res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+```
+
+**Status**: ⏳ Pending
+
+---
+
+### 8.10 Application Metrics - MEDIUM
+
+**Problem**: No metrics for response times, error rates, queue depth.
+
+**Solution**: Add Prometheus metrics middleware.
+
+**File to Create**: `src/middleware/metrics.js`
+
+**Metrics to Track**:
+- `http_requests_total` - Request count by endpoint/status
+- `http_request_duration_seconds` - Response time histogram
+- `db_query_duration_seconds` - Database query times
+- `job_queue_depth` - Background job queue size
+- `circuit_breaker_state` - Circuit breaker status
+
+**Status**: ⏳ Pending
+
+---
+
+### Implementation Order
+
+| Sub-Phase | Priority | Complexity | Status |
+|-----------|----------|------------|--------|
+| 8.1 Transaction safety | CRITICAL | Medium | ⏳ Pending |
+| 8.2 Health & graceful shutdown | CRITICAL | Low | ⏳ Pending |
+| 8.3 Memory leak fix | CRITICAL | Low | ⏳ Pending |
+| 8.4 Input validation | HIGH | Medium | ⏳ Pending |
+| 8.5 Error standardization | HIGH | Medium | ⏳ Pending |
+| 8.6 Event listener cleanup | HIGH | Medium | ⏳ Pending |
+| 8.7 Structured logging | MEDIUM | Low | ⏳ Pending |
+| 8.8 API pagination | MEDIUM | Low | ⏳ Pending |
+| 8.9 Security headers | MEDIUM | Low | ⏳ Pending |
+| 8.10 Application metrics | MEDIUM | Medium | ⏳ Pending |
+
+**Estimated Total Effort**: ~40-50 hours
+
+---
+
+### Files to Create
+
+- `src/routes/health.js` - Health check endpoint
+- `src/middleware/validate.js` - Zod validation middleware
+- `src/schemas/*.js` - Entity validation schemas
+- `src/utils/errorResponse.js` - Error handling utilities
+- `src/utils/logger.js` - Winston logger
+- `src/middleware/metrics.js` - Prometheus metrics
+
+### Files to Modify
+
+- `src/server.js` - Health routes, graceful shutdown, error handler
+- `src/routes/slots.js` - Transaction wrapping
+- `src/routes/pairing.js` - Fix TTL logic
+- `src/middleware/csp.js` - HSTS header
+- `src/routes/wines.js` - Pagination
+- `public/js/*.js` - Event listener cleanup
+
+---
+
 *Last updated: 6 January 2026*
-*Status: Phases 1-6 complete, Phase 7.1-7.5, 7.7-7.8 complete (Core + Hybrid Pairing done)*
+*Status: Phases 1-7 complete, Phase 8 in progress*

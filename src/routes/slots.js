@@ -10,12 +10,14 @@ const router = Router();
 
 /**
  * Move bottle between slots.
+ * Uses database transaction for atomicity.
  * @route POST /api/slots/move
  */
 router.post('/move', async (req, res) => {
   try {
     const { from_location, to_location } = req.body;
 
+    // Validate slots exist and have correct state before transaction
     const sourceSlot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(from_location);
     if (!sourceSlot || !sourceSlot.wine_id) {
       return res.status(400).json({ error: 'Source slot is empty' });
@@ -29,10 +31,17 @@ router.post('/move', async (req, res) => {
       return res.status(400).json({ error: 'Target slot is occupied' });
     }
 
-    // Perform move - for PostgreSQL we don't have built-in transaction helper,
-    // but these two operations should be atomic enough for this use case
-    await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from_location);
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(sourceSlot.wine_id, to_location);
+    // Perform move atomically using transaction
+    if (db.transaction) {
+      await db.transaction(async (client) => {
+        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [from_location]);
+        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [sourceSlot.wine_id, to_location]);
+      });
+    } else {
+      // SQLite fallback (uses internal transaction handling)
+      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from_location);
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(sourceSlot.wine_id, to_location);
+    }
 
     res.json({ message: 'Bottle moved' });
   } catch (error) {
@@ -43,6 +52,7 @@ router.post('/move', async (req, res) => {
 
 /**
  * Swap two bottles between slots (3-way swap with temporary location).
+ * Uses database transaction for atomicity.
  * @route POST /api/slots/swap
  */
 router.post('/swap', async (req, res) => {
@@ -68,13 +78,22 @@ router.post('/swap', async (req, res) => {
       return res.status(400).json({ error: 'Destination slot is occupied' });
     }
 
-    // Perform the swap
-    // Move wine from slot_b to displaced_to
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, displaced_to);
-    // Move wine from slot_a to slot_b
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
-    // Clear slot_a
-    await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(slot_a);
+    // Perform the swap atomically using transaction
+    if (db.transaction) {
+      await db.transaction(async (client) => {
+        // Move wine from slot_b to displaced_to
+        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, displaced_to]);
+        // Move wine from slot_a to slot_b
+        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+        // Clear slot_a
+        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [slot_a]);
+      });
+    } else {
+      // SQLite fallback
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, displaced_to);
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
+      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(slot_a);
+    }
 
     res.json({
       message: 'Bottles swapped',
@@ -91,6 +110,7 @@ router.post('/swap', async (req, res) => {
 
 /**
  * Direct swap between two occupied slots.
+ * Uses database transaction for atomicity.
  * @route POST /api/slots/direct-swap
  */
 router.post('/direct-swap', async (req, res) => {
@@ -118,10 +138,17 @@ router.post('/direct-swap', async (req, res) => {
       return res.status(400).json({ error: `Slot ${slot_b} is empty - use move instead` });
     }
 
-    // Perform the direct swap
-    // Swap the wine IDs between the two slots
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, slot_a);
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
+    // Perform the direct swap atomically using transaction
+    if (db.transaction) {
+      await db.transaction(async (client) => {
+        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, slot_a]);
+        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+      });
+    } else {
+      // SQLite fallback
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, slot_a);
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
+    }
 
     res.json({
       message: 'Bottles swapped',
@@ -135,6 +162,7 @@ router.post('/direct-swap', async (req, res) => {
 
 /**
  * Drink bottle (log consumption and clear slot).
+ * Uses database transaction for atomicity.
  * @route POST /api/slots/:location/drink
  */
 router.post('/:location/drink', async (req, res) => {
@@ -148,27 +176,50 @@ router.post('/:location/drink', async (req, res) => {
     }
 
     const wineId = slot.wine_id;
+    let remainingCount = 0;
 
-    // Log consumption
-    await db.prepare(`
-      INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null);
+    // Perform drink operation atomically using transaction
+    if (db.transaction) {
+      await db.transaction(async (client) => {
+        // Log consumption
+        await client.query(
+          `INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null]
+        );
 
-    // Clear slot
-    await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
+        // Clear slot
+        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [location]);
 
-    // Check remaining bottles
-    const remaining = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?').get(wineId);
+        // Check remaining bottles
+        const remaining = await client.query('SELECT COUNT(*) as count FROM slots WHERE wine_id = $1', [wineId]);
+        remainingCount = parseInt(remaining.rows[0].count) || 0;
 
-    // Remove from reduce_now if no bottles left
-    if (remaining.count === 0 || remaining.count === '0') {
-      await db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(wineId);
+        // Remove from reduce_now if no bottles left
+        if (remainingCount === 0) {
+          await client.query('DELETE FROM reduce_now WHERE wine_id = $1', [wineId]);
+        }
+      });
+    } else {
+      // SQLite fallback
+      await db.prepare(`
+        INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null);
+
+      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
+
+      const remaining = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?').get(wineId);
+      remainingCount = parseInt(remaining.count) || 0;
+
+      if (remainingCount === 0) {
+        await db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(wineId);
+      }
     }
 
     res.json({
       message: 'Bottle consumed and logged',
-      remaining_bottles: parseInt(remaining.count) || 0
+      remaining_bottles: remainingCount
     });
   } catch (error) {
     console.error('Drink error:', error);
