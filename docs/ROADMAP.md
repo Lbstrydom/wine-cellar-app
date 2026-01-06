@@ -1,11 +1,11 @@
 # Wine Cellar App - Commercial Roadmap (Future Work)
-## Updated: 3 January 2026
+## Updated: 6 January 2026
 
 ---
 
 ## Progress Summary
 
-### Phases 1-6: ✅ COMPLETE | Phase 7: 🚧 IN PROGRESS
+### Phases 1-7: ✅ ALL COMPLETE
 
 | Phase | Status | Completion Date |
 |-------|--------|-----------------|
@@ -15,7 +15,7 @@
 | **Phase 4**: AI Enhancements | ✅ Complete | Jan 2026 |
 | **Phase 5**: PWA & Deployment | ✅ Complete | Jan 2026 |
 | **Phase 6**: MCP Integration | ✅ Complete | Jan 2026 |
-| **Phase 7**: Sommelier-Grade Cellar Organisation | 🚧 In Progress | - |
+| **Phase 7**: Sommelier-Grade Cellar Organisation | ✅ Complete | Jan 2026 |
 
 **What Was Accomplished**:
 - 249 unit tests with 85% service coverage
@@ -41,8 +41,8 @@
 
 ## Phase 7: Sommelier-Grade Cellar Organisation
 
-**Status**: 🚧 In Progress (Started: 3 January 2026)
-**Completed**: 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.11
+**Status**: ✅ COMPLETE (Finished: 6 January 2026)
+**Completed**: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12
 
 **Goal**: Transform cellar organisation from "misplaced bottles" to proper sommelier advice with zone narratives, AI-suggested definitions, and proactive fridge stocking.
 
@@ -183,15 +183,19 @@ export const FRIDGE_PAR_LEVELS = {
 
 ---
 
-#### 7.6 Frontend Updates
+#### 7.6 Frontend Updates ✅
+
+**Status**: COMPLETE (pre-existing implementation discovered 6 January 2026)
 
 **Files**:
 - `public/js/cellarAnalysis.js`
 - `public/css/styles.css`
 
-**New UI Sections**:
-- Zone narrative cards (purpose, health status, composition)
-- Fridge status panel (current mix, gaps, candidates)
+**Implemented UI Sections**:
+- Zone narrative cards (purpose, health status, composition) via `renderZoneNarratives()`
+- Fridge status panel (current mix, gaps, candidates) via `renderFridgeStatus()`
+- Zone setup wizard with proposal and consolidation moves
+- Zone classification chat interface
 
 ---
 
@@ -292,35 +296,52 @@ const result = await getHybridPairing(wines, dish, options);
 
 ---
 
-#### 7.9 Personalisation Loop (Palate Profile)
+#### 7.9 Personalisation Loop (Palate Profile) ✅
+
+**Status**: COMPLETE (6 January 2026)
 
 **Goal**: Learn user preferences from behaviour.
 
-**New Migration**: `data/migrations/019_palate_profile.sql`
+**Files Created**:
+- `data/migrations/020_palate_profile.sql` - Database schema
+- `src/services/palateProfile.js` - Profile service
+- `src/routes/palateProfile.js` - API endpoints
 
-```sql
-CREATE TABLE consumption_feedback (
-  wine_id INTEGER,
-  would_buy_again BOOLEAN,
-  paired_with TEXT,           -- JSON array of food tags
-  rating INTEGER,             -- 1-5 personal rating
-  finished_at DATETIME
-);
+**Database Tables**:
+- `consumption_feedback` - Post-bottle feedback (rating, would buy again, pairings, occasion)
+- `palate_profile` - Aggregated preferences (grape, country, style, price_range, pairing)
+- `preference_weights` - Configurable weights per preference type
 
-CREATE TABLE palate_profile (
-  preference_key TEXT UNIQUE, -- e.g., "grape:cabernet", "country:france"
-  preference_value REAL,      -- weighted score
-  confidence REAL
-);
+**Key Functions**:
+```javascript
+recordFeedback({ wineId, wouldBuyAgain, personalRating, pairedWith, occasion, notes })
+getPalateProfile() // Returns likes, dislikes, byCategory
+getPersonalizedScore(wine) // Returns score, factors, recommendation
+getPersonalizedRecommendations(limit) // Wines ranked by personal preference
 ```
 
-**Post-Bottle Feedback**: Quick modal after marking "finished":
-- "Would you buy this again?"
-- "What did you eat with it?" (quick tags)
+**API Endpoints**:
+- `POST /api/palate/feedback` - Record post-bottle feedback
+- `GET /api/palate/feedback/:wineId` - Get feedback for a wine
+- `GET /api/palate/profile` - Get full palate profile
+- `GET /api/palate/score/:wineId` - Get personalized score for a wine
+- `GET /api/palate/recommendations` - Get personalized recommendations
+- `GET /api/palate/food-tags` - Available food tags
+- `GET /api/palate/occasions` - Available occasion types
+
+**Preference Categories**:
+- grape (weight 1.5) - Most predictive
+- style (weight 1.2) - oaked, tannic, crisp, etc.
+- country (weight 1.0) - Country/region preferences
+- colour (weight 0.8) - Red/white/rosé preferences
+- pairing (weight 0.6) - Food pairing correlations
+- price_range (weight 0.5) - Budget to luxury preferences
 
 ---
 
-#### 7.10 Move Optimisation
+#### 7.10 Move Optimisation ✅
+
+**Status**: COMPLETE (6 January 2026)
 
 **Problem**: Current moves are greedy (high-confidence first), not effort-minimised.
 
@@ -329,7 +350,28 @@ CREATE TABLE palate_profile (
 2. Prefer single-step moves over swaps
 3. Batch moves by row for efficiency
 
-**New File**: `src/services/movePlanner.js`
+**File Created**: `src/services/movePlanner.js`
+
+**Key Functions**:
+```javascript
+planMoves(misplacedWines, zoneSlots, options) // Optimised move planning
+batchMovesByZone(moves) // Group moves for efficient execution
+calculateMoveStats(plan) // Statistics for UI display
+generateMoveSummary(plan) // Human-readable summary
+validatePlan(plan) // Pre-execution validation
+```
+
+**Move Effort Scores**:
+- SINGLE (1) - Direct move to empty slot
+- SWAP (2) - Two-way swap
+- CHAIN (3) - Multi-step chain move
+- MANUAL (5) - Requires manual intervention
+
+**Optimisation Features**:
+- Sorts wines by confidence, available slots, then row number
+- Prefers adjacent slots when batching same wines together
+- Finds swap opportunities when no slots available
+- Validates plan for circular moves and duplicate targets
 
 ---
 
@@ -385,7 +427,15 @@ saveAcquiredWine(wineData, { slot, quantity, addToFridge })
 
 ---
 
-#### 7.12 Cellar Health Dashboard
+#### 7.12 Cellar Health Dashboard ✅
+
+**Status**: COMPLETE (6 January 2026)
+
+**Goal**: Provide comprehensive cellar health metrics and one-click actions.
+
+**Files Created**:
+- `src/services/cellarHealth.js` - Health metrics and actions
+- `src/routes/cellarHealth.js` - API endpoints
 
 **Metrics**:
 1. Drinking Window Risk (bottles near/past drink-by)
@@ -393,6 +443,34 @@ saveAcquiredWine(wineData, { slot, quantity, addToFridge })
 3. Duplication Risk (too many similar wines)
 4. Event Readiness (can you host 6 people with variety?)
 5. Fridge Gaps (missing par-level categories)
+
+**Key Functions**:
+```javascript
+getCellarHealth() // Full health report with metrics, alerts, actions
+executeFillFridge(maxMoves) // Move suitable wines to fill fridge gaps
+getAtRiskWines(limit) // Get wines approaching/past drinking window
+generateShoppingList() // Shopping suggestions based on gaps
+```
+
+**API Endpoints** (in `src/routes/cellarHealth.js`):
+- `GET /api/health` - Full health report
+- `GET /api/health/score` - Health score with breakdown
+- `GET /api/health/alerts` - Active alerts only
+- `GET /api/health/at-risk` - At-risk wines list
+- `POST /api/health/fill-fridge` - Execute fridge fill action
+- `GET /api/health/shopping-list` - Generate shopping suggestions
+
+**Health Score Calculation** (weighted average):
+- drinkingWindowRisk (25%) - % not at-risk
+- styleCoverage (20%) - Covered styles
+- diversityScore (20%) - Not over-concentrated
+- eventReadiness (20%) - Can host 6 people
+- fridgeStatus (15%) - Fridge par-level coverage
+
+**Alert Severity Levels**:
+- critical: Past drink-by date
+- warning: Within 1 year of drink-by
+- info: Within 2 years of drink-by
 
 **One-Click Actions**:
 - "Fill Fridge" - Move suitable wines to fill gaps
@@ -411,13 +489,13 @@ saveAcquiredWine(wineData, { slot, quantity, addToFridge })
 | 7.3 Upgrade analysis | MEDIUM | Medium | ✅ COMPLETE |
 | 7.4 Enhance AI context | MEDIUM | Medium | ✅ COMPLETE |
 | 7.5 Fridge par-levels | MEDIUM | Medium | ✅ COMPLETE |
-| 7.6 Frontend updates | LOW | Low | Pending |
+| 7.6 Frontend updates | LOW | Low | ✅ COMPLETE |
 | 7.7 AI safety & reliability | HIGH | Medium | ✅ COMPLETE |
 | 7.8 Hybrid pairing engine | MEDIUM | Medium | ✅ COMPLETE |
-| 7.9 Personalisation loop | LOW | Medium | Pending |
-| 7.10 Move optimisation | LOW | Medium | Pending |
-| 7.11 Acquisition workflow | MEDIUM | High | Pending |
-| 7.12 Cellar health dashboard | LOW | Medium | Pending |
+| 7.9 Personalisation loop | LOW | Medium | ✅ COMPLETE |
+| 7.10 Move optimisation | LOW | Medium | ✅ COMPLETE |
+| 7.11 Acquisition workflow | MEDIUM | High | ✅ COMPLETE |
+| 7.12 Cellar health dashboard | LOW | Medium | ✅ COMPLETE |
 
 ---
 
@@ -431,15 +509,17 @@ saveAcquiredWine(wineData, { slot, quantity, addToFridge })
 
 **Extended (7.7-7.12)**:
 - ✅ `data/migrations/019_chat_sessions.sql` - Created (6 Jan 2026)
-- `data/migrations/020_palate_profile.sql` - Pending
+- ✅ `data/migrations/020_palate_profile.sql` - Created (6 Jan 2026)
 - ✅ `src/config/aiModels.js` - Created (6 Jan 2026)
 - ✅ `src/config/pairingRules.js` - Created (6 Jan 2026) - Food signal mappings
 - ✅ `src/services/responseValidator.js` - Created (6 Jan 2026)
 - ✅ `src/services/inputSanitizer.js` - Created (6 Jan 2026)
 - ✅ `src/services/chatSessions.js` - Created (6 Jan 2026)
 - ✅ `src/services/pairingEngine.js` - Created (6 Jan 2026) - Hybrid pairing
-- `src/services/palateProfile.js` - Pending
-- `src/services/movePlanner.js` - Pending
+- ✅ `src/services/palateProfile.js` - Created (6 Jan 2026)
+- ✅ `src/services/movePlanner.js` - Created (6 Jan 2026)
+- ✅ `src/services/cellarHealth.js` - Created (6 Jan 2026)
+- ✅ `src/routes/cellarHealth.js` - Created (6 Jan 2026)
 
 ### Files Modified (6 Jan 2026)
 

@@ -1006,3 +1006,142 @@ export async function getConfidenceLevels() {
   const res = await fetch(`${API_BASE}/api/acquisition/confidence-levels`);
   return handleResponse(res, 'Failed to get confidence levels');
 }
+
+// ============================================
+// Palate Profile API
+// ============================================
+
+/**
+ * Record consumption feedback for a wine.
+ * @param {Object} feedback - Feedback data
+ * @returns {Promise<Object>}
+ */
+export async function recordFeedback(feedback) {
+  const res = await fetch(`${API_BASE}/api/palate/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(feedback)
+  });
+  return handleResponse(res, 'Failed to record feedback');
+}
+
+/**
+ * Get feedback for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getWineFeedback(wineId) {
+  const res = await fetch(`${API_BASE}/api/palate/feedback/${wineId}`);
+  return handleResponse(res, 'Failed to get feedback');
+}
+
+/**
+ * Get palate profile.
+ * @returns {Promise<Object>}
+ */
+export async function getPalateProfile() {
+  const res = await fetch(`${API_BASE}/api/palate/profile`);
+  return handleResponse(res, 'Failed to get palate profile');
+}
+
+/**
+ * Get personalized score for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getPersonalizedScore(wineId) {
+  const res = await fetch(`${API_BASE}/api/palate/score/${wineId}`);
+  return handleResponse(res, 'Failed to get personalized score');
+}
+
+/**
+ * Get personalized wine recommendations.
+ * @param {number} [limit=10] - Max recommendations
+ * @returns {Promise<Object>}
+ */
+export async function getPersonalizedRecommendations(limit = 10) {
+  const res = await fetch(`${API_BASE}/api/palate/recommendations?limit=${limit}`);
+  return handleResponse(res, 'Failed to get recommendations');
+}
+
+/**
+ * Get available food tags for pairing feedback.
+ * @returns {Promise<Object>}
+ */
+export async function getFoodTags() {
+  const res = await fetch(`${API_BASE}/api/palate/food-tags`);
+  return handleResponse(res, 'Failed to get food tags');
+}
+
+/**
+ * Get available occasion types.
+ * @returns {Promise<Object>}
+ */
+export async function getOccasionTypes() {
+  const res = await fetch(`${API_BASE}/api/palate/occasions`);
+  return handleResponse(res, 'Failed to get occasion types');
+}
+
+// ============================================
+// Cellar Health Dashboard API
+// ============================================
+
+/**
+ * Get full cellar health report.
+ * @returns {Promise<Object>} Health report with metrics, alerts, and actions
+ */
+export async function getCellarHealth() {
+  const res = await fetch(`${API_BASE}/api/health`);
+  return handleResponse(res, 'Failed to get cellar health');
+}
+
+/**
+ * Get health score only.
+ * @returns {Promise<Object>} Health score and breakdown
+ */
+export async function getCellarHealthScore() {
+  const res = await fetch(`${API_BASE}/api/health/score`);
+  return handleResponse(res, 'Failed to get health score');
+}
+
+/**
+ * Get health alerts only.
+ * @returns {Promise<Object>} Active alerts
+ */
+export async function getCellarHealthAlerts() {
+  const res = await fetch(`${API_BASE}/api/health/alerts`);
+  return handleResponse(res, 'Failed to get health alerts');
+}
+
+/**
+ * Get at-risk wines (approaching or past drinking windows).
+ * @param {number} [limit=20] - Max wines to return
+ * @returns {Promise<Object>} At-risk wines list
+ */
+export async function getAtRiskWines(limit = 20) {
+  const res = await fetch(`${API_BASE}/api/health/at-risk?limit=${limit}`);
+  return handleResponse(res, 'Failed to get at-risk wines');
+}
+
+/**
+ * Execute fill fridge action - move ready-to-drink wines to fridge.
+ * @param {number} [maxMoves=5] - Maximum wines to move
+ * @returns {Promise<Object>} Moves executed
+ */
+export async function executeFillFridge(maxMoves = 5) {
+  const res = await fetch(`${API_BASE}/api/health/fill-fridge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ maxMoves })
+  });
+  return handleResponse(res, 'Failed to fill fridge');
+}
+
+/**
+ * Generate shopping list based on cellar gaps.
+ * @returns {Promise<Object>} Shopping suggestions
+ */
+export async function generateShoppingList() {
+  const res = await fetch(`${API_BASE}/api/health/shopping-list`);
+  return handleResponse(res, 'Failed to generate shopping list');
+}

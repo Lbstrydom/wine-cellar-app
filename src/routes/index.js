@@ -18,6 +18,8 @@ import awardsRoutes from './awards.js';
 import backupRoutes from './backup.js';
 import wineSearchRoutes from './wineSearch.js';
 import acquisitionRoutes from './acquisition.js';
+import palateProfileRoutes from './palateProfile.js';
+import cellarHealthRoutes from './cellarHealth.js';
 
 const router = Router();
 
@@ -36,5 +38,7 @@ router.use('/awards', awardsRoutes);    // /awards/sources, /awards/import/*, /a
 router.use('/backup', backupRoutes);    // /backup/export/json, /backup/export/csv, /backup/import
 router.use('/wine-search', wineSearchRoutes);  // /wine-search (POST), /wine-search/vivino/:id (GET)
 router.use('/acquisition', acquisitionRoutes);  // /acquisition/workflow, /acquisition/save, etc.
+router.use('/palate', palateProfileRoutes);    // /palate/feedback, /palate/profile, /palate/recommendations
+router.use('/health', cellarHealthRoutes);    // /health, /health/fill-fridge, /health/at-risk, /health/shopping-list
 
 export default router;
