@@ -9,6 +9,9 @@ import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../con
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
+// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
+const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+
 /**
  * Job handler for fetching wine ratings.
  * @param {Object} payload - Job payload
@@ -89,7 +92,7 @@ async function handleRatingFetch(payload, context) {
       purchase_stars = ?,
       confidence_level = ?,
       tasting_notes = COALESCE(?, tasting_notes),
-      ratings_updated_at = datetime('now')
+      ratings_updated_at = ${NOW_FUNC}
     WHERE id = ?
   `).run(
     aggregates.competition_index,

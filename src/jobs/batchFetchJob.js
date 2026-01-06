@@ -8,6 +8,9 @@ import { calculateWineRatings, saveRatings } from '../services/ratings.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
+// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
+const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+
 /**
  * Job handler for batch rating fetch.
  * @param {Object} payload - Job payload
@@ -88,7 +91,7 @@ async function handleBatchFetch(payload, context) {
           purchase_stars = ?,
           confidence_level = ?,
           tasting_notes = COALESCE(?, tasting_notes),
-          ratings_updated_at = datetime('now')
+          ratings_updated_at = ${NOW_FUNC}
         WHERE id = ?
       `).run(
         aggregates.competition_index,

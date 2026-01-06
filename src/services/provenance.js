@@ -8,6 +8,9 @@ import crypto from 'crypto';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
+// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
+const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+
 /**
  * Retrieval methods for provenance tracking.
  */
@@ -209,7 +212,7 @@ export function hasFreshData(wineId, sourceId, fieldName) {
     const result = db.prepare(`
       SELECT 1 FROM data_provenance
       WHERE wine_id = ? AND source_id = ? AND field_name = ?
-      AND expires_at > datetime('now')
+      AND expires_at > ${NOW_FUNC}
       LIMIT 1
     `).get(wineId, sourceId, fieldName);
     return !!result;
@@ -245,7 +248,7 @@ export function getExpiredRecords() {
   try {
     return db.prepare(`
       SELECT * FROM data_provenance
-      WHERE expires_at <= datetime('now')
+      WHERE expires_at <= ${NOW_FUNC}
       ORDER BY expires_at ASC
     `).all();
   } catch (error) {
@@ -262,7 +265,7 @@ export function purgeExpiredRecords() {
   try {
     const result = db.prepare(`
       DELETE FROM data_provenance
-      WHERE expires_at <= datetime('now')
+      WHERE expires_at <= ${NOW_FUNC}
     `).run();
 
     if (result.changes > 0) {
@@ -313,7 +316,7 @@ export function getProvenanceStats() {
     // Fresh vs expired
     stats.fresh = db.prepare(`
       SELECT COUNT(*) as count FROM data_provenance
-      WHERE expires_at > datetime('now')
+      WHERE expires_at > ${NOW_FUNC}
     `).get().count;
 
     stats.expired = stats.total - stats.fresh;
