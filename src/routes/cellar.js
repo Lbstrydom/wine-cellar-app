@@ -241,6 +241,35 @@ router.get('/analyse', async (_req, res) => {
 });
 
 /**
+ * GET /api/cellar/fridge-status
+ * Get lightweight fridge status only (without full cellar analysis).
+ */
+router.get('/fridge-status', async (_req, res) => {
+  try {
+    const wines = await getAllWinesWithSlots();
+
+    const fridgeWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('F');
+    });
+    const cellarWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('R');
+    });
+
+    const status = analyseFridge(fridgeWines, cellarWines);
+
+    res.json({
+      success: true,
+      ...status
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Fridge status error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
  * GET /api/cellar/analyse/ai
  * Get AI-enhanced analysis.
  */
