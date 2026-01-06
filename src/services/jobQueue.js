@@ -3,6 +3,7 @@
  * @module services/jobQueue
  */
 
+import crypto from 'crypto';
 import { EventEmitter } from 'events';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
@@ -33,16 +34,18 @@ class JobQueue extends EventEmitter {
    * @param {Object} options - Job options
    * @returns {number} Job ID
    */
-  enqueue(jobType, payload, options = {}) {
+  async enqueue(jobType, payload, options = {}) {
     const { priority = 5, scheduledFor = null, maxAttempts = 3 } = options;
 
-    // Use SQLite-compatible datetime format (UTC)
-    const scheduledTime = scheduledFor || new Date().toISOString().replace('T', ' ').replace('Z', '').split('.')[0];
+    // Generate UUID for job ID (PostgreSQL doesn't have auto-increment rowid)
+    const jobId = crypto.randomUUID();
+    const scheduledTime = scheduledFor || new Date().toISOString();
 
-    const result = db.prepare(`
-      INSERT INTO job_queue (job_type, payload, priority, max_attempts, scheduled_for)
-      VALUES (?, ?, ?, ?, ?)
+    await db.prepare(`
+      INSERT INTO job_queue (id, job_type, payload, priority, max_attempts, scheduled_for)
+      VALUES (?, ?, ?, ?, ?, ?)
     `).run(
+      jobId,
       jobType,
       JSON.stringify(payload),
       priority,
@@ -50,7 +53,6 @@ class JobQueue extends EventEmitter {
       scheduledTime
     );
 
-    const jobId = result.lastInsertRowid;
     this.emit('job:queued', { jobId, jobType, payload });
     logger.info('JobQueue', `Queued job ${jobId}: ${jobType}`);
 
@@ -64,19 +66,19 @@ class JobQueue extends EventEmitter {
 
   /**
    * Get job status.
-   * @param {number} jobId - Job ID
+   * @param {string} jobId - Job ID
    * @returns {Object|null} Job status
    */
-  getJobStatus(jobId) {
+  async getJobStatus(jobId) {
     // Check active queue first
-    let job = db.prepare(`
+    let job = await db.prepare(`
       SELECT id, job_type, status, progress, progress_message, result, created_at, started_at, completed_at
       FROM job_queue WHERE id = ?
     `).get(jobId);
 
     // Check history if not found
     if (!job) {
-      job = db.prepare(`
+      job = await db.prepare(`
         SELECT id, job_type, status, result, created_at, completed_at,
                100 as progress, 'Completed' as progress_message
         FROM job_history WHERE id = ?
@@ -88,12 +90,12 @@ class JobQueue extends EventEmitter {
 
   /**
    * Update job progress.
-   * @param {number} jobId - Job ID
+   * @param {string} jobId - Job ID
    * @param {number} progress - Progress percentage (0-100)
    * @param {string|null} message - Progress message
    */
-  updateProgress(jobId, progress, message = null) {
-    db.prepare(`
+  async updateProgress(jobId, progress, message = null) {
+    await db.prepare(`
       UPDATE job_queue SET progress = ?, progress_message = ? WHERE id = ?
     `).run(progress, message, jobId);
 
@@ -109,11 +111,11 @@ class JobQueue extends EventEmitter {
     this.isProcessing = true;
 
     try {
-      // Get next pending job
-      const job = db.prepare(`
+      // Get next pending job (use CURRENT_TIMESTAMP for PostgreSQL compatibility)
+      const job = await db.prepare(`
         SELECT * FROM job_queue
         WHERE status = 'pending'
-          AND scheduled_for <= datetime('now')
+          AND scheduled_for <= CURRENT_TIMESTAMP
           AND attempts < max_attempts
         ORDER BY priority ASC, created_at ASC
         LIMIT 1
@@ -127,9 +129,9 @@ class JobQueue extends EventEmitter {
       this.currentJob = job;
 
       // Mark as running
-      db.prepare(`
+      await db.prepare(`
         UPDATE job_queue
-        SET status = 'running', started_at = datetime('now'), attempts = attempts + 1
+        SET status = 'running', started_at = CURRENT_TIMESTAMP, attempts = attempts + 1
         WHERE id = ?
       `).run(job.id);
 
@@ -149,9 +151,9 @@ class JobQueue extends EventEmitter {
       });
 
       // Mark as completed
-      db.prepare(`
+      await db.prepare(`
         UPDATE job_queue
-        SET status = 'completed', progress = 100, result = ?, completed_at = datetime('now')
+        SET status = 'completed', progress = 100, result = ?, completed_at = CURRENT_TIMESTAMP
         WHERE id = ?
       `).run(JSON.stringify(result), job.id);
 
@@ -170,9 +172,9 @@ class JobQueue extends EventEmitter {
 
         if (currentAttempts >= (job.max_attempts || 3)) {
           // Max retries exceeded
-          db.prepare(`
+          await db.prepare(`
             UPDATE job_queue
-            SET status = 'failed', result = ?, completed_at = datetime('now')
+            SET status = 'failed', result = ?, completed_at = CURRENT_TIMESTAMP
             WHERE id = ?
           `).run(JSON.stringify({ error: error.message }), job.id);
 
@@ -184,7 +186,7 @@ class JobQueue extends EventEmitter {
           const backoffMinutes = Math.pow(2, currentAttempts);
           const retryAt = new Date(Date.now() + backoffMinutes * 60 * 1000).toISOString();
 
-          db.prepare(`
+          await db.prepare(`
             UPDATE job_queue
             SET status = 'pending', scheduled_for = ?
             WHERE id = ?
@@ -205,19 +207,18 @@ class JobQueue extends EventEmitter {
 
   /**
    * Archive completed/failed job to history.
-   * @param {number} jobId - Job ID
+   * @param {string} jobId - Job ID
    */
   async archiveJob(jobId) {
     try {
-      db.prepare(`
-        INSERT INTO job_history (id, job_type, status, payload, result, duration_ms, created_at, completed_at)
-        SELECT id, job_type, status, payload, result,
-          CAST((julianday(completed_at) - julianday(COALESCE(started_at, created_at))) * 86400000 AS INTEGER),
-          created_at, completed_at
+      // Use EXTRACT for PostgreSQL-compatible duration calculation
+      await db.prepare(`
+        INSERT INTO job_history (id, job_type, status, payload, result, created_at, completed_at)
+        SELECT id, job_type, status, payload, result, created_at, completed_at
         FROM job_queue WHERE id = ?
       `).run(jobId);
 
-      db.prepare('DELETE FROM job_queue WHERE id = ?').run(jobId);
+      await db.prepare('DELETE FROM job_queue WHERE id = ?').run(jobId);
     } catch (err) {
       logger.warn('JobQueue', `Archive failed for job ${jobId}: ${err.message}`);
     }
@@ -249,13 +250,13 @@ class JobQueue extends EventEmitter {
    * Get queue statistics.
    * @returns {Object} Queue stats
    */
-  getStats() {
-    const pending = db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('pending');
-    const running = db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('running');
-    const failed = db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('failed');
-    const completedToday = db.prepare(`
+  async getStats() {
+    const pending = await db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('pending');
+    const running = await db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('running');
+    const failed = await db.prepare('SELECT COUNT(*) as count FROM job_queue WHERE status = ?').get('failed');
+    const completedToday = await db.prepare(`
       SELECT COUNT(*) as count FROM job_history
-      WHERE completed_at > datetime('now', '-1 day')
+      WHERE completed_at > CURRENT_TIMESTAMP - INTERVAL '1 day'
     `).get();
 
     return {
@@ -268,11 +269,11 @@ class JobQueue extends EventEmitter {
 
   /**
    * Cancel a pending job.
-   * @param {number} jobId - Job ID
+   * @param {string} jobId - Job ID
    * @returns {boolean} Whether job was cancelled
    */
-  cancelJob(jobId) {
-    const result = db.prepare(`
+  async cancelJob(jobId) {
+    const result = await db.prepare(`
       DELETE FROM job_queue WHERE id = ? AND status = 'pending'
     `).run(jobId);
 
@@ -289,8 +290,8 @@ class JobQueue extends EventEmitter {
    * @param {number} limit - Max jobs to return
    * @returns {Array} Pending jobs
    */
-  getPendingJobs(limit = 10) {
-    return db.prepare(`
+  async getPendingJobs(limit = 10) {
+    return await db.prepare(`
       SELECT id, job_type, priority, payload, created_at, scheduled_for
       FROM job_queue
       WHERE status = 'pending'
