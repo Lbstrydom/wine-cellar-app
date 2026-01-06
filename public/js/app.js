@@ -391,59 +391,19 @@ function switchView(viewName) {
 }
 
 /**
- * Debug panel for mobile (temporary - remove after debugging).
- */
-function createDebugPanel() {
-  const panel = document.createElement('div');
-  panel.id = 'mobile-debug';
-  panel.style.cssText = `
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    max-height: 150px;
-    overflow-y: auto;
-    background: rgba(0,0,0,0.9);
-    color: #0f0;
-    font-family: monospace;
-    font-size: 11px;
-    padding: 8px;
-    z-index: 99999;
-    white-space: pre-wrap;
-  `;
-  document.body.appendChild(panel);
-  return panel;
-}
-
-function debugLog(msg) {
-  console.log(msg);
-  let panel = document.getElementById('mobile-debug');
-  if (!panel) panel = createDebugPanel();
-  const time = new Date().toLocaleTimeString();
-  panel.innerHTML += `[${time}] ${msg}\n`;
-  panel.scrollTop = panel.scrollHeight;
-}
-
-/**
  * Initialize mobile menu toggle.
  */
 function initMobileMenu() {
   const menuBtn = document.getElementById('mobile-menu-btn');
   const tabsContainer = document.getElementById('tabs-container');
 
-  debugLog(`[Menu] Init: btn=${!!menuBtn}, tabs=${!!tabsContainer}`);
-
   if (menuBtn && tabsContainer) {
     const toggleMenu = () => {
-      debugLog('[Menu] Toggle called');
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      debugLog(`[Menu] Now ${isOpen ? 'OPEN' : 'CLOSED'}`);
     };
 
-    // Use only click - it works for both mouse and touch on modern browsers
     menuBtn.addEventListener('click', (e) => {
-      debugLog('[Menu] CLICK event');
       e.preventDefault();
       e.stopPropagation();
       toggleMenu();
@@ -454,7 +414,6 @@ function initMobileMenu() {
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;
-      debugLog('[Menu] Outside click - closing');
       tabsContainer.classList.remove('open');
       menuBtn.setAttribute('aria-expanded', 'false');
     });
@@ -462,15 +421,10 @@ function initMobileMenu() {
     // Close menu when a tab is selected
     tabsContainer.addEventListener('click', (e) => {
       if (e.target.classList.contains('tab')) {
-        debugLog('[Menu] Tab clicked - closing');
         tabsContainer.classList.remove('open');
         menuBtn.setAttribute('aria-expanded', 'false');
       }
     });
-
-    debugLog('[Menu] Listeners attached OK');
-  } else {
-    debugLog('[Menu] ERROR: Elements not found!');
   }
 }
 
@@ -663,12 +617,8 @@ window.addEventListener('load', updatePwaStatus);
 let appInitialized = false;
 
 function startApp() {
-  if (appInitialized) {
-    debugLog('[App] Already initialized, skipping');
-    return;
-  }
+  if (appInitialized) return;
   appInitialized = true;
-  debugLog('[App] Starting initialization');
 
   // Initialize error boundary first
   initErrorBoundary();
