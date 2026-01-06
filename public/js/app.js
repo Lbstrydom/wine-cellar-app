@@ -397,21 +397,29 @@ function initMobileMenu() {
   const menuBtn = document.getElementById('mobile-menu-btn');
   const tabsContainer = document.getElementById('tabs-container');
 
+  console.log('[MobileMenu] Init:', { menuBtn: !!menuBtn, tabsContainer: !!tabsContainer });
+
   if (menuBtn && tabsContainer) {
     let lastToggle = 0;
 
     const toggleMenu = () => {
+      console.log('[MobileMenu] Toggle triggered');
       // Debounce rapid toggles (prevents double-fire from touch + click)
       const now = Date.now();
-      if (now - lastToggle < 300) return;
+      if (now - lastToggle < 300) {
+        console.log('[MobileMenu] Debounced');
+        return;
+      }
       lastToggle = now;
 
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+      console.log('[MobileMenu] Menu is now:', isOpen ? 'open' : 'closed');
     };
 
     // Handle click (works for both mouse and touch on most browsers)
     menuBtn.addEventListener('click', (e) => {
+      console.log('[MobileMenu] Click event on button');
       e.preventDefault();
       e.stopPropagation();
       toggleMenu();
@@ -422,6 +430,7 @@ function initMobileMenu() {
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;
+      console.log('[MobileMenu] Closing due to outside click');
       tabsContainer.classList.remove('open');
       menuBtn.setAttribute('aria-expanded', 'false');
     });
@@ -429,10 +438,15 @@ function initMobileMenu() {
     // Close menu when a tab is selected
     tabsContainer.addEventListener('click', (e) => {
       if (e.target.classList.contains('tab')) {
+        console.log('[MobileMenu] Closing due to tab selection');
         tabsContainer.classList.remove('open');
         menuBtn.setAttribute('aria-expanded', 'false');
       }
     });
+
+    console.log('[MobileMenu] Event listeners attached');
+  } else {
+    console.error('[MobileMenu] Elements not found!');
   }
 }
 
