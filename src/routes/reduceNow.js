@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { stringAgg } from '../db/helpers.js';
+import { stringAgg, nullsLast } from '../db/helpers.js';
 import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
 
 const router = Router();
@@ -114,7 +114,6 @@ router.post('/evaluate', async (_req, res) => {
 
     // Optimized: Single query to fetch ALL wines with bottles that aren't already in reduce_now
     // This replaces 5 separate queries with 1 comprehensive query
-    // Note: PostgreSQL NULLS LAST is different syntax from SQLite
     const allWines = await db.prepare(`
       SELECT
         w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
@@ -130,7 +129,7 @@ router.post('/evaluate', async (_req, res) => {
       WHERE rn.id IS NULL
       GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.purchase_stars, w.vivino_rating, w.country, w.grape, dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source
       HAVING COUNT(s.id) > 0
-      ORDER BY dw.drink_by_year ASC NULLS LAST, w.vintage ASC
+      ORDER BY ${nullsLast('dw.drink_by_year', 'ASC')}, w.vintage ASC
     `).all(currentYear);
 
     const candidates = [];

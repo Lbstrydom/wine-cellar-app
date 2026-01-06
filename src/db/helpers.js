@@ -121,6 +121,27 @@ export function timestampType() {
   return isPostgres() ? 'TIMESTAMP' : 'DATETIME';
 }
 
+/**
+ * Build an ORDER BY clause with NULLS LAST handling for both databases.
+ * PostgreSQL supports NULLS LAST natively, SQLite requires a CASE workaround.
+ *
+ * @param {string} column - Column expression to order by
+ * @param {string} [direction='ASC'] - Sort direction (ASC or DESC)
+ * @returns {string} ORDER BY clause fragment with NULLS LAST handling
+ *
+ * @example
+ * // Returns "drink_by_year ASC NULLS LAST" for PostgreSQL
+ * // Returns "CASE WHEN drink_by_year IS NULL THEN 1 ELSE 0 END, drink_by_year ASC" for SQLite
+ * nullsLast('drink_by_year', 'ASC')
+ */
+export function nullsLast(column, direction = 'ASC') {
+  if (isPostgres()) {
+    return `${column} ${direction} NULLS LAST`;
+  }
+  // SQLite workaround: sort nulls to end using CASE
+  return `CASE WHEN ${column} IS NULL THEN 1 ELSE 0 END, ${column} ${direction}`;
+}
+
 export default {
   isPostgres,
   stringAgg,
@@ -128,5 +149,6 @@ export default {
   ilike,
   upsert,
   autoIncrement,
-  timestampType
+  timestampType,
+  nullsLast
 };

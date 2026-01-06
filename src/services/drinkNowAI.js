@@ -7,7 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
-import { stringAgg } from '../db/helpers.js';
+import { stringAgg, nullsLast } from '../db/helpers.js';
 import { getModelForTask } from '../config/aiModels.js';
 import { sanitize, sanitizeContext } from './inputSanitizer.js';
 
@@ -97,8 +97,8 @@ async function getUrgentWines() {
         WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 3
         ELSE 4
       END,
-      MIN(rn.priority) NULLS LAST,
-      w.purchase_stars DESC NULLS LAST
+      ${nullsLast('MIN(rn.priority)', 'ASC')},
+      ${nullsLast('w.purchase_stars', 'DESC')}
     LIMIT 30
   `).all(currentYear, currentYear, currentYear, currentYear, currentYear, currentYear, currentYear);
 }
