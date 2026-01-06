@@ -50,8 +50,12 @@ app.get('/metrics', metricsHandler);
 // API routes
 app.use('/api', routes);
 
-// 404 handler for undefined routes
-app.use('/api/*', notFoundHandler);
+// 404 handler for undefined API routes
+// Note: Must use function wrapper as notFoundHandler is a final handler (no next())
+app.use('/api', (req, res, next) => {
+  // If we reach here, no API route matched
+  notFoundHandler(req, res, next);
+});
 
 // Global error handler (must be last)
 app.use(errorHandler);
