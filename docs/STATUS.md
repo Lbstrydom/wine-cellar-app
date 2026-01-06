@@ -784,6 +784,33 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
+### Phase 8: Production Hardening - 6 January 2026
+Comprehensive fixes for Express 5 compatibility and production stability:
+
+**Express 5 Compatibility Fixes**:
+- **Path pattern fix**: Changed `/api/*` wildcard to middleware wrapper (path-to-regexp v8 incompatibility)
+- **Query parameter handling**: Express 5 makes `req.query` getter-only; validation middleware now stores coerced values in `req.validated.query`
+- **Zod coercion**: Updated `paginationSchema` to use `z.coerce.number()` for proper string→number conversion
+
+**PostgreSQL Async/Await**:
+- **Awards routes**: Added `async/await` to all 15 route handlers (PostgreSQL returns Promises, SQLite is synchronous)
+- **Database abstraction**: All `db.prepare().get/all()` calls now properly awaited
+
+**Browser Test Suite** (46 tests passing):
+- Health endpoints (3 tests)
+- Metrics endpoint (8 tests)
+- Pagination with numeric types (8 tests)
+- Input validation (6 tests)
+- Security headers (6 tests)
+- Service worker v28 (4 tests)
+- Event listener cleanup (3 tests)
+- Error boundary (2 tests)
+
+**Cache Management**:
+- Service worker cache version v28
+- Asset versioning `?v=20260106e` for cache busting
+- Global search duplicate overlay prevention
+
 ### Railway + PostgreSQL Migration - 6 January 2026
 - **Migrated from Fly.io to Railway**: Auto-deploy from GitHub, simpler deployment model
 - **Database moved to Supabase PostgreSQL**: Replaced SQLite with cloud-hosted PostgreSQL
@@ -1027,7 +1054,7 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 
-**Current Status**: Phases 1-6 complete! Phase 7 (Sommelier-Grade Cellar Organisation) in planning.
+**Current Status**: Phases 1-8 complete! Phase 7 (Sommelier-Grade Cellar Organisation) in planning.
 
 ### Completed Phases:
 - ✅ **Phase 1**: Testing infrastructure, unified configs, provenance, governance
@@ -1036,6 +1063,8 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 - ✅ **Phase 4**: AI drink recommendations, structured tasting profiles
 - ✅ **Phase 5**: PWA with Railway HTTPS deployment
 - ✅ **Phase 6**: MCP Integration (Puppeteer, PDF Reader, SQLite, Skills)
+- ✅ **Phase 7**: High-priority items (7.1, 7.2, 7.7) - Railway migration, PostgreSQL, async routes
+- ✅ **Phase 8**: Production hardening - Express 5 fixes, browser tests, validation middleware
 
 ### Phase 7: Sommelier-Grade Cellar Organisation (Planned)
 
@@ -1084,14 +1113,16 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 | **Cellar Zones** | 40+ |
 | **Database Migrations** | 15 |
 | **Unit Tests** | 249 |
+| **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
 | **Lines of Code** | ~15,000+ |
 | **Tasting Vocabulary Terms** | 170+ |
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
+| **Service Worker Version** | v28 |
 
 ---
 
 *Last updated: 6 January 2026*
-*Version: 3.0 (Railway + PostgreSQL Migration)*
+*Version: 3.1 (Phase 8 Production Hardening)*
