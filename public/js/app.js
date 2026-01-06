@@ -434,37 +434,18 @@ function initMobileMenu() {
   debugLog(`[Menu] Init: btn=${!!menuBtn}, tabs=${!!tabsContainer}`);
 
   if (menuBtn && tabsContainer) {
-    let lastToggle = 0;
-
     const toggleMenu = () => {
       debugLog('[Menu] Toggle called');
-      const now = Date.now();
-      if (now - lastToggle < 300) {
-        debugLog('[Menu] Debounced');
-        return;
-      }
-      lastToggle = now;
-
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
       debugLog(`[Menu] Now ${isOpen ? 'OPEN' : 'CLOSED'}`);
     };
 
-    // Try both click and touchend
+    // Use only click - it works for both mouse and touch on modern browsers
     menuBtn.addEventListener('click', (e) => {
       debugLog('[Menu] CLICK event');
       e.preventDefault();
       e.stopPropagation();
-      toggleMenu();
-    });
-
-    menuBtn.addEventListener('touchstart', (e) => {
-      debugLog('[Menu] TOUCHSTART');
-    }, { passive: true });
-
-    menuBtn.addEventListener('touchend', (e) => {
-      debugLog('[Menu] TOUCHEND');
-      e.preventDefault();
       toggleMenu();
     });
 
@@ -678,12 +659,29 @@ function updatePwaStatus() {
 // Check PWA status on load
 window.addEventListener('load', updatePwaStatus);
 
-// Start app when DOM ready
-document.addEventListener('DOMContentLoaded', () => {
+// Guard against double initialization at module level
+let appInitialized = false;
+
+function startApp() {
+  if (appInitialized) {
+    debugLog('[App] Already initialized, skipping');
+    return;
+  }
+  appInitialized = true;
+  debugLog('[App] Starting initialization');
+
   // Initialize error boundary first
   initErrorBoundary();
-  
+
   // Then initialize app
   init();
   registerServiceWorker();
-});
+}
+
+// Start app when DOM ready (or immediately if already loaded)
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startApp);
+} else {
+  // DOM already loaded (e.g., script loaded late or module re-executed)
+  startApp();
+}
