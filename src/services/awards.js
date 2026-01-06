@@ -124,10 +124,10 @@ function producerMatches(awardProducer, cellarWineName) {
 /**
  * Find matching wines in cellar for an award.
  * @param {Object} award - Award entry
- * @returns {Object[]} Array of potential matches with scores
+ * @returns {Promise<Object[]>} Array of potential matches with scores
  */
-export function findMatches(award) {
-  const wines = db.prepare(`
+export async function findMatches(award) {
+  const wines = await db.prepare(`
     SELECT id, wine_name, vintage, country, region
     FROM wines
   `).all();
@@ -236,23 +236,23 @@ function normalizeAward(award) {
  * @param {number} year - Competition year
  * @param {string} sourceUrl - Source URL or file path
  * @param {string} sourceType - 'pdf', 'webpage', 'magazine', 'csv', 'manual'
- * @returns {string} Source ID
+ * @returns {Promise<string>} Source ID
  */
-export function getOrCreateSource(competitionId, year, sourceUrl, sourceType) {
+export async function getOrCreateSource(competitionId, year, sourceUrl, sourceType) {
   const sourceId = `${competitionId}_${year}`;
 
   // Check if source exists
-  const existing = awardsDb.prepare('SELECT id FROM award_sources WHERE id = ?').get(sourceId);
+  const existing = await awardsDb.prepare('SELECT id FROM award_sources WHERE id = ?').get(sourceId);
 
   if (existing) {
     return sourceId;
   }
 
   // Get competition name
-  const competition = awardsDb.prepare('SELECT name FROM known_competitions WHERE id = ?').get(competitionId);
+  const competition = await awardsDb.prepare('SELECT name FROM known_competitions WHERE id = ?').get(competitionId);
   const competitionName = competition?.name || competitionId;
 
-  awardsDb.prepare(`
+  await awardsDb.prepare(`
     INSERT INTO award_sources (id, competition_id, competition_name, year, source_url, source_type, status)
     VALUES (?, ?, ?, ?, ?, ?, 'pending')
   `).run(sourceId, competitionId, competitionName, year, sourceUrl, sourceType);
@@ -264,27 +264,32 @@ export function getOrCreateSource(competitionId, year, sourceUrl, sourceType) {
  * Import awards from extracted text.
  * @param {string} sourceId - Award source ID
  * @param {Object[]} awards - Array of award objects
- * @returns {Object} Import result
+ * @returns {Promise<Object>} Import result
  */
-export function importAwards(sourceId, awards) {
+export async function importAwards(sourceId, awards) {
   if (!awards || awards.length === 0) {
     return { imported: 0, skipped: 0, errors: [] };
   }
-
-  const insertStmt = awardsDb.prepare(`
-    INSERT OR IGNORE INTO competition_awards (
-      source_id, producer, wine_name, wine_name_normalized, vintage,
-      award, award_normalized, category, region, extra_info
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `);
 
   let imported = 0;
   let skipped = 0;
   const errors = [];
 
+  // PostgreSQL uses ON CONFLICT DO NOTHING, SQLite uses INSERT OR IGNORE
+  const insertSQL = isPostgres()
+    ? `INSERT INTO competition_awards (
+        source_id, producer, wine_name, wine_name_normalized, vintage,
+        award, award_normalized, category, region, extra_info
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT DO NOTHING`
+    : `INSERT OR IGNORE INTO competition_awards (
+        source_id, producer, wine_name, wine_name_normalized, vintage,
+        award, award_normalized, category, region, extra_info
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
   for (const award of awards) {
     try {
-      const result = insertStmt.run(
+      const result = await awardsDb.prepare(insertSQL).run(
         sourceId,
         award.producer || null,
         award.wine_name,
@@ -308,7 +313,7 @@ export function importAwards(sourceId, awards) {
   }
 
   // Update source stats
-  awardsDb.prepare(`
+  await awardsDb.prepare(`
     UPDATE award_sources
     SET award_count = (SELECT COUNT(*) FROM competition_awards WHERE source_id = ?),
         status = 'completed'
@@ -689,8 +694,8 @@ async function extractFromTextChunked(text, competitionId, year, chunkSize) {
 function buildExtractionPrompt(content, competitionId, year) {
   return `Extract wine awards from this content for the ${competitionId} ${year} competition.
 
-IMPORTANT: This content may be in German, English, or another language. The content may also include 
-introductory text, forewords, or other preamble before the actual awards list. Focus ONLY on extracting 
+IMPORTANT: This content may be in German, English, or another language. The content may also include
+introductory text, forewords, or other preamble before the actual awards list. Focus ONLY on extracting
 the actual wine awards list, ignoring all introductory sections.
 
 CONTENT:
@@ -748,8 +753,8 @@ RULES:
  */
 function buildPDFExtractionPrompt(competitionId, year) {
   return `This is a PDF from the ${competitionId} ${year} wine competition/guide.
-IMPORTANT: This document may be in German, English, or another language. It may contain introductory 
-text, forewords, competition rules, or other preamble before the actual awards list. Focus ONLY on 
+IMPORTANT: This document may be in German, English, or another language. It may contain introductory
+text, forewords, competition rules, or other preamble before the actual awards list. Focus ONLY on
 extracting the actual wine awards, ignoring all introductory sections.
 
 
@@ -805,9 +810,9 @@ function salvagePartialJSON(text) {
   const awards = [];
   // Match individual award objects containing wine_name and award fields
   const awardPattern = /\{\s*"[^"]*":\s*"[^"]*"[^}]*?"wine_name"\s*:\s*"[^"]*"[^}]*?"award"\s*:\s*"[^"]*"[^}]*?\}/g;
-  
+
   const matches = text.match(awardPattern) || [];
-  
+
   for (const match of matches) {
     try {
       const award = JSON.parse(match);
@@ -819,7 +824,7 @@ function salvagePartialJSON(text) {
       continue;
     }
   }
-  
+
   return awards;
 }
 
@@ -879,10 +884,10 @@ function parseAwardsResponse(text) {
 /**
  * Auto-match imported awards to cellar wines.
  * @param {string} sourceId - Award source ID
- * @returns {Object} Match results
+ * @returns {Promise<Object>} Match results
  */
-export function autoMatchAwards(sourceId) {
-  const unmatched = awardsDb.prepare(`
+export async function autoMatchAwards(sourceId) {
+  const unmatched = await awardsDb.prepare(`
     SELECT id, producer, wine_name, wine_name_normalized, vintage
     FROM competition_awards
     WHERE source_id = ? AND matched_wine_id IS NULL
@@ -892,14 +897,8 @@ export function autoMatchAwards(sourceId) {
   let fuzzyMatches = 0;
   let noMatches = 0;
 
-  const updateStmt = awardsDb.prepare(`
-    UPDATE competition_awards
-    SET matched_wine_id = ?, match_type = ?, match_confidence = ?
-    WHERE id = ?
-  `);
-
   for (const award of unmatched) {
-    const matches = findMatches(award);
+    const matches = await findMatches(award);
 
     if (matches.length === 0) {
       noMatches++;
@@ -910,11 +909,19 @@ export function autoMatchAwards(sourceId) {
 
     // Only auto-match high confidence exact matches
     if (best.matchType === 'exact' && best.score >= 0.9) {
-      updateStmt.run(best.wine.id, 'exact', best.score, award.id);
+      await awardsDb.prepare(`
+        UPDATE competition_awards
+        SET matched_wine_id = ?, match_type = ?, match_confidence = ?
+        WHERE id = ?
+      `).run(best.wine.id, 'exact', best.score, award.id);
       exactMatches++;
     } else if (best.score >= 0.7) {
       // Mark as fuzzy match but don't auto-link (needs review)
-      updateStmt.run(null, 'fuzzy', best.score, award.id);
+      await awardsDb.prepare(`
+        UPDATE competition_awards
+        SET matched_wine_id = ?, match_type = ?, match_confidence = ?
+        WHERE id = ?
+      `).run(null, 'fuzzy', best.score, award.id);
       fuzzyMatches++;
     } else {
       noMatches++;
@@ -927,10 +934,10 @@ export function autoMatchAwards(sourceId) {
 /**
  * Get awards for a wine from the local database.
  * @param {number} wineId - Wine ID
- * @returns {Object[]} Matching awards
+ * @returns {Promise<Object[]>} Matching awards
  */
-export function getWineAwards(wineId) {
-  return awardsDb.prepare(`
+export async function getWineAwards(wineId) {
+  return await awardsDb.prepare(`
     SELECT
       ca.*,
       aws.competition_name,
@@ -948,13 +955,13 @@ export function getWineAwards(wineId) {
  * Search for awards matching a wine name (for wines not yet matched).
  * @param {string} wineName - Wine name to search
  * @param {number|null} vintage - Optional vintage
- * @returns {Object[]} Potential matching awards
+ * @returns {Promise<Object[]>} Potential matching awards
  */
-export function searchAwards(wineName, vintage = null) {
+export async function searchAwards(wineName, vintage = null) {
   const normalized = normalizeWineName(wineName);
 
   // Get all unmatched awards
-  const awards = awardsDb.prepare(`
+  const awards = await awardsDb.prepare(`
     SELECT
       ca.*,
       aws.competition_name,
@@ -988,10 +995,10 @@ export function searchAwards(wineName, vintage = null) {
  * Manually link an award to a wine.
  * @param {number} awardId - Award ID
  * @param {number} wineId - Wine ID
- * @returns {boolean} Success
+ * @returns {Promise<boolean>} Success
  */
-export function linkAwardToWine(awardId, wineId) {
-  const result = awardsDb.prepare(`
+export async function linkAwardToWine(awardId, wineId) {
+  const result = await awardsDb.prepare(`
     UPDATE competition_awards
     SET matched_wine_id = ?, match_type = 'manual', match_confidence = 1.0
     WHERE id = ?
@@ -1003,10 +1010,10 @@ export function linkAwardToWine(awardId, wineId) {
 /**
  * Unlink an award from a wine.
  * @param {number} awardId - Award ID
- * @returns {boolean} Success
+ * @returns {Promise<boolean>} Success
  */
-export function unlinkAward(awardId) {
-  const result = awardsDb.prepare(`
+export async function unlinkAward(awardId) {
+  const result = await awardsDb.prepare(`
     UPDATE competition_awards
     SET matched_wine_id = NULL, match_type = NULL, match_confidence = NULL
     WHERE id = ?
@@ -1017,10 +1024,10 @@ export function unlinkAward(awardId) {
 
 /**
  * Get all award sources.
- * @returns {Object[]} Award sources
+ * @returns {Promise<Object[]>} Award sources
  */
-export function getAwardSources() {
-  return awardsDb.prepare(`
+export async function getAwardSources() {
+  return await awardsDb.prepare(`
     SELECT
       aws.*,
       kc.name as competition_display_name,
@@ -1035,11 +1042,11 @@ export function getAwardSources() {
 /**
  * Get awards for a source.
  * @param {string} sourceId - Source ID
- * @returns {Object[]} Awards
+ * @returns {Promise<Object[]>} Awards
  */
-export function getSourceAwards(sourceId) {
+export async function getSourceAwards(sourceId) {
   // Get awards from awards database
-  const awards = awardsDb.prepare(`
+  const awards = await awardsDb.prepare(`
     SELECT ca.*
     FROM competition_awards ca
     WHERE ca.source_id = ?
@@ -1057,7 +1064,7 @@ export function getSourceAwards(sourceId) {
   const wineMap = new Map();
   if (matchedWineIds.length > 0) {
     const placeholders = matchedWineIds.map(() => '?').join(',');
-    const wines = db.prepare(`
+    const wines = await db.prepare(`
       SELECT id, wine_name, vintage FROM wines WHERE id IN (${placeholders})
     `).all(...matchedWineIds);
     wines.forEach(w => wineMap.set(w.id, w));
@@ -1079,28 +1086,26 @@ export function getSourceAwards(sourceId) {
 /**
  * Delete an award source and its awards.
  * @param {string} sourceId - Source ID
- * @returns {boolean} Success
+ * @returns {Promise<boolean>} Success
  */
-export function deleteSource(sourceId) {
-  awardsDb.prepare('DELETE FROM competition_awards WHERE source_id = ?').run(sourceId);
-  const result = awardsDb.prepare('DELETE FROM award_sources WHERE id = ?').run(sourceId);
+export async function deleteSource(sourceId) {
+  await awardsDb.prepare('DELETE FROM competition_awards WHERE source_id = ?').run(sourceId);
+  const result = await awardsDb.prepare('DELETE FROM award_sources WHERE id = ?').run(sourceId);
   return result.changes > 0;
 }
 
 /**
  * Get all known competitions.
- * @returns {Object[]} Competitions
+ * @returns {Promise<Object[]>} Competitions
  */
-export function getKnownCompetitions() {
-  return awardsDb.prepare(`
+export async function getKnownCompetitions() {
+  return await awardsDb.prepare(`
     SELECT * FROM known_competitions ORDER BY name
   `).all();
 }
 
 /**
  * Add a custom competition.
- * Note: This function uses synchronous DB calls. For PostgreSQL deployments,
- * the entire awards.js needs async conversion (see ROADMAP.md Sprint 2 extension).
  * @param {Object} competition - Competition data
  * @returns {Promise<string>} Competition ID
  */
@@ -1132,7 +1137,7 @@ export async function addCompetition(competition) {
       competition.notes || null
     );
   } else {
-    awardsDb.prepare(`
+    await awardsDb.prepare(`
       INSERT OR REPLACE INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
