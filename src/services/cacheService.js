@@ -7,6 +7,9 @@ import crypto from 'crypto';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
+// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
+const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
+
 /**
  * Generate cache key from parameters.
  * @param {Object} params - Parameters to hash
@@ -20,12 +23,12 @@ export function generateCacheKey(params) {
 /**
  * Get cache TTL from config.
  * @param {string} type - TTL type (serp, page, extraction, blocked_page)
- * @returns {number} TTL in hours
+ * @returns {Promise<number>} TTL in hours
  */
-export function getCacheTTL(type) {
+export async function getCacheTTL(type) {
   const configKey = `${type}_ttl_hours`;
   try {
-    const result = db.prepare('SELECT value FROM cache_config WHERE key = ?').get(configKey);
+    const result = await db.prepare('SELECT value FROM cache_config WHERE key = ?').get(configKey);
     return result ? parseInt(result.value) : 24;
   } catch {
     return 24; // Default fallback
@@ -50,14 +53,14 @@ function getExpiryTimestamp(hours) {
  * @param {Object} queryParams - Search parameters
  * @returns {Object|null} Cached results or null
  */
-export function getCachedSerpResults(queryParams) {
+export async function getCachedSerpResults(queryParams) {
   const cacheKey = generateCacheKey(queryParams);
 
   try {
-    const cached = db.prepare(`
+    const cached = await db.prepare(`
       SELECT results, result_count
       FROM search_cache
-      WHERE cache_key = ? AND expires_at > datetime('now')
+      WHERE cache_key = ? AND expires_at > ${NOW_FUNC}
     `).get(cacheKey);
 
     if (cached) {
@@ -81,12 +84,12 @@ export function getCachedSerpResults(queryParams) {
  * @param {string} queryType - Type of query
  * @param {Array} results - Search results
  */
-export function cacheSerpResults(queryParams, queryType, results) {
+export async function cacheSerpResults(queryParams, queryType, results) {
   const cacheKey = generateCacheKey(queryParams);
-  const ttlHours = getCacheTTL('serp');
+  const ttlHours = await getCacheTTL('serp');
 
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO search_cache (cache_key, query_type, query_params, results, result_count, expires_at)
       VALUES (?, ?, ?, ?, ?, ?)
       ON CONFLICT(cache_key) DO UPDATE SET
@@ -116,14 +119,14 @@ export function cacheSerpResults(queryParams, queryType, results) {
  * @param {string} url - Page URL
  * @returns {Object|null} Cached page or null
  */
-export function getCachedPage(url) {
+export async function getCachedPage(url) {
   const urlHash = generateCacheKey({ url });
 
   try {
-    const cached = db.prepare(`
+    const cached = await db.prepare(`
       SELECT content, fetch_status, status_code, error_message
       FROM page_cache
-      WHERE url_hash = ? AND expires_at > datetime('now')
+      WHERE url_hash = ? AND expires_at > ${NOW_FUNC}
     `).get(urlHash);
 
     if (cached) {
@@ -151,15 +154,15 @@ export function getCachedPage(url) {
  * @param {number} statusCode - HTTP status code
  * @param {string|null} errorMessage - Error message if failed
  */
-export function cachePage(url, content, status, statusCode, errorMessage = null) {
+export async function cachePage(url, content, status, statusCode, errorMessage = null) {
   const urlHash = generateCacheKey({ url });
 
   // Blocked pages get shorter TTL for retry
   const ttlType = status === 'success' ? 'page' : 'blocked_page';
-  const ttlHours = getCacheTTL(ttlType);
+  const ttlHours = await getCacheTTL(ttlType);
 
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO page_cache (url_hash, url, content, content_length, fetch_status, status_code, error_message, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(url_hash) DO UPDATE SET
@@ -196,13 +199,13 @@ export function cachePage(url, content, status, statusCode, errorMessage = null)
  * @param {string} extractionType - Type of extraction
  * @returns {Object|null} Cached extraction or null
  */
-export function getCachedExtraction(wineId, contentHash, extractionType) {
+export async function getCachedExtraction(wineId, contentHash, extractionType) {
   try {
-    const cached = db.prepare(`
+    const cached = await db.prepare(`
       SELECT extracted_ratings, extracted_windows, tasting_notes
       FROM extraction_cache
       WHERE wine_id = ? AND content_hash = ? AND extraction_type = ?
-        AND expires_at > datetime('now')
+        AND expires_at > ${NOW_FUNC}
     `).get(wineId, contentHash, extractionType);
 
     if (cached) {
@@ -231,11 +234,11 @@ export function getCachedExtraction(wineId, contentHash, extractionType) {
  * @param {string|null} tastingNotes - Tasting notes
  * @param {string} modelVersion - Claude model used
  */
-export function cacheExtraction(wineId, contentHash, extractionType, ratings, windows, tastingNotes, modelVersion) {
-  const ttlHours = getCacheTTL('extraction');
+export async function cacheExtraction(wineId, contentHash, extractionType, ratings, windows, tastingNotes, modelVersion) {
+  const ttlHours = await getCacheTTL('extraction');
 
   try {
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO extraction_cache (wine_id, content_hash, extraction_type, extracted_ratings, extracted_windows, tasting_notes, model_version, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(wine_id, content_hash, extraction_type) DO UPDATE SET
@@ -268,13 +271,13 @@ export function cacheExtraction(wineId, contentHash, extractionType, ratings, wi
  * Purge expired cache entries.
  * @returns {Object} Count of purged entries by table
  */
-export function purgeExpiredCache() {
+export async function purgeExpiredCache() {
   const tables = ['search_cache', 'page_cache', 'extraction_cache'];
   const results = {};
 
   for (const table of tables) {
     try {
-      const result = db.prepare(`DELETE FROM ${table} WHERE expires_at < datetime('now')`).run();
+      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < ${NOW_FUNC}`).run();
       results[table] = result.changes || 0;
     } catch (err) {
       results[table] = `error: ${err.message}`;
@@ -289,22 +292,22 @@ export function purgeExpiredCache() {
  * Get cache statistics.
  * @returns {Object} Cache stats by table
  */
-export function getCacheStats() {
+export async function getCacheStats() {
   const stats = {};
 
   try {
-    stats.serp = db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > datetime('now') THEN 1 ELSE 0 END) as valid
+    stats.serp = await db.prepare(`
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
       FROM search_cache
     `).get();
 
-    stats.page = db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > datetime('now') THEN 1 ELSE 0 END) as valid
+    stats.page = await db.prepare(`
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
       FROM page_cache
     `).get();
 
-    stats.extraction = db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > datetime('now') THEN 1 ELSE 0 END) as valid
+    stats.extraction = await db.prepare(`
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
       FROM extraction_cache
     `).get();
   } catch (err) {
@@ -318,9 +321,9 @@ export function getCacheStats() {
  * Invalidate cache for a specific wine.
  * @param {number} wineId - Wine ID
  */
-export function invalidateWineCache(wineId) {
+export async function invalidateWineCache(wineId) {
   try {
-    db.prepare('DELETE FROM extraction_cache WHERE wine_id = ?').run(wineId);
+    await db.prepare('DELETE FROM extraction_cache WHERE wine_id = ?').run(wineId);
     logger.info('Cache', `Invalidated extraction cache for wine ${wineId}`);
   } catch (err) {
     logger.warn('Cache', `Invalidation failed: ${err.message}`);
@@ -332,9 +335,9 @@ export function invalidateWineCache(wineId) {
  * @param {string} key - Config key
  * @param {string} value - Config value
  */
-export function updateCacheConfig(key, value) {
+export async function updateCacheConfig(key, value) {
   try {
-    db.prepare(`
+    await db.prepare(`
       UPDATE cache_config SET value = ? WHERE key = ?
     `).run(value, key);
   } catch (err) {

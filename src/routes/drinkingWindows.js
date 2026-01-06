@@ -14,10 +14,10 @@ const router = Router();
  * Get all drinking windows for a wine.
  * @route GET /api/wines/:wine_id/drinking-windows
  */
-router.get('/wines/:wine_id/drinking-windows', (req, res) => {
+router.get('/wines/:wine_id/drinking-windows', async (req, res) => {
   try {
     const { wine_id } = req.params;
-    const windows = db.prepare(`
+    const windows = await db.prepare(`
       SELECT * FROM drinking_windows
       WHERE wine_id = ?
       ORDER BY
@@ -30,7 +30,7 @@ router.get('/wines/:wine_id/drinking-windows', (req, res) => {
 
     // If no windows exist, try to get a default estimate
     if (windows.length === 0) {
-      const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
+      const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
       if (wine && wine.vintage) {
         const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
         if (defaultWindow) {
@@ -59,7 +59,7 @@ router.get('/wines/:wine_id/drinking-windows', (req, res) => {
  * Add or update a drinking window (upsert by source).
  * @route POST /api/wines/:wine_id/drinking-windows
  */
-router.post('/wines/:wine_id/drinking-windows', (req, res) => {
+router.post('/wines/:wine_id/drinking-windows', async (req, res) => {
   try {
     const { wine_id } = req.params;
     const { source, drink_from_year, drink_by_year, peak_year, confidence, raw_text } = req.body;
@@ -68,7 +68,7 @@ router.post('/wines/:wine_id/drinking-windows', (req, res) => {
       return res.status(400).json({ error: 'source is required' });
     }
 
-    db.prepare(`
+    await db.prepare(`
       INSERT INTO drinking_windows (wine_id, source, drink_from_year, drink_by_year, peak_year, confidence, raw_text, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
       ON CONFLICT(wine_id, source) DO UPDATE SET
@@ -92,10 +92,10 @@ router.post('/wines/:wine_id/drinking-windows', (req, res) => {
  * Delete a drinking window by source.
  * @route DELETE /api/wines/:wine_id/drinking-windows/:source
  */
-router.delete('/wines/:wine_id/drinking-windows/:source', (req, res) => {
+router.delete('/wines/:wine_id/drinking-windows/:source', async (req, res) => {
   try {
     const { wine_id, source } = req.params;
-    const result = db.prepare('DELETE FROM drinking_windows WHERE wine_id = ? AND source = ?').run(wine_id, source);
+    const result = await db.prepare('DELETE FROM drinking_windows WHERE wine_id = ? AND source = ?').run(wine_id, source);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Window not found' });
@@ -113,7 +113,7 @@ router.delete('/wines/:wine_id/drinking-windows/:source', (req, res) => {
  * Get wines with urgent drinking windows.
  * @route GET /api/drinking-windows/urgent
  */
-router.get('/drinking-windows/urgent', (req, res) => {
+router.get('/drinking-windows/urgent', async (req, res) => {
   try {
     const urgencyMonths = parseInt(req.query.months) || 12;
     const currentYear = new Date().getFullYear();
@@ -121,7 +121,7 @@ router.get('/drinking-windows/urgent', (req, res) => {
     // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
     const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
-    const urgent = db.prepare(`
+    const urgent = await db.prepare(`
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
@@ -133,7 +133,8 @@ router.get('/drinking-windows/urgent', (req, res) => {
       LEFT JOIN slots s ON s.wine_id = w.id
       WHERE dw.drink_by_year IS NOT NULL
         AND dw.drink_by_year <= ?
-      GROUP BY w.id, dw.id
+      GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour,
+               dw.id, dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source
       HAVING COUNT(s.id) > 0
       ORDER BY dw.drink_by_year ASC
     `).all(currentYear, urgencyYear);
@@ -149,12 +150,12 @@ router.get('/drinking-windows/urgent', (req, res) => {
  * Get the best drinking window for a wine (respecting source priority).
  * @route GET /api/wines/:wine_id/drinking-window/best
  */
-router.get('/wines/:wine_id/drinking-window/best', (req, res) => {
+router.get('/wines/:wine_id/drinking-window/best', async (req, res) => {
   try {
     const { wine_id } = req.params;
 
     // Get source priority from settings
-    const prioritySetting = db.prepare("SELECT value FROM user_settings WHERE key = 'reduce_window_source_priority'").get();
+    const prioritySetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'reduce_window_source_priority'").get();
     let sourcePriority = ['manual', 'halliday', 'wine_spectator', 'decanter', 'vivino'];
 
     if (prioritySetting?.value) {
@@ -166,11 +167,11 @@ router.get('/wines/:wine_id/drinking-window/best', (req, res) => {
     }
 
     // Get all windows for this wine
-    const windows = db.prepare('SELECT * FROM drinking_windows WHERE wine_id = ?').all(wine_id);
+    const windows = await db.prepare('SELECT * FROM drinking_windows WHERE wine_id = ?').all(wine_id);
 
     if (windows.length === 0) {
       // No explicit windows - try to get default based on wine characteristics
-      const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
+      const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
       if (wine && wine.vintage) {
         const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
         if (defaultWindow) {

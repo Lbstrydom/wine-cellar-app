@@ -12,11 +12,12 @@ const router = Router();
 /**
  * Safely get count from a table that might not exist.
  * @param {string} sql - SQL count query
- * @returns {number} Count or 0
+ * @returns {Promise<number>} Count or 0
  */
-function safeCount(sql) {
+async function safeCount(sql) {
   try {
-    return db.prepare(sql).get().count;
+    const result = await db.prepare(sql).get();
+    return result?.count || 0;
   } catch {
     return 0;
   }
@@ -26,9 +27,9 @@ function safeCount(sql) {
  * Safely run a delete statement on a table that might not exist.
  * @param {string} sql - SQL delete statement
  */
-function safeDelete(sql) {
+async function safeDelete(sql) {
   try {
-    db.prepare(sql).run();
+    await db.prepare(sql).run();
   } catch {
     // Table doesn't exist, ignore
   }
@@ -38,13 +39,13 @@ function safeDelete(sql) {
  * Get backup metadata (counts for UI display).
  * @route GET /api/backup/info
  */
-router.get('/info', (req, res) => {
+router.get('/info', async (req, res) => {
   try {
     const info = {
-      wines: safeCount('SELECT COUNT(*) as count FROM wines'),
-      slots: safeCount('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL'),
-      history: safeCount('SELECT COUNT(*) as count FROM consumption_log'),
-      ratings: safeCount('SELECT COUNT(*) as count FROM wine_ratings'),
+      wines: await safeCount('SELECT COUNT(*) as count FROM wines'),
+      slots: await safeCount('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL'),
+      history: await safeCount('SELECT COUNT(*) as count FROM consumption_log'),
+      ratings: await safeCount('SELECT COUNT(*) as count FROM wine_ratings'),
       lastBackup: null
     };
     res.json(info);
@@ -58,21 +59,21 @@ router.get('/info', (req, res) => {
  * Full JSON backup - all data.
  * @route GET /api/backup/export/json
  */
-router.get('/export/json', (req, res) => {
+router.get('/export/json', async (req, res) => {
   try {
     const backup = {
       version: '1.0',
       appVersion: '1.0.0',
       exportedAt: new Date().toISOString(),
       data: {
-        wines: db.prepare('SELECT * FROM wines').all(),
-        slots: db.prepare('SELECT * FROM slots').all(),
-        wine_ratings: safeQuery('SELECT * FROM wine_ratings'),
-        consumption_log: safeQuery('SELECT * FROM consumption_log'),
-        drinking_windows: safeQuery('SELECT * FROM drinking_windows'),
-        user_settings: safeQuery('SELECT * FROM user_settings'),
-        data_provenance: safeQuery('SELECT * FROM data_provenance'),
-        reduce_now: safeQuery('SELECT * FROM reduce_now')
+        wines: await db.prepare('SELECT * FROM wines').all(),
+        slots: await db.prepare('SELECT * FROM slots').all(),
+        wine_ratings: await safeQuery('SELECT * FROM wine_ratings'),
+        consumption_log: await safeQuery('SELECT * FROM consumption_log'),
+        drinking_windows: await safeQuery('SELECT * FROM drinking_windows'),
+        user_settings: await safeQuery('SELECT * FROM user_settings'),
+        data_provenance: await safeQuery('SELECT * FROM data_provenance'),
+        reduce_now: await safeQuery('SELECT * FROM reduce_now')
       }
     };
 
@@ -90,11 +91,11 @@ router.get('/export/json', (req, res) => {
  * CSV export - wine list with ratings.
  * @route GET /api/backup/export/csv
  */
-router.get('/export/csv', (req, res) => {
+router.get('/export/csv', async (req, res) => {
   try {
     // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
     const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(s.location_code, ',')" : 'GROUP_CONCAT(s.location_code)';
-    const wines = db.prepare(`
+    const wines = await db.prepare(`
       SELECT
         w.id,
         w.wine_name,
@@ -165,7 +166,7 @@ router.get('/export/csv', (req, res) => {
  * Import JSON backup.
  * @route POST /api/backup/import
  */
-router.post('/import', (req, res) => {
+router.post('/import', async (req, res) => {
   const { backup, options = {} } = req.body;
 
   if (!backup || !backup.data) {
@@ -177,129 +178,220 @@ router.post('/import', (req, res) => {
   try {
     const stats = { imported: 0, skipped: 0, errors: [] };
 
-    db.transaction(() => {
-      // If replace mode, clear existing data
-      if (mergeMode === 'replace') {
-        db.prepare('DELETE FROM slots').run();
-        safeDelete('DELETE FROM wine_ratings');
-        safeDelete('DELETE FROM consumption_log');
-        safeDelete('DELETE FROM drinking_windows');
-        safeDelete('DELETE FROM data_provenance');
-        safeDelete('DELETE FROM reduce_now');
-        db.prepare('DELETE FROM wines').run();
-      }
+    // Use ON CONFLICT for PostgreSQL (also works with SQLite 3.24+)
+    const upsertSuffix = process.env.DATABASE_URL
+      ? 'ON CONFLICT (id) DO UPDATE SET'
+      : 'OR REPLACE';
 
-      // Import wines
-      if (backup.data.wines) {
-        const insertWine = db.prepare(`
-          INSERT OR REPLACE INTO wines (
-            id, style, colour, wine_name, vintage, vivino_rating, price_eur,
-            country, drink_from, drink_peak, drink_until, personal_rating,
-            personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
-          ) VALUES (
-            @id, @style, @colour, @wine_name, @vintage, @vivino_rating, @price_eur,
-            @country, @drink_from, @drink_peak, @drink_until, @personal_rating,
-            @personal_notes, @personal_rated_at, @purchase_stars, @created_at, @updated_at
-          )
-        `);
+    // If replace mode, clear existing data
+    if (mergeMode === 'replace') {
+      await db.prepare('DELETE FROM slots').run();
+      await safeDelete('DELETE FROM wine_ratings');
+      await safeDelete('DELETE FROM consumption_log');
+      await safeDelete('DELETE FROM drinking_windows');
+      await safeDelete('DELETE FROM data_provenance');
+      await safeDelete('DELETE FROM reduce_now');
+      await db.prepare('DELETE FROM wines').run();
+    }
 
-        for (const wine of backup.data.wines) {
-          try {
-            insertWine.run({
-              id: wine.id,
-              style: wine.style || null,
-              colour: wine.colour || null,
-              wine_name: wine.wine_name,
-              vintage: wine.vintage || null,
-              vivino_rating: wine.vivino_rating || null,
-              price_eur: wine.price_eur || null,
-              country: wine.country || null,
-              drink_from: wine.drink_from || null,
-              drink_peak: wine.drink_peak || null,
-              drink_until: wine.drink_until || null,
-              personal_rating: wine.personal_rating || null,
-              personal_notes: wine.personal_notes || null,
-              personal_rated_at: wine.personal_rated_at || null,
-              purchase_stars: wine.purchase_stars || null,
-              created_at: wine.created_at || new Date().toISOString(),
-              updated_at: wine.updated_at || new Date().toISOString()
-            });
-            stats.imported++;
-          } catch (err) {
-            stats.errors.push(`Wine ${wine.id}: ${err.message}`);
-          }
-        }
-      }
-
-      // Import slots
-      if (backup.data.slots) {
-        const insertSlot = db.prepare(`
-          INSERT OR REPLACE INTO slots (id, location_code, wine_id)
-          VALUES (@id, @location_code, @wine_id)
-        `);
-
-        for (const slot of backup.data.slots) {
-          try {
-            insertSlot.run({
-              id: slot.id,
-              location_code: slot.location_code,
-              wine_id: slot.wine_id
-            });
-          } catch (err) {
-            stats.errors.push(`Slot ${slot.location_code}: ${err.message}`);
-          }
-        }
-      }
-
-      // Import wine_ratings
-      if (backup.data.wine_ratings) {
-        const insertRating = db.prepare(`
-          INSERT OR REPLACE INTO wine_ratings (
-            id, wine_id, source_id, score, normalized_score, review_count,
-            source_url, fetched_at, confidence
-          ) VALUES (
-            @id, @wine_id, @source_id, @score, @normalized_score, @review_count,
-            @source_url, @fetched_at, @confidence
-          )
-        `);
-
-        for (const rating of backup.data.wine_ratings) {
-          try {
-            insertRating.run(rating);
-          } catch (err) {
-            stats.errors.push(`Rating: ${err.message}`);
-          }
-        }
-      }
-
-      // Import consumption_log (also support legacy wine_history name)
-      const consumptionData = backup.data.consumption_log || backup.data.wine_history;
-      if (consumptionData && consumptionData.length > 0) {
+    // Import wines
+    if (backup.data.wines) {
+      for (const wine of backup.data.wines) {
         try {
-          const insertHistory = db.prepare(`
-            INSERT OR REPLACE INTO consumption_log (
-              id, wine_id, wine_name, vintage, style, colour, country,
-              location_code, consumed_at, occasion, pairing_dish,
-              consumption_notes, consumption_rating
-            ) VALUES (
-              @id, @wine_id, @wine_name, @vintage, @style, @colour, @country,
-              @location_code, @consumed_at, @occasion, @pairing_dish,
-              @consumption_notes, @consumption_rating
-            )
-          `);
-
-          for (const history of consumptionData) {
-            try {
-              insertHistory.run(history);
-            } catch (err) {
-              stats.errors.push(`History: ${err.message}`);
-            }
+          if (process.env.DATABASE_URL) {
+            // PostgreSQL: use INSERT ... ON CONFLICT
+            await db.prepare(`
+              INSERT INTO wines (
+                id, style, colour, wine_name, vintage, vivino_rating, price_eur,
+                country, drink_from, drink_peak, drink_until, personal_rating,
+                personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (id) DO UPDATE SET
+                style = EXCLUDED.style,
+                colour = EXCLUDED.colour,
+                wine_name = EXCLUDED.wine_name,
+                vintage = EXCLUDED.vintage,
+                vivino_rating = EXCLUDED.vivino_rating,
+                price_eur = EXCLUDED.price_eur,
+                country = EXCLUDED.country,
+                drink_from = EXCLUDED.drink_from,
+                drink_peak = EXCLUDED.drink_peak,
+                drink_until = EXCLUDED.drink_until,
+                personal_rating = EXCLUDED.personal_rating,
+                personal_notes = EXCLUDED.personal_notes,
+                personal_rated_at = EXCLUDED.personal_rated_at,
+                purchase_stars = EXCLUDED.purchase_stars,
+                updated_at = EXCLUDED.updated_at
+            `).run(
+              wine.id,
+              wine.style || null,
+              wine.colour || null,
+              wine.wine_name,
+              wine.vintage || null,
+              wine.vivino_rating || null,
+              wine.price_eur || null,
+              wine.country || null,
+              wine.drink_from || null,
+              wine.drink_peak || null,
+              wine.drink_until || null,
+              wine.personal_rating || null,
+              wine.personal_notes || null,
+              wine.personal_rated_at || null,
+              wine.purchase_stars || null,
+              wine.created_at || new Date().toISOString(),
+              wine.updated_at || new Date().toISOString()
+            );
+          } else {
+            // SQLite: use INSERT OR REPLACE
+            await db.prepare(`
+              INSERT OR REPLACE INTO wines (
+                id, style, colour, wine_name, vintage, vivino_rating, price_eur,
+                country, drink_from, drink_peak, drink_until, personal_rating,
+                personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              wine.id,
+              wine.style || null,
+              wine.colour || null,
+              wine.wine_name,
+              wine.vintage || null,
+              wine.vivino_rating || null,
+              wine.price_eur || null,
+              wine.country || null,
+              wine.drink_from || null,
+              wine.drink_peak || null,
+              wine.drink_until || null,
+              wine.personal_rating || null,
+              wine.personal_notes || null,
+              wine.personal_rated_at || null,
+              wine.purchase_stars || null,
+              wine.created_at || new Date().toISOString(),
+              wine.updated_at || new Date().toISOString()
+            );
           }
-        } catch {
-          // consumption_log table doesn't exist, skip
+          stats.imported++;
+        } catch (err) {
+          stats.errors.push(`Wine ${wine.id}: ${err.message}`);
         }
       }
-    })();
+    }
+
+    // Import slots
+    if (backup.data.slots) {
+      for (const slot of backup.data.slots) {
+        try {
+          if (process.env.DATABASE_URL) {
+            await db.prepare(`
+              INSERT INTO slots (id, location_code, wine_id)
+              VALUES (?, ?, ?)
+              ON CONFLICT (id) DO UPDATE SET
+                location_code = EXCLUDED.location_code,
+                wine_id = EXCLUDED.wine_id
+            `).run(slot.id, slot.location_code, slot.wine_id);
+          } else {
+            await db.prepare(`
+              INSERT OR REPLACE INTO slots (id, location_code, wine_id)
+              VALUES (?, ?, ?)
+            `).run(slot.id, slot.location_code, slot.wine_id);
+          }
+        } catch (err) {
+          stats.errors.push(`Slot ${slot.location_code}: ${err.message}`);
+        }
+      }
+    }
+
+    // Import wine_ratings
+    if (backup.data.wine_ratings) {
+      for (const rating of backup.data.wine_ratings) {
+        try {
+          if (process.env.DATABASE_URL) {
+            await db.prepare(`
+              INSERT INTO wine_ratings (
+                id, wine_id, source_id, score, normalized_score, review_count,
+                source_url, fetched_at, confidence
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (id) DO UPDATE SET
+                wine_id = EXCLUDED.wine_id,
+                source_id = EXCLUDED.source_id,
+                score = EXCLUDED.score,
+                normalized_score = EXCLUDED.normalized_score,
+                review_count = EXCLUDED.review_count,
+                source_url = EXCLUDED.source_url,
+                fetched_at = EXCLUDED.fetched_at,
+                confidence = EXCLUDED.confidence
+            `).run(
+              rating.id, rating.wine_id, rating.source_id, rating.score,
+              rating.normalized_score, rating.review_count, rating.source_url,
+              rating.fetched_at, rating.confidence
+            );
+          } else {
+            await db.prepare(`
+              INSERT OR REPLACE INTO wine_ratings (
+                id, wine_id, source_id, score, normalized_score, review_count,
+                source_url, fetched_at, confidence
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              rating.id, rating.wine_id, rating.source_id, rating.score,
+              rating.normalized_score, rating.review_count, rating.source_url,
+              rating.fetched_at, rating.confidence
+            );
+          }
+        } catch (err) {
+          stats.errors.push(`Rating: ${err.message}`);
+        }
+      }
+    }
+
+    // Import consumption_log (also support legacy wine_history name)
+    const consumptionData = backup.data.consumption_log || backup.data.wine_history;
+    if (consumptionData && consumptionData.length > 0) {
+      for (const history of consumptionData) {
+        try {
+          if (process.env.DATABASE_URL) {
+            await db.prepare(`
+              INSERT INTO consumption_log (
+                id, wine_id, wine_name, vintage, style, colour, country,
+                location_code, consumed_at, occasion, pairing_dish,
+                consumption_notes, consumption_rating
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT (id) DO UPDATE SET
+                wine_id = EXCLUDED.wine_id,
+                wine_name = EXCLUDED.wine_name,
+                vintage = EXCLUDED.vintage,
+                style = EXCLUDED.style,
+                colour = EXCLUDED.colour,
+                country = EXCLUDED.country,
+                location_code = EXCLUDED.location_code,
+                consumed_at = EXCLUDED.consumed_at,
+                occasion = EXCLUDED.occasion,
+                pairing_dish = EXCLUDED.pairing_dish,
+                consumption_notes = EXCLUDED.consumption_notes,
+                consumption_rating = EXCLUDED.consumption_rating
+            `).run(
+              history.id, history.wine_id, history.wine_name, history.vintage,
+              history.style, history.colour, history.country, history.location_code,
+              history.consumed_at, history.occasion, history.pairing_dish,
+              history.consumption_notes, history.consumption_rating
+            );
+          } else {
+            await db.prepare(`
+              INSERT OR REPLACE INTO consumption_log (
+                id, wine_id, wine_name, vintage, style, colour, country,
+                location_code, consumed_at, occasion, pairing_dish,
+                consumption_notes, consumption_rating
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              history.id, history.wine_id, history.wine_name, history.vintage,
+              history.style, history.colour, history.country, history.location_code,
+              history.consumed_at, history.occasion, history.pairing_dish,
+              history.consumption_notes, history.consumption_rating
+            );
+          }
+        } catch (err) {
+          stats.errors.push(`History: ${err.message}`);
+        }
+      }
+    }
 
     res.json({
       message: 'Import completed',
@@ -318,11 +410,11 @@ router.post('/import', (req, res) => {
 /**
  * Safely query a table that might not exist.
  * @param {string} sql - SQL query
- * @returns {Array} Results or empty array
+ * @returns {Promise<Array>} Results or empty array
  */
-function safeQuery(sql) {
+async function safeQuery(sql) {
   try {
-    return db.prepare(sql).all();
+    return await db.prepare(sql).all();
   } catch {
     return [];
   }
