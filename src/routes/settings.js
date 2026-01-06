@@ -14,30 +14,40 @@ const router = Router();
  * Get all settings.
  * @route GET /api/settings
  */
-router.get('/', (_req, res) => {
-  const settings = db.prepare('SELECT key, value FROM user_settings').all();
-  const result = {};
-  for (const s of settings) {
-    result[s.key] = s.value;
+router.get('/', async (_req, res) => {
+  try {
+    const settings = await db.prepare('SELECT key, value FROM user_settings').all();
+    const result = {};
+    for (const s of settings) {
+      result[s.key] = s.value;
+    }
+    res.json(result);
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({ error: error.message });
   }
-  res.json(result);
 });
 
 /**
  * Update a setting.
  * @route PUT /api/settings/:key
  */
-router.put('/:key', (req, res) => {
-  const { key } = req.params;
-  const { value } = req.body;
+router.put('/:key', async (req, res) => {
+  try {
+    const { key } = req.params;
+    const { value } = req.body;
 
-  db.prepare(`
-    INSERT INTO user_settings (key, value, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-  `).run(key, value, value);
+    await db.prepare(`
+      INSERT INTO user_settings (key, value, updated_at)
+      VALUES (?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
+    `).run(key, value, value);
 
-  res.json({ message: 'Setting updated' });
+    res.json({ message: 'Setting updated' });
+  } catch (error) {
+    console.error('Update setting error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
@@ -48,97 +58,112 @@ router.put('/:key', (req, res) => {
  * Get configured credential sources (no sensitive data).
  * @route GET /api/settings/credentials
  */
-router.get('/credentials', (_req, res) => {
-  const credentials = db.prepare(`
-    SELECT source_id, auth_status, last_used_at, created_at, updated_at,
-           CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
-    FROM source_credentials
-  `).all();
+router.get('/credentials', async (_req, res) => {
+  try {
+    const credentials = await db.prepare(`
+      SELECT source_id, auth_status, last_used_at, created_at, updated_at,
+             CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
+      FROM source_credentials
+    `).all();
 
-  // Decrypt usernames for display (masked)
-  const result = credentials.map(cred => {
-    let maskedUsername = null;
-    if (cred.has_username) {
-      const username = decrypt(
-        db.prepare('SELECT username_encrypted FROM source_credentials WHERE source_id = ?')
-          .get(cred.source_id)?.username_encrypted
-      );
-      if (username) {
-        // Mask email: show first 2 chars + ... + domain
-        const atIndex = username.indexOf('@');
-        if (atIndex > 2) {
-          maskedUsername = username.substring(0, 2) + '***' + username.substring(atIndex);
-        } else {
-          maskedUsername = username.substring(0, 2) + '***';
+    // Decrypt usernames for display (masked)
+    const result = [];
+    for (const cred of credentials) {
+      let maskedUsername = null;
+      if (cred.has_username) {
+        const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE source_id = ?')
+          .get(cred.source_id);
+        const username = decrypt(row?.username_encrypted);
+        if (username) {
+          // Mask email: show first 2 chars + ... + domain
+          const atIndex = username.indexOf('@');
+          if (atIndex > 2) {
+            maskedUsername = username.substring(0, 2) + '***' + username.substring(atIndex);
+          } else {
+            maskedUsername = username.substring(0, 2) + '***';
+          }
         }
       }
+
+      result.push({
+        source_id: cred.source_id,
+        auth_status: cred.auth_status,
+        last_used_at: cred.last_used_at,
+        has_credentials: cred.has_username === 1,
+        masked_username: maskedUsername
+      });
     }
 
-    return {
-      source_id: cred.source_id,
-      auth_status: cred.auth_status,
-      last_used_at: cred.last_used_at,
-      has_credentials: cred.has_username === 1,
-      masked_username: maskedUsername
-    };
-  });
-
-  res.json({
-    encryption_configured: isConfigured(),
-    credentials: result
-  });
+    res.json({
+      encryption_configured: isConfigured(),
+      credentials: result
+    });
+  } catch (error) {
+    console.error('Get credentials error:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 /**
  * Save credentials for a source.
  * @route PUT /api/settings/credentials/:source
  */
-router.put('/credentials/:source', (req, res) => {
-  const { source } = req.params;
-  const { username, password } = req.body;
+router.put('/credentials/:source', async (req, res) => {
+  try {
+    const { source } = req.params;
+    const { username, password } = req.body;
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
+    if (!username || !password) {
+      return res.status(400).json({ error: 'Username and password required' });
+    }
+
+    // CellarTracker removed - their API only searches user's personal cellar, not useful for ratings
+    const validSources = ['vivino', 'decanter'];
+    if (!validSources.includes(source)) {
+      return res.status(400).json({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` });
+    }
+
+    const usernameEncrypted = encrypt(username);
+    const passwordEncrypted = encrypt(password);
+
+    await db.prepare(`
+      INSERT INTO source_credentials (source_id, username_encrypted, password_encrypted, auth_status, updated_at)
+      VALUES (?, ?, ?, 'none', CURRENT_TIMESTAMP)
+      ON CONFLICT(source_id) DO UPDATE SET
+        username_encrypted = ?,
+        password_encrypted = ?,
+        auth_status = 'none',
+        updated_at = CURRENT_TIMESTAMP
+    `).run(source, usernameEncrypted, passwordEncrypted, usernameEncrypted, passwordEncrypted);
+
+    logger.info('Settings', `Credentials saved for ${source}`);
+    res.json({ message: 'Credentials saved', source_id: source });
+  } catch (error) {
+    console.error('Save credentials error:', error);
+    res.status(500).json({ error: error.message });
   }
-
-  // CellarTracker removed - their API only searches user's personal cellar, not useful for ratings
-  const validSources = ['vivino', 'decanter'];
-  if (!validSources.includes(source)) {
-    return res.status(400).json({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` });
-  }
-
-  const usernameEncrypted = encrypt(username);
-  const passwordEncrypted = encrypt(password);
-
-  db.prepare(`
-    INSERT INTO source_credentials (source_id, username_encrypted, password_encrypted, auth_status, updated_at)
-    VALUES (?, ?, ?, 'none', CURRENT_TIMESTAMP)
-    ON CONFLICT(source_id) DO UPDATE SET
-      username_encrypted = ?,
-      password_encrypted = ?,
-      auth_status = 'none',
-      updated_at = CURRENT_TIMESTAMP
-  `).run(source, usernameEncrypted, passwordEncrypted, usernameEncrypted, passwordEncrypted);
-
-  logger.info('Settings', `Credentials saved for ${source}`);
-  res.json({ message: 'Credentials saved', source_id: source });
 });
 
 /**
  * Delete credentials for a source.
  * @route DELETE /api/settings/credentials/:source
  */
-router.delete('/credentials/:source', (req, res) => {
-  const { source } = req.params;
+router.delete('/credentials/:source', async (req, res) => {
+  try {
+    const { source } = req.params;
 
-  const result = db.prepare('DELETE FROM source_credentials WHERE source_id = ?').run(source);
+    const result = await db.prepare('DELETE FROM source_credentials WHERE source_id = ?').run(source);
 
-  if (result.changes === 0) {
-    return res.status(404).json({ error: 'Credentials not found' });
+    if (result.changes === 0) {
+      return res.status(404).json({ error: 'Credentials not found' });
+    }
+
+    logger.info('Settings', `Credentials deleted for ${source}`);
+    res.json({ message: 'Credentials deleted' });
+  } catch (error) {
+    console.error('Delete credentials error:', error);
+    res.status(500).json({ error: error.message });
   }
-
-  logger.info('Settings', `Credentials deleted for ${source}`);
-  res.json({ message: 'Credentials deleted' });
 });
 
 /**
@@ -148,20 +173,20 @@ router.delete('/credentials/:source', (req, res) => {
 router.post('/credentials/:source/test', async (req, res) => {
   const { source } = req.params;
 
-  const cred = db.prepare('SELECT * FROM source_credentials WHERE source_id = ?').get(source);
-
-  if (!cred) {
-    return res.status(404).json({ error: 'No credentials configured for this source' });
-  }
-
-  const username = decrypt(cred.username_encrypted);
-  const password = decrypt(cred.password_encrypted);
-
-  if (!username || !password) {
-    return res.status(500).json({ error: 'Failed to decrypt credentials' });
-  }
-
   try {
+    const cred = await db.prepare('SELECT * FROM source_credentials WHERE source_id = ?').get(source);
+
+    if (!cred) {
+      return res.status(404).json({ error: 'No credentials configured for this source' });
+    }
+
+    const username = decrypt(cred.username_encrypted);
+    const password = decrypt(cred.password_encrypted);
+
+    if (!username || !password) {
+      return res.status(500).json({ error: 'Failed to decrypt credentials' });
+    }
+
     let testResult = { success: false, message: 'Unknown source' };
 
     if (source === 'vivino') {
@@ -172,7 +197,7 @@ router.post('/credentials/:source/test', async (req, res) => {
     // Note: CellarTracker removed - their API only searches user's personal cellar
 
     // Update auth status
-    db.prepare(`
+    await db.prepare(`
       UPDATE source_credentials
       SET auth_status = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
       WHERE source_id = ?
@@ -188,7 +213,7 @@ router.post('/credentials/:source/test', async (req, res) => {
 
   } catch (error) {
     logger.error('Settings', `Credentials test error for ${source}: ${error.message}`);
-    db.prepare(`
+    await db.prepare(`
       UPDATE source_credentials SET auth_status = 'failed', updated_at = CURRENT_TIMESTAMP
       WHERE source_id = ?
     `).run(source);
