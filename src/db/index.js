@@ -5,6 +5,8 @@
  */
 
 // Choose database backend based on environment
+console.log(`[DB] DATABASE_URL present: ${!!process.env.DATABASE_URL}`);
+console.log(`[DB] DATABASE_URL value: ${process.env.DATABASE_URL ? process.env.DATABASE_URL.substring(0, 30) + '...' : 'undefined'}`);
 const usePostgres = !!process.env.DATABASE_URL;
 
 console.log(`[DB] Backend: ${usePostgres ? 'PostgreSQL' : 'SQLite'}`);
