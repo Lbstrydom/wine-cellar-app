@@ -28,9 +28,9 @@ const upload = multer({
  * GET /awards/sources
  * Get all award sources.
  */
-router.get('/sources', (_req, res) => {
+router.get('/sources', async (_req, res) => {
   try {
-    const sources = awardsService.getAwardSources();
+    const sources = await awardsService.getAwardSources();
     res.json({ data: sources });
   } catch (err) {
     logger.error('Awards', `Failed to get sources: ${err.message}`);
@@ -42,10 +42,10 @@ router.get('/sources', (_req, res) => {
  * GET /awards/sources/:sourceId
  * Get awards for a specific source.
  */
-router.get('/sources/:sourceId', (req, res) => {
+router.get('/sources/:sourceId', async (req, res) => {
   try {
     const { sourceId } = req.params;
-    const awards = awardsService.getSourceAwards(sourceId);
+    const awards = await awardsService.getSourceAwards(sourceId);
     res.json({ data: awards });
   } catch (err) {
     logger.error('Awards', `Failed to get source awards: ${err.message}`);
@@ -57,10 +57,10 @@ router.get('/sources/:sourceId', (req, res) => {
  * DELETE /awards/sources/:sourceId
  * Delete an award source and its awards.
  */
-router.delete('/sources/:sourceId', (req, res) => {
+router.delete('/sources/:sourceId', async (req, res) => {
   try {
     const { sourceId } = req.params;
-    const success = awardsService.deleteSource(sourceId);
+    const success = await awardsService.deleteSource(sourceId);
     if (success) {
       res.json({ message: 'Source deleted' });
     } else {
@@ -76,9 +76,9 @@ router.delete('/sources/:sourceId', (req, res) => {
  * GET /awards/competitions
  * Get all known competitions.
  */
-router.get('/competitions', (_req, res) => {
+router.get('/competitions', async (_req, res) => {
   try {
-    const competitions = awardsService.getKnownCompetitions();
+    const competitions = await awardsService.getKnownCompetitions();
     res.json({ data: competitions });
   } catch (err) {
     logger.error('Awards', `Failed to get competitions: ${err.message}`);
@@ -90,7 +90,7 @@ router.get('/competitions', (_req, res) => {
  * POST /awards/competitions
  * Add a custom competition.
  */
-router.post('/competitions', (req, res) => {
+router.post('/competitions', async (req, res) => {
   try {
     const competition = req.body;
 
@@ -98,7 +98,7 @@ router.post('/competitions', (req, res) => {
       return res.status(400).json({ error: 'Competition name is required' });
     }
 
-    const id = awardsService.addCompetition(competition);
+    const id = await awardsService.addCompetition(competition);
     res.status(201).json({ message: 'Competition added', id });
   } catch (err) {
     logger.error('Awards', `Failed to add competition: ${err.message}`);
@@ -133,11 +133,11 @@ router.post('/import/webpage', async (req, res) => {
     }
 
     // Create source and import
-    const sourceId = awardsService.getOrCreateSource(competitionId, year, url, 'webpage');
-    const result = awardsService.importAwards(sourceId, extracted.awards);
+    const sourceId = await awardsService.getOrCreateSource(competitionId, year, url, 'webpage');
+    const result = await awardsService.importAwards(sourceId, extracted.awards);
 
     // Auto-match to cellar
-    const matchResult = awardsService.autoMatchAwards(sourceId);
+    const matchResult = await awardsService.autoMatchAwards(sourceId);
 
     logger.info('Awards', `Imported ${result.imported} awards, matched ${matchResult.exactMatches} exactly`);
 
@@ -189,11 +189,11 @@ router.post('/import/pdf', upload.single('pdf'), async (req, res) => {
     }
 
     // Create source and import
-    const sourceId = awardsService.getOrCreateSource(competitionId, year, req.file.originalname, 'pdf');
-    const result = awardsService.importAwards(sourceId, extracted.awards);
+    const sourceId = await awardsService.getOrCreateSource(competitionId, year, req.file.originalname, 'pdf');
+    const result = await awardsService.importAwards(sourceId, extracted.awards);
 
     // Auto-match to cellar
-    const matchResult = awardsService.autoMatchAwards(sourceId);
+    const matchResult = await awardsService.autoMatchAwards(sourceId);
 
     logger.info('Awards', `Imported ${result.imported} awards from PDF, matched ${matchResult.exactMatches} exactly`);
 
@@ -238,11 +238,11 @@ router.post('/import/text', async (req, res) => {
     }
 
     // Create source and import
-    const sourceId = awardsService.getOrCreateSource(competitionId, year, null, sourceType || 'manual');
-    const result = awardsService.importAwards(sourceId, extracted.awards);
+    const sourceId = await awardsService.getOrCreateSource(competitionId, year, null, sourceType || 'manual');
+    const result = await awardsService.importAwards(sourceId, extracted.awards);
 
     // Auto-match to cellar
-    const matchResult = awardsService.autoMatchAwards(sourceId);
+    const matchResult = await awardsService.autoMatchAwards(sourceId);
 
     logger.info('Awards', `Imported ${result.imported} awards from text, matched ${matchResult.exactMatches} exactly`);
 
@@ -265,10 +265,10 @@ router.post('/import/text', async (req, res) => {
  * POST /awards/sources/:sourceId/match
  * Re-run auto-matching for a source.
  */
-router.post('/sources/:sourceId/match', (req, res) => {
+router.post('/sources/:sourceId/match', async (req, res) => {
   try {
     const { sourceId } = req.params;
-    const result = awardsService.autoMatchAwards(sourceId);
+    const result = await awardsService.autoMatchAwards(sourceId);
 
     res.json({
       message: 'Matching completed',
@@ -284,7 +284,7 @@ router.post('/sources/:sourceId/match', (req, res) => {
  * GET /awards/search
  * Search for awards matching a wine name.
  */
-router.get('/search', (req, res) => {
+router.get('/search', async (req, res) => {
   try {
     const { q, vintage } = req.query;
 
@@ -292,7 +292,7 @@ router.get('/search', (req, res) => {
       return res.status(400).json({ error: 'q (search query) is required' });
     }
 
-    const awards = awardsService.searchAwards(q, vintage ? parseInt(vintage, 10) : null);
+    const awards = await awardsService.searchAwards(q, vintage ? parseInt(vintage, 10) : null);
     res.json({ data: awards });
   } catch (err) {
     logger.error('Awards', `Search failed: ${err.message}`);
@@ -304,10 +304,10 @@ router.get('/search', (req, res) => {
  * GET /awards/wine/:wineId
  * Get awards for a specific wine.
  */
-router.get('/wine/:wineId', (req, res) => {
+router.get('/wine/:wineId', async (req, res) => {
   try {
     const wineId = parseInt(req.params.wineId, 10);
-    const awards = awardsService.getWineAwards(wineId);
+    const awards = await awardsService.getWineAwards(wineId);
     res.json({ data: awards });
   } catch (err) {
     logger.error('Awards', `Failed to get wine awards: ${err.message}`);
@@ -319,7 +319,7 @@ router.get('/wine/:wineId', (req, res) => {
  * POST /awards/:awardId/link
  * Manually link an award to a wine.
  */
-router.post('/:awardId/link', (req, res) => {
+router.post('/:awardId/link', async (req, res) => {
   try {
     const awardId = parseInt(req.params.awardId, 10);
     const { wineId } = req.body;
@@ -328,7 +328,7 @@ router.post('/:awardId/link', (req, res) => {
       return res.status(400).json({ error: 'wineId is required' });
     }
 
-    const success = awardsService.linkAwardToWine(awardId, wineId);
+    const success = await awardsService.linkAwardToWine(awardId, wineId);
 
     if (success) {
       res.json({ message: 'Award linked to wine' });
@@ -345,10 +345,10 @@ router.post('/:awardId/link', (req, res) => {
  * DELETE /awards/:awardId/link
  * Unlink an award from a wine.
  */
-router.delete('/:awardId/link', (req, res) => {
+router.delete('/:awardId/link', async (req, res) => {
   try {
     const awardId = parseInt(req.params.awardId, 10);
-    const success = awardsService.unlinkAward(awardId);
+    const success = await awardsService.unlinkAward(awardId);
 
     if (success) {
       res.json({ message: 'Award unlinked' });
@@ -365,18 +365,19 @@ router.delete('/:awardId/link', (req, res) => {
  * GET /awards/:awardId/matches
  * Get potential wine matches for an award.
  */
-router.get('/:awardId/matches', (req, res) => {
+router.get('/:awardId/matches', async (req, res) => {
   try {
     const awardId = parseInt(req.params.awardId, 10);
 
     // Get the award
-    const award = awardsService.getSourceAwards('').find(a => a.id === awardId);
+    const awards = await awardsService.getSourceAwards('');
+    const award = awards.find(a => a.id === awardId);
 
     if (!award) {
       return res.status(404).json({ error: 'Award not found' });
     }
 
-    const matches = awardsService.findMatches(award);
+    const matches = await awardsService.findMatches(award);
     res.json({ data: matches });
   } catch (err) {
     logger.error('Awards', `Failed to find matches: ${err.message}`);

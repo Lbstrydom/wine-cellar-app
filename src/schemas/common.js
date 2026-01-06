@@ -14,10 +14,11 @@ export const idParamSchema = z.object({
 
 /**
  * Pagination query schema.
+ * Uses coerce to handle both strings and numbers, with defaults as numbers.
  */
 export const paginationSchema = z.object({
-  limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().min(1).max(500)).default('50'),
-  offset: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().min(0)).default('0')
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+  offset: z.coerce.number().int().min(0).default(0)
 });
 
 /**

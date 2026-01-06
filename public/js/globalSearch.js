@@ -45,6 +45,15 @@ export function initGlobalSearch() {
  * Create the search overlay DOM structure.
  */
 function createOverlay() {
+  // Prevent duplicate overlays
+  const existing = document.getElementById('global-search-overlay');
+  if (existing) {
+    overlay = existing;
+    searchInput = document.getElementById('global-search-input');
+    resultsContainer = document.getElementById('global-search-results');
+    return;
+  }
+
   overlay = document.createElement('div');
   overlay.id = 'global-search-overlay';
   overlay.className = 'global-search-overlay';
