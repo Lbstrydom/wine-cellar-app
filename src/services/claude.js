@@ -63,7 +63,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       wineQuery += ` AND w.colour = ?`;
       params.push(colour);
     }
-    wineQuery += ` GROUP BY w.id, rn.priority, rn.reduce_reason HAVING COUNT(s.id) > 0 ORDER BY rn.priority, w.wine_name`;
+    wineQuery += ` GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, rn.priority, rn.reduce_reason HAVING COUNT(s.id) > 0 ORDER BY rn.priority, w.wine_name`;
   } else {
     wineQuery = `
       SELECT
@@ -78,7 +78,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       wineQuery += ` AND w.colour = ?`;
       params.push(colour);
     }
-    wineQuery += ` GROUP BY w.id HAVING COUNT(s.id) > 0 ORDER BY w.colour, w.style`;
+    wineQuery += ` GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour HAVING COUNT(s.id) > 0 ORDER BY w.colour, w.style`;
   }
 
   const wines = await db.prepare(wineQuery).all(...params);
