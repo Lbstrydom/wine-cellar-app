@@ -221,7 +221,8 @@ router.get('/global-search', async (req, res) => {
  */
 router.get('/', validateQuery(paginationSchema), async (req, res) => {
   try {
-    const { limit = 50, offset = 0 } = req.query;
+    // Use validated query params (coerced to numbers by Zod)
+    const { limit = 50, offset = 0 } = req.validated?.query || req.query;
 
     // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
     const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(s.location_code, \',\')' : 'GROUP_CONCAT(s.location_code)';

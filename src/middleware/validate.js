@@ -16,14 +16,12 @@ export function validate(schema, source = 'body') {
     try {
       const data = req[source];
       const validated = schema.parse(data);
-      // Express 5: req.query is getter-only, so copy properties instead of replacing
-      if (source === 'query') {
-        // Clear and copy validated values
-        for (const key of Object.keys(req.query)) {
-          delete req.query[key];
-        }
-        Object.assign(req.query, validated);
-      } else {
+      // Express 5: req.query is getter-only and may be frozen
+      // Store validated data in req.validated for reliable access
+      req.validated = req.validated || {};
+      req.validated[source] = validated;
+      // Also try to update req[source] for backwards compatibility
+      if (source !== 'query') {
         req[source] = validated;
       }
       next();
