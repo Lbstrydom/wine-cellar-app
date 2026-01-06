@@ -42,6 +42,7 @@
 ## Phase 7: Sommelier-Grade Cellar Organisation
 
 **Status**: 🚧 In Progress (Started: 3 January 2026)
+**Completed**: 7.1, 7.2, 7.3, 7.4, 7.5, 7.7, 7.8, 7.11
 
 **Goal**: Transform cellar organisation from "misplaced bottles" to proper sommelier advice with zone narratives, AI-suggested definitions, and proactive fridge stocking.
 
@@ -332,7 +333,9 @@ CREATE TABLE palate_profile (
 
 ---
 
-#### 7.11 Acquisition Workflow
+#### 7.11 Acquisition Workflow ✅
+
+**Status**: COMPLETE (6 January 2026)
 
 **Goal**: Scan → Confirm → Place in one smooth flow.
 
@@ -343,6 +346,42 @@ CREATE TABLE palate_profile (
 4. **Enrich** - Auto-fetch drinking windows, Vivino rating
 5. **Place** - Auto-suggest zone + fridge (if fits par-level gaps)
 6. **Zone Review** - If wine doesn't fit zones, suggest zone update
+
+**Files Created**:
+- `src/services/acquisitionWorkflow.js` - Orchestrates the full acquisition flow
+- `src/routes/acquisition.js` - API endpoints for acquisition workflow
+
+**Key Functions**:
+```javascript
+// Parse with per-field confidence
+parseWineWithConfidence(base64Image, mediaType)
+
+// Get placement suggestions (zone + fridge eligibility)
+suggestPlacement(wine)
+
+// Enrich wine with ratings and drinking windows
+enrichWineData(wine)
+
+// Run complete workflow
+runAcquisitionWorkflow({ base64Image, mediaType, confirmedData, skipEnrichment })
+
+// Save acquired wine with placement
+saveAcquiredWine(wineData, { slot, quantity, addToFridge })
+```
+
+**API Endpoints** (in `src/routes/acquisition.js`):
+- `POST /api/acquisition/parse-image` - Parse with confidence data
+- `POST /api/acquisition/suggest-placement` - Get zone + fridge suggestion
+- `POST /api/acquisition/enrich` - Fetch ratings and drinking windows
+- `POST /api/acquisition/workflow` - Run complete workflow
+- `POST /api/acquisition/save` - Save wine and add bottles
+- `GET /api/acquisition/confidence-levels` - Get confidence level definitions
+
+**Frontend Enhancements**:
+- Field confidence highlighting (red for uncertain, yellow for review)
+- "Please review" hint for uncertain fields
+- "Suggest Placement" button shows zone and fridge eligibility
+- Visual indicators for zone confidence and alternatives
 
 ---
 
