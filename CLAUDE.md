@@ -6,8 +6,8 @@ This document defines coding standards and conventions for AI assistants working
 
 ## Project Overview
 
-**Stack**: Node.js, Express, SQLite (better-sqlite3), Vanilla JS frontend
-**Deployment**: Docker on Synology NAS
+**Stack**: Node.js, Express, SQLite/PostgreSQL, Vanilla JS frontend
+**Deployment**: Docker on Synology NAS (SQLite) or Railway + Supabase (PostgreSQL)
 **Purpose**: Personal wine cellar management with visual grid and AI-powered pairing
 
 ---
@@ -31,7 +31,9 @@ src/
 │   ├── claude.js          # Claude API integration
 │   └── pairing.js         # Pairing logic and scoring
 └── db/
-    └── index.js           # Database connection, helpers, queries
+    ├── index.js           # Database abstraction (auto-selects SQLite or PostgreSQL)
+    ├── sqlite.js          # SQLite implementation (better-sqlite3)
+    └── postgres.js        # PostgreSQL implementation (pg)
 ```
 
 ### Frontend Structure
@@ -395,6 +397,7 @@ refactor/modular-structure
 |----------|-------------|----------|
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
+| `DATABASE_URL` | PostgreSQL connection string (if set, uses PostgreSQL instead of SQLite) | For cloud deployment |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
 | `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
 | `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
