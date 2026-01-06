@@ -398,34 +398,40 @@ function initMobileMenu() {
   const tabsContainer = document.getElementById('tabs-container');
 
   if (menuBtn && tabsContainer) {
-    let justOpened = false;
+    let lastToggle = 0;
 
-    const toggleMenu = (e) => {
-      e.preventDefault();
-      e.stopPropagation();
+    const toggleMenu = () => {
+      // Debounce rapid toggles (prevents double-fire from touch + click)
+      const now = Date.now();
+      if (now - lastToggle < 300) return;
+      lastToggle = now;
+
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      if (isOpen) {
-        justOpened = true;
-        setTimeout(() => { justOpened = false; }, 100);
-      }
     };
 
-    // Use both click and touchend for reliable mobile handling
-    menuBtn.addEventListener('click', toggleMenu);
-    menuBtn.addEventListener('touchend', (e) => {
-      e.preventDefault(); // Prevent ghost click
-      toggleMenu(e);
-    }, { passive: false });
+    // Handle click (works for both mouse and touch on most browsers)
+    menuBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleMenu();
+    });
 
     // Close menu when clicking outside
     document.addEventListener('click', (e) => {
-      if (justOpened) return;
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;
       tabsContainer.classList.remove('open');
       menuBtn.setAttribute('aria-expanded', 'false');
+    });
+
+    // Close menu when a tab is selected
+    tabsContainer.addEventListener('click', (e) => {
+      if (e.target.classList.contains('tab')) {
+        tabsContainer.classList.remove('open');
+        menuBtn.setAttribute('aria-expanded', 'false');
+      }
     });
   }
 }
