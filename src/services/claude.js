@@ -95,13 +95,13 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
   let prioritySection = '';
   if (source === 'all') {
     const priorityWines = await db.prepare(`
-      SELECT w.wine_name, w.vintage, rn.reduce_reason
+      SELECT w.wine_name, w.vintage, rn.reduce_reason, MIN(rn.priority) as priority
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
       JOIN slots s ON s.wine_id = w.id
       ${colour !== 'any' ? 'WHERE w.colour = ?' : ''}
       GROUP BY w.id, w.wine_name, w.vintage, rn.reduce_reason
-      ORDER BY rn.priority
+      ORDER BY MIN(rn.priority)
     `).all(colour !== 'any' ? [colour] : []);
 
     if (priorityWines.length > 0) {
