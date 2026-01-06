@@ -127,7 +127,7 @@ export function createRateLimiter(options = {}) {
  */
 export function strictRateLimiter(options = {}) {
   return createRateLimiter({
-    maxRequests: 10,
+    maxRequests: 30,
     windowMs: 60 * 1000, // 1 minute
     message: 'Too many AI requests, please slow down.',
     ...options
