@@ -101,7 +101,7 @@ export async function testHealth() {
     const liveRes = await fetch('/health/live');
     const live = await liveRes.json();
     assert(liveRes.status === 200, 'GET /health/live returns 200');
-    assert(live.status === 'alive', 'Liveness status is alive');
+    assert(live.status === 'healthy', 'Liveness status is healthy');
 
     // Readiness
     const readyRes = await fetch('/health/ready');
@@ -273,9 +273,9 @@ export async function testServiceWorker() {
     const wineCellarCaches = cacheNames.filter(n => n.includes('wine-cellar'));
     assert(wineCellarCaches.length > 0, 'Wine cellar caches exist');
 
-    // Check for v25 cache (Phase 8.6 update)
-    const hasV25 = wineCellarCaches.some(n => n.includes('v25'));
-    assert(hasV25, 'Cache version v25 present', `Found: ${wineCellarCaches.join(', ')}`);
+    // Check for v27 cache (updated for Phase 8 fixes)
+    const hasV27 = wineCellarCaches.some(n => n.includes('v27'));
+    assert(hasV27, 'Cache version v27 present', `Found: ${wineCellarCaches.join(', ')}`);
 
     log(`  Active caches: ${wineCellarCaches.join(', ')}`);
 
