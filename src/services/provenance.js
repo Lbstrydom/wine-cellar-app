@@ -80,9 +80,9 @@ export function hashContent(content) {
  * @param {number} [params.confidence=1.0] - Confidence score (0.0-1.0)
  * @param {string} [params.rawContent] - Raw content to hash for change detection
  * @param {number} [params.expiresInDays] - Days until data expires
- * @returns {Object} Database insert result with lastInsertRowid
+ * @returns {Promise<Object>} Database insert result with lastInsertRowid
  */
-export function recordProvenance({
+export async function recordProvenance({
   wineId,
   fieldName,
   sourceId,
@@ -101,7 +101,7 @@ export function recordProvenance({
   const rawHash = rawContent ? hashContent(rawContent) : null;
 
   try {
-    const result = db.prepare(`
+    const result = await db.prepare(`
       INSERT INTO data_provenance
       (wine_id, field_name, source_id, source_url, retrieval_method, confidence, raw_hash, expires_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -128,18 +128,18 @@ export function recordProvenance({
  * Get provenance history for a wine.
  * @param {number} wineId - Wine ID
  * @param {string} [fieldName] - Optional field name filter
- * @returns {Array} Provenance records
+ * @returns {Promise<Array>} Provenance records
  */
-export function getProvenance(wineId, fieldName = null) {
+export async function getProvenance(wineId, fieldName = null) {
   try {
     if (fieldName) {
-      return db.prepare(`
+      return await db.prepare(`
         SELECT * FROM data_provenance
         WHERE wine_id = ? AND field_name = ?
         ORDER BY retrieved_at DESC
       `).all(wineId, fieldName);
     }
-    return db.prepare(`
+    return await db.prepare(`
       SELECT * FROM data_provenance
       WHERE wine_id = ?
       ORDER BY retrieved_at DESC
@@ -155,11 +155,11 @@ export function getProvenance(wineId, fieldName = null) {
  * @param {number} wineId - Wine ID
  * @param {string} sourceId - Source identifier
  * @param {string} fieldName - Field name
- * @returns {Object|null} Most recent provenance record
+ * @returns {Promise<Object|null>} Most recent provenance record
  */
-export function getProvenanceForSource(wineId, sourceId, fieldName) {
+export async function getProvenanceForSource(wineId, sourceId, fieldName) {
   try {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT * FROM data_provenance
       WHERE wine_id = ? AND source_id = ? AND field_name = ?
       ORDER BY retrieved_at DESC
@@ -176,11 +176,11 @@ export function getProvenanceForSource(wineId, sourceId, fieldName) {
  * @param {number} wineId - Wine ID
  * @param {string} sourceId - Source identifier
  * @param {string} fieldName - Field name
- * @returns {boolean} True if fresh data exists
+ * @returns {Promise<boolean>} True if fresh data exists
  */
-export function hasFreshData(wineId, sourceId, fieldName) {
+export async function hasFreshData(wineId, sourceId, fieldName) {
   try {
-    const result = db.prepare(`
+    const result = await db.prepare(`
       SELECT 1 FROM data_provenance
       WHERE wine_id = ? AND source_id = ? AND field_name = ?
       AND expires_at > ${nowFunc()}
@@ -199,10 +199,10 @@ export function hasFreshData(wineId, sourceId, fieldName) {
  * @param {string} sourceId - Source identifier
  * @param {string} fieldName - Field name
  * @param {string} newContent - New content to compare
- * @returns {boolean} True if content has changed
+ * @returns {Promise<boolean>} True if content has changed
  */
-export function hasContentChanged(wineId, sourceId, fieldName, newContent) {
-  const existing = getProvenanceForSource(wineId, sourceId, fieldName);
+export async function hasContentChanged(wineId, sourceId, fieldName, newContent) {
+  const existing = await getProvenanceForSource(wineId, sourceId, fieldName);
   if (!existing || !existing.raw_hash) {
     return true; // No previous record, treat as changed
   }
@@ -213,11 +213,11 @@ export function hasContentChanged(wineId, sourceId, fieldName, newContent) {
 
 /**
  * Get all expired provenance records.
- * @returns {Array} Expired records
+ * @returns {Promise<Array>} Expired records
  */
-export function getExpiredRecords() {
+export async function getExpiredRecords() {
   try {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT * FROM data_provenance
       WHERE expires_at <= ${nowFunc()}
       ORDER BY expires_at ASC
@@ -230,11 +230,11 @@ export function getExpiredRecords() {
 
 /**
  * Delete expired provenance records.
- * @returns {number} Number of records deleted
+ * @returns {Promise<number>} Number of records deleted
  */
-export function purgeExpiredRecords() {
+export async function purgeExpiredRecords() {
   try {
-    const result = db.prepare(`
+    const result = await db.prepare(`
       DELETE FROM data_provenance
       WHERE expires_at <= ${nowFunc()}
     `).run();
@@ -251,17 +251,18 @@ export function purgeExpiredRecords() {
 
 /**
  * Get provenance statistics.
- * @returns {Object} Statistics about provenance records
+ * @returns {Promise<Object>} Statistics about provenance records
  */
-export function getProvenanceStats() {
+export async function getProvenanceStats() {
   try {
     const stats = {};
 
     // Total records
-    stats.total = db.prepare('SELECT COUNT(*) as count FROM data_provenance').get().count;
+    const totalResult = await db.prepare('SELECT COUNT(*) as count FROM data_provenance').get();
+    stats.total = totalResult.count;
 
     // Records by source
-    stats.bySource = db.prepare(`
+    stats.bySource = await db.prepare(`
       SELECT source_id, COUNT(*) as count
       FROM data_provenance
       GROUP BY source_id
@@ -269,7 +270,7 @@ export function getProvenanceStats() {
     `).all();
 
     // Records by field
-    stats.byField = db.prepare(`
+    stats.byField = await db.prepare(`
       SELECT field_name, COUNT(*) as count
       FROM data_provenance
       GROUP BY field_name
@@ -277,7 +278,7 @@ export function getProvenanceStats() {
     `).all();
 
     // Records by retrieval method
-    stats.byMethod = db.prepare(`
+    stats.byMethod = await db.prepare(`
       SELECT retrieval_method, COUNT(*) as count
       FROM data_provenance
       GROUP BY retrieval_method
@@ -285,17 +286,19 @@ export function getProvenanceStats() {
     `).all();
 
     // Fresh vs expired
-    stats.fresh = db.prepare(`
+    const freshResult = await db.prepare(`
       SELECT COUNT(*) as count FROM data_provenance
       WHERE expires_at > ${nowFunc()}
-    `).get().count;
+    `).get();
+    stats.fresh = freshResult.count;
 
     stats.expired = stats.total - stats.fresh;
 
     // Average confidence
-    stats.avgConfidence = db.prepare(`
+    const avgResult = await db.prepare(`
       SELECT AVG(confidence) as avg FROM data_provenance
-    `).get().avg || 0;
+    `).get();
+    stats.avgConfidence = avgResult.avg || 0;
 
     return stats;
   } catch (error) {
@@ -307,14 +310,15 @@ export function getProvenanceStats() {
 /**
  * Get wines with provenance from a specific source.
  * @param {string} sourceId - Source identifier
- * @returns {Array} Wine IDs with provenance from this source
+ * @returns {Promise<Array>} Wine IDs with provenance from this source
  */
-export function getWinesWithSource(sourceId) {
+export async function getWinesWithSource(sourceId) {
   try {
-    return db.prepare(`
+    const results = await db.prepare(`
       SELECT DISTINCT wine_id FROM data_provenance
       WHERE source_id = ? AND wine_id IS NOT NULL
-    `).all(sourceId).map(r => r.wine_id);
+    `).all(sourceId);
+    return results.map(r => r.wine_id);
   } catch (error) {
     logger.error('[Provenance] Failed to get wines with source:', error);
     return [];
@@ -325,11 +329,11 @@ export function getWinesWithSource(sourceId) {
  * Delete all provenance for a wine.
  * Called when a wine is deleted.
  * @param {number} wineId - Wine ID
- * @returns {number} Number of records deleted
+ * @returns {Promise<number>} Number of records deleted
  */
-export function deleteWineProvenance(wineId) {
+export async function deleteWineProvenance(wineId) {
   try {
-    const result = db.prepare(`
+    const result = await db.prepare(`
       DELETE FROM data_provenance WHERE wine_id = ?
     `).run(wineId);
     return result.changes;

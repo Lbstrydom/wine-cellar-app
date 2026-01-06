@@ -10,30 +10,30 @@ import { getZoneById, CELLAR_ZONES } from '../config/cellarZones.js';
 /**
  * Get zone metadata from database.
  * @param {string} zoneId - Zone identifier
- * @returns {Object|null} Zone metadata or null if not found
+ * @returns {Promise<Object|null>} Zone metadata or null if not found
  */
-export function getZoneMetadata(zoneId) {
-  return db.prepare('SELECT * FROM zone_metadata WHERE zone_id = ?').get(zoneId) || null;
+export async function getZoneMetadata(zoneId) {
+  return await db.prepare('SELECT * FROM zone_metadata WHERE zone_id = ?').get(zoneId) || null;
 }
 
 /**
  * Get all zone metadata.
- * @returns {Array} All zone metadata records
+ * @returns {Promise<Array>} All zone metadata records
  */
-export function getAllZoneMetadata() {
-  return db.prepare('SELECT * FROM zone_metadata ORDER BY zone_id').all();
+export async function getAllZoneMetadata() {
+  return await db.prepare('SELECT * FROM zone_metadata ORDER BY zone_id').all();
 }
 
 /**
  * Get zone with merged code config and database metadata.
  * @param {string} zoneId - Zone identifier
- * @returns {Object|null} Zone with intent metadata
+ * @returns {Promise<Object|null>} Zone with intent metadata
  */
-export function getZoneWithIntent(zoneId) {
+export async function getZoneWithIntent(zoneId) {
   const codeZone = getZoneById(zoneId);
   if (!codeZone) return null;
 
-  const dbMeta = getZoneMetadata(zoneId);
+  const dbMeta = await getZoneMetadata(zoneId);
 
   return {
     ...codeZone,
@@ -54,10 +54,10 @@ export function getZoneWithIntent(zoneId) {
 
 /**
  * Get all zones with their intent metadata.
- * @returns {Array} All zones with intent data
+ * @returns {Promise<Array>} All zones with intent data
  */
-export function getAllZonesWithIntent() {
-  const allMeta = getAllZoneMetadata();
+export async function getAllZonesWithIntent() {
+  const allMeta = await getAllZoneMetadata();
   const metaMap = new Map(allMeta.map(m => [m.zone_id, m]));
 
   return CELLAR_ZONES.zones.map(zone => {
@@ -85,9 +85,9 @@ export function getAllZonesWithIntent() {
  * @param {string} zoneId - Zone identifier
  * @param {Object} updates - Metadata updates
  * @param {boolean} isAISuggestion - Whether this is from AI
- * @returns {Object} Updated metadata
+ * @returns {Promise<Object>} Updated metadata
  */
-export function updateZoneMetadata(zoneId, updates, isAISuggestion = false) {
+export async function updateZoneMetadata(zoneId, updates, isAISuggestion = false) {
   const now = new Date().toISOString();
 
   // Build update statement dynamically
@@ -141,55 +141,54 @@ export function updateZoneMetadata(zoneId, updates, isAISuggestion = false) {
   values.push(zoneId);
 
   if (fields.length > 2) { // At least one actual update + timestamps
-    db.prepare(
+    await db.prepare(
       `UPDATE zone_metadata SET ${fields.join(', ')} WHERE zone_id = ?`
     ).run(...values);
   }
 
-  return getZoneMetadata(zoneId);
+  return await getZoneMetadata(zoneId);
 }
 
 /**
  * Batch update zone metadata from AI suggestions.
+ * Note: PostgreSQL does not support db.transaction() like SQLite.
+ * For PostgreSQL, we execute updates sequentially.
  * @param {Array} suggestions - Array of { zoneId, ...updates }
- * @returns {number} Number of zones updated
+ * @returns {Promise<number>} Number of zones updated
  */
-export function batchUpdateFromAI(suggestions) {
+export async function batchUpdateFromAI(suggestions) {
   let updated = 0;
 
-  const transaction = db.transaction((items) => {
-    for (const suggestion of items) {
-      const { zoneId, ...updates } = suggestion;
-      if (zoneId && Object.keys(updates).length > 0) {
-        updateZoneMetadata(zoneId, updates, true);
-        updated++;
-      }
+  for (const suggestion of suggestions) {
+    const { zoneId, ...updates } = suggestion;
+    if (zoneId && Object.keys(updates).length > 0) {
+      await updateZoneMetadata(zoneId, updates, true);
+      updated++;
     }
-  });
+  }
 
-  transaction(suggestions);
   return updated;
 }
 
 /**
  * Mark zone metadata as user-confirmed (no changes, just timestamp).
  * @param {string} zoneId - Zone identifier
- * @returns {Object} Updated metadata
+ * @returns {Promise<Object>} Updated metadata
  */
-export function confirmZoneMetadata(zoneId) {
+export async function confirmZoneMetadata(zoneId) {
   const now = new Date().toISOString();
-  db.prepare(
+  await db.prepare(
     'UPDATE zone_metadata SET user_confirmed_at = ?, updated_at = ? WHERE zone_id = ?'
   ).run(now, now, zoneId);
-  return getZoneMetadata(zoneId);
+  return await getZoneMetadata(zoneId);
 }
 
 /**
  * Get zones that need user review (AI suggested but not confirmed).
- * @returns {Array} Zones with pending AI suggestions
+ * @returns {Promise<Array>} Zones with pending AI suggestions
  */
-export function getZonesNeedingReview() {
-  return db.prepare(`
+export async function getZonesNeedingReview() {
+  return await db.prepare(`
     SELECT * FROM zone_metadata
     WHERE ai_suggested_at IS NOT NULL
       AND (user_confirmed_at IS NULL OR ai_suggested_at > user_confirmed_at)
@@ -214,10 +213,10 @@ function safeJsonParse(jsonStr, fallback) {
 
 /**
  * Get zone families for grouping.
- * @returns {Object} Map of family to zone IDs
+ * @returns {Promise<Object>} Map of family to zone IDs
  */
-export function getZoneFamilies() {
-  const zones = db.prepare('SELECT zone_id, family FROM zone_metadata WHERE family IS NOT NULL').all();
+export async function getZoneFamilies() {
+  const zones = await db.prepare('SELECT zone_id, family FROM zone_metadata WHERE family IS NOT NULL').all();
   const families = {};
 
   for (const zone of zones) {

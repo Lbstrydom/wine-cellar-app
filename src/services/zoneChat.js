@@ -116,9 +116,9 @@ For reclassification suggestions, include a JSON block:
  * @param {number} wineId - Wine ID
  * @param {string} newZoneId - New zone ID
  * @param {string} reason - Reason for reassignment
- * @returns {Object} Result
+ * @returns {Promise<Object>} Result
  */
-export function reassignWineZone(wineId, newZoneId, reason = '') {
+export async function reassignWineZone(wineId, newZoneId, reason = '') {
   // Validate zone exists
   const zone = getZoneById(newZoneId);
   if (!zone && !['white_buffer', 'red_buffer', 'unclassified'].includes(newZoneId)) {
@@ -126,7 +126,7 @@ export function reassignWineZone(wineId, newZoneId, reason = '') {
   }
 
   // Get current wine
-  const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
   if (!wine) {
     throw new Error(`Wine not found: ${wineId}`);
   }
@@ -134,7 +134,7 @@ export function reassignWineZone(wineId, newZoneId, reason = '') {
   const previousZone = wine.zone_id || 'auto';
 
   // Update wine zone assignment with high confidence (user override)
-  db.prepare(`
+  await db.prepare(`
     UPDATE wines
     SET zone_id = ?, zone_confidence = 'high', zone_override_reason = ?
     WHERE id = ?
