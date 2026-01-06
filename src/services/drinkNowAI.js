@@ -89,7 +89,7 @@ function getUrgentWines() {
     LEFT JOIN slots s ON s.wine_id = w.id
     LEFT JOIN reduce_now rn ON rn.wine_id = w.id
     GROUP BY w.id
-    HAVING bottle_count > 0
+    HAVING COUNT(s.id) > 0
     ORDER BY
       CASE drinking_status
         WHEN 'past_peak' THEN 1
