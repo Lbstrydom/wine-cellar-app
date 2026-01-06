@@ -8,6 +8,8 @@ import { randomUUID } from 'crypto';
 import db from '../db/index.js';
 import { getSommelierRecommendation, continueSommelierChat } from '../services/claude.js';
 import { scorePairing } from '../services/pairing.js';
+import { getHybridPairing, generateShortlist, extractSignals } from '../services/pairingEngine.js';
+import { getAvailableSignals, FOOD_SIGNALS, DEFAULT_HOUSE_STYLE } from '../config/pairingRules.js';
 import { strictRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
@@ -149,5 +151,176 @@ router.delete('/chat/:chatId', (req, res) => {
   chatContexts.delete(chatId);
   res.json({ message: 'Chat session cleared' });
 });
+
+// ============================================================
+// Hybrid Pairing Engine Endpoints (7.8)
+// ============================================================
+
+/**
+ * Get available food signals.
+ * @route GET /api/pairing/signals
+ */
+router.get('/signals', (_req, res) => {
+  const signals = getAvailableSignals().map(signal => ({
+    name: signal,
+    description: FOOD_SIGNALS[signal].description
+  }));
+  res.json({ signals });
+});
+
+/**
+ * Extract signals from dish description.
+ * @route POST /api/pairing/extract-signals
+ */
+router.post('/extract-signals', (req, res) => {
+  const { dish } = req.body;
+
+  if (!dish || dish.trim().length === 0) {
+    return res.status(400).json({ error: 'Please provide a dish description' });
+  }
+
+  const signals = extractSignals(dish);
+  res.json({
+    dish,
+    signals,
+    signalDetails: signals.map(s => ({
+      name: s,
+      description: FOOD_SIGNALS[s]?.description || 'Unknown'
+    }))
+  });
+});
+
+/**
+ * Get deterministic shortlist only (no AI).
+ * @route POST /api/pairing/shortlist
+ */
+router.post('/shortlist', async (req, res) => {
+  const { dish, source = 'all', colour = 'any', limit = 8, houseStyle } = req.body;
+
+  if (!dish || dish.trim().length === 0) {
+    return res.status(400).json({ error: 'Please describe a dish' });
+  }
+
+  try {
+    const wines = await getAllWinesWithSlots();
+
+    const result = generateShortlist(wines, dish, {
+      colour,
+      source,
+      limit,
+      houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
+    });
+
+    res.json(result);
+  } catch (error) {
+    console.error('Shortlist error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Hybrid pairing: deterministic shortlist + AI explanation.
+ * Rate limited as it uses AI.
+ * @route POST /api/pairing/hybrid
+ */
+router.post('/hybrid', strictRateLimiter(), async (req, res) => {
+  const { dish, source = 'all', colour = 'any', topN = 3, houseStyle } = req.body;
+
+  if (!dish || dish.trim().length === 0) {
+    return res.status(400).json({ error: 'Please describe a dish' });
+  }
+
+  try {
+    const wines = await getAllWinesWithSlots();
+
+    const result = await getHybridPairing(wines, dish, {
+      colour,
+      source,
+      topN,
+      houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
+    });
+
+    // Store chat context for follow-up if AI succeeded
+    const chatId = randomUUID();
+    if (result.aiSuccess) {
+      chatContexts.set(chatId, {
+        dish,
+        source,
+        colour,
+        wines,
+        initialResponse: {
+          dish_analysis: result.dish_analysis,
+          signals: result.signals,
+          recommendations: result.recommendations
+        },
+        chatHistory: [],
+        createdAt: Date.now()
+      });
+    }
+
+    res.json({
+      ...result,
+      chatId: result.aiSuccess ? chatId : null
+    });
+  } catch (error) {
+    console.error('Hybrid pairing error:', error);
+    res.status(500).json({
+      error: 'Pairing service error',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get house style defaults.
+ * @route GET /api/pairing/house-style
+ */
+router.get('/house-style', (_req, res) => {
+  res.json({
+    defaults: DEFAULT_HOUSE_STYLE,
+    description: {
+      acidPreference: 'Preference for high-acid wines (1.0=neutral, >1=prefer, <1=avoid)',
+      oakPreference: 'Preference for oaky wines',
+      tanninPreference: 'Preference for tannic wines',
+      adventureLevel: 'Preference for unusual vs classic pairings',
+      reduceNowBonus: 'Bonus multiplier for reduce-now wines',
+      fridgeBonus: 'Bonus for wines already in fridge',
+      diversityPenalty: 'Penalty per duplicate style in shortlist'
+    }
+  });
+});
+
+/**
+ * Get all wines with slot assignments.
+ * @returns {Promise<Array>} Wines with location data
+ */
+async function getAllWinesWithSlots() {
+  return db.prepare(`
+    SELECT
+      w.id,
+      w.wine_name,
+      w.vintage,
+      w.style,
+      w.colour,
+      w.country,
+      w.grapes,
+      w.region,
+      w.winemaking,
+      COUNT(s.id) as bottle_count,
+      STRING_AGG(DISTINCT s.location_code, ',') as locations,
+      MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge,
+      COALESCE(rn.priority, 99) as reduce_priority,
+      rn.reduce_reason,
+      dw.drink_by_year,
+      dw.drink_from_year
+    FROM wines w
+    LEFT JOIN slots s ON s.wine_id = w.id
+    LEFT JOIN reduce_now rn ON w.id = rn.wine_id
+    LEFT JOIN drinking_windows dw ON dw.wine_id = w.id
+    GROUP BY w.id
+    HAVING COUNT(s.id) > 0
+    ORDER BY w.colour, w.style
+  `).all();
+}
 
 export default router;

@@ -236,22 +236,58 @@ export const FRIDGE_PAR_LEVELS = {
 
 ---
 
-#### 7.8 Hybrid Pairing Engine
+#### 7.8 Hybrid Pairing Engine ✅
+
+**Status**: COMPLETE (6 January 2026)
 
 **Problem**: Pure AI can hallucinate; pure deterministic lacks explanation.
 
-**Solution**: Deterministic shortlist → AI selects + explains from shortlist only.
+**Solution**: Deterministic shortlist → AI explains from shortlist only (can't hallucinate).
 
+**Files Created**:
+- `src/config/pairingRules.js` - Food signals → wine style mappings (25+ signals, 12 style buckets)
+- `src/services/pairingEngine.js` - Deterministic scoring + AI explanation
+
+**Key Functions**:
 ```javascript
-// 1. Deterministic: score all wines, apply diversity constraint
-const shortlist = generatePairingShortlist(wines, dish, preferences);
+// 1. Deterministic: score all wines against food signals
+const shortlist = generateShortlist(wines, dish, { colour, source, houseStyle });
 
-// 2. AI: explain why each works (can't hallucinate wines not in list)
-const prompt = `From the shortlist ONLY, select top 3 and explain why...`;
+// 2. AI: explain why each pairing works (from shortlist ONLY)
+const explained = await explainShortlist(dish, shortlistResult, topN);
+
+// 3. Combined hybrid approach
+const result = await getHybridPairing(wines, dish, options);
 ```
 
-**User-Tunable House Style**:
-- `acid_preference`, `oak_preference`, `tannin_preference`, `adventure_level`
+**API Endpoints** (added to `src/routes/pairing.js`):
+- `GET /api/pairing/signals` - List available food signals
+- `POST /api/pairing/extract-signals` - Extract signals from dish description
+- `POST /api/pairing/shortlist` - Deterministic shortlist only (no AI)
+- `POST /api/pairing/hybrid` - Full hybrid pairing with AI explanation
+- `GET /api/pairing/house-style` - Get house style defaults
+
+**User-Tunable House Style** (`DEFAULT_HOUSE_STYLE`):
+- `acidPreference` - Prefer high-acid wines (1.0=neutral, >1=prefer)
+- `oakPreference` - Prefer oaky wines
+- `tanninPreference` - Prefer tannic wines
+- `adventureLevel` - Prefer unusual vs classic pairings
+- `reduceNowBonus` - Bonus for reduce-now wines (default 1.5x)
+- `fridgeBonus` - Bonus for wines in fridge (default 1.2x)
+- `diversityPenalty` - Penalty per duplicate style (default 0.5x)
+
+**Food Signal Categories**:
+- Proteins: chicken, pork, beef, lamb, fish, shellfish
+- Preparations: roasted, grilled, fried, braised, raw
+- Flavours: creamy, spicy, sweet, acid, umami, herbal, earthy, smoky
+- Ingredients: tomato, cheese, mushroom, garlic_onion, cured_meat, pepper, salty
+
+**Wine Style Buckets**:
+- Whites: white_crisp, white_medium, white_oaked, white_aromatic
+- Rosé: rose_dry
+- Reds: red_light, red_medium, red_full
+- Sparkling: sparkling_dry, sparkling_rose
+- Dessert: dessert
 
 ---
 
@@ -338,7 +374,7 @@ CREATE TABLE palate_profile (
 | 7.5 Fridge par-levels | MEDIUM | Medium | ✅ COMPLETE |
 | 7.6 Frontend updates | LOW | Low | Pending |
 | 7.7 AI safety & reliability | HIGH | Medium | ✅ COMPLETE |
-| 7.8 Hybrid pairing engine | MEDIUM | Medium | Pending |
+| 7.8 Hybrid pairing engine | MEDIUM | Medium | ✅ COMPLETE |
 | 7.9 Personalisation loop | LOW | Medium | Pending |
 | 7.10 Move optimisation | LOW | Medium | Pending |
 | 7.11 Acquisition workflow | MEDIUM | High | Pending |
@@ -358,10 +394,11 @@ CREATE TABLE palate_profile (
 - ✅ `data/migrations/019_chat_sessions.sql` - Created (6 Jan 2026)
 - `data/migrations/020_palate_profile.sql` - Pending
 - ✅ `src/config/aiModels.js` - Created (6 Jan 2026)
+- ✅ `src/config/pairingRules.js` - Created (6 Jan 2026) - Food signal mappings
 - ✅ `src/services/responseValidator.js` - Created (6 Jan 2026)
 - ✅ `src/services/inputSanitizer.js` - Created (6 Jan 2026)
 - ✅ `src/services/chatSessions.js` - Created (6 Jan 2026)
-- `src/services/pairingEngine.js` - Pending
+- ✅ `src/services/pairingEngine.js` - Created (6 Jan 2026) - Hybrid pairing
 - `src/services/palateProfile.js` - Pending
 - `src/services/movePlanner.js` - Pending
 
@@ -733,4 +770,4 @@ See also:
 ---
 
 *Last updated: 6 January 2026*
-*Status: Phases 1-6 complete, Phase 7.1-7.5, 7.7 complete (Core features done, frontend polish remaining)*
+*Status: Phases 1-6 complete, Phase 7.1-7.5, 7.7-7.8 complete (Core + Hybrid Pairing done)*
