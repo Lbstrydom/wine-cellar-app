@@ -18,6 +18,8 @@ import { purgeExpiredCache } from './services/cacheService.js';
 import { generalRateLimiter } from './middleware/rateLimiter.js';
 import { cspMiddleware, cspDevMiddleware } from './middleware/csp.js';
 import healthRoutes from './routes/health.js';
+import { errorHandler, notFoundHandler } from './utils/errorResponse.js';
+import { metricsMiddleware, metricsHandler } from './middleware/metrics.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -31,6 +33,9 @@ app.use(isDevelopment ? cspDevMiddleware() : cspMiddleware());
 app.use(cors());
 app.use(express.json({ limit: '10mb' })); // Increased for base64 image uploads
 
+// Metrics collection (before rate limiting)
+app.use(metricsMiddleware());
+
 // Apply rate limiting to API routes
 app.use('/api', generalRateLimiter());
 
@@ -39,8 +44,17 @@ app.use(express.static(path.join(__dirname, '..', 'public')));
 // Health check routes (no rate limiting for load balancer probes)
 app.use('/health', healthRoutes);
 
+// Metrics endpoint (Prometheus-compatible)
+app.get('/metrics', metricsHandler);
+
 // API routes
 app.use('/api', routes);
+
+// 404 handler for undefined routes
+app.use('/api/*', notFoundHandler);
+
+// Global error handler (must be last)
+app.use(errorHandler);
 
 // Register job handlers
 jobQueue.registerHandler('rating_fetch', handleRatingFetch);

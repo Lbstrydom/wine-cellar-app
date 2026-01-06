@@ -35,6 +35,9 @@ export function cspMiddleware() {
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin'); // Control referrer information
     res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()'); // Disable unnecessary browser features
 
+    // HSTS - enforce HTTPS for 1 year, include subdomains, allow preload list
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+
     next();
   };
 }

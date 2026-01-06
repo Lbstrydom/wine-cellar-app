@@ -1204,40 +1204,45 @@ res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains;
 
 | Sub-Phase | Priority | Complexity | Status |
 |-----------|----------|------------|--------|
-| 8.1 Transaction safety | CRITICAL | Medium | ⏳ Pending |
-| 8.2 Health & graceful shutdown | CRITICAL | Low | ⏳ Pending |
-| 8.3 Memory leak fix | CRITICAL | Low | ⏳ Pending |
-| 8.4 Input validation | HIGH | Medium | ⏳ Pending |
-| 8.5 Error standardization | HIGH | Medium | ⏳ Pending |
+| 8.1 Transaction safety | CRITICAL | Medium | ✅ Complete |
+| 8.2 Health & graceful shutdown | CRITICAL | Low | ✅ Complete |
+| 8.3 Memory leak fix | CRITICAL | Low | ✅ N/A (TTL logic was correct) |
+| 8.4 Input validation | HIGH | Medium | ✅ Complete |
+| 8.5 Error standardization | HIGH | Medium | ✅ Complete |
 | 8.6 Event listener cleanup | HIGH | Medium | ⏳ Pending |
-| 8.7 Structured logging | MEDIUM | Low | ⏳ Pending |
-| 8.8 API pagination | MEDIUM | Low | ⏳ Pending |
-| 8.9 Security headers | MEDIUM | Low | ⏳ Pending |
-| 8.10 Application metrics | MEDIUM | Medium | ⏳ Pending |
+| 8.7 Structured logging | MEDIUM | Low | ✅ Complete |
+| 8.8 API pagination | MEDIUM | Low | ✅ Complete |
+| 8.9 Security headers | MEDIUM | Low | ✅ Complete |
+| 8.10 Application metrics | MEDIUM | Medium | ✅ Complete |
 
-**Estimated Total Effort**: ~40-50 hours
+**Progress**: 9/10 items complete (90%)
 
 ---
 
-### Files to Create
+### Files Created
 
-- `src/routes/health.js` - Health check endpoint
+- `src/routes/health.js` - Health check endpoints (basic, ready, live)
 - `src/middleware/validate.js` - Zod validation middleware
-- `src/schemas/*.js` - Entity validation schemas
-- `src/utils/errorResponse.js` - Error handling utilities
-- `src/utils/logger.js` - Winston logger
-- `src/middleware/metrics.js` - Prometheus metrics
+- `src/schemas/wine.js` - Wine entity validation schemas
+- `src/schemas/slot.js` - Slot operation validation schemas
+- `src/schemas/common.js` - Common validation schemas (pagination, etc.)
+- `src/schemas/index.js` - Schema exports
+- `src/utils/errorResponse.js` - Standardized error handling (AppError class)
+- `src/middleware/metrics.js` - Prometheus-compatible metrics
 
-### Files to Modify
+### Files Modified
 
-- `src/server.js` - Health routes, graceful shutdown, error handler
-- `src/routes/slots.js` - Transaction wrapping
-- `src/routes/pairing.js` - Fix TTL logic
-- `src/middleware/csp.js` - HSTS header
-- `src/routes/wines.js` - Pagination
-- `public/js/*.js` - Event listener cleanup
+- `src/server.js` - Health routes, graceful shutdown, error handler, metrics
+- `src/routes/slots.js` - Transaction wrapping, input validation
+- `src/routes/wines.js` - Pagination, input validation
+- `src/middleware/csp.js` - HSTS header added
+- `src/utils/logger.js` - Upgraded to Winston with backward-compatible API
+
+### Remaining Work
+
+- `public/js/*.js` - Frontend event listener cleanup (8.6)
 
 ---
 
 *Last updated: 6 January 2026*
-*Status: Phases 1-7 complete, Phase 8 in progress*
+*Status: Phases 1-7 complete, Phase 8 90% complete*

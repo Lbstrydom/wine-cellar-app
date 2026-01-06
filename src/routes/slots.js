@@ -5,6 +5,15 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { validateBody, validateParams } from '../middleware/validate.js';
+import {
+  moveBottleSchema,
+  swapBottleSchema,
+  directSwapSchema,
+  addToSlotSchema,
+  drinkBottleSchema,
+  locationParamSchema
+} from '../schemas/slot.js';
 
 const router = Router();
 
@@ -13,7 +22,7 @@ const router = Router();
  * Uses database transaction for atomicity.
  * @route POST /api/slots/move
  */
-router.post('/move', async (req, res) => {
+router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
   try {
     const { from_location, to_location } = req.body;
 
@@ -55,7 +64,7 @@ router.post('/move', async (req, res) => {
  * Uses database transaction for atomicity.
  * @route POST /api/slots/swap
  */
-router.post('/swap', async (req, res) => {
+router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
   try {
     const { slot_a, slot_b, displaced_to } = req.body;
 
@@ -113,13 +122,9 @@ router.post('/swap', async (req, res) => {
  * Uses database transaction for atomicity.
  * @route POST /api/slots/direct-swap
  */
-router.post('/direct-swap', async (req, res) => {
+router.post('/direct-swap', validateBody(directSwapSchema), async (req, res) => {
   try {
     const { slot_a, slot_b } = req.body;
-
-    if (!slot_a || !slot_b) {
-      return res.status(400).json({ error: 'Both slot_a and slot_b are required' });
-    }
 
     // Get wine IDs from both slots
     const slotA = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
@@ -165,7 +170,7 @@ router.post('/direct-swap', async (req, res) => {
  * Uses database transaction for atomicity.
  * @route POST /api/slots/:location/drink
  */
-router.post('/:location/drink', async (req, res) => {
+router.post('/:location/drink', validateParams(locationParamSchema), validateBody(drinkBottleSchema), async (req, res) => {
   try {
     const { location } = req.params;
     const { occasion, pairing_dish, rating, notes } = req.body;
@@ -231,7 +236,7 @@ router.post('/:location/drink', async (req, res) => {
  * Add bottle to empty slot.
  * @route POST /api/slots/:location/add
  */
-router.post('/:location/add', async (req, res) => {
+router.post('/:location/add', validateParams(locationParamSchema), validateBody(addToSlotSchema), async (req, res) => {
   try {
     const { location } = req.params;
     const { wine_id } = req.body;
@@ -256,7 +261,7 @@ router.post('/:location/add', async (req, res) => {
  * Remove bottle from slot without logging consumption.
  * @route DELETE /api/slots/:location/remove
  */
-router.delete('/:location/remove', async (req, res) => {
+router.delete('/:location/remove', validateParams(locationParamSchema), async (req, res) => {
   try {
     const { location } = req.params;
 

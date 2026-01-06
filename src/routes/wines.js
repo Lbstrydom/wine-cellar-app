@@ -5,6 +5,21 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
+import {
+  wineIdSchema,
+  createWineSchema,
+  updateWineSchema,
+  personalRatingSchema,
+  tastingProfileSchema,
+  tastingExtractionSchema,
+  parseTextSchema,
+  parseImageSchema,
+  searchQuerySchema,
+  globalSearchSchema,
+  servingTempQuerySchema
+} from '../schemas/wine.js';
+import { paginationSchema } from '../schemas/common.js';
 
 const router = Router();
 
@@ -199,13 +214,23 @@ router.get('/global-search', async (req, res) => {
 });
 
 /**
- * Get all wines with bottle counts.
+ * Get all wines with bottle counts (paginated).
  * @route GET /api/wines
+ * @query {number} limit - Max results (default 50, max 500)
+ * @query {number} offset - Skip N results (default 0)
  */
-router.get('/', async (req, res) => {
+router.get('/', validateQuery(paginationSchema), async (req, res) => {
   try {
+    const { limit = 50, offset = 0 } = req.query;
+
     // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
     const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(s.location_code, \',\')' : 'GROUP_CONCAT(s.location_code)';
+
+    // Get total count for pagination metadata
+    const countResult = await db.prepare('SELECT COUNT(*) as total FROM wines').get();
+    const total = parseInt(countResult?.total || 0);
+
+    // Get paginated wines
     const wines = await db.prepare(`
       SELECT
         w.id,
@@ -221,8 +246,18 @@ router.get('/', async (req, res) => {
       LEFT JOIN slots s ON s.wine_id = w.id
       GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur
       ORDER BY w.colour, w.style, w.wine_name
-    `).all();
-    res.json(wines);
+      LIMIT ? OFFSET ?
+    `).all(limit, offset);
+
+    res.json({
+      data: wines,
+      pagination: {
+        total,
+        limit,
+        offset,
+        hasMore: offset + wines.length < total
+      }
+    });
   } catch (error) {
     console.error('Get wines error:', error);
     res.status(500).json({ error: error.message });
@@ -233,16 +268,8 @@ router.get('/', async (req, res) => {
  * Parse wine details from text using Claude.
  * @route POST /api/wines/parse
  */
-router.post('/parse', async (req, res) => {
+router.post('/parse', validateBody(parseTextSchema), async (req, res) => {
   const { text } = req.body;
-
-  if (!text || text.trim().length === 0) {
-    return res.status(400).json({ error: 'No text provided' });
-  }
-
-  if (text.length > 5000) {
-    return res.status(400).json({ error: 'Text too long (max 5000 characters)' });
-  }
 
   try {
     const { parseWineFromText } = await import('../services/claude.js');
@@ -266,22 +293,8 @@ router.post('/parse', async (req, res) => {
  * Parse wine details from image using Claude Vision.
  * @route POST /api/wines/parse-image
  */
-router.post('/parse-image', async (req, res) => {
+router.post('/parse-image', validateBody(parseImageSchema), async (req, res) => {
   const { image, mediaType } = req.body;
-
-  if (!image) {
-    return res.status(400).json({ error: 'No image provided' });
-  }
-
-  if (!mediaType) {
-    return res.status(400).json({ error: 'No media type provided' });
-  }
-
-  // Check image size (base64 adds ~33% overhead, so 10MB image ≈ 13MB base64)
-  // Limit to ~5MB original image
-  if (image.length > 7000000) {
-    return res.status(400).json({ error: 'Image too large (max 5MB)' });
-  }
 
   try {
     const { parseWineFromImage } = await import('../services/claude.js');
@@ -337,7 +350,7 @@ router.get('/:id', async (req, res) => {
  * Create new wine.
  * @route POST /api/wines
  */
-router.post('/', async (req, res) => {
+router.post('/', validateBody(createWineSchema), async (req, res) => {
   try {
     const {
       style, colour, wine_name, vintage, vivino_rating, price_eur, country,
@@ -369,7 +382,7 @@ router.post('/', async (req, res) => {
  * Update wine including drink window and Vivino reference.
  * @route PUT /api/wines/:id
  */
-router.put('/:id', async (req, res) => {
+router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema), async (req, res) => {
   try {
     const {
       style, colour, wine_name, vintage, vivino_rating, price_eur, country,
@@ -426,7 +439,7 @@ router.put('/:id', async (req, res) => {
  * Update personal rating for a wine.
  * @route PUT /api/wines/:id/personal-rating
  */
-router.put('/:id/personal-rating', async (req, res) => {
+router.put('/:id/personal-rating', validateParams(wineIdSchema), validateBody(personalRatingSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { rating, notes } = req.body;
@@ -509,13 +522,9 @@ router.get('/:id/tasting-profile', async (req, res) => {
  * Extract tasting profile from a note.
  * @route POST /api/wines/:id/tasting-profile/extract
  */
-router.post('/:id/tasting-profile/extract', async (req, res) => {
+router.post('/:id/tasting-profile/extract', validateParams(wineIdSchema), validateBody(tastingExtractionSchema), async (req, res) => {
   const { id } = req.params;
   const { tasting_note, source_id = 'user' } = req.body;
-
-  if (!tasting_note) {
-    return res.status(400).json({ error: 'tasting_note is required' });
-  }
 
   try {
     const wine = await db.prepare(`
@@ -572,14 +581,10 @@ router.post('/:id/tasting-profile/extract', async (req, res) => {
  * Save tasting profile to wine.
  * @route PUT /api/wines/:id/tasting-profile
  */
-router.put('/:id/tasting-profile', async (req, res) => {
+router.put('/:id/tasting-profile', validateParams(wineIdSchema), validateBody(tastingProfileSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { profile } = req.body;
-
-    if (!profile) {
-      return res.status(400).json({ error: 'profile is required' });
-    }
 
     const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(id);
     if (!wine) {
