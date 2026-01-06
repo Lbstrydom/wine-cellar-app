@@ -29,10 +29,10 @@ const router = express.Router();
 
 /**
  * Get all wines with their slot assignments and drinking windows.
- * @returns {Array} Wines with location data and drink_by_year
+ * @returns {Promise<Array>} Wines with location data and drink_by_year
  */
-function getAllWinesWithSlots() {
-  return db.prepare(`
+async function getAllWinesWithSlots() {
+  return await db.prepare(`
     SELECT
       w.id,
       w.wine_name,
@@ -61,10 +61,10 @@ function getAllWinesWithSlots() {
 
 /**
  * Get currently occupied slots.
- * @returns {Set<string>} Set of occupied slot IDs
+ * @returns {Promise<Set<string>>} Set of occupied slot IDs
  */
-function getOccupiedSlots() {
-  const slots = db.prepare(
+async function getOccupiedSlots() {
+  const slots = await db.prepare(
     'SELECT location_code FROM slots WHERE wine_id IS NOT NULL'
   ).all();
   return new Set(slots.map(s => s.location_code));
@@ -143,14 +143,14 @@ router.get('/allocations', (_req, res) => {
  * POST /api/cellar/suggest-placement
  * Get placement suggestion for a wine.
  */
-router.post('/suggest-placement', (req, res) => {
+router.post('/suggest-placement', async (req, res) => {
   try {
     const { wine } = req.body;
     if (!wine) {
       return res.status(400).json({ error: 'Wine object required' });
     }
 
-    const occupiedSlots = getOccupiedSlots();
+    const occupiedSlots = await getOccupiedSlots();
     const zoneMatch = findBestZone(wine);
     const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
@@ -171,16 +171,16 @@ router.post('/suggest-placement', (req, res) => {
  * GET /api/cellar/suggest-placement/:wineId
  * Get placement suggestion for an existing wine by ID.
  */
-router.get('/suggest-placement/:wineId', (req, res) => {
+router.get('/suggest-placement/:wineId', async (req, res) => {
   try {
     const wineId = parseInt(req.params.wineId, 10);
-    const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
 
-    const occupiedSlots = getOccupiedSlots();
+    const occupiedSlots = await getOccupiedSlots();
     const zoneMatch = findBestZone(wine);
     const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
@@ -210,9 +210,9 @@ router.get('/suggest-placement/:wineId', (req, res) => {
  * GET /api/cellar/analyse
  * Get full cellar analysis with fridge status.
  */
-router.get('/analyse', (_req, res) => {
+router.get('/analyse', async (_req, res) => {
   try {
-    const wines = getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots();
     const report = analyseCellar(wines);
 
     // Add fridge candidates (legacy)
@@ -246,7 +246,7 @@ router.get('/analyse', (_req, res) => {
  */
 router.get('/analyse/ai', async (req, res) => {
   try {
-    const wines = getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots();
     const report = analyseCellar(wines);
 
     // Add fridge candidates (legacy)
@@ -653,7 +653,8 @@ router.post('/zone-chat', async (req, res) => {
 
     // Get current wine data for context
     // Note: getAllWinesWithSlots returns slot_id (from location_code alias)
-    const wines = getAllWinesWithSlots().filter(w => {
+    const allWines = await getAllWinesWithSlots();
+    const wines = allWines.filter(w => {
       const slot = w.slot_id || w.location_code;
       return slot?.startsWith('R');
     });

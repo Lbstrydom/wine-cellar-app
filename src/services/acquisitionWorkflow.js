@@ -170,22 +170,20 @@ export async function enrichWineData(wine) {
 /**
  * Get placement suggestion for a wine (zone + fridge eligibility).
  * @param {Object} wine - Wine object
- * @returns {Object} Placement suggestion
+ * @returns {Promise<Object>} Placement suggestion
  */
-export function suggestPlacement(wine) {
+export async function suggestPlacement(wine) {
   // Get zone suggestion
-  const zoneMatch = findBestZone(wine);
+  const zoneMatch = await findBestZone(wine);
 
   // Get occupied slots for slot finding
-  const occupiedSlots = new Set(
-    db.prepare('SELECT location_code FROM slots WHERE wine_id IS NOT NULL').all()
-      .map(s => s.location_code)
-  );
+  const occupiedSlotsResult = await db.prepare('SELECT location_code FROM slots WHERE wine_id IS NOT NULL').all();
+  const occupiedSlots = new Set(occupiedSlotsResult.map(s => s.location_code));
 
   // Find available slot in suggested zone
   let suggestedSlot = null;
   if (zoneMatch.zoneId !== 'unclassified') {
-    const slotResult = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+    const slotResult = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
     if (slotResult) {
       suggestedSlot = slotResult.slotId;
     }
@@ -198,7 +196,7 @@ export function suggestPlacement(wine) {
 
   if (fridgeCategory) {
     // Get current fridge contents
-    const fridgeWines = db.prepare(`
+    const fridgeWines = await db.prepare(`
       SELECT w.*, s.location_code as slot_id
       FROM wines w
       JOIN slots s ON s.wine_id = w.id

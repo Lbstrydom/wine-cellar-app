@@ -52,7 +52,7 @@ router.post('/parse-image', async (req, res) => {
  * @body {Object} wine - Wine data
  * @returns {Object} Placement suggestions
  */
-router.post('/suggest-placement', (req, res) => {
+router.post('/suggest-placement', async (req, res) => {
   const { wine } = req.body;
 
   if (!wine) {
@@ -60,7 +60,7 @@ router.post('/suggest-placement', (req, res) => {
   }
 
   try {
-    const placement = suggestPlacement(wine);
+    const placement = await suggestPlacement(wine);
     res.json(placement);
   } catch (error) {
     logger.error('Acquisition', `Placement suggestion error: ${error.message}`);
