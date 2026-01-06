@@ -166,9 +166,9 @@ class JobQueue extends EventEmitter {
 
       if (this.currentJob) {
         const job = this.currentJob;
-        const currentAttempts = job.attempts + 1;
+        const currentAttempts = (job.attempts || 0) + 1;
 
-        if (currentAttempts >= job.max_attempts) {
+        if (currentAttempts >= (job.max_attempts || 3)) {
           // Max retries exceeded
           db.prepare(`
             UPDATE job_queue
