@@ -7,6 +7,9 @@
 import { moveBottle, directSwapBottles } from './api.js';
 import { showToast, showConfirmDialog } from './utils.js';
 import { refreshData } from './app.js';
+import { addTrackedListener, cleanupNamespace } from './eventManager.js';
+
+const NAMESPACE = 'dragdrop';
 
 let draggedSlot = null;
 
@@ -31,9 +34,20 @@ const AUTO_SCROLL_CONFIG = {
 let autoScrollInterval = null;
 
 /**
+ * Clean up all drag-drop event listeners.
+ * Must be called before re-rendering grids.
+ */
+export function cleanupDragAndDrop() {
+  cleanupNamespace(NAMESPACE);
+}
+
+/**
  * Setup drag and drop on all slots.
  */
 export function setupDragAndDrop() {
+  // Clean up existing listeners before adding new ones
+  cleanupDragAndDrop();
+
   document.querySelectorAll('.slot').forEach(slot => {
     const hasWine = slot.dataset.wineId;
 
@@ -43,20 +57,20 @@ export function setupDragAndDrop() {
       slot.classList.add('draggable');
 
       // Desktop drag events
-      slot.addEventListener('dragstart', handleDragStart);
-      slot.addEventListener('dragend', handleDragEnd);
+      addTrackedListener(NAMESPACE, slot, 'dragstart', handleDragStart);
+      addTrackedListener(NAMESPACE, slot, 'dragend', handleDragEnd);
 
       // Touch events for mobile
-      slot.addEventListener('touchstart', handleTouchStart, { passive: false });
-      slot.addEventListener('touchmove', handleTouchMove, { passive: false });
-      slot.addEventListener('touchend', handleTouchEnd);
-      slot.addEventListener('touchcancel', handleTouchCancel);
+      addTrackedListener(NAMESPACE, slot, 'touchstart', handleTouchStart, { passive: false });
+      addTrackedListener(NAMESPACE, slot, 'touchmove', handleTouchMove, { passive: false });
+      addTrackedListener(NAMESPACE, slot, 'touchend', handleTouchEnd);
+      addTrackedListener(NAMESPACE, slot, 'touchcancel', handleTouchCancel);
     }
 
     // All slots can be drop targets
-    slot.addEventListener('dragover', handleDragOver);
-    slot.addEventListener('dragleave', handleDragLeave);
-    slot.addEventListener('drop', handleDrop);
+    addTrackedListener(NAMESPACE, slot, 'dragover', handleDragOver);
+    addTrackedListener(NAMESPACE, slot, 'dragleave', handleDragLeave);
+    addTrackedListener(NAMESPACE, slot, 'drop', handleDrop);
   });
 }
 

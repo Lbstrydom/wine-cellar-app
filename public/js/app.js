@@ -4,7 +4,7 @@
  */
 
 import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
-import { renderFridge, renderCellar } from './grid.js';
+import { renderFridge, renderCellar, cleanupGrid } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
@@ -16,6 +16,17 @@ import { initGlobalSearch } from './globalSearch.js';
 import { initAccessibility } from './accessibility.js';
 import { initRecommendations } from './recommendations.js';
 import { initErrorBoundary } from './errorBoundary.js';
+import { addTrackedListener, cleanupNamespace } from './eventManager.js';
+
+/**
+ * Namespace for app-level event listeners.
+ */
+const NAMESPACE = 'app';
+
+/**
+ * Namespace for wine list event listeners.
+ */
+const WINE_LIST_NAMESPACE = 'wineList';
 
 /**
  * Application state.
@@ -241,15 +252,19 @@ function renderWineList() {
       container.classList.remove('virtual-mode');
     }
 
+    // Clean up existing wine card listeners
+    cleanupNamespace(WINE_LIST_NAMESPACE);
+
     container.innerHTML = filtered.map(renderWineCard).join('');
 
-    // Add click handlers
+    // Add click handlers with tracking
     container.querySelectorAll('.wine-card').forEach(card => {
-      card.addEventListener('click', () => {
+      const handler = () => {
         const wineId = Number.parseInt(card.dataset.wineId, 10);
         const wine = filtered.find(w => w.id === wineId);
         if (wine) handleWineCardClick(wine);
-      });
+      };
+      addTrackedListener(WINE_LIST_NAMESPACE, card, 'click', handler);
     });
   }
 }

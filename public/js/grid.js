@@ -5,9 +5,12 @@
 
 import { shortenWineName } from './utils.js';
 import { state } from './app.js';
-import { setupDragAndDrop } from './dragdrop.js';
+import { setupDragAndDrop, cleanupDragAndDrop } from './dragdrop.js';
 import { handleSlotClick } from './bottles.js';
 import { getZoneMap } from './api.js';
+import { addTrackedListener, cleanupNamespace } from './eventManager.js';
+
+const NAMESPACE = 'grid';
 
 // Cache for zone map
 let zoneMapCache = null;
@@ -137,16 +140,29 @@ export async function renderCellar() {
 }
 
 /**
+ * Clean up grid event listeners.
+ * Must be called before re-rendering.
+ */
+export function cleanupGrid() {
+  cleanupNamespace(NAMESPACE);
+  cleanupDragAndDrop();
+}
+
+/**
  * Setup click handlers and drag-drop after rendering.
  * Attaches event listeners to all slot elements for interaction.
  */
 function setupInteractions() {
-  // Setup drag and drop
+  // Clean up existing grid click handlers
+  cleanupNamespace(NAMESPACE);
+
+  // Setup drag and drop (handles its own cleanup)
   setupDragAndDrop();
 
-  // Setup click handlers
+  // Setup click handlers with tracking
   document.querySelectorAll('.slot').forEach(slot => {
-    slot.addEventListener('click', () => handleSlotClick(slot));
+    const handler = () => handleSlotClick(slot);
+    addTrackedListener(NAMESPACE, slot, 'click', handler);
   });
 }
 
