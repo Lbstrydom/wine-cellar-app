@@ -16,10 +16,10 @@ const CELLAR_LAYOUT = {
 
 /**
  * Get current bottle counts by zone (based on matching rules, not location).
- * @returns {Map<string, Object>} Zone ID → { count, wines }
+ * @returns {Promise<Map<string, Object>>} Zone ID → { count, wines }
  */
-function getBottlesByZone() {
-  const wines = db.prepare(`
+async function getBottlesByZone() {
+  const wines = await db.prepare(`
     SELECT
       w.id, w.wine_name, w.vintage, w.colour, w.country, w.grapes,
       w.style, w.region, w.appellation, w.winemaking, w.sweetness,
@@ -157,10 +157,10 @@ function classifyWine(wine) {
 
 /**
  * Propose optimal zone layout based on collection.
- * @returns {Object} Proposed layout with zone assignments
+ * @returns {Promise<Object>} Proposed layout with zone assignments
  */
-export function proposeZoneLayout() {
-  const bottlesByZone = getBottlesByZone();
+export async function proposeZoneLayout() {
+  const bottlesByZone = await getBottlesByZone();
 
   // Sort zones by preferred row order (whites first, then reds)
   const zoneOrder = [
@@ -235,39 +235,35 @@ export function proposeZoneLayout() {
  * Save confirmed zone layout to database.
  * @param {Array} assignments - Array of { zoneId, assignedRows }
  */
-export function saveZoneLayout(assignments) {
-  const upsert = db.prepare(`
-    INSERT INTO zone_allocations (zone_id, assigned_rows, wine_count, updated_at)
-    VALUES (?, ?, ?, datetime('now'))
-    ON CONFLICT(zone_id) DO UPDATE SET
-      assigned_rows = excluded.assigned_rows,
-      wine_count = excluded.wine_count,
-      updated_at = datetime('now')
-  `);
+export async function saveZoneLayout(assignments) {
+  // Clear existing allocations
+  await db.prepare('DELETE FROM zone_allocations').run();
 
-  const transaction = db.transaction((items) => {
-    // Clear existing allocations
-    db.prepare('DELETE FROM zone_allocations').run();
-
-    // Insert new allocations
-    items.forEach(({ zoneId, assignedRows, bottleCount }) => {
-      upsert.run(zoneId, JSON.stringify(assignedRows), bottleCount || 0);
-    });
-  });
-
-  transaction(assignments);
+  // Insert new allocations
+  for (const { zoneId, assignedRows, bottleCount } of assignments) {
+    await db.prepare(`
+      INSERT INTO zone_allocations (zone_id, assigned_rows, wine_count, updated_at)
+      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(zone_id) DO UPDATE SET
+        assigned_rows = excluded.assigned_rows,
+        wine_count = excluded.wine_count,
+        updated_at = CURRENT_TIMESTAMP
+    `).run(zoneId, JSON.stringify(assignedRows), bottleCount || 0);
+  }
 }
 
 /**
  * Get current saved zone layout.
- * @returns {Array} Zone allocations
+ * @returns {Promise<Array>} Zone allocations
  */
-export function getSavedZoneLayout() {
-  return db.prepare(`
+export async function getSavedZoneLayout() {
+  const rows = await db.prepare(`
     SELECT zone_id, assigned_rows, wine_count, updated_at
     FROM zone_allocations
-    ORDER BY rowid
-  `).all().map(row => ({
+    ORDER BY zone_id
+  `).all();
+
+  return rows.map(row => ({
     zoneId: row.zone_id,
     assignedRows: JSON.parse(row.assigned_rows || '[]'),
     wineCount: row.wine_count,
@@ -277,10 +273,10 @@ export function getSavedZoneLayout() {
 
 /**
  * Generate specific moves to consolidate wines into their assigned zones.
- * @returns {Array} Move instructions
+ * @returns {Promise<Object>} Move instructions
  */
-export function generateConsolidationMoves() {
-  const layout = getSavedZoneLayout();
+export async function generateConsolidationMoves() {
+  const layout = await getSavedZoneLayout();
   if (layout.length === 0) {
     return { error: 'No zone layout configured. Please confirm a zone layout first.' };
   }
@@ -292,7 +288,7 @@ export function generateConsolidationMoves() {
   });
 
   // Get all wines with their current locations
-  const wines = db.prepare(`
+  const wines = await db.prepare(`
     SELECT
       w.id, w.wine_name, w.vintage, w.zone_id,
       s.location_code as current_slot
@@ -302,12 +298,13 @@ export function generateConsolidationMoves() {
   `).all();
 
   // Get all empty slots
-  const emptySlots = db.prepare(`
+  const emptySlotsResult = await db.prepare(`
     SELECT location_code
     FROM slots
     WHERE wine_id IS NULL AND location_code LIKE 'R%'
     ORDER BY location_code
-  `).all().map(s => s.location_code);
+  `).all();
+  const emptySlots = emptySlotsResult.map(s => s.location_code);
 
   const moves = [];
   const usedSlots = new Set();

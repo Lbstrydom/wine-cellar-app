@@ -252,9 +252,9 @@ function calculateConfidence(bestScore, allMatches) {
  * @param {string} zoneId
  * @param {Array|Set} occupiedSlots - Currently occupied slot IDs
  * @param {Object} wine - Wine object (for color-based preference in fallback)
- * @returns {Object|null} Slot placement result
+ * @returns {Promise<Object|null>} Slot placement result
  */
-export function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
+export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   const zone = getZoneById(zoneId);
   if (!zone) return null;
 
@@ -262,12 +262,12 @@ export function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
 
   // Standard zones - get or allocate rows
   if (!zone.isBufferZone && !zone.isFallbackZone && !zone.isCuratedZone) {
-    let rows = getZoneRows(zoneId);
+    let rows = await getZoneRows(zoneId);
 
     // If zone has no rows yet, allocate one
     if (rows.length === 0) {
       try {
-        const newRow = allocateRowToZone(zoneId);
+        const newRow = await allocateRowToZone(zoneId);
         rows = [newRow];
       } catch (_err) {
         // No rows available - fall through to overflow
@@ -302,7 +302,7 @@ export function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
 
   // Try overflow zone chain
   if (zone.overflowZoneId) {
-    const overflowResult = findAvailableSlot(zone.overflowZoneId, occupied, wine);
+    const overflowResult = await findAvailableSlot(zone.overflowZoneId, occupied, wine);
     if (overflowResult) {
       return { ...overflowResult, isOverflow: true };
     }

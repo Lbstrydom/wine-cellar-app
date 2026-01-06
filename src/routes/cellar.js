@@ -97,9 +97,9 @@ router.get('/zones', (_req, res) => {
  * GET /api/cellar/zone-map
  * Get current zone → row mapping.
  */
-router.get('/zone-map', (_req, res) => {
+router.get('/zone-map', async (_req, res) => {
   try {
-    const zoneMap = getActiveZoneMap();
+    const zoneMap = await getActiveZoneMap();
     res.json(zoneMap);
   } catch (err) {
     console.error('[CellarAPI] Zone map error:', err);
@@ -111,9 +111,9 @@ router.get('/zone-map', (_req, res) => {
  * GET /api/cellar/zone-statuses
  * Get all zones with their allocation status.
  */
-router.get('/zone-statuses', (_req, res) => {
+router.get('/zone-statuses', async (_req, res) => {
   try {
-    const statuses = getZoneStatuses();
+    const statuses = await getZoneStatuses();
     res.json(statuses);
   } catch (err) {
     console.error('[CellarAPI] Zone statuses error:', err);
@@ -125,9 +125,9 @@ router.get('/zone-statuses', (_req, res) => {
  * GET /api/cellar/allocations
  * Get all current zone allocations.
  */
-router.get('/allocations', (_req, res) => {
+router.get('/allocations', async (_req, res) => {
   try {
-    const allocations = getAllZoneAllocations();
+    const allocations = await getAllZoneAllocations();
     res.json(allocations);
   } catch (err) {
     console.error('[CellarAPI] Allocations error:', err);
@@ -152,7 +152,7 @@ router.post('/suggest-placement', async (req, res) => {
 
     const occupiedSlots = await getOccupiedSlots();
     const zoneMatch = findBestZone(wine);
-    const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+    const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
     res.json({
       success: true,
@@ -182,7 +182,7 @@ router.get('/suggest-placement/:wineId', async (req, res) => {
 
     const occupiedSlots = await getOccupiedSlots();
     const zoneMatch = findBestZone(wine);
-    const availableSlot = findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+    const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
     res.json({
       success: true,
@@ -213,7 +213,7 @@ router.get('/suggest-placement/:wineId', async (req, res) => {
 router.get('/analyse', async (_req, res) => {
   try {
     const wines = await getAllWinesWithSlots();
-    const report = analyseCellar(wines);
+    const report = await analyseCellar(wines);
 
     // Add fridge candidates (legacy)
     report.fridgeCandidates = getFridgeCandidates(wines);
@@ -247,7 +247,7 @@ router.get('/analyse', async (_req, res) => {
 router.get('/analyse/ai', async (req, res) => {
   try {
     const wines = await getAllWinesWithSlots();
-    const report = analyseCellar(wines);
+    const report = await analyseCellar(wines);
 
     // Add fridge candidates (legacy)
     report.fridgeCandidates = getFridgeCandidates(wines);
@@ -340,7 +340,7 @@ router.post('/execute-moves', (req, res) => {
  * POST /api/cellar/assign-zone
  * Manually assign a wine to a zone.
  */
-router.post('/assign-zone', (req, res) => {
+router.post('/assign-zone', async (req, res) => {
   try {
     const { wineId, zoneId, confidence } = req.body;
 
@@ -349,20 +349,20 @@ router.post('/assign-zone', (req, res) => {
     }
 
     // Get current zone for count update
-    const wine = db.prepare('SELECT zone_id FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT zone_id FROM wines WHERE id = ?').get(wineId);
     const oldZoneId = wine?.zone_id;
 
     // Update wine
-    db.prepare(
+    await db.prepare(
       'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
     ).run(zoneId, confidence || 'manual', wineId);
 
     // Update zone counts
     if (oldZoneId && oldZoneId !== zoneId) {
-      updateZoneWineCount(oldZoneId, -1);
+      await updateZoneWineCount(oldZoneId, -1);
     }
     if (zoneId !== oldZoneId) {
-      updateZoneWineCount(zoneId, 1);
+      await updateZoneWineCount(zoneId, 1);
     }
 
     res.json({
@@ -381,7 +381,7 @@ router.post('/assign-zone', (req, res) => {
  * POST /api/cellar/update-wine-attributes
  * Update canonical wine attributes (grapes, region, etc.).
  */
-router.post('/update-wine-attributes', (req, res) => {
+router.post('/update-wine-attributes', async (req, res) => {
   try {
     const { wineId, attributes } = req.body;
 
@@ -406,12 +406,12 @@ router.post('/update-wine-attributes', (req, res) => {
     }
 
     values.push(wineId);
-    db.prepare(
+    await db.prepare(
       `UPDATE wines SET ${updates.join(', ')} WHERE id = ?`
     ).run(...values);
 
     // Re-evaluate zone placement
-    const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
     const newZoneMatch = findBestZone(wine);
 
     res.json({
@@ -553,9 +553,9 @@ import {
  * GET /api/cellar/zone-layout/propose
  * Get AI-proposed zone layout based on current collection.
  */
-router.get('/zone-layout/propose', (_req, res) => {
+router.get('/zone-layout/propose', async (_req, res) => {
   try {
-    const proposal = proposeZoneLayout();
+    const proposal = await proposeZoneLayout();
     res.json({ success: true, ...proposal });
   } catch (err) {
     console.error('[CellarAPI] Zone layout propose error:', err);
@@ -567,9 +567,9 @@ router.get('/zone-layout/propose', (_req, res) => {
  * GET /api/cellar/zone-layout
  * Get current saved zone layout.
  */
-router.get('/zone-layout', (_req, res) => {
+router.get('/zone-layout', async (_req, res) => {
   try {
-    const layout = getSavedZoneLayout();
+    const layout = await getSavedZoneLayout();
     res.json({
       success: true,
       configured: layout.length > 0,
@@ -585,7 +585,7 @@ router.get('/zone-layout', (_req, res) => {
  * POST /api/cellar/zone-layout/confirm
  * Save confirmed zone layout.
  */
-router.post('/zone-layout/confirm', (req, res) => {
+router.post('/zone-layout/confirm', async (req, res) => {
   try {
     const { assignments } = req.body;
 
@@ -593,7 +593,7 @@ router.post('/zone-layout/confirm', (req, res) => {
       return res.status(400).json({ error: 'Assignments array required' });
     }
 
-    saveZoneLayout(assignments);
+    await saveZoneLayout(assignments);
 
     res.json({
       success: true,
@@ -609,9 +609,9 @@ router.post('/zone-layout/confirm', (req, res) => {
  * GET /api/cellar/zone-layout/moves
  * Generate moves needed to consolidate wines into assigned zones.
  */
-router.get('/zone-layout/moves', (_req, res) => {
+router.get('/zone-layout/moves', async (_req, res) => {
   try {
-    const result = generateConsolidationMoves();
+    const result = await generateConsolidationMoves();
 
     if (result.error) {
       return res.status(400).json({ error: result.error });

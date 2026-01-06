@@ -326,7 +326,7 @@ export async function runAcquisitionWorkflow(options) {
     // If we have a selected wine, continue with placement suggestion
     if (result.selectedWine) {
       // Step 2: Get placement suggestion
-      result.placement = suggestPlacement(result.selectedWine);
+      result.placement = await suggestPlacement(result.selectedWine);
 
       // Step 3: Check if zone review is needed
       result.zoneReview = checkZoneReview(result.placement.zone);
@@ -360,7 +360,7 @@ export async function saveAcquiredWine(wineData, options = {}) {
   const quantity = options.quantity || 1;
 
   // Create wine in database
-  const insertResult = db.prepare(`
+  const insertResult = await db.prepare(`
     INSERT INTO wines (
       wine_name, vintage, colour, style, vivino_rating, price_eur,
       country, region, alcohol_pct, drink_from, drink_until,
@@ -390,12 +390,12 @@ export async function saveAcquiredWine(wineData, options = {}) {
 
   if (!targetSlot) {
     // Get placement suggestion
-    const placement = suggestPlacement({ ...wineData, id: wineId });
+    const placement = await suggestPlacement({ ...wineData, id: wineId });
     targetSlot = placement.suggestedSlot;
 
     // If fridge eligible and user wants fridge, find fridge slot
     if (options.addToFridge && placement.fridge.eligible) {
-      const fridgeSlots = db.prepare(
+      const fridgeSlots = await db.prepare(
         "SELECT location_code FROM slots WHERE location_code LIKE 'F%' AND wine_id IS NULL ORDER BY location_code"
       ).all();
       if (fridgeSlots.length > 0) {
@@ -423,9 +423,9 @@ export async function saveAcquiredWine(wineData, options = {}) {
       }
 
       // Check if slot is available
-      const existing = db.prepare('SELECT id FROM slots WHERE location_code = ? AND wine_id IS NOT NULL').get(slotToUse);
+      const existing = await db.prepare('SELECT id FROM slots WHERE location_code = ? AND wine_id IS NOT NULL').get(slotToUse);
       if (!existing) {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO slots (location_code, wine_id)
           VALUES (?, ?)
           ON CONFLICT(location_code) DO UPDATE SET wine_id = excluded.wine_id

@@ -13,9 +13,9 @@ import { getZoneWithIntent } from './zoneMetadata.js';
 /**
  * Analyse current cellar state and identify issues.
  * @param {Array} wines - All wines with slot assignments
- * @returns {Object} Analysis report
+ * @returns {Promise<Object>} Analysis report
  */
-export function analyseCellar(wines) {
+export async function analyseCellar(wines) {
   const report = {
     timestamp: new Date().toISOString(),
     summary: {
@@ -37,7 +37,7 @@ export function analyseCellar(wines) {
     needsZoneSetup: false
   };
 
-  const zoneMap = getActiveZoneMap();
+  const zoneMap = await getActiveZoneMap();
   const slotToWine = new Map();
 
   // Build slot -> wine mapping
@@ -167,7 +167,7 @@ export function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  report.suggestedMoves = generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  report.suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
 
   // Check if reorganisation is recommended
   const shouldReorg =
@@ -343,9 +343,9 @@ function parseSlot(slotId) {
  * @param {Array} misplacedWines
  * @param {Array} allWines
  * @param {Map} slotToWine
- * @returns {Array} Move suggestions
+ * @returns {Promise<Array>} Move suggestions
  */
-function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
+async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
   const occupiedSlots = new Set();
   allWines.forEach(w => {
     const slotId = w.slot_id || w.location_code;
@@ -369,7 +369,7 @@ function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
       currentlyOccupied.add(toSlot);
     });
 
-    const slot = findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
+    const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
 
     if (slot) {
       suggestions.push({
