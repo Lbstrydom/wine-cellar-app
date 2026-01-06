@@ -796,19 +796,27 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 - **Awards routes**: Added `async/await` to all 15 route handlers (PostgreSQL returns Promises, SQLite is synchronous)
 - **Database abstraction**: All `db.prepare().get/all()` calls now properly awaited
 
+**Mobile Accessibility (Phase 8.11)**:
+- **Text size setting**: Small/Medium/Large options in Settings with localStorage persistence
+- **Touch targets**: Buttons and tabs now min-height 44px (WCAG 2.5.5 compliance)
+- **iOS zoom prevention**: Form inputs use 16px font-size on mobile to prevent auto-zoom
+- **Reduced motion**: `prefers-reduced-motion` media query support
+- **Keyboard hint**: Hidden on mobile/touch devices
+- **Focus visible**: Improved keyboard navigation styles
+
 **Browser Test Suite** (46 tests passing):
 - Health endpoints (3 tests)
 - Metrics endpoint (8 tests)
 - Pagination with numeric types (8 tests)
 - Input validation (6 tests)
 - Security headers (6 tests)
-- Service worker v28 (4 tests)
+- Service worker v29 (4 tests)
 - Event listener cleanup (3 tests)
 - Error boundary (2 tests)
 
 **Cache Management**:
-- Service worker cache version v28
-- Asset versioning `?v=20260106e` for cache busting
+- Service worker cache version v29
+- Asset versioning `?v=20260106f` for cache busting
 - Global search duplicate overlay prevention
 
 ### Railway + PostgreSQL Migration - 6 January 2026
@@ -1120,7 +1128,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v28 |
+| **Service Worker Version** | v29 |
 
 ---
 
