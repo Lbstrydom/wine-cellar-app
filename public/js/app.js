@@ -391,37 +391,80 @@ function switchView(viewName) {
 }
 
 /**
+ * Debug panel for mobile (temporary - remove after debugging).
+ */
+function createDebugPanel() {
+  const panel = document.createElement('div');
+  panel.id = 'mobile-debug';
+  panel.style.cssText = `
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    max-height: 150px;
+    overflow-y: auto;
+    background: rgba(0,0,0,0.9);
+    color: #0f0;
+    font-family: monospace;
+    font-size: 11px;
+    padding: 8px;
+    z-index: 99999;
+    white-space: pre-wrap;
+  `;
+  document.body.appendChild(panel);
+  return panel;
+}
+
+function debugLog(msg) {
+  console.log(msg);
+  let panel = document.getElementById('mobile-debug');
+  if (!panel) panel = createDebugPanel();
+  const time = new Date().toLocaleTimeString();
+  panel.innerHTML += `[${time}] ${msg}\n`;
+  panel.scrollTop = panel.scrollHeight;
+}
+
+/**
  * Initialize mobile menu toggle.
  */
 function initMobileMenu() {
   const menuBtn = document.getElementById('mobile-menu-btn');
   const tabsContainer = document.getElementById('tabs-container');
 
-  console.log('[MobileMenu] Init:', { menuBtn: !!menuBtn, tabsContainer: !!tabsContainer });
+  debugLog(`[Menu] Init: btn=${!!menuBtn}, tabs=${!!tabsContainer}`);
 
   if (menuBtn && tabsContainer) {
     let lastToggle = 0;
 
     const toggleMenu = () => {
-      console.log('[MobileMenu] Toggle triggered');
-      // Debounce rapid toggles (prevents double-fire from touch + click)
+      debugLog('[Menu] Toggle called');
       const now = Date.now();
       if (now - lastToggle < 300) {
-        console.log('[MobileMenu] Debounced');
+        debugLog('[Menu] Debounced');
         return;
       }
       lastToggle = now;
 
       const isOpen = tabsContainer.classList.toggle('open');
       menuBtn.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-      console.log('[MobileMenu] Menu is now:', isOpen ? 'open' : 'closed');
+      debugLog(`[Menu] Now ${isOpen ? 'OPEN' : 'CLOSED'}`);
     };
 
-    // Handle click (works for both mouse and touch on most browsers)
+    // Try both click and touchend
     menuBtn.addEventListener('click', (e) => {
-      console.log('[MobileMenu] Click event on button');
+      debugLog('[Menu] CLICK event');
       e.preventDefault();
       e.stopPropagation();
+      toggleMenu();
+    });
+
+    menuBtn.addEventListener('touchstart', (e) => {
+      debugLog('[Menu] TOUCHSTART');
+    }, { passive: true });
+
+    menuBtn.addEventListener('touchend', (e) => {
+      debugLog('[Menu] TOUCHEND');
+      e.preventDefault();
       toggleMenu();
     });
 
@@ -430,7 +473,7 @@ function initMobileMenu() {
       if (!tabsContainer.classList.contains('open')) return;
       if (e.target.closest('.mobile-menu-btn')) return;
       if (e.target.closest('.tabs-container')) return;
-      console.log('[MobileMenu] Closing due to outside click');
+      debugLog('[Menu] Outside click - closing');
       tabsContainer.classList.remove('open');
       menuBtn.setAttribute('aria-expanded', 'false');
     });
@@ -438,15 +481,15 @@ function initMobileMenu() {
     // Close menu when a tab is selected
     tabsContainer.addEventListener('click', (e) => {
       if (e.target.classList.contains('tab')) {
-        console.log('[MobileMenu] Closing due to tab selection');
+        debugLog('[Menu] Tab clicked - closing');
         tabsContainer.classList.remove('open');
         menuBtn.setAttribute('aria-expanded', 'false');
       }
     });
 
-    console.log('[MobileMenu] Event listeners attached');
+    debugLog('[Menu] Listeners attached OK');
   } else {
-    console.error('[MobileMenu] Elements not found!');
+    debugLog('[Menu] ERROR: Elements not found!');
   }
 }
 
