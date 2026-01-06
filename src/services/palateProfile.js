@@ -6,6 +6,101 @@
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
+// Track if tables have been initialized
+let tablesInitialized = false;
+
+/**
+ * Initialize palate profile tables if they don't exist.
+ * Works with both SQLite and PostgreSQL.
+ */
+async function ensureTables() {
+  if (tablesInitialized) return;
+
+  try {
+    // Check if table exists
+    const tableCheck = await db.prepare(`
+      SELECT 1 FROM information_schema.tables
+      WHERE table_name = 'palate_profile'
+    `).get().catch(() => null);
+
+    if (!tableCheck) {
+      logger.info('PalateProfile', 'Creating palate profile tables...');
+
+      // Create consumption_feedback table
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS consumption_feedback (
+          id SERIAL PRIMARY KEY,
+          wine_id INTEGER NOT NULL,
+          consumption_id INTEGER,
+          would_buy_again INTEGER DEFAULT NULL,
+          personal_rating REAL DEFAULT NULL,
+          paired_with TEXT DEFAULT NULL,
+          occasion TEXT DEFAULT NULL,
+          notes TEXT DEFAULT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (wine_id) REFERENCES wines(id) ON DELETE CASCADE
+        )
+      `).run();
+
+      // Create palate_profile table
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS palate_profile (
+          id SERIAL PRIMARY KEY,
+          preference_key TEXT UNIQUE NOT NULL,
+          preference_category TEXT NOT NULL,
+          preference_value TEXT NOT NULL,
+          score REAL DEFAULT 0,
+          confidence REAL DEFAULT 0,
+          sample_count INTEGER DEFAULT 0,
+          avg_rating REAL DEFAULT NULL,
+          buy_again_rate REAL DEFAULT NULL,
+          last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+      `).run();
+
+      // Create preference_weights table
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS preference_weights (
+          id SERIAL PRIMARY KEY,
+          preference_type TEXT UNIQUE NOT NULL,
+          weight REAL DEFAULT 1.0,
+          description TEXT DEFAULT NULL
+        )
+      `).run();
+
+      // Insert default weights
+      const defaultWeights = [
+        ['grape', 1.5, 'Grape variety preferences (most predictive)'],
+        ['country', 1.0, 'Country/region preferences'],
+        ['style', 1.2, 'Style preferences (oaked, tannic, etc.)'],
+        ['colour', 0.8, 'Colour preferences'],
+        ['pairing', 0.6, 'Food pairing correlations'],
+        ['price_range', 0.5, 'Price point preferences']
+      ];
+
+      for (const [type, weight, desc] of defaultWeights) {
+        await db.prepare(`
+          INSERT INTO preference_weights (preference_type, weight, description)
+          VALUES (?, ?, ?)
+          ON CONFLICT (preference_type) DO NOTHING
+        `).run(type, weight, desc);
+      }
+
+      // Create indexes
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_consumption_feedback_wine_id ON consumption_feedback(wine_id)`).run();
+      await db.prepare(`CREATE INDEX IF NOT EXISTS idx_palate_profile_category ON palate_profile(preference_category)`).run();
+
+      logger.info('PalateProfile', 'Palate profile tables created successfully');
+    }
+
+    tablesInitialized = true;
+  } catch (err) {
+    // Table might already exist or other issue - log but don't fail
+    logger.warn('PalateProfile', `Table init check: ${err.message}`);
+    tablesInitialized = true;
+  }
+}
+
 /**
  * Record consumption feedback for a wine.
  * @param {Object} feedback - Feedback data
@@ -19,6 +114,8 @@ import logger from '../utils/logger.js';
  * @returns {Promise<Object>} Created feedback record
  */
 export async function recordFeedback(feedback) {
+  await ensureTables();
+
   const {
     wineId,
     consumptionId,
@@ -62,6 +159,8 @@ export async function recordFeedback(feedback) {
  * @returns {Promise<Array>} Feedback records
  */
 export async function getWineFeedback(wineId) {
+  await ensureTables();
+
   const feedbacks = await db.prepare(`
     SELECT * FROM consumption_feedback
     WHERE wine_id = ?
@@ -225,6 +324,8 @@ async function upsertPreference(update) {
  * @returns {Promise<Object>} Profile data
  */
 export async function getPalateProfile() {
+  await ensureTables();
+
   const preferences = await db.prepare(`
     SELECT pp.*, pw.weight
     FROM palate_profile pp
@@ -350,13 +451,15 @@ export async function getPersonalizedScore(wine) {
  * @returns {Promise<Array>} Recommended wines
  */
 export async function getPersonalizedRecommendations(limit = 10) {
+  await ensureTables();
+
   // Get wines in cellar
   const wines = await db.prepare(`
     SELECT w.*, COUNT(s.id) as bottle_count
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
     GROUP BY w.id
-    HAVING bottle_count > 0
+    HAVING COUNT(s.id) > 0
   `).all();
 
   // Score each wine

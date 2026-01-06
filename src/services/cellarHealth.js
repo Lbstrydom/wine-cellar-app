@@ -28,7 +28,7 @@ export async function getCellarHealth() {
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
     GROUP BY w.id
-    HAVING bottle_count > 0
+    HAVING COUNT(s.id) > 0
   `).all();
 
   // Get drinking windows
