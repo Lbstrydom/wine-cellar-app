@@ -52,14 +52,14 @@ Guidelines:
 
 /**
  * Get urgent wines that should be considered for drinking.
- * @returns {Array} Wines with urgency information
+ * @returns {Promise<Array>} Wines with urgency information
  */
-function getUrgentWines() {
+async function getUrgentWines() {
   const currentYear = new Date().getFullYear();
   // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
   const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
-  return db.prepare(`
+  return await db.prepare(`
     SELECT
       w.id,
       w.wine_name,
@@ -106,14 +106,14 @@ function getUrgentWines() {
 /**
  * Get recent consumption history.
  * @param {number} days - Number of days to look back
- * @returns {Array} Recent consumption records
+ * @returns {Promise<Array>} Recent consumption records
  */
-function getRecentConsumption(days = 30) {
+async function getRecentConsumption(days = 30) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
 
   try {
-    return db.prepare(`
+    return await db.prepare(`
       SELECT
         wine_name,
         vintage,
@@ -136,10 +136,10 @@ function getRecentConsumption(days = 30) {
 
 /**
  * Get collection breakdown by colour and style.
- * @returns {Object} Collection statistics
+ * @returns {Promise<Object>} Collection statistics
  */
-function getCollectionStats() {
-  const colourBreakdown = db.prepare(`
+async function getCollectionStats() {
+  const colourBreakdown = await db.prepare(`
     SELECT
       w.colour,
       COUNT(s.id) as bottle_count,
@@ -149,7 +149,7 @@ function getCollectionStats() {
     GROUP BY w.colour
   `).all();
 
-  const styleBreakdown = db.prepare(`
+  const styleBreakdown = await db.prepare(`
     SELECT
       w.style,
       w.colour,
@@ -161,9 +161,10 @@ function getCollectionStats() {
     LIMIT 10
   `).all();
 
-  const totalBottles = db.prepare(`
+  const totalResult = await db.prepare(`
     SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL
-  `).get().count;
+  `).get();
+  const totalBottles = totalResult?.count || 0;
 
   return {
     total_bottles: totalBottles,
@@ -244,9 +245,9 @@ export async function generateDrinkRecommendations(options = {}) {
   }
 
   // Gather data
-  const urgentWines = getUrgentWines();
-  const recentConsumption = getRecentConsumption(30);
-  const collectionStats = getCollectionStats();
+  const urgentWines = await getUrgentWines();
+  const recentConsumption = await getRecentConsumption(30);
+  const collectionStats = await getCollectionStats();
 
   if (urgentWines.length === 0) {
     return {

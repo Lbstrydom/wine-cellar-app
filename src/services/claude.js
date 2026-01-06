@@ -81,7 +81,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
     wineQuery += ` GROUP BY w.id HAVING COUNT(s.id) > 0 ORDER BY w.colour, w.style`;
   }
 
-  const wines = db.prepare(wineQuery).all(...params);
+  const wines = await db.prepare(wineQuery).all(...params);
 
   if (wines.length === 0) {
     return {
@@ -94,13 +94,13 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
   // Get priority wines if source is 'all'
   let prioritySection = '';
   if (source === 'all') {
-    const priorityWines = db.prepare(`
+    const priorityWines = await db.prepare(`
       SELECT w.wine_name, w.vintage, rn.reduce_reason
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
       JOIN slots s ON s.wine_id = w.id
       ${colour !== 'any' ? 'WHERE w.colour = ?' : ''}
-      GROUP BY w.id
+      GROUP BY w.id, w.wine_name, w.vintage, rn.reduce_reason
       ORDER BY rn.priority
     `).all(colour !== 'any' ? [colour] : []);
 
@@ -1259,7 +1259,7 @@ export async function saveExtractedWindows(wineId, ratings) {
   for (const rating of ratings) {
     if (rating.drinking_window && (rating.drinking_window.drink_from_year || rating.drinking_window.drink_by_year || rating.drinking_window.peak_year)) {
       try {
-        db.prepare(`
+        await db.prepare(`
           INSERT INTO drinking_windows (wine_id, source, drink_from_year, drink_by_year, peak_year, confidence, raw_text, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
           ON CONFLICT(wine_id, source) DO UPDATE SET

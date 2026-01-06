@@ -9,14 +9,14 @@
  * @param {string[]} signals - Food signals
  * @param {boolean} preferReduceNow - Prioritise reduce-now wines
  * @param {number} limit - Max suggestions to return
- * @returns {Object} Pairing suggestions
+ * @returns {Promise<Object>} Pairing suggestions
  */
-export function scorePairing(db, signals, preferReduceNow, limit) {
+export async function scorePairing(db, signals, preferReduceNow, limit) {
   const placeholders = signals.map(() => '?').join(',');
   // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
   const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
-  const styleScores = db.prepare(`
+  const styleScores = await db.prepare(`
     SELECT
       wine_style_bucket,
       SUM(CASE match_level
@@ -30,7 +30,7 @@ export function scorePairing(db, signals, preferReduceNow, limit) {
     ORDER BY score DESC
   `).all(...signals);
 
-  const wines = db.prepare(`
+  const wines = await db.prepare(`
     SELECT
       w.id,
       w.style,
