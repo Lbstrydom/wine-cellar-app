@@ -10,6 +10,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:pg": "node scripts/test-pg-compat.js",
     "lint": "eslint src/ public/js/",
     "lint:fix": "eslint src/ public/js/ --fix"
   },
