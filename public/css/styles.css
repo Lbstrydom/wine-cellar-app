@@ -6267,3 +6267,229 @@ textarea:focus-visible {
   color: var(--text-muted);
   margin-bottom: 1rem;
 }
+
+/* ============================================================
+   Text Size Settings & Mobile Accessibility Fixes
+   ============================================================ */
+
+/* Text size CSS custom properties */
+:root {
+  --text-size-multiplier: 1;
+}
+
+html[data-text-size="small"] {
+  --text-size-multiplier: 0.875;
+}
+
+html[data-text-size="medium"] {
+  --text-size-multiplier: 1;
+}
+
+html[data-text-size="large"] {
+  --text-size-multiplier: 1.125;
+}
+
+/* Apply text size to key elements */
+body {
+  font-size: calc(1rem * var(--text-size-multiplier));
+}
+
+.slot-name {
+  font-size: calc(0.65rem * var(--text-size-multiplier));
+}
+
+.slot-vintage {
+  font-size: calc(0.55rem * var(--text-size-multiplier));
+}
+
+.wine-card-title {
+  font-size: calc(1rem * var(--text-size-multiplier));
+}
+
+.wine-card-meta {
+  font-size: calc(0.85rem * var(--text-size-multiplier));
+}
+
+/* Text size selector styles */
+.text-size-selector {
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+
+.text-size-selector legend.settings-label {
+  font-weight: 500;
+  color: var(--text);
+  margin-bottom: 0.75rem;
+  display: block;
+}
+
+.text-size-options {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.text-size-option {
+  cursor: pointer;
+}
+
+.text-size-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.text-size-option .text-size-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 70px;
+  min-height: 60px;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.text-size-option .text-size-btn .size-label {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+/* Size variants for the A letter */
+.text-size-option[data-size="small"] .text-size-btn,
+.text-size-option:has(input[value="small"]) .text-size-btn {
+  font-size: 1rem;
+}
+
+.text-size-option[data-size="medium"] .text-size-btn,
+.text-size-option:has(input[value="medium"]) .text-size-btn {
+  font-size: 1.25rem;
+}
+
+.text-size-option[data-size="large"] .text-size-btn,
+.text-size-option:has(input[value="large"]) .text-size-btn {
+  font-size: 1.5rem;
+}
+
+.text-size-option input[type="radio"]:checked + .text-size-btn {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+.text-size-option input[type="radio"]:focus-visible + .text-size-btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.text-size-preview {
+  color: var(--text-muted);
+  font-size: calc(0.9rem * var(--text-size-multiplier));
+  font-style: italic;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+}
+
+/* ============================================================
+   Mobile Touch Target Fixes (WCAG 2.5.5 - 44px minimum)
+   ============================================================ */
+
+.btn {
+  min-height: 44px;
+  padding: 0.75rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.btn-small {
+  min-height: 36px;
+  padding: 0.5rem 0.75rem;
+}
+
+.tab {
+  min-height: 44px;
+  padding: 0.75rem 1.2rem;
+}
+
+/* Form inputs - iOS zoom prevention (must be 16px+) */
+@media (max-width: 768px) {
+  .form-field input,
+  .form-field select,
+  .form-field textarea,
+  #wine-search,
+  .natural-pairing input[type="text"],
+  .chat-input-container input,
+  .zone-chat-input-container input {
+    font-size: 16px;
+    min-height: 44px;
+  }
+
+  /* Ensure select dropdowns are tappable */
+  .form-field select {
+    padding: 0.75rem;
+  }
+}
+
+/* Hide keyboard shortcut hints on touch devices */
+@media (max-width: 768px), (hover: none) {
+  .search-trigger kbd {
+    display: none;
+  }
+
+  .search-trigger {
+    padding-right: 1rem;
+  }
+}
+
+/* ============================================================
+   Reduced Motion Support
+   ============================================================ */
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .slot,
+  .btn,
+  .tab,
+  .wine-card {
+    transition: none !important;
+  }
+}
+
+/* ============================================================
+   Focus Visible Styles for Touch/Keyboard Navigation
+   ============================================================ */
+
+.btn:focus-visible,
+.tab:focus-visible,
+.slot:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Remove default focus ring on mouse click */
+.btn:focus:not(:focus-visible),
+.tab:focus:not(:focus-visible),
+.slot:focus:not(:focus-visible) {
+  outline: none;
+}

@@ -8,7 +8,7 @@ import { renderFridge, renderCellar, cleanupGrid } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
-import { initSettings, loadSettings } from './settings.js';
+import { initSettings, loadSettings, loadTextSize } from './settings.js';
 import { initCellarAnalysis, loadAnalysis } from './cellarAnalysis.js';
 import { escapeHtml } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
@@ -434,6 +434,9 @@ function initMobileMenu() {
  * Initialise application.
  */
 async function init() {
+  // Load text size preference early to prevent flash of wrong size
+  loadTextSize();
+
   // Setup navigation
   document.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => switchView(tab.dataset.view));

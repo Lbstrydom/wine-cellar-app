@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260106e">
+  <link rel="stylesheet" href="/css/styles.css?v=20260106f">
 </head>
 <body>
   <header>
@@ -353,6 +353,31 @@
           <span id="preference-description">Slightly favors competition awards</span>
         </div>
       </div>
+    </div>
+
+    <!-- Display Settings Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Display Settings</h3>
+      <p class="settings-section-desc">Adjust text size for better readability on your device.</p>
+
+      <fieldset class="text-size-selector">
+        <legend class="settings-label">Text Size</legend>
+        <div class="text-size-options">
+          <label class="text-size-option">
+            <input type="radio" name="text-size" value="small" />
+            <span class="text-size-btn">A<span class="size-label">Small</span></span>
+          </label>
+          <label class="text-size-option">
+            <input type="radio" name="text-size" value="medium" checked />
+            <span class="text-size-btn">A<span class="size-label">Medium</span></span>
+          </label>
+          <label class="text-size-option">
+            <input type="radio" name="text-size" value="large" />
+            <span class="text-size-btn">A<span class="size-label">Large</span></span>
+          </label>
+        </div>
+        <p class="text-size-preview">Preview: The quick brown fox jumps over the lazy dog.</p>
+      </fieldset>
     </div>
 
     <!-- Reduce-Now Auto Rules Section -->
@@ -935,6 +960,6 @@
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js?v=20260106e"></script>
+  <script type="module" src="/js/app.js?v=20260106f"></script>
 </body>
 </html>

@@ -25,6 +25,54 @@ import { showToast, escapeHtml } from './utils.js';
 // Track current import type
 let currentImportType = 'webpage';
 
+// ============================================
+// Text Size / Display Settings
+// ============================================
+
+const TEXT_SIZE_KEY = 'wine-cellar-text-size';
+
+/**
+ * Load and apply saved text size preference.
+ * Call this early (e.g., in app.js init) to prevent flash of wrong size.
+ */
+export function loadTextSize() {
+  const saved = localStorage.getItem(TEXT_SIZE_KEY) || 'medium';
+  applyTextSize(saved);
+  return saved;
+}
+
+/**
+ * Apply text size to the document.
+ * @param {string} size - 'small', 'medium', or 'large'
+ */
+function applyTextSize(size) {
+  document.documentElement.setAttribute('data-text-size', size);
+}
+
+/**
+ * Initialize text size selector in settings.
+ */
+function initTextSizeSelector() {
+  const radios = document.querySelectorAll('input[name="text-size"]');
+  if (radios.length === 0) return;
+
+  // Set the current selection based on saved preference
+  const currentSize = localStorage.getItem(TEXT_SIZE_KEY) || 'medium';
+  radios.forEach(radio => {
+    radio.checked = radio.value === currentSize;
+  });
+
+  // Add change listeners
+  radios.forEach(radio => {
+    radio.addEventListener('change', (e) => {
+      const newSize = e.target.value;
+      applyTextSize(newSize);
+      localStorage.setItem(TEXT_SIZE_KEY, newSize);
+      showToast(`Text size set to ${newSize}`);
+    });
+  });
+}
+
 /**
  * Load and display current settings.
  */
@@ -342,6 +390,9 @@ async function handleAddCandidates() {
  * Initialize settings page event listeners.
  */
 export function initSettings() {
+  // Initialize display settings (text size)
+  initTextSizeSelector();
+
   // Initialize backup section
   initBackupSection();
 

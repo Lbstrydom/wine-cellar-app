@@ -273,9 +273,9 @@ export async function testServiceWorker() {
     const wineCellarCaches = cacheNames.filter(n => n.includes('wine-cellar'));
     assert(wineCellarCaches.length > 0, 'Wine cellar caches exist');
 
-    // Check for v28 cache (updated for Phase 8 fixes)
-    const hasV28 = wineCellarCaches.some(n => n.includes('v28'));
-    assert(hasV28, 'Cache version v28 present', `Found: ${wineCellarCaches.join(', ')}`);
+    // Check for v29 cache (updated for mobile accessibility fixes)
+    const hasV29 = wineCellarCaches.some(n => n.includes('v29'));
+    assert(hasV29, 'Cache version v29 present', `Found: ${wineCellarCaches.join(', ')}`);
 
     log(`  Active caches: ${wineCellarCaches.join(', ')}`);
 
