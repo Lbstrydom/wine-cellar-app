@@ -41,12 +41,12 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
       COUNT(s.id) as bottle_count,
       ${aggFunc} as locations,
       MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,
-      CASE WHEN rn.id IS NOT NULL THEN rn.priority ELSE 99 END as reduce_priority,
-      rn.reduce_reason
+      COALESCE(MIN(rn.priority), 99) as reduce_priority,
+      MAX(rn.reduce_reason) as reduce_reason
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
     LEFT JOIN reduce_now rn ON w.id = rn.wine_id
-    GROUP BY w.id
+    GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating
     HAVING COUNT(s.id) > 0
     ORDER BY ${preferReduceNow ? 'reduce_priority ASC,' : ''} w.vivino_rating DESC
   `).all();

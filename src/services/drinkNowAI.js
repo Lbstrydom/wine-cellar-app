@@ -76,8 +76,8 @@ async function getUrgentWines() {
       w.tasting_notes,
       COUNT(s.id) as bottle_count,
       ${aggFunc} as locations,
-      rn.priority as reduce_priority,
-      rn.reduce_reason,
+      MIN(rn.priority) as reduce_priority,
+      MAX(rn.reduce_reason) as reduce_reason,
       CASE
         WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 'past_peak'
         WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 'at_peak'
@@ -88,19 +88,20 @@ async function getUrgentWines() {
     FROM wines w
     LEFT JOIN slots s ON s.wine_id = w.id
     LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    GROUP BY w.id
+    GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.price_eur, w.vivino_rating,
+             w.purchase_stars, w.drink_from, w.drink_peak, w.drink_until, w.personal_rating, w.tasting_notes
     HAVING COUNT(s.id) > 0
     ORDER BY
-      CASE drinking_status
-        WHEN 'past_peak' THEN 1
-        WHEN 'at_peak' THEN 2
-        WHEN 'ready' THEN 3
+      CASE
+        WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 1
+        WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 2
+        WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 3
         ELSE 4
       END,
-      reduce_priority NULLS LAST,
+      MIN(rn.priority) NULLS LAST,
       w.purchase_stars DESC NULLS LAST
     LIMIT 30
-  `).all(currentYear, currentYear, currentYear, currentYear);
+  `).all(currentYear, currentYear, currentYear, currentYear, currentYear, currentYear, currentYear);
 }
 
 /**
