@@ -6,10 +6,8 @@
 
 import crypto from 'crypto';
 import db from '../db/index.js';
+import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
-
-// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
-const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
 
 /**
  * Retrieval methods for provenance tracking.
@@ -52,38 +50,11 @@ const DEFAULT_EXPIRY_DAYS = {
 
 /**
  * Initialize the provenance table if it doesn't exist.
- * Called during app startup.
+ * @deprecated Table is now created via migrations (013_data_provenance.sql).
+ * This function is kept for backwards compatibility but is a no-op.
  */
 export function initProvenanceTable() {
-  try {
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS data_provenance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        wine_id INTEGER,
-        field_name TEXT NOT NULL,
-        source_id TEXT NOT NULL,
-        source_url TEXT,
-        retrieval_method TEXT NOT NULL,
-        confidence REAL DEFAULT 1.0,
-        retrieved_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        raw_hash TEXT,
-        expires_at DATETIME,
-        FOREIGN KEY (wine_id) REFERENCES wines(id) ON DELETE CASCADE
-      )
-    `);
-
-    // Create indexes if they don't exist
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_provenance_wine ON data_provenance(wine_id)`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_provenance_source ON data_provenance(source_id)`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_provenance_expires ON data_provenance(expires_at)`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_provenance_field ON data_provenance(field_name)`);
-    db.exec(`CREATE INDEX IF NOT EXISTS idx_provenance_wine_source_field ON data_provenance(wine_id, source_id, field_name)`);
-
-    logger.info('[Provenance] Table initialized');
-  } catch (error) {
-    logger.error('[Provenance] Failed to initialize table:', error);
-    throw error;
-  }
+  logger.info('[Provenance] Table initialization skipped - table created via migrations');
 }
 
 /**
@@ -212,7 +183,7 @@ export function hasFreshData(wineId, sourceId, fieldName) {
     const result = db.prepare(`
       SELECT 1 FROM data_provenance
       WHERE wine_id = ? AND source_id = ? AND field_name = ?
-      AND expires_at > ${NOW_FUNC}
+      AND expires_at > ${nowFunc()}
       LIMIT 1
     `).get(wineId, sourceId, fieldName);
     return !!result;
@@ -248,7 +219,7 @@ export function getExpiredRecords() {
   try {
     return db.prepare(`
       SELECT * FROM data_provenance
-      WHERE expires_at <= ${NOW_FUNC}
+      WHERE expires_at <= ${nowFunc()}
       ORDER BY expires_at ASC
     `).all();
   } catch (error) {
@@ -265,7 +236,7 @@ export function purgeExpiredRecords() {
   try {
     const result = db.prepare(`
       DELETE FROM data_provenance
-      WHERE expires_at <= ${NOW_FUNC}
+      WHERE expires_at <= ${nowFunc()}
     `).run();
 
     if (result.changes > 0) {
@@ -316,7 +287,7 @@ export function getProvenanceStats() {
     // Fresh vs expired
     stats.fresh = db.prepare(`
       SELECT COUNT(*) as count FROM data_provenance
-      WHERE expires_at > ${NOW_FUNC}
+      WHERE expires_at > ${nowFunc()}
     `).get().count;
 
     stats.expired = stats.total - stats.fresh;

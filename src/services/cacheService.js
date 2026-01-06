@@ -5,10 +5,8 @@
 
 import crypto from 'crypto';
 import db from '../db/index.js';
+import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
-
-// PostgreSQL uses CURRENT_TIMESTAMP, SQLite uses datetime('now')
-const NOW_FUNC = process.env.DATABASE_URL ? 'CURRENT_TIMESTAMP' : "datetime('now')";
 
 /**
  * Generate cache key from parameters.
@@ -60,7 +58,7 @@ export async function getCachedSerpResults(queryParams) {
     const cached = await db.prepare(`
       SELECT results, result_count
       FROM search_cache
-      WHERE cache_key = ? AND expires_at > ${NOW_FUNC}
+      WHERE cache_key = ? AND expires_at > ${nowFunc()}
     `).get(cacheKey);
 
     if (cached) {
@@ -126,7 +124,7 @@ export async function getCachedPage(url) {
     const cached = await db.prepare(`
       SELECT content, fetch_status, status_code, error_message
       FROM page_cache
-      WHERE url_hash = ? AND expires_at > ${NOW_FUNC}
+      WHERE url_hash = ? AND expires_at > ${nowFunc()}
     `).get(urlHash);
 
     if (cached) {
@@ -205,7 +203,7 @@ export async function getCachedExtraction(wineId, contentHash, extractionType) {
       SELECT extracted_ratings, extracted_windows, tasting_notes
       FROM extraction_cache
       WHERE wine_id = ? AND content_hash = ? AND extraction_type = ?
-        AND expires_at > ${NOW_FUNC}
+        AND expires_at > ${nowFunc()}
     `).get(wineId, contentHash, extractionType);
 
     if (cached) {
@@ -277,7 +275,7 @@ export async function purgeExpiredCache() {
 
   for (const table of tables) {
     try {
-      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < ${NOW_FUNC}`).run();
+      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < ${nowFunc()}`).run();
       results[table] = result.changes || 0;
     } catch (err) {
       results[table] = `error: ${err.message}`;
@@ -297,17 +295,17 @@ export async function getCacheStats() {
 
   try {
     stats.serp = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
       FROM search_cache
     `).get();
 
     stats.page = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
       FROM page_cache
     `).get();
 
     stats.extraction = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${NOW_FUNC} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
       FROM extraction_cache
     `).get();
   } catch (err) {

@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { stringAgg } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
 
@@ -118,14 +119,12 @@ router.get('/drinking-windows/urgent', async (req, res) => {
     const urgencyMonths = parseInt(req.query.months) || 12;
     const currentYear = new Date().getFullYear();
     const urgencyYear = currentYear + Math.ceil(urgencyMonths / 12);
-    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-    const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
     const urgent = await db.prepare(`
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations,
+        ${stringAgg('s.location_code', ',', true)} as locations,
         dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,
         (dw.drink_by_year - ?) as years_remaining
       FROM wines w

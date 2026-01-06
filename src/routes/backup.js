@@ -6,6 +6,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { stringAgg, isPostgres } from '../db/helpers.js';
 
 const router = Router();
 
@@ -93,8 +94,6 @@ router.get('/export/json', async (req, res) => {
  */
 router.get('/export/csv', async (req, res) => {
   try {
-    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-    const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(s.location_code, ',')" : 'GROUP_CONCAT(s.location_code)';
     const wines = await db.prepare(`
       SELECT
         w.id,
@@ -112,7 +111,7 @@ router.get('/export/csv', async (req, res) => {
         w.drink_until,
         w.purchase_stars,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations
+        ${stringAgg('s.location_code')} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       GROUP BY w.id
@@ -179,7 +178,7 @@ router.post('/import', async (req, res) => {
     const stats = { imported: 0, skipped: 0, errors: [] };
 
     // Use ON CONFLICT for PostgreSQL (also works with SQLite 3.24+)
-    const upsertSuffix = process.env.DATABASE_URL
+    const upsertSuffix = isPostgres()
       ? 'ON CONFLICT (id) DO UPDATE SET'
       : 'OR REPLACE';
 
@@ -198,7 +197,7 @@ router.post('/import', async (req, res) => {
     if (backup.data.wines) {
       for (const wine of backup.data.wines) {
         try {
-          if (process.env.DATABASE_URL) {
+          if (isPostgres()) {
             // PostgreSQL: use INSERT ... ON CONFLICT
             await db.prepare(`
               INSERT INTO wines (
@@ -280,7 +279,7 @@ router.post('/import', async (req, res) => {
     if (backup.data.slots) {
       for (const slot of backup.data.slots) {
         try {
-          if (process.env.DATABASE_URL) {
+          if (isPostgres()) {
             await db.prepare(`
               INSERT INTO slots (id, location_code, wine_id)
               VALUES (?, ?, ?)
@@ -304,7 +303,7 @@ router.post('/import', async (req, res) => {
     if (backup.data.wine_ratings) {
       for (const rating of backup.data.wine_ratings) {
         try {
-          if (process.env.DATABASE_URL) {
+          if (isPostgres()) {
             await db.prepare(`
               INSERT INTO wine_ratings (
                 id, wine_id, source_id, score, normalized_score, review_count,
@@ -347,7 +346,7 @@ router.post('/import', async (req, res) => {
     if (consumptionData && consumptionData.length > 0) {
       for (const history of consumptionData) {
         try {
-          if (process.env.DATABASE_URL) {
+          if (isPostgres()) {
             await db.prepare(`
               INSERT INTO consumption_log (
                 id, wine_id, wine_name, vintage, style, colour, country,

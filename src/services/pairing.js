@@ -3,6 +3,8 @@
  * @module services/pairing
  */
 
+import { stringAgg } from '../db/helpers.js';
+
 /**
  * Score wines against food signals.
  * @param {Database} db - Database connection
@@ -13,8 +15,6 @@
  */
 export async function scorePairing(db, signals, preferReduceNow, limit) {
   const placeholders = signals.map(() => '?').join(',');
-  // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-  const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
   const styleScores = await db.prepare(`
     SELECT
@@ -39,7 +39,7 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
       w.vintage,
       w.vivino_rating,
       COUNT(s.id) as bottle_count,
-      ${aggFunc} as locations,
+      ${stringAgg('s.location_code', ',', true)} as locations,
       MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,
       COALESCE(MIN(rn.priority), 99) as reduce_priority,
       MAX(rn.reduce_reason) as reduce_reason

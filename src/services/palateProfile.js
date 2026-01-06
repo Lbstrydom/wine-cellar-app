@@ -455,10 +455,15 @@ export async function getPersonalizedRecommendations(limit = 10) {
 
   // Get wines in cellar
   const wines = await db.prepare(`
-    SELECT w.*, COUNT(s.id) as bottle_count
+    SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
+           w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
+           w.drink_from, w.drink_peak, w.drink_until, w.created_at,
+           COUNT(s.id) as bottle_count
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
-    GROUP BY w.id
+    GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
+             w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
+             w.drink_from, w.drink_peak, w.drink_until, w.created_at
     HAVING COUNT(s.id) > 0
   `).all();
 

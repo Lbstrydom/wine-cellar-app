@@ -7,6 +7,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
+import { stringAgg } from '../db/helpers.js';
 import { getModelForTask } from '../config/aiModels.js';
 import { sanitize, sanitizeContext } from './inputSanitizer.js';
 
@@ -56,8 +57,6 @@ Guidelines:
  */
 async function getUrgentWines() {
   const currentYear = new Date().getFullYear();
-  // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-  const aggFunc = process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)';
 
   return await db.prepare(`
     SELECT
@@ -75,7 +74,7 @@ async function getUrgentWines() {
       w.personal_rating,
       w.tasting_notes,
       COUNT(s.id) as bottle_count,
-      ${aggFunc} as locations,
+      ${stringAgg('s.location_code', ',', true)} as locations,
       MIN(rn.priority) as reduce_priority,
       MAX(rn.reduce_reason) as reduce_reason,
       CASE

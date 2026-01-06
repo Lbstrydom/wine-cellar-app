@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { stringAgg } from '../db/helpers.js';
 import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
 
 const router = Router();
@@ -15,8 +16,6 @@ const router = Router();
  */
 router.get('/', async (req, res) => {
   try {
-    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-    const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(s.location_code, \',\')' : 'GROUP_CONCAT(s.location_code)';
     const list = await db.prepare(`
       SELECT
         rn.id,
@@ -29,7 +28,7 @@ router.get('/', async (req, res) => {
         w.vintage,
         w.vivino_rating,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations
+        ${stringAgg('s.location_code')} as locations
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
       LEFT JOIN slots s ON s.wine_id = w.id
@@ -113,9 +112,6 @@ router.post('/evaluate', async (_req, res) => {
     const currentYear = new Date().getFullYear();
     const urgencyYear = currentYear + Math.ceil(urgencyMonths / 12);
 
-    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-    const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(DISTINCT s.location_code, \',\')' : 'GROUP_CONCAT(DISTINCT s.location_code)';
-
     // Optimized: Single query to fetch ALL wines with bottles that aren't already in reduce_now
     // This replaces 5 separate queries with 1 comprehensive query
     // Note: PostgreSQL NULLS LAST is different syntax from SQLite
@@ -126,7 +122,7 @@ router.post('/evaluate', async (_req, res) => {
         (? - w.vintage) as wine_age,
         dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations
+        ${stringAgg('s.location_code', ',', true)} as locations
       FROM wines w
       JOIN slots s ON s.wine_id = w.id
       LEFT JOIN drinking_windows dw ON w.id = dw.wine_id

@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
+import { stringAgg, ilike, isPostgres } from '../db/helpers.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
 import {
   wineIdSchema,
@@ -43,7 +44,7 @@ router.get('/styles', async (req, res) => {
  */
 async function hasFTS5() {
   // FTS5 is SQLite-specific, not available in PostgreSQL
-  if (process.env.DATABASE_URL) {
+  if (isPostgres()) {
     return false;
   }
   try {
@@ -105,7 +106,7 @@ router.get('/search', async (req, res) => {
 
     // Fallback to LIKE search (works on both SQLite and PostgreSQL)
     // PostgreSQL uses ILIKE for case-insensitive search
-    const likeOp = process.env.DATABASE_URL ? 'ILIKE' : 'LIKE';
+    const likeOp = ilike();
     const wines = await db.prepare(`
       SELECT id, wine_name, vintage, style, colour, vivino_rating, price_eur, country, purchase_stars
       FROM wines
@@ -135,7 +136,7 @@ router.get('/global-search', async (req, res) => {
 
     const searchLimit = Math.min(parseInt(limit) || 5, 20);
     const likePattern = `%${q}%`;
-    const likeOp = process.env.DATABASE_URL ? 'ILIKE' : 'LIKE';
+    const likeOp = ilike();
 
     // Search wines (with FTS5 if available - SQLite only)
     let wines = [];
@@ -224,9 +225,6 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
     // Use validated query params (coerced to numbers by Zod)
     const { limit = 50, offset = 0 } = req.validated?.query || req.query;
 
-    // PostgreSQL uses STRING_AGG instead of GROUP_CONCAT
-    const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(s.location_code, \',\')' : 'GROUP_CONCAT(s.location_code)';
-
     // Get total count for pagination metadata
     const countResult = await db.prepare('SELECT COUNT(*) as total FROM wines').get();
     const total = parseInt(countResult?.total || 0);
@@ -242,7 +240,7 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
         w.vivino_rating,
         w.price_eur,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations
+        ${stringAgg('s.location_code')} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur
@@ -325,12 +323,11 @@ router.post('/parse-image', validateBody(parseImageSchema), async (req, res) => 
  */
 router.get('/:id', async (req, res) => {
   try {
-    const aggFunc = process.env.DATABASE_URL ? 'STRING_AGG(s.location_code, \',\')' : 'GROUP_CONCAT(s.location_code)';
     const wine = await db.prepare(`
       SELECT
         w.*,
         COUNT(s.id) as bottle_count,
-        ${aggFunc} as locations
+        ${stringAgg('s.location_code')} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       WHERE w.id = ?

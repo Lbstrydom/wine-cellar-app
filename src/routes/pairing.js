@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../db/index.js';
+import { stringAgg } from '../db/helpers.js';
 import { getSommelierRecommendation, continueSommelierChat } from '../services/claude.js';
 import { scorePairing } from '../services/pairing.js';
 import { getHybridPairing, generateShortlist, extractSignals } from '../services/pairingEngine.js';
@@ -305,11 +306,6 @@ router.get('/house-style', (_req, res) => {
  * @returns {Promise<Array>} Wines with location data
  */
 async function getAllWinesWithSlots() {
-  // PostgreSQL uses STRING_AGG, SQLite uses GROUP_CONCAT
-  const aggFunc = process.env.DATABASE_URL
-    ? "STRING_AGG(DISTINCT s.location_code, ',')"
-    : 'GROUP_CONCAT(DISTINCT s.location_code)';
-
   return db.prepare(`
     SELECT
       w.id,
@@ -322,7 +318,7 @@ async function getAllWinesWithSlots() {
       w.region,
       w.winemaking,
       COUNT(s.id) as bottle_count,
-      ${aggFunc} as locations,
+      ${stringAgg('s.location_code', ',', true)} as locations,
       MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge,
       COALESCE(MIN(rn.priority), 99) as reduce_priority,
       MAX(rn.reduce_reason) as reduce_reason,

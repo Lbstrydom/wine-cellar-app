@@ -8,6 +8,7 @@ import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from '
 import { LENS_CREDIBILITY, getSource as getSourceConfig } from '../config/unifiedSources.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
+import { stringAgg } from '../db/helpers.js';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { sanitizeDishDescription, sanitizeWineList, sanitizeChatMessage } from './inputSanitizer.js';
 import { parseAndValidate, createFallback } from './responseValidator.js';
@@ -52,7 +53,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        ${process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)'} as locations,
+        ${stringAgg('s.location_code', ',', true)} as locations,
         rn.priority, rn.reduce_reason
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
@@ -69,7 +70,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        ${process.env.DATABASE_URL ? "STRING_AGG(DISTINCT s.location_code, ',')" : 'GROUP_CONCAT(DISTINCT s.location_code)'} as locations
+        ${stringAgg('s.location_code', ',', true)} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
       WHERE 1=1
