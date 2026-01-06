@@ -5,6 +5,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk';
+import { getModelForTask } from '../config/aiModels.js';
 
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
@@ -29,8 +30,9 @@ export async function getCellarOrganisationAdvice(analysisReport) {
 
   while (attempts < maxAttempts) {
     try {
+      const modelId = getModelForTask('cellarAnalysis');
       const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: modelId,
         max_tokens: 2000,
         messages: [{ role: 'user', content: prompt }]
       });

@@ -15,6 +15,8 @@ import {
   getAllSecondaryTerms,
   getAllTertiaryTerms
 } from '../config/tastingVocabulary.js';
+import { getModelForTask } from '../config/aiModels.js';
+import { sanitizeTastingNote } from './inputSanitizer.js';
 
 let anthropic = null;
 
@@ -137,13 +139,17 @@ export async function extractTastingProfile(tastingNote, options = {}) {
   }
 
   try {
+    // Sanitize tasting note input
+    const sanitizedNote = sanitizeTastingNote(tastingNote);
+    const modelId = getModelForTask('tastingExtraction');
+
     const response = await client.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: modelId,
       max_tokens: 1024,
       system: EXTRACTION_SYSTEM_PROMPT,
       messages: [{
         role: 'user',
-        content: buildExtractionPrompt(tastingNote, wineInfo)
+        content: buildExtractionPrompt(sanitizedNote, wineInfo)
       }]
     });
 

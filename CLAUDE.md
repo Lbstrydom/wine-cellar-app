@@ -6,8 +6,9 @@ This document defines coding standards and conventions for AI assistants working
 
 ## Project Overview
 
-**Stack**: Node.js, Express, SQLite/PostgreSQL, Vanilla JS frontend
-**Deployment**: Docker on Synology NAS (SQLite) or Railway + Supabase (PostgreSQL)
+**Stack**: Node.js, Express, PostgreSQL (Supabase), Vanilla JS frontend
+**Deployment**: Railway (auto-deploys from GitHub)
+**Database**: Supabase PostgreSQL
 **Purpose**: Personal wine cellar management with visual grid and AI-powered pairing
 
 ---
@@ -138,21 +139,27 @@ try {
 ### Database Queries
 
 ```javascript
-// Use prepared statements (already enforced by better-sqlite3)
-const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+// Use prepared statements with async/await (PostgreSQL returns Promises)
+const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
 
-// Name complex queries
-const getWineWithLocations = db.prepare(`
-  SELECT 
+// Use STRING_AGG for PostgreSQL (not GROUP_CONCAT like SQLite)
+const getWineWithLocations = await db.prepare(`
+  SELECT
     w.id,
     w.wine_name,
     COUNT(s.id) as bottle_count,
-    GROUP_CONCAT(s.location_code) as locations
+    STRING_AGG(s.location_code, ',') as locations
   FROM wines w
   LEFT JOIN slots s ON s.wine_id = w.id
   WHERE w.id = ?
   GROUP BY w.id
-`);
+`).get(wineId);
+
+// PostgreSQL syntax differences from SQLite:
+// - Use ILIKE for case-insensitive search (not LIKE)
+// - Use STRING_AGG() instead of GROUP_CONCAT()
+// - Use CURRENT_TIMESTAMP instead of datetime('now')
+// - Use INTERVAL '30 days' instead of '-30 days'
 ```
 
 ---
@@ -409,114 +416,84 @@ refactor/modular-structure
 
 ## Deployment
 
-The app is deployed to a Synology NAS using Git and local Docker builds.
+The app is deployed to **Railway** with auto-deploy from GitHub. Database is hosted on **Supabase** (PostgreSQL).
 
-### Deploy Script (Recommended)
+### How Deployment Works
 
-Use the deployment script for reliable, automated deployment:
-
-```powershell
-# Full deploy with lint and tests
-.\scripts\deploy.ps1
-
-# Quick deploy (skip tests, no rebuild)
-.\scripts\deploy.ps1 -Quick
-
-# Skip pre-flight checks
-.\scripts\deploy.ps1 -SkipTests
-
-# Deploy and show logs
-.\scripts\deploy.ps1 -Logs
-```
-
-The script performs:
-1. Run ESLint
-2. Run tests (if configured)
-3. Check for uncommitted changes (prompts to commit)
-4. Git push to GitHub
-5. SSH to Synology: git pull
-6. Docker compose down/build/up
-7. Verify container is running
-8. Test API endpoint
-
-### Manual Deployment
-
-If you need to deploy manually:
-
-```bash
-# 1. Commit and push
-git add -A && git commit -m "your message" && git push
-
-# 2. Deploy on Synology (single command via SSH)
-ssh lstrydom@192.168.86.31 "cd ~/Apps/wine-cellar-app && git fetch origin && git reset --hard origin/main && /usr/local/bin/docker-compose down && /usr/local/bin/docker-compose up -d --build"
-```
+1. Push to `main` branch on GitHub
+2. Railway automatically detects the push and deploys
+3. The app connects to Supabase PostgreSQL via `DATABASE_URL`
 
 ### Quick Reference
 
 | Action | Command |
 |--------|---------|
-| Deploy to Synology | `.\scripts\deploy.ps1` |
-| Quick deploy | `.\scripts\deploy.ps1 -Quick` |
-| Download production DB | `.\scripts\sync-db.ps1 -Download` |
-| Upload local DB | `.\scripts\sync-db.ps1 -Upload` |
-| Setup SSH key auth | `.\scripts\setup-ssh-key.ps1` |
-| SSH to Synology | `ssh lstrydom@192.168.86.31` |
-| View container logs | `ssh lstrydom@192.168.86.31 "docker logs wine-cellar --tail 50"` |
-| Check container status | `ssh lstrydom@192.168.86.31 "docker ps \| grep wine"` |
-| Test API | `curl -s http://192.168.86.31:3000/api/stats` |
+| Deploy | `git push origin main` (auto-deploys) |
+| View logs | `railway logs` |
+| Check status | `railway status` |
+| Open dashboard | `railway open` |
+| Test API | `curl -s https://cellar.creathyst.com/api/stats` |
 
-### Claude Code SSH Note
-
-**IMPORTANT**: When running SSH commands from Claude Code's Bash tool, always use native `ssh` instead of `plink.exe`. The Bash tool runs through a Unix-like shell (Git Bash/MSYS) which mangles Windows paths with spaces.
+### Railway CLI
 
 ```bash
-# CORRECT - use native ssh
-ssh lstrydom@192.168.86.31 "/usr/local/bin/docker ps"
+# Install Railway CLI
+npm install -g @railway/cli
 
-# WRONG - plink paths get mangled by the shell
-"C:\Program Files\PuTTY\plink.exe" ...  # Results in "sh: C:Program: command not found"
+# Login
+railway login
+
+# Link to project (if needed)
+railway link
+
+# View logs
+railway logs --tail 100
+
+# Open Railway dashboard
+railway open
 ```
 
-For full deployments, use the PowerShell deploy script which handles Windows paths correctly:
+### Key URLs
+
+| Item | URL |
+|------|-----|
+| Production | https://cellar.creathyst.com |
+| Railway Dashboard | https://railway.app/project/wine-cellar-app |
+| Supabase Dashboard | https://supabase.com/dashboard |
+| GitHub Repo | https://github.com/Lbstrydom/wine-cellar-app |
+
+### Environment Variables (Railway)
+
+Set these in Railway dashboard → Variables:
+
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Supabase PostgreSQL connection string |
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `GOOGLE_SEARCH_API_KEY` | Google Search API key |
+| `GOOGLE_SEARCH_ENGINE_ID` | Google CSE ID |
+| `BRIGHTDATA_API_KEY` | BrightData API key |
+| `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
+| `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |
+
+### Custom Domain Setup
+
+The app uses Cloudflare for DNS with a CNAME record pointing to Railway:
+- Domain: `cellar.creathyst.com`
+- CNAME target: `qxi4wlbz.up.railway.app`
+
+### Local Development
+
 ```bash
-powershell -File scripts/deploy.ps1
+# Install dependencies
+npm install
+
+# Run locally (uses SQLite by default)
+npm run dev
+
+# Run locally with PostgreSQL (set DATABASE_URL in .env)
+DATABASE_URL="your-supabase-url" npm run dev
 ```
-
-### Key Paths on Synology
-
-| Item | Path |
-|------|------|
-| App directory | `~/Apps/wine-cellar-app/` |
-| Database | `~/Apps/wine-cellar-app/data/cellar.db` |
-| Docker binary | `/usr/local/bin/docker` |
-| Docker Compose | `/usr/local/bin/docker-compose` |
-| Production URL (Cloudflare) | https://cellar.creathyst.com |
-| Production URL (local) | http://192.168.86.31:3000 |
-| Production URL (Tailscale) | https://ds223j.tailf6bfbc.ts.net |
-
-### First-Time Synology Setup
-
-1. **Setup SSH key auth**: `.\scripts\setup-ssh-key.ps1`
-2. **Clone the repo on Synology**:
-   ```bash
-   ssh lstrydom@192.168.86.31
-   mkdir -p ~/Apps && cd ~/Apps
-   git clone https://github.com/Lbstrydom/wine-cellar-app.git
-   cd wine-cellar-app
-   cp .env.example .env
-   # Edit .env with your API keys
-   ```
-3. **Configure docker access** (on Synology via SSH):
-   ```bash
-   sudo chgrp administrators /var/run/docker.sock
-   sudo chmod 660 /var/run/docker.sock
-   ```
-4. **Make docker permissions persistent**: Create triggered task in DSM Task Scheduler (Boot-up, root user) with command: `chgrp administrators /var/run/docker.sock && chmod 660 /var/run/docker.sock`
-5. **Initial build and start**:
-   ```bash
-   /usr/local/bin/docker-compose build --no-cache
-   /usr/local/bin/docker-compose up -d
-   ```
 
 ### Cache Busting
 

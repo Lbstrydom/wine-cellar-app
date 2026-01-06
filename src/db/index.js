@@ -18,7 +18,7 @@ if (usePostgres) {
   preparedStatements = postgres.preparedStatements;
   pool = postgres.pool;
 } else {
-  // SQLite mode (local dev, Synology)
+  // SQLite mode (local development)
   const sqlite = await import('./sqlite.js');
   db = sqlite.default;
   awardsDb = sqlite.awardsDb;

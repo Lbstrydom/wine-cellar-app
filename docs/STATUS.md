@@ -1,25 +1,25 @@
 # Wine Cellar App - Status Report
-## 5 January 2026
+## 6 January 2026
 
 ---
 
 ## Executive Summary
 
-The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on Synology NAS with secure HTTPS access via Tailscale. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, and comprehensive test coverage.
+The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on **Railway** with **Supabase PostgreSQL** database. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, and comprehensive test coverage.
 
-**Current State**: Production PWA deployed with Tailscale HTTPS, installable on any device, with 249 unit tests and 85% service coverage. Full MCP integration for enhanced scraping and database access.
+**Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Key Differentiators**:
 - Progressive Web App with offline support and cross-platform installation
 - Multi-source rating aggregation with data provenance tracking
 - Claude AI integration for pairing, drink recommendations, and tasting analysis
-- **MCP Integration**: Puppeteer (scraping), PDF Reader (awards), SQLite (queries)
+- **Cloud-native deployment**: Railway + Supabase PostgreSQL
 - **Award Extractor Skill** for structured PDF processing
 - Dynamic cellar zone clustering with 40+ wine categories
-- Automated award database with PDF/MCP import
-- Secure HTTPS access via Tailscale (works anywhere)
+- Automated award database with PDF import
+- Secure HTTPS access via custom domain
 - Comprehensive testing infrastructure (249 tests, 85% coverage)
-- FTS5 full-text search with BM25 ranking
+- Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
 ---
@@ -29,13 +29,12 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 | Component | Technology | Version |
 |-----------|------------|---------|
 | **Backend** | Node.js + Express | 5.2.1 |
-| **Database** | SQLite (libsql) | 0.5.22 |
+| **Database** | PostgreSQL (Supabase) | 15+ |
 | **AI** | Claude API (Anthropic SDK) | 0.71.2 |
-| **MCP Servers** | Puppeteer, PDF Reader, SQLite | Latest |
 | **Frontend** | Vanilla JavaScript (ES6 Modules) | - |
 | **Testing** | Vitest | 2.1.8 |
-| **Deployment** | Docker on Synology NAS | - |
-| **HTTPS** | Tailscale Serve | - |
+| **Deployment** | Railway (auto-deploy from GitHub) | - |
+| **Domain** | Cloudflare DNS | - |
 
 ### Key Dependencies
 
@@ -44,7 +43,8 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   "dependencies": {
     "express": "^5.2.1",
     "@anthropic-ai/sdk": "^0.71.2",
-    "libsql": "^0.5.22",
+    "pg": "^8.11.3",
+    "better-sqlite3": "^11.8.1",
     "multer": "^2.0.2",
     "cors": "^2.8.5",
     "dotenv": "^17.2.3"
@@ -82,9 +82,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Shortcuts for quick actions (Add Wine, Sommelier, Settings)
 
 **Access Methods**:
-- **Cloudflare Tunnel**: https://cellar.creathyst.com (PWA install, public internet)
-- **Tailscale HTTPS**: https://ds223j.tailf6bfbc.ts.net (tailnet only)
-- **Local Network**: http://192.168.86.31:3000 (fastest when at home)
+- **Production**: https://cellar.creathyst.com (Railway + Cloudflare DNS)
 
 **Files**:
 - `public/manifest.json` - PWA manifest
@@ -646,7 +644,7 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 
 ## Database Schema
 
-### Main Database (`cellar.db`)
+### PostgreSQL (Supabase) - Production
 
 **Core Tables**:
 - `wines` - Master wine inventory
@@ -657,21 +655,20 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 - `consumption_log` - Consumption history
 - `user_settings` - User preferences
 - `pairing_rules` - Food-to-wine mappings
-- **`data_provenance`** ✨ NEW - External data tracking
-- **`search_cache`** ✨ NEW - Search result caching
+- `data_provenance` - External data tracking
+- `search_cache` - Search result caching
+- `competition_awards` - Award records (merged from awards.db)
 
-**Performance Enhancements** ✨ NEW:
-- **15+ strategic indexes** for query optimization
-- **FTS5 virtual table** for full-text search with Porter stemming
-- **WAL mode** for concurrent access
-- Composite indexes for common queries
-- N+1 query optimizations
+**PostgreSQL Features**:
+- Connection pooling via Supabase Transaction Pooler
+- Full-text search with PostgreSQL built-in capabilities
+- Auto-vacuum and concurrent access handling
+- Strategic indexes for common queries
 
-### Awards Database (`awards.db`)
+### SQLite - Local Development
 
-- `award_sources` - Import source metadata
-- `competition_awards` - Individual award records
-- `known_competitions` - Competition registry
+For local development, the app can still use SQLite (`data/cellar.db`).
+Set `DATABASE_URL` to switch to PostgreSQL.
 
 ---
 
@@ -756,45 +753,29 @@ public/js/
 
 ## Deployment
 
-### Docker Configuration
+### Railway + Supabase
 
-```dockerfile
-# Multi-stage build, Node.js 20 Alpine
-FROM node:20-alpine
-WORKDIR /app
-COPY . .
-RUN npm ci --only=production
-EXPOSE 3000
-CMD ["node", "src/server.js"]
-```
+The app is deployed to **Railway** with auto-deploy from GitHub. Database is hosted on **Supabase** (PostgreSQL).
 
-### Synology NAS
+**How Deployment Works**:
+1. Push to `main` branch on GitHub
+2. Railway automatically detects the push and deploys
+3. The app connects to Supabase PostgreSQL via `DATABASE_URL`
 
-**Target**: `192.168.86.31:3000`
+**Key URLs**:
+| Item | URL |
+|------|-----|
+| Production | https://cellar.creathyst.com |
+| Railway Dashboard | https://railway.app |
+| Supabase Dashboard | https://supabase.com/dashboard |
+| GitHub Repo | https://github.com/Lbstrydom/wine-cellar-app |
 
-**Deployment Scripts**:
-- `scripts/deploy.ps1` - Full deployment
-- `scripts/sync-db.ps1` - Database sync
-- `scripts/setup-ssh-key.ps1` - SSH key setup
-
-**Key Paths**:
-- App: `~/Apps/wine-cellar-app/`
-- Database: `~/Apps/wine-cellar-app/data/cellar.db`
-- Awards: `~/Apps/wine-cellar-app/data/awards.db`
-
-### HTTPS Access ✨ NEW
-
-**Tailscale Serve Configuration**:
-```bash
-sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://localhost:3000
-```
-
-**Access Methods**:
-- **Secure (anywhere)**: https://ds223j.tailf6bfbc.ts.net
-- **Fast (local network)**: http://192.168.86.31:3000
+**Custom Domain**:
+- Domain: `cellar.creathyst.com`
+- DNS: Cloudflare CNAME → `qxi4wlbz.up.railway.app`
 
 **PWA Installation**:
-1. Visit HTTPS URL on any device
+1. Visit https://cellar.creathyst.com on any device
 2. Click browser "Install" or "Add to Home Screen"
 3. App works offline with service worker
 4. Updates automatically when new version deployed
@@ -802,6 +783,16 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### Railway + PostgreSQL Migration - 6 January 2026
+- **Migrated from Fly.io to Railway**: Auto-deploy from GitHub, simpler deployment model
+- **Database moved to Supabase PostgreSQL**: Replaced SQLite with cloud-hosted PostgreSQL
+- **Database abstraction layer**: Auto-selects SQLite (local) or PostgreSQL (production)
+- **Route handler updates**: All handlers converted to async/await for PostgreSQL compatibility
+- **SQL syntax updates**: STRING_AGG, ILIKE, CURRENT_TIMESTAMP, INTERVAL syntax
+- **Custom domain**: `cellar.creathyst.com` via Cloudflare CNAME to Railway
+- **Removed legacy files**: fly.toml, deploy.ps1, sync-db.ps1, Synology-specific configs
+- **Documentation updates**: CLAUDE.md, AGENTS.md, STATUS.md updated for new deployment
 
 ### UX & Bug Fixes - 5 January 2026
 - **Direct Wine Swap**: Drag wine onto occupied slot → confirmation dialog → swap positions
@@ -833,13 +824,11 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
   - Verifies container and tests API
 - **Options**: `-Quick` (fast deploy), `-SkipTests`, `-Logs`
 
-### Cloudflare Tunnel Setup - January 2026
+### Custom Domain Setup - January 2026
 - **Custom Domain**: `https://cellar.creathyst.com` for PWA installation
-- **Architecture**: Browser → Cloudflare → Tunnel → Synology → App (port 3000)
-- **Why Not Tailscale Funnel**: Rejects proxied connections, serves `*.ts.net` certs only
-- **Setup**: Docker container `cloudflared` with token-based authentication
-- **Config**: Public hostname `cellar.creathyst.com` → `192.168.86.31:3000`
-- **Documentation**: `docs/cloudflare_tunnel_setup.md`
+- **Architecture**: Browser → Cloudflare DNS → Railway app
+- **Setup**: CNAME record pointing to Railway app
+- **Note**: Replaced previous Cloudflare Tunnel setup with direct Railway deployment
 
 ### MCP Integration - January 2026
 - Puppeteer MCP for Vivino/Decanter scraping with full JS rendering
@@ -854,7 +843,7 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 - Manifest with app metadata and icons
 - Icon generation script (72px - 512px + maskable)
 - Installable on all platforms
-- Tailscale HTTPS deployment for secure access
+- Railway cloud deployment with custom domain
 
 ### Testing Infrastructure - January 2025
 - Vitest test framework with 249 passing tests
@@ -969,9 +958,6 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
 | `BRIGHTDATA_SERP_ZONE` | No | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | No | Web Unlocker zone |
 | `CREDENTIAL_ENCRYPTION_KEY` | No | Credential storage key |
-| `SYNOLOGY_USER` | No | Synology NAS username (for sync) |
-| `SYNOLOGY_IP` | No | Synology NAS IP (for sync) |
-| `SYNOLOGY_PASSWORD` | No | Synology NAS password (for sync) |
 | `PORT` | No | Server port (default: 3000) |
 
 ---
@@ -1029,8 +1015,9 @@ sudo /var/packages/Tailscale/target/bin/tailscale serve --bg --https 443 http://
                        │
                        ▼
             ┌──────────────────┐
-            │ Tailscale Serve  │
-            │ HTTPS Endpoint   │
+            │ Railway + HTTPS  │
+            │ cellar.creathyst │
+            │     .com         │
             └──────────────────┘
 ```
 
@@ -1047,7 +1034,7 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 - ✅ **Phase 2**: FTS5 search, virtual lists, modular bottles.js
 - ✅ **Phase 3**: Global search, accessibility, backup/restore
 - ✅ **Phase 4**: AI drink recommendations, structured tasting profiles
-- ✅ **Phase 5**: PWA with Tailscale HTTPS
+- ✅ **Phase 5**: PWA with Railway HTTPS deployment
 - ✅ **Phase 6**: MCP Integration (Puppeteer, PDF Reader, SQLite, Skills)
 
 ### Phase 7: Sommelier-Grade Cellar Organisation (Planned)
@@ -1106,5 +1093,5 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 
 ---
 
-*Last updated: 5 January 2026*
-*Version: 2.2 (UX Polish + Zone Fix)*
+*Last updated: 6 January 2026*
+*Version: 3.0 (Railway + PostgreSQL Migration)*

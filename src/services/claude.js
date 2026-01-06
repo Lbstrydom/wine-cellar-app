@@ -8,6 +8,9 @@ import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from '
 import { LENS_CREDIBILITY, getSource as getSourceConfig } from '../config/unifiedSources.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
+import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
+import { sanitizeDishDescription, sanitizeWineList, sanitizeChatMessage } from './inputSanitizer.js';
+import { parseAndValidate, createFallback } from './responseValidator.js';
 
 /**
  * Add vintage year parameter to Vivino URLs for correct vintage-specific data.
@@ -119,28 +122,43 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
     'sparkling': 'Sparkling wines only'
   }[colour] || 'No colour preference - suggest what works best';
 
-  const { systemPrompt, userPrompt } = buildSommelierPrompts(dish, sourceDesc, colourDesc, wines, prioritySection);
+  // Sanitize inputs
+  const sanitizedDish = sanitizeDishDescription(dish);
+  const sanitizedWines = sanitizeWineList(wines);
+
+  const { systemPrompt, userPrompt } = buildSommelierPrompts(sanitizedDish, sourceDesc, colourDesc, sanitizedWines, prioritySection);
+
+  // Get model for task (allows environment override)
+  const modelId = getModelForTask('sommelier');
+  const maxTokens = Math.min(getMaxTokens(modelId), 1500);
 
   // Call Claude API with system prompt for security
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
-    max_tokens: 1500,
+    model: modelId,
+    max_tokens: maxTokens,
     system: systemPrompt,
     messages: [{ role: 'user', content: userPrompt }]
   });
 
-  // Parse response
+  // Parse and validate response
   const responseText = message.content[0].text;
-  let parsed;
+  const validated = parseAndValidate(responseText, 'sommelier');
 
-  try {
-    const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
-                      responseText.match(/```\s*([\s\S]*?)\s*```/);
-    const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
-    parsed = JSON.parse(jsonStr.trim());
-  } catch (_parseError) {
-    console.error('Failed to parse Claude response:', responseText);
-    throw new Error('Could not parse sommelier response');
+  let parsed;
+  if (validated.success) {
+    parsed = validated.data;
+  } else {
+    // Log validation errors but try to use the data anyway for backwards compatibility
+    console.warn('Sommelier response validation warnings:', validated.errors);
+    try {
+      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
+                        responseText.match(/```\s*([\s\S]*?)\s*```/);
+      const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
+      parsed = JSON.parse(jsonStr.trim());
+    } catch (_parseError) {
+      console.error('Failed to parse Claude response:', responseText);
+      return createFallback('sommelier', 'Could not parse sommelier response');
+    }
   }
 
   // Enrich recommendations with wine data including ID for clickable links
@@ -274,16 +292,24 @@ RULES:
 - Set confidence to "high", "medium", or "low" based on how much you had to infer
 - Be conservative - only include what you can reasonably determine`;
 
+  // Get model for task
+  const modelId = getModelForTask('parsing');
+
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: modelId,
     max_tokens: 1500,
     messages: [{ role: 'user', content: prompt }]
   });
 
   const responseText = message.content[0].text;
+  const validated = parseAndValidate(responseText, 'wineDetails');
 
+  if (validated.success) {
+    return validated.data;
+  }
+
+  // Fallback: try raw parsing
   try {
-    // Handle potential markdown code blocks
     const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
                       responseText.match(/```\s*([\s\S]*?)\s*```/);
     const jsonStr = jsonMatch ? jsonMatch[1] : responseText;
@@ -311,8 +337,11 @@ export async function parseWineFromImage(base64Image, mediaType) {
     throw new Error(`Invalid image type: ${mediaType}. Supported: ${validTypes.join(', ')}`);
   }
 
+  // Get model for task
+  const modelId = getModelForTask('parsing');
+
   const message = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: modelId,
     max_tokens: 1500,
     messages: [
       {
@@ -493,9 +522,10 @@ export async function fetchWineRatings(wine) {
     if (snippetPages.length > 0) {
       logger.info('Ratings', `Trying extraction from ${snippetPages.length} search snippets`);
       const snippetPrompt = buildSnippetExtractionPrompt(wineName, vintage, snippetPages);
+      const ratingsModel = getModelForTask('ratings');
 
       const snippetResponse = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: ratingsModel,
         max_tokens: 2000,
         messages: [{ role: 'user', content: snippetPrompt }]
       });
@@ -549,11 +579,12 @@ export async function fetchWineRatings(wine) {
 
   // Step 3: Ask Claude to extract ratings from page contents
   const parsePrompt = buildExtractionPrompt(wineName, vintage, validPages);
+  const ratingsModel = getModelForTask('ratings');
 
   logger.info('Ratings', 'Sending to Claude for extraction...');
 
   const parseResponse = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: ratingsModel,
     max_tokens: 2000,
     messages: [{ role: 'user', content: parsePrompt }]
   });
@@ -577,10 +608,11 @@ export async function fetchWineRatings(wine) {
   if (snippetsForExtraction.length > 0) {
     logger.info('Ratings', `Extracting from ${snippetsForExtraction.length} snippets...`);
     const snippetPrompt = buildSnippetExtractionPrompt(wineName, vintage, snippetsForExtraction);
+    const snippetModel = getModelForTask('ratings');
 
     try {
       const snippetResponse = await anthropic.messages.create({
-        model: 'claude-sonnet-4-5-20250929',
+        model: snippetModel,
         max_tokens: 1500,
         messages: [{ role: 'user', content: snippetPrompt }]
       });
@@ -941,11 +973,15 @@ export async function continueSommelierChat(db, followUp, context) {
     throw new Error('Claude API key not configured');
   }
 
+  // Sanitize follow-up input
+  const sanitizedFollowUp = sanitizeChatMessage(followUp);
+
   // Build conversation history for Claude
-  const messages = buildChatMessages(followUp, context);
+  const messages = buildChatMessages(sanitizedFollowUp, context);
+  const chatModel = getModelForTask('sommelier');
 
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: chatModel,
     max_tokens: 1500,
     system: buildSommelierSystemPrompt(),
     messages

@@ -2,118 +2,93 @@
 
 Personal wine cellar management with visual grid layout and AI-powered pairing suggestions.
 
+**Live at:** https://cellar.creathyst.com
+
 ## Features
 
 - **Visual cellar grid** - See all bottles in their physical locations (Fridge F1-F9, Cellar R1-R19)
 - **One-click drinking** - Tap a bottle, click "Drink", consumption logged automatically
 - **Reduce-now list** - Prioritised bottles to drink down (aging, overstock)
-- **Pairing suggestions** - Select dish characteristics, get matched bottles from your cellar
+- **AI Sommelier** - Claude-powered pairing suggestions for any dish
+- **Rating aggregation** - Fetch ratings from 50+ sources
+- **PWA Support** - Installable on any device, works offline
 - **Mobile-friendly** - Works on phone, tablet, laptop
 
-## Quick Start (Local Testing)
+## Tech Stack
+
+- **Backend**: Node.js + Express
+- **Database**: PostgreSQL (Supabase) / SQLite (local)
+- **AI**: Claude API (Anthropic)
+- **Deployment**: Railway (auto-deploy from GitHub)
+- **Domain**: Cloudflare DNS
+
+## Quick Start (Local Development)
 
 ```bash
 # Install dependencies
 npm install
 
-# Run migration (first time only, or to reset)
-cd data && python3 migrate.py && cd ..
-
-# Start server
-npm start
+# Run locally with SQLite
+npm run dev
 ```
 
 Open http://localhost:3000
 
----
+## Deployment
 
-## Deployment on Synology DS223
-
-### Prerequisites
-
-1. **Tailscale installed** on Synology, phone, and laptop (you've done this ✓)
-2. **Container Manager** (Docker) installed on Synology
-   - Open Package Center → search "Container Manager" → Install
-
-### Step 1: Copy files to Synology
-
-Option A - Via File Station:
-1. Open File Station on Synology
-2. Navigate to a shared folder (e.g., `/docker` or `/volume1/docker`)
-3. Create folder `wine-cellar`
-4. Upload all files from this directory
-
-Option B - Via SCP (from your PC):
-```bash
-scp -r wine-cellar-app/* your-user@synology-ip:/volume1/docker/wine-cellar/
-```
-
-### Step 2: Build and run with Docker Compose
-
-SSH into Synology:
-```bash
-ssh your-user@synology-ip
-cd /volume1/docker/wine-cellar
-sudo docker-compose up -d --build
-```
-
-Or via Container Manager UI:
-1. Open Container Manager
-2. Go to Project → Create
-3. Set path to `/volume1/docker/wine-cellar`
-4. It will detect `docker-compose.yml` and build
-
-### Step 3: Import your wine data
-
-First time only - need to run the migration script:
+The app auto-deploys to Railway when you push to the `main` branch.
 
 ```bash
-# SSH into Synology
-ssh your-user@synology-ip
-
-# Copy your data files to the container's data folder
-cp /path/to/inventory_layout.xlsx /volume1/docker/wine-cellar/data/
-cp /path/to/reduce_now_priority.csv /volume1/docker/wine-cellar/data/
-cp /path/to/pairing_matrix.csv /volume1/docker/wine-cellar/data/
-
-# Run migration inside container
-docker exec -it wine-cellar sh -c "cd /app/data && python3 migrate.py"
+# Deploy (just push to main)
+git add -A && git commit -m "your message" && git push
 ```
 
-### Step 4: Access the app
+Railway will:
+1. Detect the push
+2. Build the Docker image
+3. Deploy with environment variables
+4. Connect to Supabase PostgreSQL
 
-From any device with Tailscale:
-```
-http://[synology-tailscale-ip]:3000
-```
+### Environment Variables
 
-Find your Synology's Tailscale IP:
-- Tailscale admin console: https://login.tailscale.com/admin/machines
-- Or on Synology: `tailscale ip`
+Set in Railway dashboard:
 
-Bookmark this URL on your phone for quick access.
+| Variable | Description |
+|----------|-------------|
+| `DATABASE_URL` | Supabase PostgreSQL connection string |
+| `ANTHROPIC_API_KEY` | Claude API key |
+| `GOOGLE_SEARCH_API_KEY` | Google Search API key |
+| `GOOGLE_SEARCH_ENGINE_ID` | Google CSE ID |
+| `BRIGHTDATA_API_KEY` | BrightData API key |
+| `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
+| `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |
 
----
+### Custom Domain
 
-## File Structure
+The app uses Cloudflare for DNS:
+- Domain: `cellar.creathyst.com`
+- CNAME: `qxi4wlbz.up.railway.app`
+
+## Project Structure
 
 ```
 wine-cellar-app/
-├── data/
-│   ├── schema.sql          # Database schema
-│   ├── migrate.py          # Data import script
-│   └── cellar.db           # SQLite database (created on first run)
-├── public/
-│   └── index.html          # Frontend UI
 ├── src/
-│   └── server.js           # Express API server
+│   ├── server.js           # Express app entry point
+│   ├── routes/             # API endpoints
+│   ├── services/           # Business logic
+│   ├── config/             # Configuration
+│   └── db/                 # Database abstraction
+├── public/
+│   ├── index.html          # Frontend UI
+│   ├── css/                # Styles
+│   └── js/                 # Frontend modules
+├── data/
+│   └── migrations/         # Database migrations
+├── docs/                   # Documentation
 ├── Dockerfile
-├── docker-compose.yml
-├── package.json
-└── README.md
+└── docker-compose.yml      # Local development
 ```
-
----
 
 ## API Reference
 
@@ -139,43 +114,28 @@ wine-cellar-app/
 
 ### Pairing
 - `GET /api/pairing-rules` - View pairing matrix
-- `POST /api/pairing/suggest` - Get pairing suggestions for food signals
+- `POST /api/pairing/natural` - AI pairing suggestions
 
----
+## Documentation
 
-## Backup
-
-The database is a single SQLite file. Backup options:
-
-1. **Synology Hyper Backup** - Include `/volume1/docker/wine-cellar/data/`
-2. **Manual copy** - `cp data/cellar.db data/cellar-backup-$(date +%Y%m%d).db`
-3. **Cron job** - Add to Synology Task Scheduler
-
----
+- [CLAUDE.md](CLAUDE.md) - AI assistant coding guidelines
+- [docs/STATUS.md](docs/STATUS.md) - Current status and features
+- [docs/ROADMAP.md](docs/ROADMAP.md) - Development roadmap
 
 ## Troubleshooting
 
-**Container won't start:**
+**View logs:**
 ```bash
-docker logs wine-cellar
+railway logs
 ```
 
-**Database locked:**
+**Local development with PostgreSQL:**
 ```bash
-docker restart wine-cellar
+DATABASE_URL="your-supabase-url" npm run dev
 ```
 
-**Reset everything:**
+**Reset local SQLite:**
 ```bash
-docker-compose down
 rm data/cellar.db
-docker-compose up -d --build
-# Re-run migration
-```
-
-**Update the app:**
-```bash
-# Pull latest code, then:
-docker-compose down
-docker-compose up -d --build
+npm run dev  # Creates fresh database
 ```

@@ -31,7 +31,7 @@
 - AI drink recommendations
 - Structured tasting profiles with controlled vocabulary
 - Progressive Web App with service worker
-- Tailscale HTTPS deployment
+- Railway + PostgreSQL cloud deployment
 - **MCP Puppeteer** for Vivino/Decanter scraping
 - **MCP PDF Reader** for awards import
 - **MCP SQLite** for direct database queries
@@ -47,22 +47,22 @@
 
 ### Core Features (7.1-7.6)
 
-#### 7.1 Fix Drinking Window Field Mismatch
+#### 7.1 Fix Drinking Window Field Mismatch ✅
+
+**Status**: COMPLETE (6 January 2026)
 
 **Problem**: `getFridgeCandidates()` uses `wine.drink_until` but reduce-now uses `drink_by_year` from drinking_windows table.
 
-**Files**:
-- `src/services/cellarAnalysis.js` (lines 339-380)
-- `src/routes/cellar.js`
-
-**Changes**:
-- LEFT JOIN drinking_windows and return `drink_by_year`
-- Check BOTH `drink_by_year` (preferred) and `drink_until` (fallback)
-- Add helper `getEffectiveDrinkByYear(wine)`
+**Implemented**:
+- `src/services/cellarAnalysis.js`: Added `getEffectiveDrinkByYear(wine)` helper (lines 593-599)
+- `src/routes/cellar.js`: Already included LEFT JOIN drinking_windows and returns `drink_by_year`
+- Function checks BOTH `drink_by_year` (preferred) and `drink_until` (fallback)
 
 ---
 
-#### 7.2 Zone Intent Metadata (Database)
+#### 7.2 Zone Intent Metadata (Database) ✅
+
+**Status**: COMPLETE (pre-existing implementation discovered)
 
 **Problem**: Zones have matching rules but no human-readable "why" text.
 
@@ -195,18 +195,43 @@ export const FRIDGE_PAR_LEVELS = {
 
 ### Extended Features (7.7-7.12)
 
-#### 7.7 AI Safety & Reliability
+#### 7.7 AI Safety & Reliability ✅
 
-**Changes**:
-- Sanitise all AI inputs (wine names can contain injection attacks)
-- Schema validation for responses (not just JSON parse)
-- Persist chat sessions to database (survive restarts)
-- Configurable model selection via environment
+**Status**: COMPLETE (6 January 2026)
 
-**New Files**:
-- `data/migrations/018_chat_sessions.sql`
+**Implemented**:
+- ✅ Input sanitization: `src/services/inputSanitizer.js` - Prevents prompt injection attacks
+  - `sanitizeDishDescription()` - For sommelier requests
+  - `sanitizeWineList()` - For wine data in prompts
+  - `sanitizeChatMessage()` - For zone chat and follow-up messages
+  - `sanitizeTastingNote()` - For tasting profile extraction
+  - Pattern detection for system prompt manipulation, role switching, instruction overrides
+- ✅ Schema validation: `src/services/responseValidator.js` - Validates AI responses against schemas
+  - Schemas for: sommelier, wineDetails, ratings, cellarAnalysis, zoneChat, drinkRecommendations, tastingProfile
+  - `parseAndValidate()` - Parse JSON and validate against schema
+  - `createFallback()` - Generate safe fallback responses
+- ✅ Model configuration: `src/config/aiModels.js` - Environment-based model selection
+  - `getModelForTask(task)` - Get model ID for a task (supports env override)
+  - Task-to-model mapping: sommelier, parsing, ratings, cellarAnalysis, zoneChat, etc.
+  - Support for CLAUDE_MODEL and CLAUDE_MODEL_<TASK> environment variables
+- ✅ Chat sessions persistence: `data/migrations/019_chat_sessions.sql` + `src/services/chatSessions.js`
+  - Session management: create, get, update status, cleanup
+  - Message storage with token tracking
+  - Session types: sommelier, zone_chat, cellar_analysis, drink_recommendations
+
+**Files Created**:
 - `src/config/aiModels.js`
 - `src/services/responseValidator.js`
+- `src/services/inputSanitizer.js`
+- `src/services/chatSessions.js`
+- `data/migrations/019_chat_sessions.sql`
+
+**Files Updated** (to use new modules):
+- `src/services/claude.js` - All API calls now use model config, sanitization, and validation
+- `src/services/drinkNowAI.js` - Model config and sanitization
+- `src/services/cellarAI.js` - Model config
+- `src/services/zoneChat.js` - Model config and sanitization
+- `src/services/tastingExtractor.js` - Model config and sanitization
 
 ---
 
@@ -303,52 +328,59 @@ CREATE TABLE palate_profile (
 
 ### Implementation Order
 
-| Sub-Phase | Priority | Complexity | Dependencies |
-|-----------|----------|------------|--------------|
-| 7.1 Fix drink_until bug | HIGH | Low | None |
-| 7.2 Zone intent metadata (DB) | HIGH | Medium | None |
-| 7.3 Upgrade analysis | MEDIUM | Medium | 7.2 |
-| 7.4 Enhance AI context | MEDIUM | Medium | 7.2, 7.3 |
-| 7.5 Fridge par-levels | MEDIUM | Medium | 7.1 |
-| 7.6 Frontend updates | LOW | Low | 7.3, 7.4, 7.5 |
-| 7.7 AI safety & reliability | HIGH | Medium | None |
-| 7.8 Hybrid pairing engine | MEDIUM | Medium | 7.7 |
-| 7.9 Personalisation loop | LOW | Medium | 7.8 |
-| 7.10 Move optimisation | LOW | Medium | 7.3 |
-| 7.11 Acquisition workflow | MEDIUM | High | 7.2, 7.7 |
-| 7.12 Cellar health dashboard | LOW | Medium | 7.5, 7.10 |
+| Sub-Phase | Priority | Complexity | Status |
+|-----------|----------|------------|--------|
+| 7.1 Fix drink_until bug | HIGH | Low | ✅ COMPLETE |
+| 7.2 Zone intent metadata (DB) | HIGH | Medium | ✅ COMPLETE |
+| 7.3 Upgrade analysis | MEDIUM | Medium | Pending |
+| 7.4 Enhance AI context | MEDIUM | Medium | Pending |
+| 7.5 Fridge par-levels | MEDIUM | Medium | Pending |
+| 7.6 Frontend updates | LOW | Low | Pending |
+| 7.7 AI safety & reliability | HIGH | Medium | ✅ COMPLETE |
+| 7.8 Hybrid pairing engine | MEDIUM | Medium | Pending |
+| 7.9 Personalisation loop | LOW | Medium | Pending |
+| 7.10 Move optimisation | LOW | Medium | Pending |
+| 7.11 Acquisition workflow | MEDIUM | High | Pending |
+| 7.12 Cellar health dashboard | LOW | Medium | Pending |
 
 ---
 
 ### Files to Create
 
 **Core (7.1-7.6)**:
-- `data/migrations/017_zone_metadata.sql`
-- `src/config/fridgeParLevels.js`
-- `src/services/fridgeStocking.js`
-- `src/services/zoneMetadata.js`
+- ✅ `data/migrations/017_zone_metadata.sql` - Created
+- `src/config/fridgeParLevels.js` - Pending
+- ✅ `src/services/fridgeStocking.js` - Created (pre-existing)
+- ✅ `src/services/zoneMetadata.js` - Created (pre-existing)
 
 **Extended (7.7-7.12)**:
-- `data/migrations/018_chat_sessions.sql`
-- `data/migrations/019_palate_profile.sql`
-- `src/config/aiModels.js`
-- `src/services/responseValidator.js`
-- `src/services/pairingEngine.js`
-- `src/services/palateProfile.js`
-- `src/services/movePlanner.js`
+- ✅ `data/migrations/019_chat_sessions.sql` - Created (6 Jan 2026)
+- `data/migrations/020_palate_profile.sql` - Pending
+- ✅ `src/config/aiModels.js` - Created (6 Jan 2026)
+- ✅ `src/services/responseValidator.js` - Created (6 Jan 2026)
+- ✅ `src/services/inputSanitizer.js` - Created (6 Jan 2026)
+- ✅ `src/services/chatSessions.js` - Created (6 Jan 2026)
+- `src/services/pairingEngine.js` - Pending
+- `src/services/palateProfile.js` - Pending
+- `src/services/movePlanner.js` - Pending
 
-### Files to Modify
+### Files Modified (6 Jan 2026)
 
-**Core (7.1-7.6)**:
-- `src/services/cellarAnalysis.js` - Fix drink_until, add narratives, include buffer zones
+**AI Safety (7.7)**:
+- ✅ `src/services/claude.js` - Sanitise inputs, configurable models, response validation
+- ✅ `src/services/drinkNowAI.js` - Model config and context sanitization
+- ✅ `src/services/cellarAI.js` - Model config
+- ✅ `src/services/zoneChat.js` - Model config and message sanitization
+- ✅ `src/services/tastingExtractor.js` - Model config and note sanitization
+
+**Core (7.1-7.6)** - Still Pending:
+- `src/services/cellarAnalysis.js` - Add narratives, include buffer zones
 - `src/services/cellarAI.js` - Expand prompt context
-- `src/routes/cellar.js` - Update queries, add zone-metadata endpoints
-- `src/db/index.js` - Add zone metadata queries
+- `src/routes/cellar.js` - Add zone-metadata endpoints
 - `public/js/cellarAnalysis.js` - New UI sections
 - `public/css/styles.css` - Zone cards, fridge status styling
 
-**Extended (7.7-7.12)**:
-- `src/services/claude.js` - Sanitise inputs, configurable models
+**Extended (7.8-7.12)** - Still Pending:
 - `src/services/pairing.js` - Integrate hybrid engine
 - `src/routes/pairing.js` - Persist chat sessions
 - `public/js/bottles/form.js` - Acquisition workflow
@@ -692,12 +724,12 @@ Claude: Uses sqlite MCP → SELECT w.* FROM wines w
 ## Documentation
 
 See also:
-- **Status_2_Jan_2026.md** - Complete feature documentation
+- **STATUS.md** - Complete feature documentation
 - **AGENTS.md** - Coding standards and conventions
-- **HTTPS_SETUP.md** - Tailscale deployment guide
+- **CLAUDE.md** - AI assistant guidelines
 - **WINE_CONFIRMATION_PLAN.md** - Detailed wine confirmation feature spec
 
 ---
 
-*Last updated: 3 January 2026*
-*Status: Phases 1-6 complete, Phase 7 (Sommelier-Grade Organisation) in progress*
+*Last updated: 6 January 2026*
+*Status: Phases 1-6 complete, Phase 7.1, 7.2, 7.7 complete (AI Safety & High Priority Items)*

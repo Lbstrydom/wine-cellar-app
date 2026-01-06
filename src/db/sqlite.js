@@ -10,7 +10,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Use DATA_DIR env var for Fly.io, fallback to local data directory
+// Use DATA_DIR env var if set, fallback to local data directory
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
 const DB_PATH = path.join(DATA_DIR, 'cellar.db');
 const AWARDS_DB_PATH = path.join(DATA_DIR, 'awards.db');
@@ -126,7 +126,7 @@ initSchema();
  * @private
  */
 function runMigrations() {
-  // Try DATA_DIR first (Fly.io), fallback to local
+  // Try DATA_DIR first, fallback to local
   let migrationsDir = path.join(DATA_DIR, 'migrations');
   if (!fs.existsSync(migrationsDir)) {
     migrationsDir = path.join(__dirname, '..', '..', 'data', 'migrations');

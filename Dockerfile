@@ -22,10 +22,10 @@ COPY public/ ./public/
 COPY data/schema.sql ./data/
 COPY data/migrations/ ./data/migrations/
 
-# Create data directory (will be overridden by volume mount on Fly.io)
+# Create data directory (for local SQLite development)
 RUN mkdir -p /app/data
 
-# Copy startup script for Fly.io and fix line endings
+# Copy startup script and fix line endings
 COPY scripts/start.sh ./scripts/
 RUN dos2unix ./scripts/start.sh && chmod +x ./scripts/start.sh
 
@@ -36,5 +36,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/api/stats || exit 1
 
-# Start the application (use script for Fly.io compatibility)
+# Start the application
 CMD ["./scripts/start.sh"]

@@ -7,6 +7,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../config/cellarZones.js';
+import { getModelForTask } from '../config/aiModels.js';
+import { sanitizeChatMessage } from './inputSanitizer.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -69,11 +71,13 @@ For reclassification suggestions, include a JSON block:
     messages.push(...context.history);
   }
 
-  // Add current message
-  messages.push({ role: 'user', content: message });
+  // Sanitize and add current message
+  const sanitizedMessage = sanitizeChatMessage(message);
+  messages.push({ role: 'user', content: sanitizedMessage });
 
+  const modelId = getModelForTask('zoneChat');
   const response = await anthropic.messages.create({
-    model: 'claude-sonnet-4-5-20250929',
+    model: modelId,
     max_tokens: 2000,
     system: systemPrompt,
     messages

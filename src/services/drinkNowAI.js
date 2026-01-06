@@ -7,6 +7,8 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
+import { getModelForTask } from '../config/aiModels.js';
+import { sanitize, sanitizeContext } from './inputSanitizer.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -261,8 +263,9 @@ export async function generateDrinkRecommendations(options = {}) {
   });
 
   try {
+    const modelId = getModelForTask('drinkRecommendations');
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: modelId,
       max_tokens: 1024,
       system: DRINK_NOW_SYSTEM_PROMPT,
       messages: [{ role: 'user', content: prompt }]

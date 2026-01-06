@@ -1,5 +1,5 @@
 -- Migration 012: Performance optimization indexes
--- These indexes address slow queries identified on Synology NAS deployment
+-- These indexes address slow query patterns
 
 -- Critical: Index for rating source lookups
 -- Used in: src/routes/ratings.js filtering by source

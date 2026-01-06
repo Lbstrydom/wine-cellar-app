@@ -1,24 +1,22 @@
-# Wine Cellar App - Docker Compose
-# 
-# Deployment on Synology DS223:
-# 1. Copy this entire wine-cellar-app folder to your Synology
-# 2. SSH into Synology or use Container Manager
-# 3. Run: docker-compose up -d
+# Wine Cellar App - Docker Compose (Local Development)
 #
-# The database persists in the ./data volume
+# This file is for LOCAL DEVELOPMENT ONLY.
+# Production is deployed to Railway (auto-deploys from GitHub).
+#
+# Usage:
+#   docker-compose up -d
+#   Open http://localhost:3000
 
 services:
   wine-cellar:
     build: .
-    container_name: wine-cellar
-    restart: unless-stopped
+    container_name: wine-cellar-dev
     ports:
       - "3000:3000"
     volumes:
-      # Persist database outside container
       - ./data:/app/data
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PORT=3000
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GOOGLE_SEARCH_API_KEY=${GOOGLE_SEARCH_API_KEY}
@@ -26,16 +24,8 @@ services:
       - BRIGHTDATA_API_KEY=${BRIGHTDATA_API_KEY}
       - BRIGHTDATA_SERP_ZONE=${BRIGHTDATA_SERP_ZONE}
       - BRIGHTDATA_WEB_ZONE=${BRIGHTDATA_WEB_ZONE}
-    # Explicit DNS servers to fix resolution issues on Synology
-    dns:
-      - 8.8.8.8
-      - 8.8.4.4
-      - 1.1.1.1
-    dns_opt:
-      - use-vc
-      - no-tld-query
-    extra_hosts:
-      - "api.anthropic.com:160.79.104.10"
+      # Optionally connect to PostgreSQL instead of SQLite:
+      # - DATABASE_URL=${DATABASE_URL}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
       interval: 30s

@@ -1,20 +1,14 @@
 #!/bin/sh
 # Startup script for Wine Cellar App
-# Handles both local Docker and Fly.io deployments
+# Handles local Docker and Railway deployments
 
 set -e
 
-# Determine data directory
-# Fly.io mounts volume at /data, local Docker uses /app/data
-if [ -d "/data" ] && [ -w "/data" ]; then
-    export DATA_DIR="/data"
-    echo "Using Fly.io volume at /data"
-else
-    export DATA_DIR="/app/data"
-    echo "Using local data directory at /app/data"
-fi
+# Set data directory for SQLite (only used if DATABASE_URL is not set)
+export DATA_DIR="/app/data"
+echo "Data directory: $DATA_DIR"
 
-# Ensure schema and migrations are available in data directory
+# Ensure schema and migrations are available
 if [ ! -f "$DATA_DIR/schema.sql" ]; then
     cp /app/data/schema.sql "$DATA_DIR/" 2>/dev/null || true
 fi

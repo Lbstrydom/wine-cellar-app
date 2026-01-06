@@ -49,7 +49,7 @@ async function main() {
   // Check SQLite databases exist
   if (!fs.existsSync(CELLAR_DB)) {
     console.error(`Error: SQLite database not found at ${CELLAR_DB}`);
-    console.error('Download it from Synology first using: .\\scripts\\sync-db.ps1 -Download');
+    console.error('Ensure you have a local SQLite database in the data/ directory');
     process.exit(1);
   }
 
