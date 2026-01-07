@@ -6,6 +6,7 @@
 import { askSommelier, getPairingSuggestions, sommelierChat } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { showWineModalFromList } from './modals.js';
+import { renderRecommendation, displayRecommendations } from './pairing.js';
 
 const selectedSignals = new Set();
 
@@ -71,26 +72,62 @@ function renderSommelierResponse(data) {
     html += `<div class="colour-suggestion">${data.colour_suggestion}</div>`;
   }
 
+
   if (!data.recommendations || data.recommendations.length === 0) {
     html += `<div class="no-match"><p>No suitable wines found.</p></div>`;
   } else {
-    data.recommendations.forEach(rec => {
-      const priorityClass = rec.is_priority ? 'priority' : '';
-      const clickableClass = rec.wine_id ? 'clickable' : '';
-
-      html += `
-        <div class="recommendation ${priorityClass} ${clickableClass}" data-wine-id="${rec.wine_id || ''}" data-wine-name="${rec.wine_name}" data-vintage="${rec.vintage || ''}" data-style="${rec.style || ''}" data-colour="${rec.colour || ''}" data-locations="${rec.location}" data-bottle-count="${rec.bottle_count}">
-          <div class="recommendation-header">
-            <h4>#${rec.rank} ${rec.wine_name} ${rec.vintage || 'NV'}</h4>
-            ${rec.is_priority ? '<span class="priority-badge">Drink Soon</span>' : ''}
-          </div>
-          <div class="location">${rec.location} (${rec.bottle_count} bottle${rec.bottle_count !== 1 ? 's' : ''})</div>
-          <p class="why">${rec.why}</p>
-          ${rec.food_tip ? `<div class="food-tip">${rec.food_tip}</div>` : ''}
-        </div>
-      `;
+    // Use new pairing.js card rendering with Choose button
+    html += '<div class="recommendation-cards">';
+    data.recommendations.forEach((rec, idx) => {
+      const card = renderRecommendation(rec, idx + 1);
+      html += card.outerHTML;
     });
+    html += '</div>';
+    // Store sessionId for feedback/choice
+    if (data.sessionId) {
+      displayRecommendations(data);
+    }
   }
+// Feedback modal logic
+document.addEventListener('DOMContentLoaded', () => {
+  const feedbackModal = document.getElementById('pairing-feedback-modal');
+  const cancelBtn = document.getElementById('cancel-feedback');
+  if (cancelBtn) {
+    cancelBtn.onclick = () => {
+      feedbackModal.style.display = 'none';
+    };
+  }
+  const form = document.getElementById('pairing-feedback-form');
+  if (form) {
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const modal = feedbackModal;
+      const sessionId = modal.dataset.sessionId;
+      const rating = document.getElementById('feedback-rating').value;
+      const notes = document.getElementById('feedback-notes').value;
+      if (!sessionId || !rating) {
+        showToast('Please select a rating.');
+        return;
+      }
+      try {
+        await fetch(`/api/pairing/sessions/${sessionId}/feedback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rating: Number(rating), notes })
+        });
+        modal.style.display = 'none';
+        showToast('Thank you for your feedback!');
+        form.reset();
+      } catch (err) {
+        if (err instanceof Error) {
+          showToast('Error submitting feedback: ' + err.message);
+        } else {
+          showToast('Error submitting feedback.');
+        }
+      }
+    };
+  }
+});
 
   html += '</div>';
 
@@ -266,7 +303,7 @@ function renderChatRecommendations(response) {
             <h4>#${rec.rank} ${escapeHtml(rec.wine_name)} ${rec.vintage || 'NV'}</h4>
             ${rec.is_priority ? '<span class="priority-badge">Drink Soon</span>' : ''}
           </div>
-          <div class="location">${rec.location || 'Unknown'} (${rec.bottle_count || 0} bottle${rec.bottle_count !== 1 ? 's' : ''})</div>
+          <div class="location">${rec.location ? rec.location : 'Unknown'} (${rec.bottle_count ? rec.bottle_count : 0} bottle${(rec.bottle_count ? rec.bottle_count : 0) === 1 ? '' : 's'})</div>
           <p class="why">${escapeHtml(rec.why)}</p>
           ${rec.food_tip ? `<div class="food-tip">${escapeHtml(rec.food_tip)}</div>` : ''}
         </div>

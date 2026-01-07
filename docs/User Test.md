@@ -1,5 +1,6 @@
 Observed issues:
 1. I think we need to capture the find pairing dialogues, this is a gold mine of informaiton about the user's preferences, taste profile, etc and also we should make it intuitive so that the user can give feedback on which option they chose and how they found the pairing, maybe jsut with an easy 1 to 5 scale working in 0.1 increments and a slider or something - what do you think, how can we build this wihtout complicating things but still extracting valuable data and feeding it back into our user profile. On this subject, are we actively building a user profile, is that implicit in the database or should we slightly expand that as well to improve our AI recomendations and the user cellar manager and use experience?
+2. on the cellar analyis suggested moves i tmade a mistake once i said movve 1 with the same name it suggested moving it to a new cell, and then the next bottle it move to the same cell thereby i lost a bottle so we need a quality check to prvent bottles losing when moves are suggested - this should be a function
 
 
 

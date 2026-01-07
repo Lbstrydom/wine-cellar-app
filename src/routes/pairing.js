@@ -335,3 +335,109 @@ async function getAllWinesWithSlots() {
 }
 
 export default router;
+
+// ================= Pairing Feedback & User Profile Endpoints =================
+import {
+  recordWineChoice,
+  recordFeedback,
+  getPendingFeedbackSessions,
+  getPairingHistory,
+  getPairingStats,
+  FAILURE_REASONS
+} from '../services/pairingSession.js';
+
+/**
+ * POST /api/pairing/sessions/:id/choose
+ * Record which wine the user chose from recommendations.
+ */
+router.post('/sessions/:id/choose', async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id, 10);
+    const { wineId, rank } = req.body;
+    if (!wineId || !rank) {
+      return res.status(400).json({ error: 'wineId and rank are required' });
+    }
+    await recordWineChoice(sessionId, wineId, rank);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error recording wine choice:', error);
+    res.status(500).json({ error: 'Failed to record wine choice' });
+  }
+});
+
+/**
+ * POST /api/pairing/sessions/:id/feedback
+ * Record user feedback on a pairing.
+ */
+router.post('/sessions/:id/feedback', async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id, 10);
+    const { pairingFitRating, wouldPairAgain, failureReasons, notes } = req.body;
+    if (pairingFitRating === undefined || wouldPairAgain === undefined) {
+      return res.status(400).json({ error: 'pairingFitRating and wouldPairAgain are required' });
+    }
+    await recordFeedback(sessionId, {
+      pairingFitRating,
+      wouldPairAgain,
+      failureReasons,
+      notes
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error recording feedback:', error);
+    res.status(500).json({ error: error.message || 'Failed to record feedback' });
+  }
+});
+
+/**
+ * GET /api/pairing/sessions/pending-feedback
+ * Get sessions that need feedback.
+ */
+router.get('/sessions/pending-feedback', async (req, res) => {
+  try {
+    const sessions = await getPendingFeedbackSessions();
+    res.json({ sessions });
+  } catch (error) {
+    console.error('Error fetching pending sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch pending sessions' });
+  }
+});
+
+/**
+ * GET /api/pairing/history
+ * Get pairing history with optional filters.
+ */
+router.get('/history', async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit, 10) || 20;
+    const offset = parseInt(req.query.offset, 10) || 0;
+    const feedbackOnly = req.query.feedbackOnly === 'true';
+    const history = await getPairingHistory('default', { limit, offset, feedbackOnly });
+    res.json({ history });
+  } catch (error) {
+    console.error('Error fetching pairing history:', error);
+    res.status(500).json({ error: 'Failed to fetch pairing history' });
+  }
+});
+
+/**
+ * GET /api/pairing/stats
+ * Get aggregate pairing statistics.
+ */
+router.get('/stats', async (req, res) => {
+  try {
+    const stats = await getPairingStats();
+    res.json(stats);
+  } catch (error) {
+    console.error('Error fetching pairing stats:', error);
+    res.status(500).json({ error: 'Failed to fetch pairing stats' });
+  }
+});
+
+/**
+ * GET /api/pairing/failure-reasons
+ * Get valid failure reason vocabulary.
+ */
+router.get('/failure-reasons', (req, res) => {
+  res.json({ reasons: FAILURE_REASONS });
+});

@@ -337,6 +337,36 @@
     <div class="pairing-results" id="pairing-results">
       <p style="color: var(--text-muted);">Select dish characteristics above</p>
     </div>
+
+    <!-- Pairing Feedback Modal -->
+    <div class="modal-overlay" id="pairing-feedback-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="pairing-feedback-title">
+      <div class="modal" style="max-width: 400px;">
+        <h2 id="pairing-feedback-title">Pairing Feedback</h2>
+        <form id="pairing-feedback-form">
+          <div class="form-group">
+            <label for="feedback-rating">How well did this pairing work?</label>
+            <select id="feedback-rating" name="rating" required>
+              <option value="">Select...</option>
+              <option value="5">Perfect</option>
+              <option value="4">Very Good</option>
+              <option value="3">Good</option>
+              <option value="2">Okay</option>
+              <option value="1">Poor</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="feedback-notes">Notes (optional)</label>
+            <textarea id="feedback-notes" name="notes" rows="3" maxlength="300" placeholder="What worked, what didn't, etc."></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="submit" class="btn btn-primary">Submit Feedback</button>
+            <button type="button" class="btn btn-secondary" id="cancel-feedback">Cancel</button>
+          </div>
+        </form>
+      </div>
+    </div>
+    </div>
+
   </div>
 
   <!-- Settings View -->
@@ -715,6 +745,9 @@
       </p>
     </div>
   </div>
+
+  <!-- Scripts -->
+  <script type="module" src="/js/pairing.js"></script>
   </main>
 
   <!-- Wine Detail Modal -->

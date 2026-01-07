@@ -237,7 +237,29 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
     initialResponse: initialResponseCopy
   };
 
-  return parsed;
+  // --- Pairing Feedback: Save session and return sessionId ---
+  // Import here to avoid circular dependency at top
+  const { createPairingSession } = await import('./pairingSession.js');
+  const sessionId = await createPairingSession({
+    dish,
+    source,
+    colour,
+    foodSignals: parsed.signals || [],
+    dishAnalysis: parsed.dish_analysis || '',
+    recommendations: (parsed.recommendations || []).map((rec, idx) => ({
+      rank: rec.rank || idx + 1,
+      wine_id: rec.wine_id,
+      wine_name: rec.wine_name,
+      vintage: rec.vintage,
+      why: rec.why,
+      is_priority: rec.is_priority
+    }))
+  });
+
+  return {
+    ...parsed,
+    sessionId
+  };
 }
 
 /**
