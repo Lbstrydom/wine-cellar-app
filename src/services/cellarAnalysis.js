@@ -369,9 +369,12 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
   const allocatedTargets = new Set();
 
   // Sort by confidence - high confidence moves first
+  // Note: Use ?? instead of || because confOrder['high'] = 0 and 0 || 2 = 2 (falsy!)
   const sortedMisplaced = [...misplacedWines].sort((a, b) => {
     const confOrder = { high: 0, medium: 1, low: 2 };
-    return (confOrder[a.confidence] || 2) - (confOrder[b.confidence] || 2);
+    const aConf = confOrder[a.confidence] ?? 2;
+    const bConf = confOrder[b.confidence] ?? 2;
+    return aConf - bConf;
   });
 
   for (const wine of sortedMisplaced) {
