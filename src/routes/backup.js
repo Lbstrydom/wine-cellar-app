@@ -7,8 +7,17 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { stringAgg } from '../db/helpers.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
+
+// Rate limiter for backup/export operations (5 per hour to prevent data scraping)
+const backupRateLimiter = createRateLimiter({
+  maxRequests: 5,
+  windowMs: 60 * 60 * 1000, // 1 hour
+  message: 'Too many backup requests. Please wait before exporting again.'
+});
 
 /**
  * Safely get count from a table that might not exist.
@@ -19,7 +28,9 @@ async function safeCount(sql) {
   try {
     const result = await db.prepare(sql).get();
     return result?.count || 0;
-  } catch {
+  } catch (err) {
+    // Table might not exist in some environments - log but don't fail
+    logger.debug('Backup', `safeCount skipped (table may not exist): ${err.message}`);
     return 0;
   }
 }
@@ -31,8 +42,9 @@ async function safeCount(sql) {
 async function safeDelete(sql) {
   try {
     await db.prepare(sql).run();
-  } catch {
-    // Table doesn't exist, ignore
+  } catch (err) {
+    // Table might not exist - log but don't fail import
+    logger.debug('Backup', `safeDelete skipped (table may not exist): ${err.message}`);
   }
 }
 
@@ -58,9 +70,10 @@ router.get('/info', async (req, res) => {
 
 /**
  * Full JSON backup - all data.
+ * Rate limited to prevent abuse.
  * @route GET /api/backup/export/json
  */
-router.get('/export/json', async (req, res) => {
+router.get('/export/json', backupRateLimiter, async (req, res) => {
   try {
     const backup = {
       version: '1.0',
@@ -90,9 +103,10 @@ router.get('/export/json', async (req, res) => {
 
 /**
  * CSV export - wine list with ratings.
+ * Rate limited to prevent abuse.
  * @route GET /api/backup/export/csv
  */
-router.get('/export/csv', async (req, res) => {
+router.get('/export/csv', backupRateLimiter, async (req, res) => {
   try {
     const wines = await db.prepare(`
       SELECT
@@ -344,7 +358,9 @@ router.post('/import', async (req, res) => {
 async function safeQuery(sql) {
   try {
     return await db.prepare(sql).all();
-  } catch {
+  } catch (err) {
+    // Table might not exist in some environments - log but don't fail
+    logger.debug('Backup', `safeQuery skipped (table may not exist): ${err.message}`);
     return [];
   }
 }
@@ -358,7 +374,7 @@ function escapeCsvField(value) {
   if (value === null || value === undefined) return '';
   const str = String(value);
   if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-    return `"${str.replace(/"/g, '""')}"`;
+    return `"${str.replaceAll('"', '""')}"`;
   }
   return str;
 }

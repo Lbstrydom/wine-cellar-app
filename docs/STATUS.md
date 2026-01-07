@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 6 January 2026
+## 7 January 2026
 
 ---
 
@@ -571,6 +571,52 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 
 ---
 
+### 16. Sommelier-Grade Cellar Organisation ✨ NEW (Phase 7)
+
+**Zone Intent Metadata**:
+- AI-suggested zone descriptions (purpose, style range, serving temps)
+- User-editable with confirmation timestamps
+- Pairing hints and example wines per zone
+- Family groupings for related zones
+- Service: `src/services/zoneMetadata.js`
+
+**Zone Chat**:
+- Discuss wine classifications with AI sommelier
+- Challenge and reassign wines to different zones
+- Context-aware responses based on cellar composition
+- Reclassification suggestions with JSON payloads
+- Service: `src/services/zoneChat.js`
+
+**Hybrid Pairing Engine**:
+- Deterministic shortlist based on food signals (no AI needed)
+- AI explanation layer for top matches
+- House style preferences (acid, oak, tannin, adventure level)
+- Reduce-now and fridge bonuses
+- Diversity penalty to avoid repetitive suggestions
+- Config: `src/config/pairingRules.js`
+- Service: `src/services/pairingEngine.js`
+
+**Fridge Stocking Service**:
+- Par-level targets for 8 wine categories
+- Gap analysis (what's missing from fridge)
+- AI-powered restocking suggestions from cellar
+- Considers drinking windows and variety balance
+- Service: `src/services/fridgeStocking.js`
+
+**Storage-Aware Drinking Windows**:
+- Different aging rates for cellar vs fridge storage
+- Fridge wines age ~3x faster (constant temp vs optimal cellar)
+- Auto-adjusts drink-by dates based on current storage location
+- Service: `src/services/windowDefaults.js`
+
+**Input Sanitization**:
+- Prevents prompt injection in AI chat inputs
+- Removes markdown formatting and code blocks
+- Length limits and suspicious pattern detection
+- Service: `src/services/inputSanitizer.js`
+
+---
+
 ## API Endpoints
 
 ### Wine Management
@@ -611,10 +657,34 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/api/cellar/zones` | Get zone definitions |
+| GET | `/api/cellar/zones/:zoneId/intent` | Get zone intent metadata |
+| PUT | `/api/cellar/zones/:zoneId/intent` | Update zone intent |
+| POST | `/api/cellar/zones/:zoneId/confirm` | Confirm AI suggestion |
 | POST | `/api/cellar/analyse` | Analyze placements |
 | POST | `/api/cellar/execute-moves` | Execute moves |
 
-### Drink Recommendations ✨ NEW
+### Zone Chat ✨ NEW (Phase 7)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/cellar/zone-chat` | Discuss classifications with AI |
+| POST | `/api/cellar/reassign-zone` | Reassign wine to different zone |
+
+### Hybrid Pairing ✨ NEW (Phase 7)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/pairing/signals` | Get available food signals |
+| POST | `/api/pairing/extract-signals` | Extract signals from dish |
+| POST | `/api/pairing/shortlist` | Get deterministic shortlist (no AI) |
+| POST | `/api/pairing/hybrid` | Shortlist + AI explanation |
+| GET | `/api/pairing/house-style` | Get house style defaults |
+
+### Fridge Stocking ✨ NEW (Phase 7)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/cellar/fridge/status` | Get fridge gaps vs par levels |
+| POST | `/api/cellar/fridge/suggestions` | AI suggestions to fill gaps |
+
+### Drink Recommendations
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/api/reduce-now/ai-recommendations` | AI-powered drink suggestions |
@@ -647,7 +717,7 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 ### PostgreSQL (Supabase) - Production
 
 **Core Tables**:
-- `wines` - Master wine inventory
+- `wines` - Master wine inventory (includes zone_id, zone_confidence)
 - `slots` - Physical storage locations
 - `wine_ratings` - Individual ratings from sources
 - `drinking_windows` - Drinking window data
@@ -655,9 +725,12 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 - `consumption_log` - Consumption history
 - `user_settings` - User preferences
 - `pairing_rules` - Food-to-wine mappings
+- `zone_metadata` - Zone intent descriptions (AI-suggested, user-confirmed)
 - `data_provenance` - External data tracking
 - `search_cache` - Search result caching
-- `competition_awards` - Award records (merged from awards.db)
+- `competition_awards` - Award records
+- `award_sources` - Competition source definitions
+- `known_competitions` - Competition metadata
 
 **PostgreSQL Features**:
 - Connection pooling via Supabase Transaction Pooler
@@ -784,8 +857,8 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
-### Phase 8: Production Hardening - 6 January 2026
-Comprehensive fixes for Express 5 compatibility and production stability:
+### Phase 8: Production Hardening - 6-7 January 2026
+Comprehensive fixes for Express 5 compatibility, PostgreSQL async patterns, and production stability:
 
 **Express 5 Compatibility Fixes**:
 - **Path pattern fix**: Changed `/api/*` wildcard to middleware wrapper (path-to-regexp v8 incompatibility)
@@ -794,7 +867,11 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 
 **PostgreSQL Async/Await**:
 - **Awards routes**: Added `async/await` to all 15 route handlers (PostgreSQL returns Promises, SQLite is synchronous)
-- **Database abstraction**: All `db.prepare().get/all()` calls now properly awaited
+- **Cellar routes**: Converted zone metadata endpoints to async/await (`/api/cellar/zones/:zoneId/intent`, etc.)
+- **Pairing routes**: Converted zone metadata access in pairing service to async/await
+- **Ratings routes**: Fixed async patterns in rating fetch endpoints
+- **JobQueue service**: Converted all methods to async with proper PostgreSQL SQL syntax (`RETURNING *` vs SQLite's `lastInsertRowid`)
+- **Database abstraction**: All `db.prepare().get/all()` calls now properly awaited throughout codebase
 
 **Mobile Accessibility (Phase 8.11)**:
 - **Text size setting**: Small/Medium/Large options in Settings with localStorage persistence
@@ -840,6 +917,43 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 ### Deploy Script Improvements - 5 January 2026
 - **SSH Key + Sudo Fix**: Deploy script now pipes password for sudo commands even when using SSH key authentication
 - **Warning Filter**: Suppresses irrelevant SSH warnings (post-quantum, password prompt noise)
+
+### SonarQube Code Quality Review - 7 January 2026
+Comprehensive code quality audit addressing security, maintainability, and best practices:
+
+**Security Fixes**:
+- **SQL Injection Prevention**: Fixed string interpolation in ratings.js DELETE query → parameterized placeholders
+- **CSP Hardening**: Removed `unsafe-inline` from script-src directive (all JS now external modules)
+- **Race Condition Fix**: Added promise lock pattern to JobQueue to prevent concurrent job processing
+- **Input Validation**: Added Zod schema validation to bottles.js with regex patterns for location codes
+- **Rate Limiting**: Added 5 requests/hour limit to backup export endpoints
+
+**Code Quality Improvements**:
+- **Optional Chaining**: Converted `!obj || !obj.prop` patterns to `!obj?.prop` in slots.js
+- **Number.parseInt**: Added explicit radix parameter to all parseInt calls in wines.js
+- **String.replaceAll**: Modernized regex replace to replaceAll in backup.js CSV escaping
+- **Unused Imports Cleanup**: Removed 17 unused imports across 10 files (cellarHealth.js, awards.js, wines.js, acquisitionWorkflow.js, drinkNowAI.js, movePlanner.js, pairingEngine.js, health.js, app.js)
+- **Dead Code Removal**: Removed useless `dbStatus = 'unknown'` assignment in health.js
+- **Exception Handling**: Improved catch blocks in awards.js with descriptive comments
+
+**Files Modified**:
+- `src/routes/ratings.js` - SQL injection fix
+- `src/routes/slots.js` - Optional chaining (4 locations)
+- `src/routes/wines.js` - Number.parseInt, exception handling
+- `src/routes/backup.js` - Rate limiting, replaceAll, logging
+- `src/routes/bottles.js` - Zod validation, grid constants
+- `src/routes/health.js` - Dead code removal, catch syntax
+- `src/middleware/csp.js` - Removed unsafe-inline
+- `src/services/jobQueue.js` - Race condition fix
+- `src/services/awards.js` - Exception handling, unused import
+- `src/services/cellarHealth.js` - Unused imports
+- `src/services/acquisitionWorkflow.js` - Unused imports
+- `src/services/drinkNowAI.js` - Unused imports
+- `src/services/movePlanner.js` - Unused imports
+- `src/services/pairingEngine.js` - Unused imports
+- `public/js/app.js` - Unused imports
+
+**ESLint Status**: 0 errors, 0 warnings (clean)
 
 ### Security & Code Quality - January 2026
 - **CSP Headers**: Content Security Policy middleware with production/dev modes
@@ -970,15 +1084,14 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 ## Known Limitations
 
 ### Not Yet Implemented
-- Wine confirmation modal (see COMMERCIAL_ROADMAP.md - future feature)
-- Barcode scanning
-- Multi-user authentication
+- Wine confirmation modal (Vivino search before save - P2)
+- Barcode scanning (P4)
+- Multi-user authentication (P4)
 - Cloud sync/real-time collaboration
-- Cloud backend (deferred until product-market fit)
 
-### Technical Debt
-- Minor: Some routes could benefit from additional error handling
-- Database abstraction layer (deferred to Phase 1.2 of roadmap - P3 priority)
+### Technical Debt (Low Priority)
+- Frontend event listener cleanup functions (optional improvement)
+- Some routes could benefit from additional error handling edge cases
 
 ---
 
@@ -1008,37 +1121,41 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 └──────────────────────┬──────────────────────────────────────┘
                        │ REST API
 ┌──────────────────────▼──────────────────────────────────────┐
-│                  EXPRESS.JS SERVER                           │
+│                  EXPRESS.JS SERVER (Railway)                 │
 ├──────────────────────────────────────────────────────────────┤
 │  routes/           services/           config/               │
 │  ├─ wines.js       ├─ claude.js        ├─ unifiedSources.js │
 │  ├─ ratings.js     ├─ ratings.js       ├─ cellarZones.js    │
 │  ├─ cellar.js      ├─ awards.js        ├─ scoreFormats.js   │
 │  ├─ pairing.js     ├─ searchProviders  ├─ tastingVocabulary │
-│  ├─ awards.js      ├─ drinkNowAI.js    └─ vintageSensitivity│
-│  ├─ backup.js      ├─ tastingExtractor                      │
+│  ├─ awards.js      ├─ drinkNowAI.js    ├─ pairingRules.js   │
+│  ├─ backup.js      ├─ tastingExtractor └─ vintageSensitivity│
 │  └─ settings.js    ├─ provenance.js                         │
-│                    ├─ rateLimiter.js                        │
-│                    ├─ circuitBreaker.js                     │
-│                    ├─ scrapingGovernance.js                 │
+│                    ├─ zoneMetadata.js                       │
+│                    ├─ zoneChat.js                           │
+│                    ├─ pairingEngine.js                      │
+│                    ├─ fridgeStocking.js                     │
+│                    ├─ inputSanitizer.js                     │
 │                    ├─ cacheService.js                       │
 │                    └─ jobQueue.js                           │
 └──────────────────────┬──────────────────────────────────────┘
-                       │ SQL
+                       │ SQL (async/await)
 ┌──────────────────────▼──────────────────────────────────────┐
-│         SQLite (libsql) WAL Mode + FTS5 Search              │
-│  ┌────────────────────┐    ┌────────────────────┐           │
-│  │  cellar.db         │    │  awards.db         │           │
-│  │  ├─ wines          │    │  ├─ award_sources  │           │
-│  │  ├─ slots          │    │  ├─ competition_   │           │
-│  │  ├─ wine_ratings   │    │  │  awards         │           │
-│  │  ├─ drinking_      │    │  └─ known_         │           │
-│  │  │  windows        │    │     competitions   │           │
-│  │  ├─ data_provenance│    │                    │           │
-│  │  ├─ search_cache   │    │                    │           │
-│  │  └─ wines_fts      │    │                    │           │
-│  │     (FTS5)         │    │                    │           │
-│  └────────────────────┘    └────────────────────┘           │
+│       PostgreSQL (Supabase) + Full-Text Search              │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │  Production Database (Supabase)                      │    │
+│  │  ├─ wines              ├─ zone_metadata             │    │
+│  │  ├─ slots              ├─ pairing_rules             │    │
+│  │  ├─ wine_ratings       ├─ competition_awards        │    │
+│  │  ├─ drinking_windows   ├─ award_sources             │    │
+│  │  ├─ data_provenance    ├─ known_competitions        │    │
+│  │  ├─ search_cache       └─ job_queue                 │    │
+│  │  └─ user_settings                                   │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  Database Abstraction Layer: src/db/index.js                │
+│  - Auto-selects SQLite (local) or PostgreSQL (production)   │
+│  - Unified prepare().get/all/run() interface                │
 └─────────────────────────────────────────────────────────────┘
                        │
         ┌──────────────┼──────────────┐
@@ -1060,9 +1177,9 @@ Comprehensive fixes for Express 5 compatibility and production stability:
 
 ## Next Steps
 
-See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
+See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 
-**Current Status**: Phases 1-8 complete! Phase 7 (Sommelier-Grade Cellar Organisation) in planning.
+**Current Status**: All major development phases complete. Production-ready PWA deployed on Railway + Supabase PostgreSQL.
 
 ### Completed Phases:
 - ✅ **Phase 1**: Testing infrastructure, unified configs, provenance, governance
@@ -1071,33 +1188,25 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 - ✅ **Phase 4**: AI drink recommendations, structured tasting profiles
 - ✅ **Phase 5**: PWA with Railway HTTPS deployment
 - ✅ **Phase 6**: MCP Integration (Puppeteer, PDF Reader, SQLite, Skills)
-- ✅ **Phase 7**: High-priority items (7.1, 7.2, 7.7) - Railway migration, PostgreSQL, async routes
-- ✅ **Phase 8**: Production hardening - Express 5 fixes, browser tests, validation middleware
+- ✅ **Phase 7**: Sommelier-Grade Cellar Organisation
+  - Zone intent metadata (DB) with AI-suggested, user-editable descriptions
+  - Storage-aware drinking windows (cellar vs fridge aging rates)
+  - Zone health analysis and chat
+  - Hybrid pairing engine (deterministic shortlist + AI explanation)
+  - Fridge stocking service with zone par-levels
+  - Input sanitization for AI chat
+- ✅ **Phase 8**: Production hardening
+  - Express 5 compatibility fixes
+  - PostgreSQL async/await conversion throughout codebase
+  - Browser test suite (46 tests)
+  - Mobile accessibility (touch targets, text sizing)
+  - Validation middleware with Zod schemas
 
-### Phase 7: Sommelier-Grade Cellar Organisation (Planned)
-
-**Goal**: Transform cellar organisation from "misplaced bottles" to proper sommelier advice.
-
-**Core Features:**
-1. Fix drinking window field mismatch (`drink_until` vs `drink_by_year`)
-2. Zone intent metadata (DB) - AI-suggested, user-editable descriptions
-3. Upgrade analysis from row-centric to zone-narrative with health status
-4. Enhance Claude context with zone definitions + composition
-5. Fridge par-level system (show gaps for 8 categories)
-6. Frontend zone cards and fridge status display
-
-**Extended Features:**
-7. AI safety (sanitise inputs, validate responses, persist chat)
-8. Hybrid pairing engine (deterministic shortlist + AI explanation)
-9. Palate profile from user behaviour
-10. Move optimisation (batch by row, minimise effort)
-11. Acquisition workflow (scan → confirm → place)
-12. Cellar health dashboard with one-click actions
-
-### Remaining Future Work:
-- Wine confirmation modal (from WINE_CONFIRMATION_PLAN.md)
-- Play Store wrapper (TWA) when ready for public release
-- Cloud backend (when scaling beyond personal use)
+### Future Work (When Needed):
+- Wine confirmation modal (Vivino search before save)
+- Play Store wrapper (TWA) for public release
+- Multi-user authentication
+- Barcode scanning
 
 ---
 
@@ -1132,5 +1241,5 @@ See [ROADMAP.md](ROADMAP.md) for detailed roadmap.
 
 ---
 
-*Last updated: 6 January 2026*
-*Version: 3.1 (Phase 8 Production Hardening)*
+*Last updated: 7 January 2026*
+*Version: 4.0 (All Phases Complete - Production Ready)*

@@ -4,7 +4,7 @@
  */
 
 import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
-import { renderFridge, renderCellar, cleanupGrid } from './grid.js';
+import { renderFridge, renderCellar } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
@@ -21,7 +21,7 @@ import { addTrackedListener, cleanupNamespace } from './eventManager.js';
 /**
  * Namespace for app-level event listeners.
  */
-const NAMESPACE = 'app';
+const _NAMESPACE = 'app'; // Reserved for future app-level event cleanup
 
 /**
  * Namespace for wine list event listeners.

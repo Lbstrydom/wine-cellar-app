@@ -9,7 +9,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import db from '../db/index.js';
 import { stringAgg, nullsLast } from '../db/helpers.js';
 import { getModelForTask } from '../config/aiModels.js';
-import { sanitize, sanitizeContext } from './inputSanitizer.js';
+// Note: sanitize functions available from inputSanitizer.js if needed for user inputs
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY

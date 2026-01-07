@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { stringAgg, ilike } from '../db/helpers.js';
+import { stringAgg } from '../db/helpers.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
 import {
   wineIdSchema,
@@ -15,10 +15,7 @@ import {
   tastingProfileSchema,
   tastingExtractionSchema,
   parseTextSchema,
-  parseImageSchema,
-  searchQuerySchema,
-  globalSearchSchema,
-  servingTempQuerySchema
+  parseImageSchema
 } from '../schemas/wine.js';
 import { paginationSchema } from '../schemas/common.js';
 
@@ -49,7 +46,7 @@ router.get('/search', async (req, res) => {
       return res.json([]);
     }
 
-    const searchLimit = Math.min(parseInt(limit) || 10, 50);
+    const searchLimit = Math.min(Number.parseInt(limit, 10) || 10, 50);
     const likePattern = `%${q}%`;
 
     const wines = await db.prepare(`
@@ -79,7 +76,7 @@ router.get('/global-search', async (req, res) => {
       return res.json({ wines: [], producers: [], countries: [], styles: [] });
     }
 
-    const searchLimit = Math.min(parseInt(limit) || 5, 20);
+    const searchLimit = Math.min(Number.parseInt(limit, 10) || 5, 20);
     const likePattern = `%${q}%`;
 
     // Search wines with bottle counts
@@ -147,7 +144,7 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
 
     // Get total count for pagination metadata
     const countResult = await db.prepare('SELECT COUNT(*) as total FROM wines').get();
-    const total = parseInt(countResult?.total || 0);
+    const total = Number.parseInt(countResult?.total || 0, 10);
 
     // Get paginated wines
     const wines = await db.prepare(`
@@ -538,8 +535,9 @@ router.get('/:id/tasting-profile/history', async (req, res) => {
     `).all(id);
 
     res.json(history);
-  } catch (_error) {
-    // Table might not exist
+  } catch {
+    // Table tasting_profile_extractions might not exist in all environments
+    // Return empty array rather than error to allow graceful degradation
     res.json([]);
   }
 });

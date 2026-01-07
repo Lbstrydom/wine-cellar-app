@@ -12,6 +12,7 @@ class JobQueue extends EventEmitter {
   constructor() {
     super();
     this.isProcessing = false;
+    this.processingPromise = null; // Track the processing promise to prevent races
     this.currentJob = null;
     this.handlers = {};
     this.pollInterval = null;
@@ -104,11 +105,33 @@ class JobQueue extends EventEmitter {
 
   /**
    * Process next job in queue.
+   * Uses a promise lock to prevent race conditions.
    */
   async processNext() {
-    if (this.isProcessing) return;
+    // Atomic check-and-set using promise lock
+    if (this.isProcessing) {
+      // Wait for current processing to complete, then check queue again
+      if (this.processingPromise) {
+        await this.processingPromise;
+      }
+      return;
+    }
 
     this.isProcessing = true;
+    this.processingPromise = this._processNextInternal();
+
+    try {
+      await this.processingPromise;
+    } finally {
+      this.processingPromise = null;
+    }
+  }
+
+  /**
+   * Internal job processing logic.
+   * @private
+   */
+  async _processNextInternal() {
 
     try {
       // Get next pending job (use CURRENT_TIMESTAMP for PostgreSQL compatibility)
@@ -200,8 +223,15 @@ class JobQueue extends EventEmitter {
       this.currentJob = null;
       this.isProcessing = false;
 
-      // Process next job
-      setImmediate(() => this.processNext());
+      // Check if there are more jobs to process
+      const pendingCount = await db.prepare(
+        "SELECT COUNT(*) as count FROM job_queue WHERE status = 'pending' AND scheduled_for <= CURRENT_TIMESTAMP"
+      ).get();
+
+      if (pendingCount?.count > 0) {
+        // Process next job after a short delay to prevent tight loops
+        setImmediate(() => this.processNext());
+      }
     }
   }
 

@@ -6,7 +6,6 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db, { awardsDb } from '../db/index.js';
-import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 import { fetchPageContent } from './searchProviders.js';
 import * as ocrService from './ocrService.js';
@@ -814,8 +813,8 @@ function salvagePartialJSON(text) {
       if (award.wine_name && award.award) {
         awards.push(award);
       }
-    } catch (_e) {
-      // Skip malformed individual awards
+    } catch {
+      // Skip malformed individual awards - parse failures expected for partial JSON
       continue;
     }
   }
@@ -835,8 +834,8 @@ function parseAwardsResponse(text) {
     if (parsed.awards && Array.isArray(parsed.awards)) {
       return parsed;
     }
-  } catch (_e) {
-    // Continue to fallbacks
+  } catch {
+    // Direct parse failed - continue to fallback parsing methods
   }
 
   // Try code block
@@ -847,8 +846,8 @@ function parseAwardsResponse(text) {
       if (parsed.awards && Array.isArray(parsed.awards)) {
         return parsed;
       }
-    } catch (_e) {
-      // Continue
+    } catch {
+      // Code block parse failed - try other patterns
     }
   }
 
@@ -860,8 +859,8 @@ function parseAwardsResponse(text) {
       if (parsed.awards && Array.isArray(parsed.awards)) {
         return parsed;
       }
-    } catch (_e) {
-      // Continue
+    } catch {
+      // JSON object parse failed - try salvage as last resort
     }
   }
 

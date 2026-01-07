@@ -5,8 +5,7 @@
 
 import db from '../db/index.js';
 import { stringAgg } from '../db/helpers.js';
-import { calculateParLevelGaps, selectFridgeFillCandidates, analyseFridge } from './fridgeStocking.js';
-import logger from '../utils/logger.js';
+import { analyseFridge } from './fridgeStocking.js';
 
 /**
  * Get comprehensive cellar health report.

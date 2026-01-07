@@ -355,8 +355,10 @@ router.post('/cleanup', async (_req, res) => {
     `).all();
 
     if (duplicates.length > 0) {
+      // Use parameterized query to prevent SQL injection
       const ids = duplicates.map(d => d.id);
-      await db.prepare(`DELETE FROM wine_ratings WHERE id IN (${ids.join(',')})`).run();
+      const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      await db.prepare(`DELETE FROM wine_ratings WHERE id IN (${placeholders})`).run(...ids);
       logger.info('Cleanup', `Removed ${duplicates.length} duplicate ratings`);
     }
 

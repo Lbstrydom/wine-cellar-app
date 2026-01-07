@@ -1,6 +1,9 @@
 Observed issues:
 1. on mobile under Cellar Analysis, when at suggested additions for Fridge and I click on add is says Error: Transaction is not a function
 2. suggested additions for fridge should first be from reduce now category unless we do not have a wine from that category in which casde it can be suggested from the overall cellar
+3. Feature - on mobile allow to sweitch to horisontal viewing so we can see more of thje cellar
+4. Feature - wine does not always get drunki in one go, so we should also have an "open" classification - if there are open bottles an additional suggestion for pairing could be to include them if it makes sense, and also we can have them a different color visually onnthe cellar
+5. Once cellar analysis is done we should keep it in memory/database - so that it does not have to redo it every time you go to that tab, and only update when we actually click refresh analysis - in general check what needs to be stored to create an easy PWA experience for the user so that information is easily available for useful items
 
 
 

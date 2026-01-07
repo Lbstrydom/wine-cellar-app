@@ -61,7 +61,7 @@ router.get('/live', async (_req, res) => {
   const uptimeMs = Date.now() - startTime;
   const uptimeSeconds = Math.floor(uptimeMs / 1000);
 
-  let dbStatus = 'unknown';
+  let dbStatus;
   let wineCount = 0;
   let slotCount = 0;
 
@@ -74,7 +74,7 @@ router.get('/live', async (_req, res) => {
     const slotResult = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
     wineCount = wineResult?.count || 0;
     slotCount = slotResult?.count || 0;
-  } catch (err) {
+  } catch {
     dbStatus = 'error';
   }
 

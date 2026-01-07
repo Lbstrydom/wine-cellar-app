@@ -5,7 +5,6 @@
  */
 
 import db from '../db/index.js';
-import logger from '../utils/logger.js';
 
 /**
  * Move types with effort scores.
@@ -201,7 +200,7 @@ function calculateProximityScore(slot, existingLocations) {
  * @param {Object} availableSlots - Available slots by zone
  * @returns {Object|null} Swap move or null
  */
-function findSwapOpportunity(wine, allWines, availableSlots) {
+function findSwapOpportunity(wine, allWines, _availableSlots) {
   // Look for a wine in the target zone that wants to be where this wine is
   const wineZone = getZoneForSlot(wine.currentSlot);
 

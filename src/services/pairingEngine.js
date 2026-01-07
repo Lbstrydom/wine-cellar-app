@@ -8,7 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { FOOD_SIGNALS, WINE_STYLES, DEFAULT_HOUSE_STYLE } from '../config/pairingRules.js';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { sanitizeDishDescription, sanitizeWineList } from './inputSanitizer.js';
-import { parseAndValidate, createFallback } from './responseValidator.js';
+import { parseAndValidate } from './responseValidator.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;

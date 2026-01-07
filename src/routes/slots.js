@@ -28,7 +28,7 @@ router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
 
     // Validate slots exist and have correct state before transaction
     const sourceSlot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(from_location);
-    if (!sourceSlot || !sourceSlot.wine_id) {
+    if (!sourceSlot?.wine_id) {
       return res.status(400).json({ error: 'Source slot is empty' });
     }
 
@@ -66,10 +66,10 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
     const slotA = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
     const slotB = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_b);
 
-    if (!slotA || !slotA.wine_id) {
+    if (!slotA?.wine_id) {
       return res.status(400).json({ error: 'First slot is empty' });
     }
-    if (!slotB || !slotB.wine_id) {
+    if (!slotB?.wine_id) {
       return res.status(400).json({ error: 'Second slot is empty - use move instead' });
     }
 
@@ -157,7 +157,7 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     const { occasion, pairing_dish, rating, notes } = req.body;
 
     const slot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(location);
-    if (!slot || !slot.wine_id) {
+    if (!slot?.wine_id) {
       return res.status(400).json({ error: 'Slot is empty' });
     }
 

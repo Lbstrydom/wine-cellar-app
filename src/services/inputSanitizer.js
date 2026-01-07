@@ -68,6 +68,7 @@ export function sanitize(input, options = {}) {
   }
 
   // Remove null bytes and control characters (except newline, tab)
+  // eslint-disable-next-line no-control-regex
   result = result.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
   // Check and warn about injection patterns (don't remove, but log)

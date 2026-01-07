@@ -4,9 +4,27 @@
  */
 
 import { Router } from 'express';
+import { z } from 'zod';
 import db from '../db/index.js';
 
 const router = Router();
+
+// Grid layout constants
+const GRID_CONSTANTS = {
+  FRIDGE_MAX_SLOT: 9,
+  CELLAR_MAX_ROW: 19,
+  CELLAR_ROW1_COLS: 7,
+  CELLAR_OTHER_COLS: 9
+};
+
+// Input validation schema
+const addBottlesSchema = z.object({
+  wine_id: z.number().int().positive('wine_id must be a positive integer'),
+  start_location: z.string()
+    .min(2, 'start_location is required')
+    .regex(/^(F\d+|R\d+C\d+)$/, 'Invalid location format (expected F# or R#C#)'),
+  quantity: z.number().int().min(1).max(50).default(1)
+});
 
 /**
  * Add bottle(s) to consecutive slots.
@@ -14,11 +32,16 @@ const router = Router();
  */
 router.post('/add', async (req, res) => {
   try {
-    const { wine_id, start_location, quantity = 1 } = req.body;
-
-    if (!wine_id || !start_location) {
-      return res.status(400).json({ error: 'wine_id and start_location required' });
+    // Validate input
+    const parseResult = addBottlesSchema.safeParse(req.body);
+    if (!parseResult.success) {
+      return res.status(400).json({
+        error: 'Validation failed',
+        details: parseResult.error.errors.map(e => e.message)
+      });
     }
+
+    const { wine_id, start_location, quantity } = parseResult.data;
 
     // Verify wine exists
     const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(wine_id);
@@ -34,7 +57,7 @@ router.post('/add', async (req, res) => {
       const startNum = parseInt(start_location.substring(1));
       for (let i = 0; i < quantity; i++) {
         const slotNum = startNum + i;
-        if (slotNum > 9) break;
+        if (slotNum > GRID_CONSTANTS.FRIDGE_MAX_SLOT) break;
         slots.push(`F${slotNum}`);
       }
     } else {
@@ -47,11 +70,11 @@ router.post('/add', async (req, res) => {
       let col = parseInt(match[2]);
 
       for (let i = 0; i < quantity; i++) {
-        const maxCol = row === 1 ? 7 : 9;
+        const maxCol = row === 1 ? GRID_CONSTANTS.CELLAR_ROW1_COLS : GRID_CONSTANTS.CELLAR_OTHER_COLS;
         if (col > maxCol) {
           row++;
           col = 1;
-          if (row > 19) break;
+          if (row > GRID_CONSTANTS.CELLAR_MAX_ROW) break;
         }
         slots.push(`R${row}C${col}`);
         col++;

@@ -6,7 +6,7 @@
 
 import { parseWineFromImage, parseWineFromText, fetchWineRatings, saveExtractedWindows } from './claude.js';
 import { findBestZone, findAvailableSlot } from './cellarPlacement.js';
-import { categoriseWine, getFridgeStatus, selectFridgeFillCandidates, calculateParLevelGaps } from './fridgeStocking.js';
+import { categoriseWine, getFridgeStatus } from './fridgeStocking.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
@@ -23,7 +23,7 @@ const CONFIDENCE_LEVELS = {
 /**
  * Confidence thresholds for highlighting uncertain fields.
  */
-const UNCERTAIN_THRESHOLD = 'medium';
+const _UNCERTAIN_THRESHOLD = 'medium'; // Reserved for future confidence highlighting
 
 /**
  * Parse wine from image with per-field confidence.

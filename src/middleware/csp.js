@@ -14,8 +14,8 @@ export function cspMiddleware() {
     // Define CSP policy
     const cspDirectives = [
       "default-src 'self'",
-      "script-src 'self' 'unsafe-inline'", // unsafe-inline needed for inline scripts (consider moving to external files)
-      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // unsafe-inline for inline styles, Google Fonts
+      "script-src 'self'", // No inline scripts - all JS in external modules
+      "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // unsafe-inline needed for inline styles and Google Fonts
       "font-src 'self' https://fonts.gstatic.com", // Google Fonts
       "img-src 'self' data: blob:", // data: for base64 images, blob: for object URLs
       "connect-src 'self'", // API calls to same origin
