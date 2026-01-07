@@ -151,8 +151,8 @@ export async function updateZoneMetadata(zoneId, updates, isAISuggestion = false
 
 /**
  * Batch update zone metadata from AI suggestions.
- * Note: PostgreSQL does not support db.transaction() like SQLite.
- * For PostgreSQL, we execute updates sequentially.
+ * PostgreSQL supports db.transaction(), but these updates are small and independent,
+ * so we run them sequentially to keep the flow simple.
  * @param {Array} suggestions - Array of { zoneId, ...updates }
  * @returns {Promise<number>} Number of zones updated
  */

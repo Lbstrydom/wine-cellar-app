@@ -455,9 +455,9 @@ router.post('/update-wine-attributes', async (req, res) => {
  * GET /api/cellar/zone-metadata
  * Get all zone metadata with intent descriptions.
  */
-router.get('/zone-metadata', (_req, res) => {
+router.get('/zone-metadata', async (_req, res) => {
   try {
-    const metadata = getAllZoneMetadata();
+    const metadata = await getAllZoneMetadata();
     res.json({ success: true, metadata });
   } catch (err) {
     console.error('[CellarAPI] Zone metadata error:', err);
@@ -469,10 +469,10 @@ router.get('/zone-metadata', (_req, res) => {
  * GET /api/cellar/zone-metadata/:zoneId
  * Get metadata for a specific zone.
  */
-router.get('/zone-metadata/:zoneId', (req, res) => {
+router.get('/zone-metadata/:zoneId', async (req, res) => {
   try {
     const { zoneId } = req.params;
-    const metadata = getZoneMetadata(zoneId);
+    const metadata = await getZoneMetadata(zoneId);
 
     if (!metadata) {
       return res.status(404).json({ error: 'Zone not found' });
@@ -489,9 +489,9 @@ router.get('/zone-metadata/:zoneId', (req, res) => {
  * GET /api/cellar/zones-with-intent
  * Get all zones with merged code config and database metadata.
  */
-router.get('/zones-with-intent', (_req, res) => {
+router.get('/zones-with-intent', async (_req, res) => {
   try {
-    const zones = getAllZonesWithIntent();
+    const zones = await getAllZonesWithIntent();
     res.json({ success: true, zones });
   } catch (err) {
     console.error('[CellarAPI] Zones with intent error:', err);
@@ -503,7 +503,7 @@ router.get('/zones-with-intent', (_req, res) => {
  * PUT /api/cellar/zone-metadata/:zoneId
  * Update zone metadata (user edit).
  */
-router.put('/zone-metadata/:zoneId', (req, res) => {
+router.put('/zone-metadata/:zoneId', async (req, res) => {
   try {
     const { zoneId } = req.params;
     const updates = req.body;
@@ -512,7 +512,7 @@ router.put('/zone-metadata/:zoneId', (req, res) => {
       return res.status(400).json({ error: 'No updates provided' });
     }
 
-    const metadata = updateZoneMetadata(zoneId, updates, false);
+    const metadata = await updateZoneMetadata(zoneId, updates, false);
 
     if (!metadata) {
       return res.status(404).json({ error: 'Zone not found' });
@@ -529,10 +529,10 @@ router.put('/zone-metadata/:zoneId', (req, res) => {
  * POST /api/cellar/zone-metadata/:zoneId/confirm
  * Confirm zone metadata (mark as user-reviewed).
  */
-router.post('/zone-metadata/:zoneId/confirm', (req, res) => {
+router.post('/zone-metadata/:zoneId/confirm', async (req, res) => {
   try {
     const { zoneId } = req.params;
-    const metadata = confirmZoneMetadata(zoneId);
+    const metadata = await confirmZoneMetadata(zoneId);
 
     if (!metadata) {
       return res.status(404).json({ error: 'Zone not found' });
@@ -549,9 +549,9 @@ router.post('/zone-metadata/:zoneId/confirm', (req, res) => {
  * GET /api/cellar/zones-needing-review
  * Get zones with AI suggestions that haven't been confirmed.
  */
-router.get('/zones-needing-review', (_req, res) => {
+router.get('/zones-needing-review', async (_req, res) => {
   try {
-    const zones = getZonesNeedingReview();
+    const zones = await getZonesNeedingReview();
     res.json({ success: true, zones });
   } catch (err) {
     console.error('[CellarAPI] Zones needing review error:', err);
@@ -696,7 +696,7 @@ router.post('/zone-chat', async (req, res) => {
  * POST /api/cellar/zone-reassign
  * Reassign a wine to a different zone (user override).
  */
-router.post('/zone-reassign', (req, res) => {
+router.post('/zone-reassign', async (req, res) => {
   try {
     const { wineId, newZoneId, reason } = req.body;
 
@@ -704,7 +704,7 @@ router.post('/zone-reassign', (req, res) => {
       return res.status(400).json({ error: 'wineId and newZoneId required' });
     }
 
-    const result = reassignWineZone(wineId, newZoneId, reason);
+    const result = await reassignWineZone(wineId, newZoneId, reason);
 
     res.json({
       success: true,

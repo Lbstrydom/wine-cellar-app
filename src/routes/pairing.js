@@ -306,7 +306,7 @@ router.get('/house-style', (_req, res) => {
  * @returns {Promise<Array>} Wines with location data
  */
 async function getAllWinesWithSlots() {
-  return db.prepare(`
+  return await db.prepare(`
     SELECT
       w.id,
       w.wine_name,
