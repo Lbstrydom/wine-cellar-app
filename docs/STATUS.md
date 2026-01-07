@@ -857,6 +857,63 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
+### Move Integrity & Data Protection - 7 January 2026
+Critical fix for bottle loss bug during cellar reorganization moves:
+
+**Root Cause**: Two moves with the same wine name could target the same slot, causing one bottle to be overwritten and lost.
+
+**Validation System (`movePlanner.js`)**:
+- `validateMovePlan()` function with 5 validation rules:
+  1. Each wine can only be moved once (no duplicate wine IDs)
+  2. Each target slot can only be used once (prevents collisions)
+  3. Target must be empty OR will be vacated by another move in the plan
+  4. Source must contain the expected wine (DB verification)
+  5. No-op moves detection (from === to)
+- Returns detailed errors with type, message, and context for each failure
+
+**Allocated Target Tracking (`cellarAnalysis.js`)**:
+- Added `allocatedTargets` Set to track slots already assigned during batch suggestion generation
+- Prevents same slot from being suggested multiple times
+- Combines with existing `pendingMoves` tracking for comprehensive collision prevention
+
+**Atomic Move Execution (`cellar.js`)**:
+- All moves wrapped in database transaction (BEGIN/COMMIT/ROLLBACK)
+- Pre-execution validation rejects invalid plans before any changes
+- Invalidates analysis cache only after successful completion
+- Returns validation details in API response
+
+**Database Constraint (`025_slot_uniqueness.sql`)**:
+- Unique partial index: `idx_slots_wine_unique ON slots(wine_id) WHERE wine_id IS NOT NULL`
+- Database-level guarantee that one wine can't be in multiple slots
+- Complements application-level validation
+
+**Frontend Validation UI (`cellarAnalysis.js`)**:
+- Preview modal shows all bottles to be moved before execution
+- Validation error modal with categorized errors by type
+- Clear explanations and "Refresh suggestions" guidance
+
+**Placement Recommendations (`cellarPlacement.js`)**:
+- `recommendPlacement()` function for new bottle additions
+- Combines zone matching with slot suggestion
+- Returns comprehensive recommendation with alternatives and confidence
+
+**Unit Tests (`movePlanner.test.js`)**:
+- 18 comprehensive tests covering all validation rules
+- Edge cases: empty arrays, single moves, missing data
+- Complex scenarios: swaps, chains, multiple errors
+
+**Files Modified**:
+- `src/services/movePlanner.js` - Added `validateMovePlan()` function
+- `src/services/cellarAnalysis.js` - Added `allocatedTargets` tracking
+- `src/routes/cellar.js` - Added validation and transaction support
+- `src/services/cellarPlacement.js` - Added `recommendPlacement()` function
+- `public/js/cellarAnalysis.js` - Added preview and validation error modals
+- `public/css/styles.css` - Modal styles
+- `data/migrations/025_slot_uniqueness.sql` - Database constraint
+- `tests/unit/services/movePlanner.test.js` - Full test suite
+
+---
+
 ### Phase 8: Production Hardening - 6-7 January 2026
 Comprehensive fixes for Express 5 compatibility, PostgreSQL async patterns, and production stability:
 
@@ -1307,7 +1364,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **API Endpoints** | 50+ |
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
-| **Database Migrations** | 24 |
+| **Database Migrations** | 25 |
 | **Unit Tests** | 249 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |

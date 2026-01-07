@@ -162,6 +162,151 @@ const getWineWithLocations = await db.prepare(`
 // - Use INTERVAL '30 days' instead of '-30 days'
 ```
 
+### PostgreSQL Async Patterns (CRITICAL)
+
+The database abstraction layer (`src/db/postgres.js`) returns Promises. **All route handlers and services must use async/await.**
+
+```javascript
+// ✅ CORRECT: async route handler with await
+router.get('/wines', async (req, res) => {
+  const wines = await db.prepare('SELECT * FROM wines').all();
+  res.json({ data: wines });
+});
+
+// ❌ WRONG: Missing async/await - returns Promise, not data
+router.get('/wines', (req, res) => {
+  const wines = db.prepare('SELECT * FROM wines').all(); // Returns Promise!
+  res.json({ data: wines }); // Sends Promise object, not results
+});
+
+// ✅ CORRECT: Service function with async
+export async function getWineById(id) {
+  return await db.prepare('SELECT * FROM wines WHERE id = ?').get(id);
+}
+
+// ❌ WRONG: Sync-style function call
+export function getWineById(id) {
+  return db.prepare('SELECT * FROM wines WHERE id = ?').get(id); // Returns Promise!
+}
+```
+
+**Common Symptoms of Missing Async:**
+- API returns `{}` or `[object Promise]`
+- Railway logs show no errors but data is empty
+- Works locally with SQLite but fails with PostgreSQL
+
+**Checklist When Adding New Routes/Services:**
+1. Is the route handler `async`?
+2. Are all `db.prepare().get/all/run()` calls `await`ed?
+3. Are service functions that call DB marked `async`?
+4. Are service function calls `await`ed in route handlers?
+
+---
+
+## Data Integrity Patterns
+
+### Move/Batch Operations Must Validate First
+
+When implementing operations that modify multiple records (moves, swaps, batch updates):
+
+```javascript
+// ✅ CORRECT: Validate before execution
+const validation = await validateMovePlan(moves);
+if (!validation.valid) {
+  return res.status(409).json({ error: 'Validation failed', conflicts: validation.errors });
+}
+
+// Execute only after validation passes
+await db.prepare('BEGIN TRANSACTION').run();
+try {
+  for (const move of moves) {
+    await executeMove(move);
+  }
+  await db.prepare('COMMIT').run();
+} catch (err) {
+  await db.prepare('ROLLBACK').run();
+  throw err;
+}
+```
+
+### Track Allocated Resources in Batch Operations
+
+When generating suggestions that allocate resources (slots, IDs, etc.), track what's been allocated within the batch:
+
+```javascript
+// ✅ CORRECT: Track allocated targets to prevent collisions
+const allocatedTargets = new Set();
+
+for (const item of items) {
+  const target = findAvailableTarget(occupiedSet);
+  if (target && !allocatedTargets.has(target)) {
+    suggestions.push({ from: item.current, to: target });
+    allocatedTargets.add(target); // Mark as allocated
+  }
+}
+
+// ❌ WRONG: Each iteration doesn't know about previous allocations
+for (const item of items) {
+  const target = findAvailableTarget(occupiedSet); // May return same target twice!
+  suggestions.push({ from: item.current, to: target });
+}
+```
+
+### Invariant Checks for Critical Operations
+
+For operations that must not lose data:
+
+```javascript
+// Count before
+const beforeCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+
+// ... perform operations ...
+
+// Count after
+const afterCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+
+if (afterCount.count !== beforeCount.count) {
+  await db.prepare('ROLLBACK').run();
+  throw new Error(`Data integrity violation: count changed from ${beforeCount.count} to ${afterCount.count}`);
+}
+```
+
+---
+
+## Content Security Policy (CSP) Compliance
+
+### No Inline Event Handlers
+
+CSP blocks inline JavaScript. Never use `onclick`, `onchange`, etc. in HTML:
+
+```html
+<!-- ❌ WRONG: Blocked by CSP -->
+<button onclick="handleClick()">Click</button>
+
+<!-- ✅ CORRECT: Wire up in JavaScript -->
+<button id="my-button">Click</button>
+```
+
+```javascript
+// In your JS file
+document.getElementById('my-button').addEventListener('click', handleClick);
+```
+
+### Dynamic Element Event Binding
+
+For dynamically created elements, wire events after creation:
+
+```javascript
+// ✅ CORRECT: Add listeners after creating HTML
+container.innerHTML = items.map(item => `
+  <button class="item-btn" data-id="${item.id}">Action</button>
+`).join('');
+
+container.querySelectorAll('.item-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => handleItemClick(e.target.dataset.id));
+});
+```
+
 ---
 
 ## Documentation
@@ -514,6 +659,11 @@ This forces browsers to reload fresh assets instead of using cached versions
 - Create files over 300 lines (split them)
 - Use inline styles in HTML (use CSS classes)
 - Hardcode magic numbers (use named constants)
+- Use inline event handlers (`onclick`, `onchange`) in HTML - CSP blocks them
+- Forget `async/await` when calling `db.prepare()` methods
+- Assume batch operations won't have collisions - always validate
+- Use wine name for identity in move/swap logic - use wine ID
+- Execute multi-step operations without transaction wrapping
 
 ---
 
@@ -525,3 +675,9 @@ This forces browsers to reload fresh assets instead of using cached versions
 - Preserve existing functionality when refactoring
 - Add JSDoc to all exported functions
 - Keep functions under 50 lines where practical
+- Mark all route handlers as `async` when using PostgreSQL
+- Validate move/batch plans before execution
+- Track allocated resources in batch suggestion generation
+- Use invariant checks (before/after counts) for data-critical operations
+- Test with PostgreSQL before deploying (not just SQLite locally)
+- Bump cache version after frontend changes

@@ -162,6 +162,100 @@ const getWineWithLocations = await db.prepare(`
 // - Use INTERVAL '30 days' instead of '-30 days'
 ```
 
+### PostgreSQL Async Patterns (CRITICAL)
+
+**IMPORTANT**: Unlike SQLite (which is synchronous), PostgreSQL uses Promises. ALL database calls MUST be awaited.
+
+```javascript
+// CORRECT: Await all database calls
+router.get('/wines', async (req, res) => {
+  try {
+    const wines = await db.prepare('SELECT * FROM wines').all();  // AWAIT!
+    res.json({ data: wines });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// WRONG: Missing await - returns Promise object, not data
+router.get('/wines', (req, res) => {
+  const wines = db.prepare('SELECT * FROM wines').all();  // BUG: No await!
+  res.json({ data: wines });  // Sends { data: Promise } - broken!
+});
+```
+
+**Checklist for every database operation**:
+1. Function must be `async`
+2. Every `db.prepare().get()`, `.all()`, `.run()` must have `await`
+3. Error handling with try/catch around awaited calls
+
+### Data Integrity Patterns
+
+When generating suggestions or plans that allocate resources (slots, moves, etc.), always track allocated resources to prevent collisions:
+
+```javascript
+// CORRECT: Track allocated targets during batch operations
+const allocatedTargets = new Set();
+const occupiedSlots = new Set(currentOccupancy.map(s => s.location_code));
+
+for (const wine of winesToMove) {
+  const availableSlot = findEmptySlot(targetZone);
+
+  // Check BOTH current occupancy AND already-allocated slots
+  if (availableSlot && !occupiedSlots.has(availableSlot) && !allocatedTargets.has(availableSlot)) {
+    suggestions.push({ from: wine.currentSlot, to: availableSlot });
+    allocatedTargets.add(availableSlot);  // Mark as allocated
+  }
+}
+
+// WRONG: Only checking current occupancy - can suggest same slot twice
+for (const wine of winesToMove) {
+  const availableSlot = findEmptySlot(targetZone);
+  if (availableSlot && !occupiedSlots.has(availableSlot)) {
+    suggestions.push({ from: wine.currentSlot, to: availableSlot });  // BUG: May duplicate!
+  }
+}
+```
+
+**Validation before execution**:
+```javascript
+// Always validate batch operations before executing
+async function executeMoves(moves) {
+  const validation = await validateMovePlan(moves);
+  if (!validation.valid) {
+    return { error: 'Validation failed', details: validation.errors };
+  }
+
+  // Count before
+  const beforeCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+
+  // Execute moves...
+
+  // Count after - must match
+  const afterCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+  if (beforeCount.count !== afterCount.count) {
+    throw new Error('Bottle count mismatch - data corruption detected');
+  }
+}
+```
+
+### CSP Compliance
+
+This app uses Content Security Policy. Never use inline event handlers:
+
+```html
+<!-- WRONG: Inline handlers blocked by CSP -->
+<button onclick="handleClick()">Click</button>
+
+<!-- CORRECT: Add listeners in JS -->
+<button id="my-button">Click</button>
+```
+
+```javascript
+// In your JS file
+document.getElementById('my-button').addEventListener('click', handleClick);
+```
+
 ---
 
 ## Documentation
@@ -514,6 +608,11 @@ This forces browsers to reload fresh assets instead of using cached versions
 - Create files over 300 lines (split them)
 - Use inline styles in HTML (use CSS classes)
 - Hardcode magic numbers (use named constants)
+- Forget `await` on database calls (PostgreSQL is async, unlike SQLite)
+- Use inline event handlers in HTML (`onclick`, `onchange`, etc.) - CSP blocks them
+- Allocate the same resource twice in batch operations (track allocated items in a Set)
+- Execute batch operations without validation (always validate before execute)
+- Assume synchronous behaviour - check if functions return Promises
 
 ---
 
@@ -525,3 +624,9 @@ This forces browsers to reload fresh assets instead of using cached versions
 - Preserve existing functionality when refactoring
 - Add JSDoc to all exported functions
 - Keep functions under 50 lines where practical
+- Always use `async/await` for route handlers with database calls
+- Track allocated resources with a Set when generating batch suggestions
+- Validate batch operations before execution (check for collisions, mismatches)
+- Add invariant checks (before/after counts) for operations that modify data
+- Use `addEventListener` in JS files instead of inline HTML event handlers
+- Test both locally (SQLite) and against Supabase (PostgreSQL) before deploying

@@ -354,6 +354,9 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
 
   const suggestions = [];
   const pendingMoves = new Map();
+  
+  // Track allocated target slots to prevent collisions
+  const allocatedTargets = new Set();
 
   // Sort by confidence - high confidence moves first
   const sortedMisplaced = [...misplacedWines].sort((a, b) => {
@@ -362,12 +365,15 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
   });
 
   for (const wine of sortedMisplaced) {
-    // Calculate currently available slots (accounting for pending moves)
+    // Calculate currently available slots (accounting for pending moves AND allocated targets)
     const currentlyOccupied = new Set(occupiedSlots);
     pendingMoves.forEach((toSlot, fromSlot) => {
       currentlyOccupied.delete(fromSlot);
       currentlyOccupied.add(toSlot);
     });
+    
+    // Add already-allocated targets to the occupied set
+    allocatedTargets.forEach(target => currentlyOccupied.add(target));
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
 
@@ -385,6 +391,7 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
         priority: wine.confidence === 'high' ? 1 : wine.confidence === 'medium' ? 2 : 3
       });
       pendingMoves.set(wine.currentSlot, slot.slotId);
+      allocatedTargets.add(slot.slotId); // Mark this target as allocated
     } else {
       suggestions.push({
         type: 'manual',

@@ -452,3 +452,49 @@ function extractWinemakingFromText(wine) {
   const text = `${wine.wine_name || ''} ${wine.style || ''}`.toLowerCase();
   return wmPatterns.filter(wm => text.includes(wm));
 }
+
+/**
+ * Recommend placement for a new bottle being added.
+ * Returns both zone and specific slot suggestion.
+ * @param {Object} wine - Wine object with attributes
+ * @param {Set<string>} occupiedSlots - Currently occupied slot IDs
+ * @returns {Promise<Object>} Placement recommendation with zone, slot, and rationale
+ */
+export async function recommendPlacement(wine, occupiedSlots) {
+  // Find best zone match
+  const zoneMatch = findBestZone(wine);
+  
+  // Find available slot in that zone
+  const slotSuggestion = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+  
+  // Build comprehensive recommendation
+  const recommendation = {
+    wine: {
+      id: wine.id,
+      name: wine.wine_name,
+      vintage: wine.vintage
+    },
+    zone: {
+      id: zoneMatch.zoneId,
+      displayName: zoneMatch.displayName,
+      confidence: zoneMatch.confidence,
+      score: zoneMatch.score,
+      reason: zoneMatch.reason,
+      alternatives: zoneMatch.alternativeZones || []
+    },
+    slot: slotSuggestion ? {
+      slotId: slotSuggestion.slotId,
+      row: slotSuggestion.row,
+      isOverflow: slotSuggestion.isOverflow || false,
+      message: slotSuggestion.isOverflow 
+        ? `${zoneMatch.displayName} is full - suggested overflow location`
+        : `Available in ${zoneMatch.displayName}`
+    } : {
+      slotId: null,
+      message: `${zoneMatch.displayName} and overflow zones are full - manual placement required`
+    },
+    requiresReview: zoneMatch.requiresReview || !slotSuggestion
+  };
+  
+  return recommendation;
+}

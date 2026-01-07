@@ -390,4 +390,103 @@ export function validatePlan(plan) {
   };
 }
 
+/**
+ * Validate a move plan against current occupancy state.
+ * Ensures no bottle collisions, overwrites, or data loss.
+ * @param {Array} moves - Array of {wineId, from, to, wineName} objects
+ * @returns {Promise<Object>} {valid: boolean, errors: Array, summary: Object}
+ */
+export async function validateMovePlan(moves) {
+  const errors = [];
+  const targetSlots = new Set();
+  const movedWineIds = new Set();
+
+  // Fetch current occupancy from DB (canonical source of truth)
+  const slots = await db.prepare(
+    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL'
+  ).all();
+  const occupiedSlots = new Map(slots.map(s => [s.location_code, s.wine_id]));
+
+  // Build set of slots that will be vacated by this plan
+  const vacatedSlots = new Set(moves.map(m => m.from));
+
+  for (const move of moves) {
+    // Rule 1: Each wine can only be moved once
+    if (movedWineIds.has(move.wineId)) {
+      errors.push({
+        type: 'duplicate_wine',
+        message: `Wine ${move.wineName || move.wineId} (ID: ${move.wineId}) appears in multiple moves`,
+        move,
+        wineId: move.wineId,
+        wineName: move.wineName
+      });
+    }
+    movedWineIds.add(move.wineId);
+
+    // Rule 2: Each target slot can only be used once in this plan
+    if (targetSlots.has(move.to)) {
+      errors.push({
+        type: 'duplicate_target',
+        message: `Slot ${move.to} is targeted by multiple moves`,
+        move,
+        targetSlot: move.to
+      });
+    }
+    targetSlots.add(move.to);
+
+    // Rule 3: Target must be empty OR will be vacated by another move in this plan
+    const occupant = occupiedSlots.get(move.to);
+    if (occupant && !vacatedSlots.has(move.to)) {
+      // Get wine name for better error message
+      const occupantWine = await db.prepare(
+        'SELECT wine_name FROM wines WHERE id = ?'
+      ).get(occupant);
+      errors.push({
+        type: 'target_occupied',
+        message: `Slot ${move.to} is occupied by ${occupantWine?.wine_name || 'another wine'} (ID: ${occupant})`,
+        move,
+        targetSlot: move.to,
+        occupantWineId: occupant,
+        occupantWineName: occupantWine?.wine_name
+      });
+    }
+
+    // Rule 4: Source must contain the expected wine
+    const sourceOccupant = occupiedSlots.get(move.from);
+    if (sourceOccupant !== move.wineId) {
+      errors.push({
+        type: 'source_mismatch',
+        message: `Wine ${move.wineName || move.wineId} not found at ${move.from} (found ${sourceOccupant ? `wine ID ${sourceOccupant}` : 'empty slot'})`,
+        move,
+        sourceSlot: move.from,
+        expectedWineId: move.wineId,
+        actualWineId: sourceOccupant || null
+      });
+    }
+
+    // Rule 5: No-op moves are wasteful (optional but good practice)
+    if (move.from === move.to) {
+      errors.push({
+        type: 'noop_move',
+        message: `Move from ${move.from} to ${move.to} is a no-op`,
+        move
+      });
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    summary: {
+      totalMoves: moves.length,
+      errorCount: errors.length,
+      duplicateTargets: errors.filter(e => e.type === 'duplicate_target').length,
+      occupiedTargets: errors.filter(e => e.type === 'target_occupied').length,
+      sourceMismatches: errors.filter(e => e.type === 'source_mismatch').length,
+      duplicateWines: errors.filter(e => e.type === 'duplicate_wine').length,
+      noopMoves: errors.filter(e => e.type === 'noop_move').length
+    }
+  };
+}
+
 export { MOVE_EFFORT };

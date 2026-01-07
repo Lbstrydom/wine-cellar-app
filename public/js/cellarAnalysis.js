@@ -758,6 +758,7 @@ async function handleExecuteAllMoves() {
     .filter(m => m.type === 'move')
     .map(m => ({
       wineId: m.wineId,
+      wineName: m.wineName, // Include wine name for validation messages
       from: m.from,
       to: m.to
     }));
@@ -767,9 +768,22 @@ async function handleExecuteAllMoves() {
     return;
   }
 
+  // Show preview modal with move details
+  const confirmed = await showMovePreviewModal(movesToExecute);
+  if (!confirmed) {
+    return;
+  }
+
   try {
     const result = await executeCellarMoves(movesToExecute);
-    showToast(`Executed ${result.executed} moves`);
+    
+    // Check if validation failed
+    if (!result.success) {
+      showValidationErrorModal(result.validation);
+      return;
+    }
+    
+    showToast(`Successfully executed ${result.moved} moves`);
 
     // Re-analyse to show updated state
     await loadAnalysis();
@@ -778,6 +792,188 @@ async function handleExecuteAllMoves() {
     showToast(`Error: ${err.message}`);
   }
 }
+
+/**
+ * Show move preview modal before execution.
+ * @param {Array} moves - Array of move objects
+ * @returns {Promise<boolean>} True if user confirms
+ */
+function showMovePreviewModal(moves) {
+  return new Promise((resolve) => {
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+      <div class="modal move-preview-modal">
+        <div class="modal-header">
+          <h3>Confirm Bottle Moves</h3>
+          <button class="close-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="preview-summary">About to move <strong>${moves.length}</strong> bottle(s):</p>
+          <div class="move-preview-list">
+            ${moves.map(m => `
+              <div class="move-preview-item">
+                <div class="move-wine">${escapeHtml(m.wineName || `Wine ${m.wineId}`)}</div>
+                <div class="move-path">${escapeHtml(m.from)} → ${escapeHtml(m.to)}</div>
+              </div>
+            `).join('')}
+          </div>
+          <p class="preview-warning">
+            <strong>⚠️ Important:</strong> All moves will be executed atomically. 
+            If validation fails, no bottles will be moved.
+          </p>
+        </div>
+        <div class="modal-footer">
+          <button class="btn-secondary cancel-btn">Cancel</button>
+          <button class="btn-primary confirm-btn">Execute Moves</button>
+        </div>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    const confirmBtn = modal.querySelector('.confirm-btn');
+    const cancelBtn = modal.querySelector('.cancel-btn');
+    const closeBtn = modal.querySelector('.close-btn');
+    
+    const handleConfirm = () => {
+      modal.remove();
+      resolve(true);
+    };
+    
+    const handleCancel = () => {
+      modal.remove();
+      resolve(false);
+    };
+    
+    confirmBtn.addEventListener('click', handleConfirm);
+    cancelBtn.addEventListener('click', handleCancel);
+    closeBtn.addEventListener('click', handleCancel);
+    
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
+        resolve(false);
+      }
+    });
+  });
+}
+
+/**
+ * Show validation error modal with detailed error information.
+ * @param {Object} validation - Validation result from API
+ */
+function showValidationErrorModal(validation) {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  
+  const errorsByType = {};
+  validation.errors.forEach(err => {
+    if (!errorsByType[err.type]) {
+      errorsByType[err.type] = [];
+    }
+    errorsByType[err.type].push(err);
+  });
+  
+  let errorsHtml = '';
+  
+  if (errorsByType.duplicate_target) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>🚫 Duplicate Target Slots (${errorsByType.duplicate_target.length})</h4>
+        <ul>
+          ${errorsByType.duplicate_target.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Multiple bottles would be moved to the same slot, causing data loss.</p>
+      </div>
+    `;
+  }
+  
+  if (errorsByType.target_occupied) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>⚠️ Occupied Target Slots (${errorsByType.target_occupied.length})</h4>
+        <ul>
+          ${errorsByType.target_occupied.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Target slots already contain bottles that aren't being moved.</p>
+      </div>
+    `;
+  }
+  
+  if (errorsByType.source_mismatch) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>❌ Source Slot Mismatches (${errorsByType.source_mismatch.length})</h4>
+        <ul>
+          ${errorsByType.source_mismatch.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Expected wines not found at source locations (bottles may have been moved already).</p>
+      </div>
+    `;
+  }
+  
+  if (errorsByType.duplicate_wine) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>🔁 Duplicate Wine Moves (${errorsByType.duplicate_wine.length})</h4>
+        <ul>
+          ${errorsByType.duplicate_wine.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Same wine appears in multiple moves.</p>
+      </div>
+    `;
+  }
+  
+  modal.innerHTML = `
+    <div class="modal validation-error-modal">
+      <div class="modal-header error">
+        <h3>❌ Move Validation Failed</h3>
+        <button class="close-btn">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="validation-summary">
+          <strong>${validation.summary.errorCount}</strong> validation error(s) prevented execution.
+          No bottles were moved.
+        </p>
+        ${errorsHtml}
+        <div class="validation-advice">
+          <strong>What to do:</strong>
+          <p>Refresh the analysis to get an updated view of the cellar. 
+          The suggested moves may be stale if bottles were recently moved.</p>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn-primary close-btn-footer">Close</button>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  const closeBtn = modal.querySelector('.close-btn');
+  const closeFooterBtn = modal.querySelector('.close-btn-footer');
+  
+  const handleClose = () => modal.remove();
+  
+  closeBtn.addEventListener('click', handleClose);
+  closeFooterBtn.addEventListener('click', handleClose);
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+}
+
 
 /**
  * Get AI advice for cellar organisation.

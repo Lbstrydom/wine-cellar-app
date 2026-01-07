@@ -1,452 +1,588 @@
-# User Test Issues - Implementation Plan
+# Move Integrity & Placement Guidance - Implementation Plan
 
 **Date**: 7 January 2026
-**Source**: User testing on mobile device
+**Priority**: P1-Critical (data loss bug)
+**Root Cause**: Suggested moves can target the same slot, causing bottle overwrites
 
 ---
 
-## Issue Summary
+## Problem Statement
 
-| # | Issue | Priority | Effort | Category |
-|---|-------|----------|--------|----------|
-| 1 | "Transaction is not a function" error on fridge add | P1-Critical | Low | Bug |
-| 2 | Fridge suggestions should prioritize Reduce-Now wines | P2-High | Medium | Enhancement |
-| 3 | Horizontal viewing mode for mobile | P3-Medium | Medium | Feature |
-| 4 | "Open bottle" classification and visual indicator | P3-Medium | High | Feature |
-| 5 | Cache cellar analysis results | P2-High | Medium | Performance |
-| 6 | Fridge zone ordering/categorization | P3-Medium | Medium | Feature |
-| 7 | Mobile scroll vs drag conflict | P1-Critical | Medium | UX Bug |
+When executing suggested moves from Cellar Analysis:
+1. Two moves can target the same slot → one bottle gets overwritten/lost
+2. Target slots may become occupied between suggestion and execution
+3. No validation prevents these collisions
+4. No atomic transaction wrapping means partial failures corrupt state
 
 ---
 
-## Issue 1: "Transaction is not a function" Error
+## Implementation Tasks
 
-### Status: RESOLVED (Legacy)
-This error is from a legacy code path that no longer exists. No action needed.
+### Task 1: Add Move Plan Validation Function
 
----
+**File**: `src/services/movePlanner.js`
 
-## Issue 2: Prioritize Reduce-Now Wines for Fridge Suggestions
+Add a comprehensive validation function that checks:
 
-### Current Behavior
-- `fridgeStocking.js` scores wines by:
-  - Drink-by urgency (+100 for past, +80 within 1 year)
-  - Preferred zones (+30)
-  - Wine ID (newer = slight bonus)
-
-### Problem
-- Doesn't explicitly check if wine is in Reduce-Now list
-- Should prioritize wines already flagged for urgent drinking
-
-### Fix Plan
-1. Fetch reduce-now wine IDs before candidate selection
-2. Add +150 bonus for wines in reduce-now list
-3. Fall back to regular scoring if no reduce-now wines in category
-
-### Implementation
 ```javascript
-// In fridgeStocking.js - findSuitableWines()
-const reduceNowIds = await getReduceNowWineIds();
+/**
+ * Validate a move plan against current occupancy.
+ * @param {Array} moves - Array of {wineId, from, to} objects
+ * @returns {Promise<Object>} {valid: boolean, errors: Array<{type, message, move}>}
+ */
+export async function validateMovePlan(moves) {
+  const errors = [];
+  const targetSlots = new Set();
+  const movedWineIds = new Set();
 
-// Add to scoring
-if (reduceNowIds.has(wine.id)) {
-  score += 150; // Highest priority
-  reason = 'Flagged for drinking soon';
-}
-```
+  // Fetch current occupancy from DB
+  const slots = await db.prepare(
+    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL'
+  ).all();
+  const occupiedSlots = new Map(slots.map(s => [s.location_code, s.wine_id]));
 
-### Files to Modify
-- `src/services/fridgeStocking.js` - Add reduce-now bonus scoring
-- `src/routes/cellar.js` - Pass reduce-now context to fridge analysis
+  // Build set of slots that will be vacated by this plan
+  const vacatedSlots = new Set(moves.map(m => m.from));
 
----
+  for (const move of moves) {
+    // Rule 1: Each wine can only be moved once
+    if (movedWineIds.has(move.wineId)) {
+      errors.push({
+        type: 'duplicate_wine',
+        message: `Wine ID ${move.wineId} appears in multiple moves`,
+        move
+      });
+    }
+    movedWineIds.add(move.wineId);
 
-## Issue 3: Horizontal Viewing Mode for Mobile
+    // Rule 2: Each target slot can only be used once
+    if (targetSlots.has(move.to)) {
+      errors.push({
+        type: 'duplicate_target',
+        message: `Slot ${move.to} is target of multiple moves`,
+        move
+      });
+    }
+    targetSlots.add(move.to);
 
-### Current State
-- Fixed portrait layout
-- Grid is 9 columns wide, hard to see on phone
+    // Rule 3: Target must be empty OR will be vacated by another move in this plan
+    const occupant = occupiedSlots.get(move.to);
+    if (occupant && !vacatedSlots.has(move.to)) {
+      errors.push({
+        type: 'target_occupied',
+        message: `Slot ${move.to} is occupied by wine ${occupant}`,
+        move
+      });
+    }
 
-### Design Options
+    // Rule 4: Source must contain the expected wine
+    const sourceOccupant = occupiedSlots.get(move.from);
+    if (sourceOccupant !== move.wineId) {
+      errors.push({
+        type: 'source_mismatch',
+        message: `Wine ${move.wineId} not found at ${move.from} (found ${sourceOccupant || 'empty'})`,
+        move
+      });
+    }
 
-**Option A: CSS Rotate Transform**
-- Rotate grid 90 degrees
-- Swap touch coordinates
-- Simple but awkward scroll behavior
-
-**Option B: Landscape Lock Button**
-- Use Screen Orientation API
-- `screen.orientation.lock('landscape')`
-- Only works in fullscreen/PWA mode
-
-**Option C: Zoom/Pan with Pinch Gesture (Recommended)**
-- Add pinch-to-zoom on grid area
-- Add pan gesture when zoomed
-- Keep natural scroll when not zoomed
-- Most intuitive for mobile users
-
-### Implementation Plan
-1. Add CSS transforms for zoom: `transform: scale(${zoomLevel})`
-2. Detect pinch gesture distance changes
-3. Implement pan with touch-move when zoomed
-4. Add zoom controls (+ / - buttons) as fallback
-5. Store zoom preference in localStorage
-
-### Files to Modify
-- `public/js/grid.js` - Add zoom state and transforms
-- `public/css/styles.css` - Zoom container styles
-- `public/index.html` - Add zoom controls
-
----
-
-## Issue 4: "Open Bottle" Classification
-
-### Concept
-- Wine can be in cellar/fridge but partially consumed
-- Visual indicator: different color/icon on grid
-- Pairing suggestions should prefer open bottles
-- Full UI/UX integration
-
-### Database Schema Change
-```sql
-ALTER TABLE slots ADD COLUMN is_open BOOLEAN DEFAULT FALSE;
-ALTER TABLE slots ADD COLUMN opened_at TIMESTAMP;
-ALTER TABLE slots ADD COLUMN remaining_ml INTEGER; -- Optional: track remaining
-```
-
-### UI/UX Integration
-1. **Grid Visual**: Distinct slot styling (e.g., amber/gold border, wine glass icon)
-2. **Quick Action**: Tap slot → "Mark as Open" button in bottle modal
-3. **Context Menu**: Long-press shows "Open/Seal" option
-4. **Wine List**: Filter by "Open Bottles"
-5. **Fridge Priority**: Open bottles shown first in fridge view
-6. **Pairing Panel**: "You have an open bottle of X that pairs well"
-7. **Notifications**: "Open bottle reminder: Finish within 3-5 days"
-8. **Stats Panel**: "Open bottles: 2" in dashboard
-
-### Implementation Plan
-1. Add migration for `is_open`, `opened_at` columns
-2. Add API endpoints: `PUT /api/slots/:location/open`, `PUT /api/slots/:location/seal`
-3. Update slot rendering with open styling (gold/amber indicator)
-4. Add "Mark as Open" button to bottle detail modal
-5. Modify pairing algorithm to boost open bottles (+200 score)
-6. Add "Open Bottles" quick filter in wine list
-7. Show open bottle suggestions in pairing results
-8. Add open bottle count to stats API
-
-### Files to Modify
-- `data/migrations/017_open_bottles.sql` - Schema
-- `src/routes/slots.js` - Open/seal endpoints
-- `src/routes/stats.js` - Open bottle count
-- `public/js/grid.js` - Visual styling with open indicator
-- `public/js/modals.js` - "Mark as Open" button
-- `public/css/styles.css` - Open bottle styles (gold border, icon)
-- `src/services/pairing.js` - Prefer open bottles in suggestions
-- `src/services/drinkNowAI.js` - Include open bottles in recommendations
-
----
-
-## Issue 5: Cache Cellar Analysis Results
-
-### Current State
-- Analysis recalculated on every tab switch
-- No persistence between page reloads
-- Expensive AI calls repeated unnecessarily
-
-### Caching Strategy (3-Tier)
-
-**Tier 1: Database (Supabase/PostgreSQL) - Primary**
-- Store analysis results in `cellar_analysis_cache` table
-- Survives page reloads and device switches
-- Single source of truth
-- Invalidated when wines/slots change
-
-**Tier 2: localStorage - Fast Load**
-- Cache last analysis for instant display
-- Show immediately while checking for updates
-- Fallback if offline
-
-**Tier 3: In-Memory - Session**
-- `currentAnalysis` variable for tab switches
-- No API call needed within session
-
-### Database Schema
-```sql
-CREATE TABLE cellar_analysis_cache (
-  id SERIAL PRIMARY KEY,
-  analysis_type VARCHAR(50) NOT NULL, -- 'full', 'fridge', 'zones'
-  analysis_data JSONB NOT NULL,
-  wine_count INTEGER, -- For invalidation check
-  slot_hash VARCHAR(64), -- Hash of slot assignments for change detection
-  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  expires_at TIMESTAMP,
-  UNIQUE(analysis_type)
-);
-```
-
-### Cache Flow
-```
-1. User opens Cellar Analysis tab
-2. Check localStorage → show cached data immediately (if exists)
-3. Call GET /api/cellar/analysis/cached
-4. If valid cache exists in DB:
-   - Compare slot_hash with current state
-   - If match: use cached analysis
-   - If mismatch: invalidate and re-analyze
-5. If no cache or stale: run analysis, store in DB
-6. Update localStorage with fresh data
-```
-
-### Invalidation Triggers
-- Wine added/deleted/updated
-- Slot assignment changed (move, swap, remove)
-- Manual "Refresh Analysis" click
-- Cache older than 24 hours
-
-### Implementation Plan
-1. Add migration for `cellar_analysis_cache` table
-2. Add API endpoints:
-   - `GET /api/cellar/analysis/cached` - Get cached or compute fresh
-   - `DELETE /api/cellar/analysis/cache` - Invalidate cache
-3. Add slot hash computation (MD5 of wine_id assignments)
-4. Update frontend to use cache-first strategy
-5. Add cache invalidation calls to wine/slot mutations
-6. Show "Last analyzed: X minutes ago" in UI
-
-### Files to Modify
-- `data/migrations/017_analysis_cache.sql` - Schema
-- `src/routes/cellar.js` - Cache endpoints
-- `src/services/cellarAnalysis.js` - Cache logic
-- `public/js/cellarAnalysis.js` - Cache-first loading
-- `public/js/api.js` - Cache invalidation on mutations
-- `public/js/app.js` - Invalidate on data changes
-
----
-
-## Issue 6: Fridge Zone Ordering/Categorization
-
-### Current State
-- Fridge slots (F1-F9) have no zone assignment
-- Cellar zones work well (Everyday, Premium, etc.)
-- Fridge analysis shows category breakdown but not slot organization
-
-### Design Options
-
-**Option A: Visual Grouping Only**
-- Group fridge display by category (Sparkling, Crisp White, etc.)
-- No physical reorganization
-- Show category labels in UI
-
-**Option B: Suggested Positions**
-- Assign categories to slot ranges (F1-F2: Sparkling, F3-F5: White, etc.)
-- Show suggestions when adding to fridge
-- Color-code slots by category
-
-**Option C: Auto-Arrange Feature (Recommended)**
-- "Organize Fridge" button
-- AI suggests optimal arrangement
-- User confirms moves
-- Slots get category metadata
-
-### Implementation Plan
-1. Add fridge category display in Cellar Analysis
-2. Add `fridge_zone` column to slots table (optional categorization)
-3. Create fridge layout suggestion algorithm
-4. Add "Organize Fridge" button that generates moves
-5. Color-code fridge slots by detected category
-
-### Files to Modify
-- `data/migrations/018_fridge_zones.sql` - Optional schema
-- `src/services/fridgeStocking.js` - Category arrangement logic
-- `public/js/grid.js` - Fridge category rendering
-- `public/css/styles.css` - Category colors
-
----
-
-## Issue 7: Mobile Scroll vs Drag Conflict (CRITICAL)
-
-### Problem
-- Touching a bottle initiates drag
-- Cannot scroll the cellar view
-- Must use browser scrollbar (not accessible on mobile)
-
-### Root Cause
-- Touch events on slots are captured immediately
-- `touchstart` begins drag state
-- No way to distinguish scroll intent from drag intent
-
-### Solution Options
-
-**Option A: Long-Press to Drag (Recommended)**
-- Normal touch = scroll
-- Long-press (500ms) = start drag
-- Visual feedback: slot pulses before entering drag mode
-- Most intuitive for mobile users
-
-**Option B: Drag Handle**
-- Add drag icon/handle to each slot
-- Only dragging handle initiates move
-- Takes up visual space
-
-**Option C: Edit Mode Toggle**
-- Add "Edit Mode" button
-- Normal mode = scroll only
-- Edit mode = drag enabled
-- Extra step for users
-
-### Implementation Plan (Option A: Long-Press)
-1. Add `longPressTimer` to touch state
-2. On `touchstart`: start timer, don't initiate drag
-3. After 500ms: trigger drag start, show visual feedback
-4. On `touchmove` before timer: cancel timer, allow scroll
-5. On `touchend` before timer: cancel timer (was a tap)
-6. Add CSS animation for "entering drag mode"
-
-### Code Changes
-```javascript
-// In dragdrop.js
-const LONG_PRESS_DURATION = 500; // ms
-let longPressTimer = null;
-let touchStartPos = null;
-
-function handleTouchStart(e) {
-  const slot = e.target.closest('.slot');
-  if (!slot?.dataset.wineId) return;
-
-  touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
-
-  // Start long-press timer
-  longPressTimer = setTimeout(() => {
-    // Haptic feedback if available
-    navigator.vibrate?.(50);
-    initiateDrag(slot, e);
-  }, LONG_PRESS_DURATION);
-}
-
-function handleTouchMove(e) {
-  if (longPressTimer) {
-    // Check if moved significantly (scroll intent)
-    const dx = Math.abs(e.touches[0].clientX - touchStartPos.x);
-    const dy = Math.abs(e.touches[0].clientY - touchStartPos.y);
-    if (dx > 10 || dy > 10) {
-      clearTimeout(longPressTimer);
-      longPressTimer = null;
-      // Allow native scroll
-      return;
+    // Rule 5: No-op moves are wasteful
+    if (move.from === move.to) {
+      errors.push({
+        type: 'noop_move',
+        message: `Move from ${move.from} to ${move.to} is a no-op`,
+        move
+      });
     }
   }
-  // ... existing drag logic
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    summary: {
+      totalMoves: moves.length,
+      errorCount: errors.length,
+      duplicateTargets: errors.filter(e => e.type === 'duplicate_target').length,
+      occupiedTargets: errors.filter(e => e.type === 'target_occupied').length
+    }
+  };
 }
 ```
 
-### Files to Modify
-- `public/js/dragdrop.js` - Long-press detection
-- `public/css/styles.css` - Drag-pending animation
+---
+
+### Task 2: Update Move Suggestion Generation
+
+**File**: `src/services/cellarAnalysis.js`
+
+Modify `generateMoveSuggestions()` to track allocated targets:
+
+```javascript
+async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
+  // Build canonical occupancy from DB, not from passed-in data
+  const slotsFromDb = await db.prepare(
+    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL'
+  ).all();
+  const occupiedSlots = new Set(slotsFromDb.map(s => s.location_code));
+
+  // Track slots we've allocated in THIS suggestion batch
+  const allocatedTargets = new Set();
+
+  const suggestions = [];
+
+  for (const wine of sortedMisplaced) {
+    // Calculate effective occupancy = DB occupied + newly allocated - sources being vacated
+    const effectiveOccupied = new Set([...occupiedSlots, ...allocatedTargets]);
+
+    // Remove slots that will be vacated by earlier moves in this batch
+    suggestions.forEach(s => {
+      if (s.type === 'move') effectiveOccupied.delete(s.from);
+    });
+
+    const slot = await findAvailableSlot(wine.suggestedZoneId, effectiveOccupied, wine);
+
+    if (slot && !allocatedTargets.has(slot.slotId)) {
+      suggestions.push({
+        type: 'move',
+        wineId: wine.wineId,
+        wineName: wine.name,
+        from: wine.currentSlot,
+        to: slot.slotId,
+        // ... rest of properties
+      });
+
+      // Mark this slot as allocated so no other move can target it
+      allocatedTargets.add(slot.slotId);
+    } else {
+      suggestions.push({
+        type: 'manual',
+        // ... manual intervention required
+      });
+    }
+  }
+
+  return suggestions;
+}
+```
 
 ---
 
-## Recommended Implementation Order
+### Task 3: Make Move Execution Atomic with Validation
 
-### Phase 1: Critical Fixes
-1. **Issue 7**: Mobile scroll vs drag - most impactful UX fix
-2. ~~**Issue 1**: Transaction error~~ - RESOLVED (legacy)
+**File**: `src/routes/cellar.js`
 
-### Phase 2: High Priority
-3. **Issue 5**: Cache analysis results (with DB storage) - performance improvement
-4. **Issue 2**: Reduce-Now prioritization - better suggestions
+Replace the current `/execute-moves` endpoint:
 
-### Phase 3: New Features
-5. **Issue 6**: Fridge categorization
-6. **Issue 4**: Open bottle tracking (with full UI/UX)
-7. **Issue 3**: Horizontal/zoom viewing
+```javascript
+import { validateMovePlan } from '../services/movePlanner.js';
+
+router.post('/execute-moves', async (req, res) => {
+  try {
+    const { moves } = req.body;
+    if (!Array.isArray(moves) || moves.length === 0) {
+      return res.status(400).json({ error: 'Moves array required' });
+    }
+
+    // Step 1: Validate the move plan
+    const validation = await validateMovePlan(moves);
+    if (!validation.valid) {
+      return res.status(409).json({
+        error: 'Move plan validation failed',
+        conflicts: validation.errors,
+        summary: validation.summary,
+        hint: 'Cellar state may have changed. Please refresh and regenerate suggestions.'
+      });
+    }
+
+    // Step 2: Count bottles before (for invariant check)
+    const beforeCount = await db.prepare(
+      'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL'
+    ).get();
+
+    // Step 3: Execute moves in a transaction
+    await db.prepare('BEGIN TRANSACTION').run();
+
+    try {
+      const results = [];
+
+      for (const move of moves) {
+        // Clear source slot
+        await db.prepare(
+          'UPDATE slots SET wine_id = NULL WHERE location_code = ? AND wine_id = ?'
+        ).run(move.from, move.wineId);
+
+        // Set target slot (only if empty - extra safety)
+        const targetCheck = await db.prepare(
+          'SELECT wine_id FROM slots WHERE location_code = ?'
+        ).get(move.to);
+
+        if (targetCheck?.wine_id !== null) {
+          throw new Error(`Target slot ${move.to} became occupied during execution`);
+        }
+
+        await db.prepare(
+          'UPDATE slots SET wine_id = ? WHERE location_code = ?'
+        ).run(move.wineId, move.to);
+
+        // Update wine zone
+        if (move.zoneId) {
+          await db.prepare(
+            'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
+          ).run(move.zoneId, move.confidence || 'medium', move.wineId);
+        }
+
+        results.push({ wineId: move.wineId, from: move.from, to: move.to, success: true });
+      }
+
+      // Step 4: Verify bottle count invariant
+      const afterCount = await db.prepare(
+        'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL'
+      ).get();
+
+      if (afterCount.count !== beforeCount.count) {
+        throw new Error(
+          `Bottle count changed: ${beforeCount.count} → ${afterCount.count}. Rolling back.`
+        );
+      }
+
+      await db.prepare('COMMIT').run();
+
+      // Step 5: Invalidate analysis cache
+      await invalidateAnalysisCache();
+
+      res.json({
+        success: true,
+        moved: results.length,
+        results,
+        bottleCount: afterCount.count
+      });
+
+    } catch (txError) {
+      await db.prepare('ROLLBACK').run();
+      throw txError;
+    }
+
+  } catch (err) {
+    console.error('[CellarAPI] Execute moves error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+```
 
 ---
 
-## Estimated Effort
+### Task 4: Add Database Constraint (PostgreSQL)
 
-| Issue | Complexity | Hours | Dependencies |
-|-------|------------|-------|--------------|
-| 1 | N/A | 0 | Resolved |
-| 2 | Medium | 4 | None |
-| 3 | Medium | 6 | None |
-| 4 | High | 10 | DB migration |
-| 5 | Medium | 6 | DB migration |
-| 6 | Medium | 6 | Issue 5 |
-| 7 | Medium | 4 | None |
+**File**: `data/migrations/025_slot_uniqueness.sql`
 
-**Total Estimated: ~36 hours**
+```sql
+-- Ensure only one wine can occupy a slot
+-- The slots table already has location_code as PK, but we need to ensure
+-- wine_id appears at most once across all slots
+
+-- Create a partial unique index: each wine_id can only appear once
+-- (NULL wine_ids are allowed multiple times)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_wine_unique
+ON slots (wine_id)
+WHERE wine_id IS NOT NULL;
+
+-- Add comment explaining constraint
+COMMENT ON INDEX idx_slots_wine_unique IS
+  'Ensures each wine can only be in one slot at a time. Prevents move collisions.';
+```
+
+---
+
+### Task 5: Persist Move Plans with Analysis Cache
+
+**File**: `src/services/cacheService.js`
+
+Add move plan persistence:
+
+```javascript
+/**
+ * Cache suggested moves along with analysis.
+ * @param {Array} moves - Suggested moves
+ * @param {string} slotHash - Current slot hash for validation
+ */
+export async function cacheSuggestedMoves(moves, slotHash) {
+  try {
+    await db.prepare(`
+      INSERT INTO cellar_analysis_cache (analysis_type, analysis_data, slot_hash, wine_count)
+      VALUES ('suggested_moves', ?, ?, ?)
+      ON CONFLICT(analysis_type) DO UPDATE SET
+        analysis_data = excluded.analysis_data,
+        slot_hash = excluded.slot_hash,
+        created_at = CURRENT_TIMESTAMP
+    `).run(JSON.stringify(moves), slotHash, moves.length);
+  } catch (err) {
+    logger.warn('Cache', `Move plan cache failed: ${err.message}`);
+  }
+}
+
+/**
+ * Get cached move plan if still valid.
+ * @returns {Promise<Array|null>} Cached moves or null if stale
+ */
+export async function getCachedMoves() {
+  try {
+    const cached = await db.prepare(`
+      SELECT analysis_data, slot_hash FROM cellar_analysis_cache
+      WHERE analysis_type = 'suggested_moves'
+    `).get();
+
+    if (cached) {
+      const currentHash = await generateSlotHash();
+      if (cached.slot_hash === currentHash) {
+        return JSON.parse(cached.analysis_data);
+      }
+      // Stale - invalidate
+      await db.prepare(
+        "DELETE FROM cellar_analysis_cache WHERE analysis_type = 'suggested_moves'"
+      ).run();
+    }
+  } catch (err) {
+    logger.warn('Cache', `Move cache lookup failed: ${err.message}`);
+  }
+  return null;
+}
+```
+
+---
+
+### Task 6: Add Placement Recommendations for New Bottles
+
+**File**: `src/services/cellarPlacement.js` (update existing)
+
+```javascript
+/**
+ * Recommend placement slots for a new bottle.
+ * Uses cached analysis if available, otherwise runs lightweight placement logic.
+ * @param {Object} wine - Wine object with colour, style, zone_id, etc.
+ * @param {number} [count=3] - Number of recommendations to return
+ * @returns {Promise<Array>} Recommended slots with reasons
+ */
+export async function recommendPlacement(wine, count = 3) {
+  // Get current occupancy
+  const occupied = await db.prepare(
+    'SELECT location_code FROM slots WHERE wine_id IS NOT NULL'
+  ).all();
+  const occupiedSet = new Set(occupied.map(s => s.location_code));
+
+  // Determine target zone
+  const bestZone = findBestZone(wine);
+
+  // Get zone layout
+  const zoneRows = await db.prepare(
+    'SELECT assigned_rows FROM zone_layout WHERE zone_id = ?'
+  ).get(bestZone.zoneId);
+
+  const recommendations = [];
+
+  if (zoneRows) {
+    // Find empty slots in target zone
+    const rows = JSON.parse(zoneRows.assigned_rows || '[]');
+    for (const row of rows) {
+      for (let col = 1; col <= 9; col++) {
+        const slotId = `${row}C${col}`;
+        if (!occupiedSet.has(slotId)) {
+          recommendations.push({
+            slotId,
+            zoneId: bestZone.zoneId,
+            zoneName: bestZone.displayName,
+            reason: bestZone.reason,
+            confidence: bestZone.confidence
+          });
+          if (recommendations.length >= count) break;
+        }
+      }
+      if (recommendations.length >= count) break;
+    }
+  }
+
+  // Fallback: any empty slot
+  if (recommendations.length < count) {
+    const allSlots = await db.prepare('SELECT location_code FROM slots').all();
+    for (const slot of allSlots) {
+      if (!occupiedSet.has(slot.location_code) &&
+          !recommendations.some(r => r.slotId === slot.location_code)) {
+        recommendations.push({
+          slotId: slot.location_code,
+          zoneId: null,
+          zoneName: 'Unzoned',
+          reason: 'Fallback placement',
+          confidence: 'low'
+        });
+        if (recommendations.length >= count) break;
+      }
+    }
+  }
+
+  return recommendations;
+}
+```
+
+**File**: `src/routes/cellar.js`
+
+Add endpoint:
+
+```javascript
+/**
+ * GET /api/cellar/recommend-placement
+ * Get placement recommendations for a wine.
+ */
+router.get('/recommend-placement', async (req, res) => {
+  try {
+    const { wineId, colour, style, country, vintage } = req.query;
+
+    // Build wine object from query or fetch from DB
+    let wine;
+    if (wineId) {
+      wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+      if (!wine) return res.status(404).json({ error: 'Wine not found' });
+    } else {
+      wine = { colour, style, country, vintage: parseInt(vintage) };
+    }
+
+    const recommendations = await recommendPlacement(wine);
+
+    res.json({
+      recommendations,
+      wineId: wine.id || null,
+      count: recommendations.length
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Recommend placement error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+```
+
+---
+
+### Task 7: Frontend Pre-Apply Validation
+
+**File**: `public/js/cellarAnalysis.js`
+
+Before applying moves, show preview and validate:
+
+```javascript
+async function applyMoves(moves) {
+  // Show preview modal
+  const preview = document.getElementById('move-preview-modal');
+  preview.querySelector('.move-count').textContent = moves.length;
+  preview.querySelector('.move-list').innerHTML = moves
+    .map(m => `<li>${m.wineName}: ${m.from} → ${m.to}</li>`)
+    .join('');
+  preview.style.display = 'flex';
+
+  // Wait for user confirmation
+  const confirmed = await waitForConfirmation(preview);
+  if (!confirmed) return;
+
+  try {
+    const response = await fetch('/api/cellar/execute-moves', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ moves })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      if (response.status === 409) {
+        // Validation failed - show conflicts
+        showConflictModal(result.conflicts, result.hint);
+        return;
+      }
+      throw new Error(result.error);
+    }
+
+    showToast(`Moved ${result.moved} bottles successfully`);
+    await refreshAnalysis(); // Refresh to show updated state
+
+  } catch (err) {
+    showToast(`Error: ${err.message}`, 'error');
+  }
+}
+
+function showConflictModal(conflicts, hint) {
+  const modal = document.getElementById('conflict-modal');
+  modal.querySelector('.hint').textContent = hint;
+  modal.querySelector('.conflict-list').innerHTML = conflicts
+    .map(c => `<li class="conflict-${c.type}">${c.message}</li>`)
+    .join('');
+  modal.style.display = 'flex';
+}
+```
+
+---
+
+## Acceptance Criteria
+
+### Invariants (Must Pass)
+- [ ] Total bottle count never decreases after move execution
+- [ ] No slot ever contains more than one wine
+- [ ] Every wine is in exactly one slot (or none if consumed)
+- [ ] Suggested moves never target the same slot twice
+- [ ] Executing moves that conflict returns 409, not 500
+- [ ] Partial move failures roll back completely
+
+### Functional Tests
+- [ ] `validateMovePlan()` catches duplicate targets
+- [ ] `validateMovePlan()` catches occupied targets
+- [ ] `validateMovePlan()` catches source mismatches
+- [ ] Transaction rollback works on constraint violation
+- [ ] Cache invalidates after successful moves
+- [ ] Cached moves return null when cellar changes
+
+### UX Tests
+- [ ] Pre-apply preview shows move count and list
+- [ ] Conflict modal explains what went wrong
+- [ ] "Refresh suggestions" regenerates after conflict
+
+---
+
+## Files to Create/Modify
+
+| File | Action | Description |
+|------|--------|-------------|
+| `src/services/movePlanner.js` | Modify | Add `validateMovePlan()` function |
+| `src/services/cellarAnalysis.js` | Modify | Track allocated targets in suggestion generation |
+| `src/routes/cellar.js` | Modify | Add validation + transaction to `/execute-moves` |
+| `src/services/cacheService.js` | Modify | Add move plan persistence |
+| `src/services/cellarPlacement.js` | Modify | Add `recommendPlacement()` function |
+| `data/migrations/025_slot_uniqueness.sql` | Create | Unique index on wine_id |
+| `public/js/cellarAnalysis.js` | Modify | Add pre-apply preview and conflict handling |
+| `public/index.html` | Modify | Add preview and conflict modal HTML |
+| `tests/unit/services/movePlanner.test.js` | Create | Unit tests for validation |
+
+---
+
+## SQL to Run in Supabase
+
+```sql
+-- Migration 025: Slot uniqueness constraint
+CREATE UNIQUE INDEX IF NOT EXISTS idx_slots_wine_unique
+ON slots (wine_id)
+WHERE wine_id IS NOT NULL;
+
+COMMENT ON INDEX idx_slots_wine_unique IS
+  'Ensures each wine can only be in one slot at a time. Prevents move collisions.';
+```
+
+---
+
+## Critical Note on the Original Bug
+
+The original bug occurred because:
+1. User said "move bottle 1" (same wine name as bottle 2)
+2. System suggested moving bottle 1 to slot X
+3. System suggested moving bottle 2 to slot X (same target!)
+4. When executed, bottle 1 was placed at X, then bottle 2 overwrote it
+
+**Root fix**: The `allocatedTargets` set in Task 2 prevents this by tracking which slots have already been assigned to earlier moves in the same batch.
 
 ---
 
 *Created: 7 January 2026*
-*Status: ALL ISSUES COMPLETE*
-
----
-
-## Implementation Summary (7 January 2026)
-
-### Completed
-
-**Phase 1 - Issue 7: Mobile Scroll vs Drag (DONE)**
-- Added long-press (500ms) to initiate drag on mobile
-- Normal touch allows scroll; only long-press starts drag
-- Added `drag-pending` CSS animation for visual feedback
-- Modified `handleTouchStart`, `handleTouchMove`, `handleTouchEnd` in dragdrop.js
-
-**Phase 2a - Issue 5: Cache Analysis Results (DONE)**
-- Created `cellar_analysis_cache` table (migration 021)
-- Added cache functions to `cacheService.js`:
-  - `generateSlotHash()` - MD5 hash of slot assignments for invalidation
-  - `getCachedAnalysis()` - retrieves cached analysis, validates hash
-  - `cacheAnalysis()` - stores analysis with 24h TTL
-  - `invalidateAnalysisCache()` - clears cache on slot changes
-- Updated `/api/cellar/analyse` to use cache-first strategy
-- Added `?refresh=true` query param to force fresh analysis
-- Added cache status display in UI ("Cached Xm ago")
-- Cache automatically invalidated when slots change (move, swap, drink, add, remove)
-
-**Phase 2b - Issue 2: Reduce-Now Prioritization (DONE)**
-- Modified `findSuitableWines()` in fridgeStocking.js to fetch reduce-now wine IDs
-- Wines in reduce-now list get +150 score bonus (highest priority)
-- Added `isReduceNow` flag to fridge candidates
-- Pre-fetches reduce-now IDs once per analysis to avoid N+1 queries
-
-**Phase 3a - Issue 4: Open Bottle Tracking (DONE)**
-- Created migration 022 for `is_open`, `opened_at` columns on slots table
-- Added API endpoints: `PUT /api/slots/:location/open`, `PUT /api/slots/:location/seal`, `GET /api/slots/open`
-- Added "Mark Open/Sealed" toggle button in bottle modal
-- Added gold border visual indicator for open bottles (🍷 icon)
-- Added `open_bottles` count to stats API
-- Added CSS for `.is-open`, `.btn-warning` styling
-
-**Phase 3b - Issue 6: Fridge Zone Categorization (DONE)**
-- Added `suggestFridgeOrganization()` function to fridgeStocking.js
-- Groups fridge wines by category in temperature order (coldest at top)
-- Added `GET /api/cellar/fridge-organize` endpoint
-- Added "Organize Fridge" button in Cellar Analysis fridge status
-- Shows suggested moves to group wines by category
-- Execute individual moves or all at once
-
-**Phase 3c - Issue 3: Zoom/Pan Viewing Mode (DONE)**
-- Added pinch-to-zoom gesture support for touch devices
-- Added pan gestures when zoomed in (>1x)
-- Added zoom controls (+, -, reset) in cellar header
-- Zoom level persisted in localStorage
-- Ctrl+scroll wheel zoom for desktop
-- CSS transforms for smooth scaling
-
-### Files Modified
-- `public/js/dragdrop.js` - Long-press to drag implementation
-- `public/js/grid.js` - Zoom controls, pinch-to-zoom, pan gestures
-- `public/js/app.js` - Import and init zoom controls
-- `public/js/modals.js` - Open bottle toggle button
-- `public/js/api.js` - openBottle, sealBottle, getOpenBottles, getFridgeOrganization
-- `public/js/cellarAnalysis.js` - Fridge organize UI
-- `public/css/styles.css` - Open bottle styles, zoom controls, fridge organize panel
-- `public/index.html` - Zoom controls, open bottle button
-- `src/routes/slots.js` - Open/seal endpoints
-- `src/routes/stats.js` - is_open in layout, open_bottles count
-- `src/routes/cellar.js` - fridge-organize endpoint
-- `src/services/fridgeStocking.js` - suggestFridgeOrganization()
-- `data/migrations/022_open_bottles.sql` - Schema
-- `data/migrations/postgres/supabase_missing_objects.sql` - Supabase updates
+*Status: READY FOR IMPLEMENTATION*

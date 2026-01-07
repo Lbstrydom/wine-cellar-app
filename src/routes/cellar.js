@@ -30,6 +30,7 @@ import {
   invalidateAnalysisCache,
   getAnalysisCacheInfo
 } from '../services/cacheService.js';
+import { validateMovePlan } from '../services/movePlanner.js';
 
 const router = express.Router();
 
@@ -424,7 +425,7 @@ router.get('/analyse/ai', async (req, res) => {
 
 /**
  * POST /api/cellar/execute-moves
- * Execute wine moves.
+ * Execute wine moves with validation and atomicity.
  */
 router.post('/execute-moves', async (req, res) => {
   try {
@@ -433,35 +434,68 @@ router.post('/execute-moves', async (req, res) => {
       return res.status(400).json({ error: 'Moves array required' });
     }
 
-    const results = [];
-
-    for (const move of moves) {
-      // Clear source slot
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(null, move.from);
-
-      // Set target slot
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(move.wineId, move.to);
-
-      // Update wine zone assignment
-      if (move.zoneId) {
-        await db.prepare('UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?').run(
-          move.zoneId, move.confidence || 'medium', move.wineId
-        );
-      }
-
-      results.push({
-        wineId: move.wineId,
-        from: move.from,
-        to: move.to,
-        success: true
+    // Validate move plan before execution
+    const validation = await validateMovePlan(moves);
+    
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        error: 'Move plan validation failed',
+        validation,
+        message: `Cannot execute moves: ${validation.summary.errorCount} validation error(s) detected`
       });
     }
 
-    res.json({
-      success: true,
-      moved: results.length,
-      results
-    });
+    // Execute all moves in a transaction
+    const results = [];
+    
+    try {
+      // Begin transaction
+      await db.prepare('BEGIN TRANSACTION').run();
+
+      for (const move of moves) {
+        // Clear source slot
+        await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(null, move.from);
+
+        // Set target slot
+        await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(move.wineId, move.to);
+
+        // Update wine zone assignment
+        if (move.zoneId) {
+          await db.prepare('UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?').run(
+            move.zoneId, move.confidence || 'medium', move.wineId
+          );
+        }
+
+        results.push({
+          wineId: move.wineId,
+          from: move.from,
+          to: move.to,
+          success: true
+        });
+      }
+
+      // Commit transaction
+      await db.prepare('COMMIT').run();
+
+      // Invalidate analysis cache after successful moves
+      await invalidateAnalysisCache();
+
+      res.json({
+        success: true,
+        moved: results.length,
+        results,
+        validation
+      });
+    } catch (execError) {
+      // Rollback transaction on error
+      try {
+        await db.prepare('ROLLBACK').run();
+      } catch (rollbackError) {
+        console.error('[CellarAPI] Rollback failed:', rollbackError);
+      }
+      throw execError;
+    }
   } catch (err) {
     console.error('[CellarAPI] Execute moves error:', err);
     res.status(500).json({ error: err.message });
