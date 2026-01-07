@@ -315,7 +315,7 @@ router.get('/analyse/ai', async (req, res) => {
  * POST /api/cellar/execute-moves
  * Execute wine moves.
  */
-router.post('/execute-moves', (req, res) => {
+router.post('/execute-moves', async (req, res) => {
   try {
     const { moves } = req.body;
     if (!Array.isArray(moves) || moves.length === 0) {
@@ -323,36 +323,28 @@ router.post('/execute-moves', (req, res) => {
     }
 
     const results = [];
-    const updateSlot = db.prepare(
-      'UPDATE slots SET wine_id = ? WHERE location_code = ?'
-    );
-    const updateWineZone = db.prepare(
-      'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
-    );
 
-    const transaction = db.transaction((movesToExecute) => {
-      for (const move of movesToExecute) {
-        // Clear source slot
-        updateSlot.run(null, move.from);
+    for (const move of moves) {
+      // Clear source slot
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(null, move.from);
 
-        // Set target slot
-        updateSlot.run(move.wineId, move.to);
+      // Set target slot
+      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(move.wineId, move.to);
 
-        // Update wine zone assignment
-        if (move.zoneId) {
-          updateWineZone.run(move.zoneId, move.confidence || 'medium', move.wineId);
-        }
-
-        results.push({
-          wineId: move.wineId,
-          from: move.from,
-          to: move.to,
-          success: true
-        });
+      // Update wine zone assignment
+      if (move.zoneId) {
+        await db.prepare('UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?').run(
+          move.zoneId, move.confidence || 'medium', move.wineId
+        );
       }
-    });
 
-    transaction(moves);
+      results.push({
+        wineId: move.wineId,
+        from: move.from,
+        to: move.to,
+        success: true
+      });
+    }
 
     res.json({
       success: true,

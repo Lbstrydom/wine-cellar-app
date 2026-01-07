@@ -119,98 +119,89 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       });
     }
 
-    // Use transaction for atomic replacement
-    const transaction = db.transaction(() => {
-      // Delete existing auto-fetched ratings (keep user overrides)
-      db.prepare(`
-        DELETE FROM wine_ratings
-        WHERE wine_id = ? AND (is_user_override != 1 OR is_user_override IS NULL)
-      `).run(wineId);
+    // Deduplicate by source before inserting
+    const seenSources = new Set();
+    const uniqueRatings = [];
 
-      logger.info('Ratings', `Cleared ${existingRatings.length} existing auto-ratings for wine ${wineId}`);
+    for (const rating of newRatings) {
+      const key = `${rating.source}-${rating.competition_year || 'any'}`;
+      if (!seenSources.has(key)) {
+        seenSources.add(key);
+        uniqueRatings.push(rating);
+      } else {
+        logger.info('Ratings', `Skipping duplicate ${rating.source} rating`);
+      }
+    }
 
-      // Deduplicate by source before inserting
-      const seenSources = new Set();
-      const uniqueRatings = [];
+    // Delete existing auto-fetched ratings (keep user overrides)
+    await db.prepare(`
+      DELETE FROM wine_ratings
+      WHERE wine_id = ? AND (is_user_override != 1 OR is_user_override IS NULL)
+    `).run(wineId);
 
-      for (const rating of newRatings) {
-        const key = `${rating.source}-${rating.competition_year || 'any'}`;
-        if (!seenSources.has(key)) {
-          seenSources.add(key);
-          uniqueRatings.push(rating);
-        } else {
-          logger.info('Ratings', `Skipping duplicate ${rating.source} rating`);
-        }
+    logger.info('Ratings', `Cleared ${existingRatings.length} existing auto-ratings for wine ${wineId}`);
+
+    // Insert new ratings
+    let insertedCount = 0;
+    for (const rating of uniqueRatings) {
+      const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
+      if (!sourceConfig) {
+        logger.warn('Ratings', `Unknown source: ${rating.source}, skipping`);
+        continue;
       }
 
-      // Insert new ratings
-      const insertStmt = db.prepare(`
-        INSERT INTO wine_ratings (
-          wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
-          normalized_min, normalized_max, normalized_mid,
-          award_name, competition_year, rating_count,
-          source_url, evidence_excerpt, matched_wine_label,
-          vintage_match, match_confidence, fetched_at, is_user_override
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
-      `);
+      // Skip ratings without valid scores (e.g., paywalled content)
+      if (!rating.raw_score || rating.raw_score === 'null' || rating.raw_score === '') {
+        logger.warn('Ratings', `No score found for ${rating.source}, skipping (likely paywalled)`);
+        continue;
+      }
 
-      let insertedCount = 0;
-      for (const rating of uniqueRatings) {
-        const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
-        if (!sourceConfig) {
-          logger.warn('Ratings', `Unknown source: ${rating.source}, skipping`);
+      try {
+        const normalized = normalizeScore(rating.source, rating.score_type, rating.raw_score);
+
+        // Validate normalized values are actual numbers
+        if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
+          logger.warn('Ratings', `Invalid normalized score for ${rating.source}: ${rating.raw_score}, skipping`);
           continue;
         }
 
-        // Skip ratings without valid scores (e.g., paywalled content)
-        if (!rating.raw_score || rating.raw_score === 'null' || rating.raw_score === '') {
-          logger.warn('Ratings', `No score found for ${rating.source}, skipping (likely paywalled)`);
-          continue;
-        }
+        const numericScore = parseFloat(String(rating.raw_score).replace(/\/\d+$/, '')) || null;
 
-        try {
-          const normalized = normalizeScore(rating.source, rating.score_type, rating.raw_score);
-
-          // Validate normalized values are actual numbers
-          if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
-            logger.warn('Ratings', `Invalid normalized score for ${rating.source}: ${rating.raw_score}, skipping`);
-            continue;
-          }
-
-          const numericScore = parseFloat(String(rating.raw_score).replace(/\/\d+$/, '')) || null;
-
-          insertStmt.run(
-            wineId,
-            wine.vintage,
-            rating.source,
-            rating.lens || sourceConfig.lens,
-            rating.score_type,
-            rating.raw_score,
-            numericScore,
-            normalized.min,
-            normalized.max,
-            normalized.mid,
-            rating.award_name || null,
-            rating.competition_year || null,
-            rating.rating_count || null,
-            rating.source_url || null,
-            rating.evidence_excerpt || null,
-            rating.matched_wine_label || null,
-            rating.vintage_match || 'inferred',
-            rating.match_confidence || 'medium'
-          );
-          insertedCount++;
-        } catch (err) {
-          logger.error('Ratings', `Failed to insert rating from ${rating.source}: ${err.message}`);
-        }
+        await db.prepare(`
+          INSERT INTO wine_ratings (
+            wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
+            normalized_min, normalized_max, normalized_mid,
+            award_name, competition_year, rating_count,
+            source_url, evidence_excerpt, matched_wine_label,
+            vintage_match, match_confidence, fetched_at, is_user_override
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+        `).run(
+          wineId,
+          wine.vintage,
+          rating.source,
+          rating.lens || sourceConfig.lens,
+          rating.score_type,
+          rating.raw_score,
+          numericScore,
+          normalized.min,
+          normalized.max,
+          normalized.mid,
+          rating.award_name || null,
+          rating.competition_year || null,
+          rating.rating_count || null,
+          rating.source_url || null,
+          rating.evidence_excerpt || null,
+          rating.matched_wine_label || null,
+          rating.vintage_match || 'inferred',
+          rating.match_confidence || 'medium'
+        );
+        insertedCount++;
+      } catch (err) {
+        logger.error('Ratings', `Failed to insert rating from ${rating.source}: ${err.message}`);
       }
+    }
 
-      logger.info('Ratings', `Inserted ${insertedCount} ratings for wine ${wineId}`);
-      return insertedCount;
-    });
-
-    // Execute transaction
-    const insertedCount = transaction();
+    logger.info('Ratings', `Inserted ${insertedCount} ratings for wine ${wineId}`);
 
     // Update aggregates
     const ratings = db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
