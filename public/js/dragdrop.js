@@ -24,6 +24,15 @@ let touchDragState = {
   currentTarget: null
 };
 
+// Long-press configuration for mobile drag
+const LONG_PRESS_CONFIG = {
+  duration: 500,          // ms to hold before drag starts
+  moveThreshold: 10       // px movement cancels long-press (scroll intent)
+};
+
+let longPressTimer = null;
+let longPressStartPos = null;
+
 // Auto-scroll configuration
 const AUTO_SCROLL_CONFIG = {
   edgeThreshold: 80,      // Pixels from viewport edge to trigger scroll
@@ -261,7 +270,62 @@ export function isDragging() {
 // ============== Touch Event Handlers for Mobile ==============
 
 /**
- * Handle touch start - begin drag on mobile.
+ * Cancel any pending long-press timer.
+ */
+function cancelLongPress() {
+  if (longPressTimer) {
+    clearTimeout(longPressTimer);
+    longPressTimer = null;
+  }
+  longPressStartPos = null;
+
+  // Remove pending visual feedback
+  document.querySelectorAll('.slot.drag-pending').forEach(s => {
+    s.classList.remove('drag-pending');
+  });
+}
+
+/**
+ * Initiate drag after long-press completes.
+ * @param {HTMLElement} slot - The slot to drag
+ * @param {number} x - Touch X coordinate
+ * @param {number} y - Touch Y coordinate
+ */
+function initiateTouchDrag(slot, x, y) {
+  // Haptic feedback if available
+  if (navigator.vibrate) {
+    navigator.vibrate(50);
+  }
+
+  // Start touch drag
+  touchDragState = {
+    active: true,
+    sourceSlot: slot.dataset.location,
+    sourceElement: slot,
+    ghostElement: null,
+    startX: x,
+    startY: y,
+    currentTarget: null
+  };
+
+  // Visual feedback
+  slot.classList.remove('drag-pending');
+  slot.classList.add('touch-dragging');
+
+  // Create ghost element for visual feedback
+  createTouchGhost(slot, x, y);
+
+  // Highlight valid drop targets
+  document.querySelectorAll('.slot').forEach(s => {
+    if (s !== slot) {
+      s.classList.add('drag-target');
+    }
+  });
+}
+
+/**
+ * Handle touch start - begin long-press timer for drag.
+ * Normal scroll is allowed; drag only starts after holding 500ms.
  * @param {TouchEvent} e
  */
 function handleTouchStart(e) {
@@ -271,32 +335,23 @@ function handleTouchStart(e) {
   const touch = e.touches[0];
   const slot = e.currentTarget;
 
-  // Start touch drag
-  touchDragState = {
-    active: true,
-    sourceSlot: slot.dataset.location,
-    sourceElement: slot,
-    ghostElement: null,
-    startX: touch.clientX,
-    startY: touch.clientY,
-    currentTarget: null
-  };
+  // Cancel any existing long-press
+  cancelLongPress();
 
-  // Visual feedback - mark as dragging after a short delay to avoid accidental drags
-  slot.classList.add('touch-dragging');
+  // Store start position for movement detection
+  longPressStartPos = { x: touch.clientX, y: touch.clientY };
 
-  // Create ghost element for visual feedback
-  createTouchGhost(slot, touch.clientX, touch.clientY);
+  // Add visual hint that drag will start (subtle pulse)
+  slot.classList.add('drag-pending');
 
-  // Highlight valid drop targets
-  document.querySelectorAll('.slot').forEach(s => {
-    if (s !== slot) {
-      s.classList.add('drag-target');
-    }
-  });
+  // Start long-press timer
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    initiateTouchDrag(slot, touch.clientX, touch.clientY);
+  }, LONG_PRESS_CONFIG.duration);
 
-  // Prevent default to avoid scrolling while dragging
-  e.preventDefault();
+  // DON'T prevent default here - allow native scroll to work
+  // e.preventDefault(); -- REMOVED to allow scrolling
 }
 
 /**
@@ -326,16 +381,32 @@ function createTouchGhost(slot, x, y) {
 }
 
 /**
- * Handle touch move - update ghost position and find target.
+ * Handle touch move - check for scroll vs drag intent.
  * @param {TouchEvent} e
  */
 function handleTouchMove(e) {
-  if (!touchDragState.active) return;
-
   // Only handle single touch
   if (e.touches.length !== 1) return;
 
   const touch = e.touches[0];
+
+  // If long-press timer is still running, check for scroll intent
+  if (longPressTimer && longPressStartPos) {
+    const dx = Math.abs(touch.clientX - longPressStartPos.x);
+    const dy = Math.abs(touch.clientY - longPressStartPos.y);
+
+    // User moved finger - they want to scroll, not drag
+    if (dx > LONG_PRESS_CONFIG.moveThreshold || dy > LONG_PRESS_CONFIG.moveThreshold) {
+      cancelLongPress();
+      // Let native scroll continue - don't prevent default
+      return;
+    }
+  }
+
+  // If drag is not active yet, allow normal behavior
+  if (!touchDragState.active) return;
+
+  // === DRAG IS ACTIVE - handle drag movement ===
 
   // Update ghost position
   if (touchDragState.ghostElement) {
@@ -382,15 +453,19 @@ function handleTouchMove(e) {
   // Auto-scroll when near viewport edges
   startAutoScroll(touch.clientY);
 
-  // Prevent default scrolling (we handle it ourselves via auto-scroll)
+  // Only prevent default when drag is active (stops page scroll during drag)
   e.preventDefault();
 }
 
 /**
- * Handle touch end - complete the drag.
+ * Handle touch end - complete the drag or cancel long-press.
  * @param {TouchEvent} e
  */
 async function handleTouchEnd(_e) {
+  // Cancel any pending long-press
+  cancelLongPress();
+
+  // If drag wasn't active, nothing to do
   if (!touchDragState.active) return;
 
   const targetSlot = touchDragState.currentTarget;

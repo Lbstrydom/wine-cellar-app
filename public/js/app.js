@@ -4,7 +4,7 @@
  */
 
 import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
-import { renderFridge, renderCellar } from './grid.js';
+import { renderFridge, renderCellar, initZoomControls } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
@@ -459,6 +459,9 @@ async function init() {
   // Load initial data
   await loadLayout();
   await loadStats();
+
+  // Initialize zoom controls after grid is rendered
+  initZoomControls();
 }
 
 /**

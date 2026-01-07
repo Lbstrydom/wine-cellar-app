@@ -14,6 +14,7 @@ import {
   drinkBottleSchema,
   locationParamSchema
 } from '../schemas/slot.js';
+import { invalidateAnalysisCache } from '../services/cacheService.js';
 
 const router = Router();
 
@@ -45,6 +46,9 @@ router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
       await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [from_location]);
       await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [sourceSlot.wine_id, to_location]);
     });
+
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
 
     res.json({ message: 'Bottle moved' });
   } catch (error) {
@@ -91,6 +95,9 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
       await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [slot_a]);
     });
 
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
+
     res.json({
       message: 'Bottles swapped',
       moves: [
@@ -135,6 +142,9 @@ router.post('/direct-swap', validateBody(directSwapSchema), async (req, res) => 
       await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, slot_a]);
       await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
     });
+
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
 
     res.json({
       message: 'Bottles swapped',
@@ -186,6 +196,9 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
       }
     });
 
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
+
     res.json({
       message: 'Bottle consumed and logged',
       remaining_bottles: remainingCount
@@ -214,6 +227,10 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
     }
 
     await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(wine_id, location);
+
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
+
     res.json({ message: 'Bottle added to slot' });
   } catch (error) {
     console.error('Add to slot error:', error);
@@ -239,9 +256,100 @@ router.delete('/:location/remove', validateParams(locationParamSchema), async (r
 
     await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
 
+    // Invalidate analysis cache since slot assignments changed
+    await invalidateAnalysisCache();
+
     res.json({ message: `Bottle removed from ${location}` });
   } catch (error) {
     console.error('Remove error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Mark bottle as open.
+ * @route PUT /api/slots/:location/open
+ */
+router.put('/:location/open', validateParams(locationParamSchema), async (req, res) => {
+  try {
+    const { location } = req.params;
+
+    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE location_code = ?').get(location);
+    if (!slot) {
+      return res.status(404).json({ error: 'Slot not found' });
+    }
+    if (!slot.wine_id) {
+      return res.status(400).json({ error: 'Slot is empty' });
+    }
+    if (slot.is_open) {
+      return res.status(400).json({ error: 'Bottle is already open' });
+    }
+
+    await db.prepare('UPDATE slots SET is_open = TRUE, opened_at = CURRENT_TIMESTAMP WHERE location_code = ?').run(location);
+
+    res.json({ message: 'Bottle marked as open', location });
+  } catch (error) {
+    console.error('Open bottle error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Mark bottle as sealed/closed (undo open).
+ * @route PUT /api/slots/:location/seal
+ */
+router.put('/:location/seal', validateParams(locationParamSchema), async (req, res) => {
+  try {
+    const { location } = req.params;
+
+    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE location_code = ?').get(location);
+    if (!slot) {
+      return res.status(404).json({ error: 'Slot not found' });
+    }
+    if (!slot.wine_id) {
+      return res.status(400).json({ error: 'Slot is empty' });
+    }
+    if (!slot.is_open) {
+      return res.status(400).json({ error: 'Bottle is not open' });
+    }
+
+    await db.prepare('UPDATE slots SET is_open = FALSE, opened_at = NULL WHERE location_code = ?').run(location);
+
+    res.json({ message: 'Bottle marked as sealed', location });
+  } catch (error) {
+    console.error('Seal bottle error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get all open bottles.
+ * @route GET /api/slots/open
+ */
+router.get('/open', async (_req, res) => {
+  try {
+    const openBottles = await db.prepare(`
+      SELECT
+        s.location_code,
+        s.opened_at,
+        s.zone,
+        w.id as wine_id,
+        w.wine_name,
+        w.vintage,
+        w.colour,
+        w.style
+      FROM slots s
+      JOIN wines w ON w.id = s.wine_id
+      WHERE s.is_open = TRUE
+      ORDER BY s.opened_at DESC
+    `).all();
+
+    res.json({
+      count: openBottles.length,
+      bottles: openBottles
+    });
+  } catch (error) {
+    console.error('Get open bottles error:', error);
     res.status(500).json({ error: error.message });
   }
 });

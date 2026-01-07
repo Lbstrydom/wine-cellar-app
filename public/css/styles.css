@@ -13,6 +13,7 @@
   --priority-1: #ff4444;
   --priority-2: #ff8844;
   --priority-3: #ffbb44;
+  --gold: #D4AF37;
   --accent: #8B7355;
   --fridge-bg: #1e2a35;
 }
@@ -124,6 +125,38 @@ header .search-trigger {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.15em;
+}
+
+/* Zoom controls */
+.zoom-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.zoom-controls .btn-small {
+  padding: 0.25rem 0.5rem;
+  font-size: 1rem;
+  min-width: 32px;
+}
+
+.zoom-level {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  min-width: 40px;
+  text-align: center;
+}
+
+/* Cellar container for zoom */
+.cellar-container {
+  position: relative;
+  overflow: auto;
+  touch-action: pan-x pan-y;
+}
+
+.cellar-container.zoomed {
+  overflow: auto;
+  touch-action: none;
 }
 
 /* Cellar grid */
@@ -475,6 +508,14 @@ header .search-trigger {
 .analysis-actions {
   display: flex;
   gap: 0.75rem;
+  align-items: center;
+}
+
+.analysis-cache-status {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  cursor: help;
+  padding-left: 0.5rem;
 }
 
 #view-analysis h3 {
@@ -1087,6 +1128,27 @@ header .search-trigger {
 .slot.priority-2::after { border-color: transparent var(--priority-2) transparent transparent; }
 .slot.priority-3::after { border-color: transparent var(--priority-3) transparent transparent; }
 
+/* Open bottle indicator */
+.slot.is-open {
+  border: 2px solid var(--gold, #D4AF37);
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.4);
+}
+
+.slot.is-open.red,
+.slot.is-open.white,
+.slot.is-open.rose,
+.slot.is-open.sparkling {
+  border-left: 3px solid var(--gold, #D4AF37);
+}
+
+.open-indicator {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  font-size: 0.6rem;
+  line-height: 1;
+}
+
 .slot-name {
   font-size: 0.65rem;
   font-weight: 500;
@@ -1300,6 +1362,100 @@ header .search-trigger {
 
 .btn-secondary:hover {
   background: var(--bg-slot-hover);
+}
+
+.btn-warning {
+  background: var(--gold, #D4AF37);
+  color: #1a1a1a;
+}
+
+.btn-warning:hover {
+  filter: brightness(1.15);
+}
+
+#btn-open-bottle.is-open {
+  background: var(--bg-slot);
+  color: var(--text);
+  border: 1px solid var(--gold, #D4AF37);
+}
+
+/* Fridge organize panel */
+.fridge-organize-result {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: var(--bg-card);
+  border-radius: 8px;
+}
+
+.fridge-organize-result h5 {
+  margin-bottom: 0.5rem;
+}
+
+.organize-description {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.fridge-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.fridge-summary-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.25rem 0.5rem;
+  background: var(--bg-slot);
+  border-radius: 4px;
+  font-size: 0.8rem;
+}
+
+.fridge-summary-item .category-name {
+  font-weight: 500;
+}
+
+.fridge-summary-item .category-slots {
+  color: var(--text-muted);
+}
+
+.fridge-moves-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.fridge-move-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  background: var(--bg-slot);
+  border-radius: 4px;
+  font-size: 0.85rem;
+}
+
+.fridge-move-item .move-wine {
+  flex: 1;
+  font-weight: 500;
+}
+
+.fridge-move-item .move-category {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.fridge-move-item .move-path {
+  color: var(--accent);
+}
+
+.fridge-organize-actions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 /* Reduce Now list view */
@@ -1893,6 +2049,16 @@ header .search-trigger {
 }
 
 /* Touch drag styles for mobile */
+.slot.drag-pending {
+  animation: drag-pending-pulse 0.5s ease-in-out;
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+@keyframes drag-pending-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(0.97); }
+}
+
 .slot.touch-dragging {
   opacity: 0.5;
   transform: scale(0.95);

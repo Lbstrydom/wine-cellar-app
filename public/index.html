@@ -121,8 +121,14 @@
     <div class="zone">
       <div class="zone-header">
         <span class="zone-title">Cellar</span>
+        <div class="zoom-controls">
+          <button class="btn btn-small" id="zoom-out-btn" title="Zoom out">−</button>
+          <span class="zoom-level" id="zoom-level">100%</span>
+          <button class="btn btn-small" id="zoom-in-btn" title="Zoom in">+</button>
+          <button class="btn btn-small" id="zoom-reset-btn" title="Reset zoom">⟲</button>
+        </div>
       </div>
-      <div class="cellar-container">
+      <div class="cellar-container" id="cellar-container">
         <div class="zone-labels" id="zone-labels"></div>
         <div class="cellar-grid" id="cellar-grid"></div>
       </div>
@@ -137,6 +143,7 @@
         <button class="btn btn-primary" id="refresh-analysis-btn">Refresh Analysis</button>
         <button class="btn btn-secondary" id="get-ai-advice-btn">Get AI Advice</button>
         <button class="btn btn-secondary" id="setup-zones-btn">Setup Zones</button>
+        <span class="analysis-cache-status" id="analysis-cache-status"></span>
       </div>
     </div>
 
@@ -782,6 +789,7 @@
       </div>
       <div class="modal-actions">
         <button class="btn btn-danger" id="btn-drink">Drink This</button>
+        <button class="btn btn-warning" id="btn-open-bottle">Mark Open</button>
         <button class="btn btn-secondary" id="btn-add-another">+ Add Another</button>
         <button class="btn btn-secondary" id="btn-edit-wine">Edit</button>
         <button class="btn btn-secondary" id="btn-close">Close</button>

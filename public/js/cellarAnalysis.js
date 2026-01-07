@@ -11,7 +11,8 @@ import {
   confirmZoneLayout,
   getConsolidationMoves,
   zoneChatMessage,
-  reassignWineZone
+  reassignWineZone,
+  getFridgeOrganization
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { refreshLayout } from './app.js';
@@ -39,7 +40,7 @@ export function initCellarAnalysis() {
   const zoneChatInput = document.getElementById('zone-chat-input');
 
   if (refreshBtn) {
-    refreshBtn.addEventListener('click', loadAnalysis);
+    refreshBtn.addEventListener('click', () => refreshAnalysis());
   }
 
   if (executeAllBtn) {
@@ -87,27 +88,54 @@ export function initCellarAnalysis() {
 /**
  * Load analysis when tab is opened.
  * Called by app.js when switching to analysis tab.
+ * @param {boolean} [forceRefresh=false] - Force fresh analysis ignoring cache
  */
-export async function loadAnalysis() {
+export async function loadAnalysis(forceRefresh = false) {
   const summaryEl = document.getElementById('analysis-summary');
   const alertsEl = document.getElementById('analysis-alerts');
   const movesListEl = document.getElementById('moves-list');
   const movesActionsEl = document.getElementById('moves-actions');
+  const cacheStatusEl = document.getElementById('analysis-cache-status');
 
   // Show loading state
   summaryEl.innerHTML = '<div class="analysis-loading">Analysing cellar organisation...</div>';
   alertsEl.innerHTML = '';
   movesListEl.innerHTML = '';
   movesActionsEl.style.display = 'none';
+  if (cacheStatusEl) cacheStatusEl.textContent = '';
 
   try {
-    const response = await analyseCellar();
+    const response = await analyseCellar(forceRefresh);
     currentAnalysis = response.report;
     analysisLoaded = true;
     renderAnalysis(currentAnalysis);
+
+    // Show cache status
+    if (cacheStatusEl) {
+      if (response.fromCache && response.cachedAt) {
+        const cacheDate = new Date(response.cachedAt);
+        const now = new Date();
+        const diffMs = now - cacheDate;
+        const diffMins = Math.round(diffMs / 60000);
+        const timeAgo = diffMins < 1 ? 'just now' :
+          diffMins < 60 ? `${diffMins}m ago` :
+          `${Math.round(diffMins / 60)}h ago`;
+        cacheStatusEl.textContent = `Cached ${timeAgo}`;
+        cacheStatusEl.title = `Analysis cached at ${cacheDate.toLocaleTimeString()}. Click refresh to update.`;
+      } else {
+        cacheStatusEl.textContent = 'Fresh analysis';
+      }
+    }
   } catch (err) {
     summaryEl.innerHTML = `<div class="analysis-loading">Error: ${err.message}</div>`;
   }
+}
+
+/**
+ * Force refresh analysis (ignore cache).
+ */
+export async function refreshAnalysis() {
+  return loadAnalysis(true);
 }
 
 /**
@@ -297,16 +325,22 @@ function renderFridgeStatus(fridgeStatus) {
     `;
   }
 
+  // Organize button (only show if 2+ wines in fridge)
+  const organizeBtn = fridgeStatus.occupied >= 2
+    ? '<button class="btn btn-secondary btn-small organize-fridge-btn">Organize Fridge</button>'
+    : '';
+
   contentEl.innerHTML = `
     <div class="fridge-status-header">
       <div class="fridge-capacity-bar">
         <div class="fridge-capacity-fill" style="width: ${fillPercent}%"></div>
       </div>
-      <div class="fridge-capacity-text">${fridgeStatus.occupied}/${fridgeStatus.capacity} slots</div>
+      <div class="fridge-capacity-text">${fridgeStatus.occupied}/${fridgeStatus.capacity} slots ${organizeBtn}</div>
     </div>
     <div class="fridge-mix-grid">${mixHtml}</div>
     ${gapsHtml}
     ${candidatesHtml}
+    <div id="fridge-organize-panel" style="display: none;"></div>
   `;
 
   // Attach event listeners for fridge candidate add buttons (CSP-compliant)
@@ -316,6 +350,12 @@ function renderFridgeStatus(fridgeStatus) {
       moveFridgeCandidate(index);
     });
   });
+
+  // Attach organize fridge button handler
+  const organizeButton = contentEl.querySelector('.organize-fridge-btn');
+  if (organizeButton) {
+    organizeButton.addEventListener('click', handleOrganizeFridge);
+  }
 }
 
 /**
@@ -423,6 +463,163 @@ async function moveFridgeCandidate(index) {
     showToast(`Moved ${candidate.wineName} to ${targetSlot}`);
 
     // Re-analyse to show updated state
+    await loadAnalysis();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Handle the "Organize Fridge" button click.
+ * Shows suggested moves to group wines by category.
+ */
+async function handleOrganizeFridge() {
+  const panel = document.getElementById('fridge-organize-panel');
+  if (!panel) return;
+
+  // Toggle visibility if already showing
+  if (panel.style.display !== 'none') {
+    panel.style.display = 'none';
+    return;
+  }
+
+  panel.style.display = 'block';
+  panel.innerHTML = '<div class="analysis-loading">Calculating optimal arrangement...</div>';
+
+  try {
+    const result = await getFridgeOrganization();
+
+    if (!result.moves || result.moves.length === 0) {
+      panel.innerHTML = `
+        <div class="fridge-organize-result">
+          <p class="no-moves">Your fridge is already well-organized by category.</p>
+          ${result.summary ? renderFridgeSummary(result.summary) : ''}
+        </div>
+      `;
+      return;
+    }
+
+    panel.innerHTML = `
+      <div class="fridge-organize-result">
+        <h5>Suggested Reorganization</h5>
+        <p class="organize-description">Grouping wines by category (coldest at top):</p>
+        ${renderFridgeSummary(result.summary)}
+        <div class="fridge-moves-list">
+          ${result.moves.map((m, i) => `
+            <div class="fridge-move-item" data-move-index="${i}">
+              <span class="move-wine">${escapeHtml(m.wineName)} ${m.vintage || ''}</span>
+              <span class="move-category">${escapeHtml(m.category)}</span>
+              <span class="move-path">${m.from} → ${m.to}</span>
+              <button class="btn btn-small btn-primary fridge-move-btn" data-move-index="${i}">Move</button>
+            </div>
+          `).join('')}
+        </div>
+        <div class="fridge-organize-actions">
+          <button class="btn btn-primary execute-all-fridge-moves-btn">Execute All ${result.moves.length} Moves</button>
+          <button class="btn btn-secondary close-organize-btn">Close</button>
+        </div>
+      </div>
+    `;
+
+    // Store moves for execution
+    panel.dataset.moves = JSON.stringify(result.moves);
+
+    // Attach event listeners
+    panel.querySelectorAll('.fridge-move-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = Number.parseInt(btn.dataset.moveIndex, 10);
+        executeFridgeOrganizeMove(idx);
+      });
+    });
+
+    panel.querySelector('.execute-all-fridge-moves-btn')?.addEventListener('click', executeAllFridgeOrganizeMoves);
+    panel.querySelector('.close-organize-btn')?.addEventListener('click', () => {
+      panel.style.display = 'none';
+    });
+
+  } catch (err) {
+    panel.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+  }
+}
+
+/**
+ * Render fridge organization summary.
+ * @param {Array} summary - Category groups
+ * @returns {string} HTML
+ */
+function renderFridgeSummary(summary) {
+  if (!summary || summary.length === 0) return '';
+
+  return `
+    <div class="fridge-summary">
+      ${summary.map(g => `
+        <span class="fridge-summary-item">
+          <span class="category-name">${escapeHtml(g.name)}</span>
+          <span class="category-slots">${g.startSlot}${g.startSlot !== g.endSlot ? '-' + g.endSlot : ''}</span>
+        </span>
+      `).join('')}
+    </div>
+  `;
+}
+
+/**
+ * Execute a single fridge organization move.
+ * @param {number} index - Move index
+ */
+async function executeFridgeOrganizeMove(index) {
+  const panel = document.getElementById('fridge-organize-panel');
+  if (!panel) return;
+
+  const moves = JSON.parse(panel.dataset.moves || '[]');
+  const move = moves[index];
+  if (!move) return;
+
+  try {
+    await executeCellarMoves([{
+      wineId: move.wineId,
+      from: move.from,
+      to: move.to
+    }]);
+    showToast(`Moved ${move.wineName} to ${move.to}`);
+
+    // Remove from list and refresh
+    moves.splice(index, 1);
+    panel.dataset.moves = JSON.stringify(moves);
+
+    // Refresh UI
+    await loadAnalysis();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Execute all fridge organization moves.
+ */
+async function executeAllFridgeOrganizeMoves() {
+  const panel = document.getElementById('fridge-organize-panel');
+  if (!panel) return;
+
+  const moves = JSON.parse(panel.dataset.moves || '[]');
+  if (moves.length === 0) {
+    showToast('No moves to execute');
+    return;
+  }
+
+  try {
+    const movesToExecute = moves.map(m => ({
+      wineId: m.wineId,
+      from: m.from,
+      to: m.to
+    }));
+
+    const result = await executeCellarMoves(movesToExecute);
+    showToast(`Executed ${result.moved} moves`);
+
+    // Clear and refresh
+    panel.style.display = 'none';
     await loadAnalysis();
     refreshLayout();
   } catch (err) {

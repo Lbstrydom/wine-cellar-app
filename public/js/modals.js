@@ -3,7 +3,7 @@
  * @module modals
  */
 
-import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature } from './api.js';
+import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature, openBottle, sealBottle } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
@@ -51,6 +51,9 @@ export async function showWineModal(slot) {
   document.getElementById('modal-location').textContent = slot.location_code;
   document.getElementById('modal-rating').textContent = slot.rating ? `${slot.rating}/5` : '-';
   document.getElementById('modal-price').textContent = slot.price ? `${slot.price.toFixed(2)}` : '-';
+
+  // Update open bottle button state
+  updateOpenBottleButton(slot.is_open);
 
   const reduceField = document.getElementById('modal-reduce-field');
   if (slot.reduce_priority) {
@@ -267,6 +270,49 @@ export async function handleDrinkBottle() {
 }
 
 /**
+ * Update open bottle button text based on state.
+ * @param {boolean} isOpen - Whether bottle is open
+ */
+function updateOpenBottleButton(isOpen) {
+  const btn = document.getElementById('btn-open-bottle');
+  if (!btn) return;
+
+  if (isOpen) {
+    btn.textContent = 'Mark Sealed';
+    btn.classList.add('is-open');
+  } else {
+    btn.textContent = 'Mark Open';
+    btn.classList.remove('is-open');
+  }
+}
+
+/**
+ * Handle open/seal bottle button click.
+ */
+async function handleToggleOpenBottle() {
+  if (!currentSlot) return;
+
+  const location = currentSlot.location_code;
+  const isCurrentlyOpen = currentSlot.is_open;
+
+  try {
+    if (isCurrentlyOpen) {
+      await sealBottle(location);
+      currentSlot.is_open = false;
+      showToast('Bottle marked as sealed');
+    } else {
+      await openBottle(location);
+      currentSlot.is_open = true;
+      showToast('Bottle marked as open');
+    }
+    updateOpenBottleButton(currentSlot.is_open);
+    await refreshData();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  }
+}
+
+/**
  * Load drinking windows for a wine.
  * @param {number} wineId - Wine ID
  */
@@ -443,6 +489,7 @@ export function initModals() {
   document.getElementById('btn-close').addEventListener('click', closeWineModal);
   document.getElementById('btn-add-another')?.addEventListener('click', handleAddAnother);
   document.getElementById('btn-edit-wine')?.addEventListener('click', handleEditWine);
+  document.getElementById('btn-open-bottle')?.addEventListener('click', handleToggleOpenBottle);
   document.getElementById('save-personal-rating')?.addEventListener('click', savePersonalRating);
   document.getElementById('save-manual-window')?.addEventListener('click', handleSaveManualWindow);
   document.getElementById('modal-overlay').addEventListener('click', (e) => {

@@ -955,6 +955,41 @@ Comprehensive code quality audit addressing security, maintainability, and best 
 
 **ESLint Status**: 0 errors, 0 warnings (clean)
 
+### User Test Issues - 7 January 2026
+All 7 issues from user testing resolved:
+
+**Phase 1 - Issue 7: Mobile Scroll vs Drag (DONE)**
+- Added long-press (500ms) to initiate drag on mobile
+- Normal touch allows scroll; only long-press starts drag
+- Added `drag-pending` CSS animation for visual feedback
+
+**Phase 2a - Issue 5: Cache Analysis Results (DONE)**
+- Created `cellar_analysis_cache` table (migration 021)
+- Cache-first strategy with slot hash invalidation
+- "Cached Xm ago" status display in UI
+
+**Phase 2b - Issue 2: Reduce-Now Prioritization (DONE)**
+- Wines in reduce-now list get +150 score bonus for fridge suggestions
+- Added `isReduceNow` flag to fridge candidates
+
+**Phase 3a - Issue 4: Open Bottle Tracking (DONE)**
+- Created migration 022 for `is_open`, `opened_at` columns
+- API endpoints: PUT /api/slots/:location/open, /seal, GET /open
+- Gold border visual indicator with 🍷 icon
+- "Mark Open/Sealed" toggle in bottle modal
+
+**Phase 3b - Issue 6: Fridge Zone Categorization (DONE)**
+- "Organize Fridge" button groups wines by category (temperature order)
+- API: GET /api/cellar/fridge-organize
+- Execute individual moves or batch reorganization
+
+**Phase 3c - Issue 3: Zoom/Pan Viewing Mode (DONE)**
+- Pinch-to-zoom gesture support (50%-200%)
+- Pan gestures when zoomed in
+- Zoom controls (+, -, reset) in cellar header
+- Ctrl+scroll wheel zoom for desktop
+- Zoom level persisted in localStorage
+
 ### CSP Event Handler Audit - 7 January 2026
 Discovered and fixed silent failures caused by CSP blocking inline event handlers.
 
@@ -1247,7 +1282,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **API Endpoints** | 50+ |
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
-| **Database Migrations** | 15 |
+| **Database Migrations** | 22 |
 | **Unit Tests** | 249 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
@@ -1256,7 +1291,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v29 |
+| **Service Worker Version** | v45 |
 
 ---
 

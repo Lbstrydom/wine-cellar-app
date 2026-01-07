@@ -342,3 +342,148 @@ export async function updateCacheConfig(key, value) {
     logger.warn('Cache', `Config update failed: ${err.message}`);
   }
 }
+
+// =============================================================================
+// Analysis Cache
+// =============================================================================
+
+/**
+ * Generate slot hash for cache invalidation.
+ * Hash of all wine_id assignments to detect changes.
+ * @returns {Promise<string>} MD5 hash of slot assignments
+ */
+export async function generateSlotHash() {
+  try {
+    const slots = await db.prepare(`
+      SELECT location_code, wine_id
+      FROM slots
+      WHERE wine_id IS NOT NULL
+      ORDER BY location_code
+    `).all();
+
+    const slotData = slots.map(s => `${s.location_code}:${s.wine_id}`).join('|');
+    return crypto.createHash('md5').update(slotData).digest('hex');
+  } catch (err) {
+    logger.warn('Cache', `Slot hash generation failed: ${err.message}`);
+    return '';
+  }
+}
+
+/**
+ * Get cached cellar analysis.
+ * @param {string} analysisType - Type of analysis ('full', 'fridge', 'zones')
+ * @returns {Promise<Object|null>} Cached analysis or null
+ */
+export async function getCachedAnalysis(analysisType) {
+  try {
+    const cached = await db.prepare(`
+      SELECT analysis_data, wine_count, slot_hash, created_at
+      FROM cellar_analysis_cache
+      WHERE analysis_type = ? AND (expires_at IS NULL OR expires_at > ${nowFunc()})
+    `).get(analysisType);
+
+    if (cached) {
+      // Verify slot hash matches current state
+      const currentHash = await generateSlotHash();
+      if (cached.slot_hash === currentHash) {
+        logger.info('Cache', `Analysis HIT: ${analysisType}`);
+        return {
+          data: JSON.parse(cached.analysis_data),
+          wineCount: cached.wine_count,
+          createdAt: cached.created_at,
+          fromCache: true
+        };
+      } else {
+        logger.info('Cache', `Analysis STALE: ${analysisType} (slot hash mismatch)`);
+        // Invalidate stale cache
+        await invalidateAnalysisCache(analysisType);
+      }
+    }
+  } catch (err) {
+    logger.warn('Cache', `Analysis lookup failed: ${err.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Cache cellar analysis result.
+ * @param {string} analysisType - Type of analysis ('full', 'fridge', 'zones')
+ * @param {Object} analysisData - The analysis result
+ * @param {number} wineCount - Current wine count
+ * @param {number} [ttlHours=24] - Cache TTL in hours
+ */
+export async function cacheAnalysis(analysisType, analysisData, wineCount, ttlHours = 24) {
+  try {
+    const slotHash = await generateSlotHash();
+    const expiresAt = getExpiryTimestamp(ttlHours);
+
+    await db.prepare(`
+      INSERT INTO cellar_analysis_cache (analysis_type, analysis_data, wine_count, slot_hash, expires_at)
+      VALUES (?, ?, ?, ?, ?)
+      ON CONFLICT(analysis_type) DO UPDATE SET
+        analysis_data = excluded.analysis_data,
+        wine_count = excluded.wine_count,
+        slot_hash = excluded.slot_hash,
+        created_at = CURRENT_TIMESTAMP,
+        expires_at = excluded.expires_at
+    `).run(
+      analysisType,
+      JSON.stringify(analysisData),
+      wineCount,
+      slotHash,
+      expiresAt
+    );
+
+    logger.info('Cache', `Analysis cached: ${analysisType} (${wineCount} wines)`);
+  } catch (err) {
+    logger.warn('Cache', `Analysis cache write failed: ${err.message}`);
+  }
+}
+
+/**
+ * Invalidate analysis cache.
+ * @param {string} [analysisType] - Specific type to invalidate, or all if omitted
+ */
+export async function invalidateAnalysisCache(analysisType = null) {
+  try {
+    if (analysisType) {
+      await db.prepare('DELETE FROM cellar_analysis_cache WHERE analysis_type = ?').run(analysisType);
+      logger.info('Cache', `Invalidated analysis cache: ${analysisType}`);
+    } else {
+      await db.prepare('DELETE FROM cellar_analysis_cache').run();
+      logger.info('Cache', 'Invalidated all analysis cache');
+    }
+  } catch (err) {
+    logger.warn('Cache', `Analysis cache invalidation failed: ${err.message}`);
+  }
+}
+
+/**
+ * Get analysis cache info (without full data).
+ * @param {string} analysisType - Type of analysis
+ * @returns {Promise<Object|null>} Cache info or null
+ */
+export async function getAnalysisCacheInfo(analysisType) {
+  try {
+    const info = await db.prepare(`
+      SELECT wine_count, slot_hash, created_at, expires_at
+      FROM cellar_analysis_cache
+      WHERE analysis_type = ?
+    `).get(analysisType);
+
+    if (info) {
+      const currentHash = await generateSlotHash();
+      return {
+        wineCount: info.wine_count,
+        createdAt: info.created_at,
+        expiresAt: info.expires_at,
+        isValid: info.slot_hash === currentHash
+      };
+    }
+  } catch (err) {
+    logger.warn('Cache', `Analysis cache info lookup failed: ${err.message}`);
+  }
+
+  return null;
+}

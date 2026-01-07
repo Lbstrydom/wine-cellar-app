@@ -6,6 +6,7 @@
 
 import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../config/fridgeParLevels.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
+import db from '../db/index.js';
 
 /**
  * Categorise a wine into a fridge par-level category.
@@ -171,16 +172,33 @@ export function getFridgeStatus(fridgeWines) {
 }
 
 /**
+ * Get wine IDs that are in the reduce-now list.
+ * @returns {Promise<Set<number>>} Set of wine IDs
+ */
+async function getReduceNowWineIds() {
+  try {
+    const rows = await db.prepare('SELECT wine_id FROM reduce_now').all();
+    return new Set(rows.map(r => r.wine_id));
+  } catch {
+    return new Set();
+  }
+}
+
+/**
  * Find wines suitable for a fridge category.
+ * Prioritizes wines in the reduce-now list.
  * @param {Array} cellarWines - Available wines in cellar
  * @param {string} category - Target category
  * @param {number} count - Number needed
- * @returns {Array} Suitable wines
+ * @param {Set<number>} [reduceNowIds] - Pre-fetched reduce-now wine IDs
+ * @returns {Promise<Array>} Suitable wines
  */
-export function findSuitableWines(cellarWines, category, count) {
+export async function findSuitableWines(cellarWines, category, count, reduceNowIds = null) {
   const config = FRIDGE_PAR_LEVELS[category];
   if (!config) return [];
 
+  // Fetch reduce-now IDs if not provided
+  const reduceNowSet = reduceNowIds || await getReduceNowWineIds();
   const currentYear = new Date().getFullYear();
 
   // Filter to wines that match this category
@@ -196,15 +214,30 @@ export function findSuitableWines(cellarWines, category, count) {
   // Rank by suitability
   const ranked = matching.map(wine => {
     let score = 0;
+    let reason = '';
 
-    // Prefer wines near drink-by year (reduce-now candidates)
+    // HIGHEST PRIORITY: Wines in reduce-now list
+    if (reduceNowSet.has(wine.id)) {
+      score += 150;
+      reason = 'Flagged for drinking soon';
+    }
+
+    // Prefer wines near drink-by year
     const drinkByYear = getEffectiveDrinkByYear(wine);
     if (drinkByYear) {
       const yearsLeft = drinkByYear - currentYear;
-      if (yearsLeft <= 0) score += 100; // Past due - highest priority
-      else if (yearsLeft <= 1) score += 80;
-      else if (yearsLeft <= 2) score += 50;
-      else if (yearsLeft <= 3) score += 20;
+      if (yearsLeft <= 0) {
+        score += 100; // Past due - highest priority
+        if (!reason) reason = 'Past optimal window';
+      } else if (yearsLeft <= 1) {
+        score += 80;
+        if (!reason) reason = 'Final year of drinking window';
+      } else if (yearsLeft <= 2) {
+        score += 50;
+        if (!reason) reason = `Drink by ${drinkByYear}`;
+      } else if (yearsLeft <= 3) {
+        score += 20;
+      }
     }
 
     // Prefer wines from preferred zones
@@ -215,14 +248,14 @@ export function findSuitableWines(cellarWines, category, count) {
     // Slight preference for newer entries (higher ID = more recently added)
     score += Math.min(wine.id / 1000, 10);
 
-    return { wine, score };
+    return { wine, score, reason };
   });
 
   // Sort by score descending and return top N
   return ranked
     .sort((a, b) => b.score - a.score)
     .slice(0, count)
-    .map(r => r.wine);
+    .map(r => ({ ...r.wine, _suggestReason: r.reason }));
 }
 
 /**
@@ -230,11 +263,14 @@ export function findSuitableWines(cellarWines, category, count) {
  * @param {Array} cellarWines - Available wines in cellar
  * @param {Object} gaps - Par level gaps from calculateParLevelGaps
  * @param {number} emptySlots - Available fridge slots
- * @returns {Array} Wines to move to fridge with reasons
+ * @returns {Promise<Array>} Wines to move to fridge with reasons
  */
-export function selectFridgeFillCandidates(cellarWines, gaps, emptySlots) {
+export async function selectFridgeFillCandidates(cellarWines, gaps, emptySlots) {
   const candidates = [];
   let slotsRemaining = emptySlots;
+
+  // Pre-fetch reduce-now IDs once for all categories
+  const reduceNowIds = await getReduceNowWineIds();
 
   // Sort gaps by priority
   const sortedGaps = Object.entries(gaps)
@@ -244,13 +280,16 @@ export function selectFridgeFillCandidates(cellarWines, gaps, emptySlots) {
     if (slotsRemaining <= 0) break;
 
     const toFill = Math.min(gap.need, slotsRemaining);
-    const suitable = findSuitableWines(cellarWines, category, toFill);
+    const suitable = await findSuitableWines(cellarWines, category, toFill, reduceNowIds);
 
     for (const wine of suitable) {
       if (slotsRemaining <= 0) break;
 
       const drinkByYear = getEffectiveDrinkByYear(wine);
-      const reason = buildFillReason(wine, category, drinkByYear);
+      // Use the reason from scoring if available, otherwise build one
+      const reason = wine._suggestReason
+        ? `${wine._suggestReason} • ${buildFillReason(wine, category, drinkByYear)}`
+        : buildFillReason(wine, category, drinkByYear);
 
       candidates.push({
         wineId: wine.id,
@@ -260,7 +299,8 @@ export function selectFridgeFillCandidates(cellarWines, gaps, emptySlots) {
         categoryDescription: FRIDGE_PAR_LEVELS[category].description,
         drinkByYear,
         fromSlot: wine.slot_id || wine.location_code,
-        reason
+        reason,
+        isReduceNow: reduceNowIds.has(wine.id)
       });
 
       slotsRemaining--;
@@ -310,12 +350,12 @@ function buildFillReason(wine, category, drinkByYear) {
  * Get complete fridge analysis with candidates.
  * @param {Array} fridgeWines - Current fridge contents
  * @param {Array} cellarWines - All cellar wines
- * @returns {Object} Complete fridge analysis
+ * @returns {Promise<Object>} Complete fridge analysis
  */
-export function analyseFridge(fridgeWines, cellarWines) {
+export async function analyseFridge(fridgeWines, cellarWines) {
   const status = getFridgeStatus(fridgeWines);
   const candidates = status.hasGaps && status.emptySlots > 0
-    ? selectFridgeFillCandidates(cellarWines, status.parLevelGaps, status.emptySlots)
+    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, status.emptySlots)
     : [];
 
   return {
@@ -330,4 +370,143 @@ export function analyseFridge(fridgeWines, cellarWines) {
       drinkByYear: getEffectiveDrinkByYear(w)
     }))
   };
+}
+
+/**
+ * Fridge category slot assignments (recommended positioning).
+ * Organizes by temperature preference: coldest at top, warmer at bottom.
+ */
+const FRIDGE_CATEGORY_ORDER = [
+  'sparkling',    // Coldest (top shelf)
+  'crispWhite',   // Cold
+  'aromatic',     // Cool
+  'richWhite',    // Slightly warmer
+  'rose',         // Cool to room
+  'lightRed',     // Warmer (bottom shelf)
+  'flex'          // Any remaining slots
+];
+
+/**
+ * Generate suggested moves to organize fridge by category.
+ * Groups wines by category in optimal temperature order.
+ * @param {Array} fridgeWines - Current fridge contents with slot info
+ * @returns {Array} Suggested moves [{from, to, wine, reason}]
+ */
+export function suggestFridgeOrganization(fridgeWines) {
+  if (fridgeWines.length === 0) return [];
+
+  // Map wines to their categories
+  const categorizedWines = fridgeWines.map(w => ({
+    ...w,
+    category: categoriseWine(w) || 'flex'
+  }));
+
+  // Sort wines by category order
+  const sortedWines = [...categorizedWines].sort((a, b) => {
+    const aIdx = FRIDGE_CATEGORY_ORDER.indexOf(a.category);
+    const bIdx = FRIDGE_CATEGORY_ORDER.indexOf(b.category);
+    // If category not found, put at end
+    const aOrder = aIdx === -1 ? 999 : aIdx;
+    const bOrder = bIdx === -1 ? 999 : bIdx;
+    return aOrder - bOrder;
+  });
+
+  // Get current slots in order (F1, F2, ... F9)
+  const currentSlots = categorizedWines.map(w => w.slot_id || w.location_code);
+  const sortedSlots = [...currentSlots].sort((a, b) => {
+    const aNum = parseInt(a.replace('F', ''));
+    const bNum = parseInt(b.replace('F', ''));
+    return aNum - bNum;
+  });
+
+  // Generate moves needed
+  const moves = [];
+  const slotAssignments = {};
+
+  sortedWines.forEach((wine, idx) => {
+    const targetSlot = sortedSlots[idx];
+    const currentSlot = wine.slot_id || wine.location_code;
+
+    if (currentSlot !== targetSlot) {
+      moves.push({
+        wineId: wine.id,
+        wineName: wine.wine_name,
+        vintage: wine.vintage,
+        category: wine.category,
+        from: currentSlot,
+        to: targetSlot,
+        reason: `Group ${formatCategoryName(wine.category)} wines together`
+      });
+    }
+    slotAssignments[targetSlot] = wine.category;
+  });
+
+  return {
+    moves,
+    slotAssignments,
+    categoryOrder: FRIDGE_CATEGORY_ORDER,
+    summary: generateOrganizationSummary(sortedWines)
+  };
+}
+
+/**
+ * Format category name for display.
+ * @param {string} category - Category ID
+ * @returns {string} Human-readable name
+ */
+function formatCategoryName(category) {
+  const names = {
+    sparkling: 'Sparkling',
+    crispWhite: 'Crisp White',
+    aromatic: 'Aromatic White',
+    richWhite: 'Rich White',
+    rose: 'Rosé',
+    lightRed: 'Light Red',
+    flex: 'Other'
+  };
+  return names[category] || category;
+}
+
+/**
+ * Generate summary of fridge organization.
+ * @param {Array} sortedWines - Wines sorted by category
+ * @returns {Array} Category groups with slot ranges
+ */
+function generateOrganizationSummary(sortedWines) {
+  const groups = [];
+  let currentCategory = null;
+  let startSlot = null;
+  let count = 0;
+
+  sortedWines.forEach((wine, idx) => {
+    if (wine.category !== currentCategory) {
+      if (currentCategory !== null) {
+        groups.push({
+          category: currentCategory,
+          name: formatCategoryName(currentCategory),
+          count,
+          startSlot,
+          endSlot: `F${idx}`
+        });
+      }
+      currentCategory = wine.category;
+      startSlot = `F${idx + 1}`;
+      count = 1;
+    } else {
+      count++;
+    }
+  });
+
+  // Add last group
+  if (currentCategory !== null) {
+    groups.push({
+      category: currentCategory,
+      name: formatCategoryName(currentCategory),
+      count,
+      startSlot,
+      endSlot: `F${sortedWines.length}`
+    });
+  }
+
+  return groups;
 }

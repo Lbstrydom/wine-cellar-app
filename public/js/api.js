@@ -160,6 +160,39 @@ export async function drinkBottle(location, details = {}) {
 }
 
 /**
+ * Mark bottle as open.
+ * @param {string} location - Slot location
+ * @returns {Promise<Object>}
+ */
+export async function openBottle(location) {
+  const res = await fetch(`${API_BASE}/api/slots/${location}/open`, {
+    method: 'PUT'
+  });
+  return handleResponse(res, 'Failed to mark bottle as open');
+}
+
+/**
+ * Mark bottle as sealed (undo open).
+ * @param {string} location - Slot location
+ * @returns {Promise<Object>}
+ */
+export async function sealBottle(location) {
+  const res = await fetch(`${API_BASE}/api/slots/${location}/seal`, {
+    method: 'PUT'
+  });
+  return handleResponse(res, 'Failed to seal bottle');
+}
+
+/**
+ * Get all open bottles.
+ * @returns {Promise<Object>}
+ */
+export async function getOpenBottles() {
+  const res = await fetch(`${API_BASE}/api/slots/open`);
+  return handleResponse(res, 'Failed to fetch open bottles');
+}
+
+/**
  * Get sommelier pairing recommendation.
  * @param {string} dish - Dish description
  * @param {string} source - 'all' or 'reduce_now'
@@ -606,10 +639,14 @@ export async function suggestPlacement(wine) {
 
 /**
  * Get full cellar analysis.
+ * @param {boolean} [forceRefresh=false] - Force fresh analysis ignoring cache
  * @returns {Promise<Object>}
  */
-export async function analyseCellar() {
-  const res = await fetch(`${API_BASE}/api/cellar/analyse`);
+export async function analyseCellar(forceRefresh = false) {
+  const url = forceRefresh
+    ? `${API_BASE}/api/cellar/analyse?refresh=true`
+    : `${API_BASE}/api/cellar/analyse`;
+  const res = await fetch(url);
   return handleResponse(res, 'Failed to analyse cellar');
 }
 
@@ -666,6 +703,15 @@ export async function assignWineToZone(wineId, zoneId) {
     body: JSON.stringify({ wineId, zoneId, confidence: 'manual' })
   });
   return handleResponse(res, 'Failed to assign zone');
+}
+
+/**
+ * Get suggested moves to organize fridge by category.
+ * @returns {Promise<Object>}
+ */
+export async function getFridgeOrganization() {
+  const res = await fetch(`${API_BASE}/api/cellar/fridge-organize`);
+  return handleResponse(res, 'Failed to get fridge organization');
 }
 
 /**

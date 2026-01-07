@@ -23,7 +23,13 @@ import {
   confirmZoneMetadata,
   getZonesNeedingReview
 } from '../services/zoneMetadata.js';
-import { analyseFridge } from '../services/fridgeStocking.js';
+import { analyseFridge, suggestFridgeOrganization } from '../services/fridgeStocking.js';
+import {
+  getCachedAnalysis,
+  cacheAnalysis,
+  invalidateAnalysisCache,
+  getAnalysisCacheInfo
+} from '../services/cacheService.js';
 
 const router = express.Router();
 
@@ -207,35 +213,104 @@ router.get('/suggest-placement/:wineId', async (req, res) => {
 // ============================================================
 
 /**
+ * Run analysis and generate report (shared logic).
+ * @param {Array} wines - Wine data
+ * @returns {Promise<Object>} Analysis report
+ */
+async function runAnalysis(wines) {
+  const report = await analyseCellar(wines);
+
+  // Add fridge candidates (legacy)
+  report.fridgeCandidates = getFridgeCandidates(wines);
+
+  // Add fridge status with par-levels
+  const fridgeWines = wines.filter(w => {
+    const slot = w.slot_id || w.location_code;
+    return slot && slot.startsWith('F');
+  });
+  const cellarWines = wines.filter(w => {
+    const slot = w.slot_id || w.location_code;
+    return slot && slot.startsWith('R');
+  });
+  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines);
+
+  return report;
+}
+
+/**
  * GET /api/cellar/analyse
  * Get full cellar analysis with fridge status.
+ * Uses cache if available and valid.
  */
-router.get('/analyse', async (_req, res) => {
+router.get('/analyse', async (req, res) => {
   try {
+    const forceRefresh = req.query.refresh === 'true';
+
+    // Check cache first (unless force refresh)
+    if (!forceRefresh) {
+      const cached = await getCachedAnalysis('full');
+      if (cached) {
+        return res.json({
+          success: true,
+          report: cached.data,
+          shouldTriggerAIReview: shouldTriggerAIReview(cached.data),
+          fromCache: true,
+          cachedAt: cached.createdAt
+        });
+      }
+    }
+
+    // No valid cache, run analysis
     const wines = await getAllWinesWithSlots();
-    const report = await analyseCellar(wines);
+    const report = await runAnalysis(wines);
 
-    // Add fridge candidates (legacy)
-    report.fridgeCandidates = getFridgeCandidates(wines);
-
-    // Add fridge status with par-levels
-    const fridgeWines = wines.filter(w => {
-      const slot = w.slot_id || w.location_code;
-      return slot && slot.startsWith('F');
-    });
-    const cellarWines = wines.filter(w => {
-      const slot = w.slot_id || w.location_code;
-      return slot && slot.startsWith('R');
-    });
-    report.fridgeStatus = analyseFridge(fridgeWines, cellarWines);
+    // Cache the result
+    const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
+    await cacheAnalysis('full', report, wineCount);
 
     res.json({
       success: true,
       report,
-      shouldTriggerAIReview: shouldTriggerAIReview(report)
+      shouldTriggerAIReview: shouldTriggerAIReview(report),
+      fromCache: false
     });
   } catch (err) {
     console.error('[CellarAPI] Analyse error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/analyse/cache-info
+ * Get cache status without running analysis.
+ */
+router.get('/analyse/cache-info', async (_req, res) => {
+  try {
+    const info = await getAnalysisCacheInfo('full');
+    res.json({
+      success: true,
+      cached: info !== null,
+      ...(info || {})
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Cache info error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * DELETE /api/cellar/analyse/cache
+ * Invalidate the analysis cache.
+ */
+router.delete('/analyse/cache', async (_req, res) => {
+  try {
+    await invalidateAnalysisCache();
+    res.json({
+      success: true,
+      message: 'Analysis cache invalidated'
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Cache invalidation error:', err);
     res.status(500).json({ error: err.message });
   }
 });
@@ -257,7 +332,7 @@ router.get('/fridge-status', async (_req, res) => {
       return slot && slot.startsWith('R');
     });
 
-    const status = analyseFridge(fridgeWines, cellarWines);
+    const status = await analyseFridge(fridgeWines, cellarWines);
 
     res.json({
       success: true,
@@ -270,27 +345,62 @@ router.get('/fridge-status', async (_req, res) => {
 });
 
 /**
- * GET /api/cellar/analyse/ai
- * Get AI-enhanced analysis.
+ * GET /api/cellar/fridge-organize
+ * Get suggestions for organizing fridge wines by category.
  */
-router.get('/analyse/ai', async (req, res) => {
+router.get('/fridge-organize', async (_req, res) => {
   try {
     const wines = await getAllWinesWithSlots();
-    const report = await analyseCellar(wines);
 
-    // Add fridge candidates (legacy)
-    report.fridgeCandidates = getFridgeCandidates(wines);
-
-    // Add fridge status with par-levels
     const fridgeWines = wines.filter(w => {
       const slot = w.slot_id || w.location_code;
       return slot && slot.startsWith('F');
     });
-    const cellarWines = wines.filter(w => {
-      const slot = w.slot_id || w.location_code;
-      return slot && slot.startsWith('R');
+
+    if (fridgeWines.length < 2) {
+      return res.json({
+        success: true,
+        message: 'Not enough wines in fridge to organize',
+        moves: [],
+        summary: []
+      });
+    }
+
+    const organization = suggestFridgeOrganization(fridgeWines);
+
+    res.json({
+      success: true,
+      ...organization
     });
-    report.fridgeStatus = analyseFridge(fridgeWines, cellarWines);
+  } catch (err) {
+    console.error('[CellarAPI] Fridge organize error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/cellar/analyse/ai
+ * Get AI-enhanced analysis.
+ * Uses cached report if available.
+ */
+router.get('/analyse/ai', async (req, res) => {
+  try {
+    let report;
+    let fromCache = false;
+
+    // Check cache first
+    const cached = await getCachedAnalysis('full');
+    if (cached) {
+      report = cached.data;
+      fromCache = true;
+    } else {
+      const wines = await getAllWinesWithSlots();
+      report = await runAnalysis(wines);
+
+      // Cache the result
+      const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
+      await cacheAnalysis('full', report, wineCount);
+    }
 
     const aiResult = await getCellarOrganisationAdvice(report);
 
@@ -299,7 +409,8 @@ router.get('/analyse/ai', async (req, res) => {
       report,
       aiAdvice: aiResult.success ? aiResult.advice : aiResult.fallback,
       aiSuccess: aiResult.success,
-      aiError: aiResult.error || null
+      aiError: aiResult.error || null,
+      reportFromCache: fromCache
     });
   } catch (err) {
     console.error('[CellarAPI] AI analyse error:', err);

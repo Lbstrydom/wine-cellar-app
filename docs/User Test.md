@@ -1,11 +1,7 @@
 Observed issues:
-1. on mobile under Cellar Analysis, when at suggested additions for Fridge and I click on add is says Error: Transaction is not a function
-2. suggested additions for fridge should first be from reduce now category unless we do not have a wine from that category in which casde it can be suggested from the overall cellar
-3. Feature - on mobile allow to sweitch to horisontal viewing so we can see more of thje cellar
-4. Feature - wine does not always get drunki in one go, so we should also have an "open" classification - if there are open bottles an additional suggestion for pairing could be to include them if it makes sense, and also we can have them a different color visually onnthe cellar
-5. Once cellar analysis is done we should keep it in memory/database - so that it does not have to redo it every time you go to that tab, and only update when we actually click refresh analysis - in general check what needs to be stored to create an easy PWA experience for the user so that information is easily available for useful items
-6. We should have a ordering in the fridge as well, it is very well classified in the cellar analysis but in our actual cellar we only order the wines in the cellar and categorise them, not in the fridge (although we can use the categories more practically as per the cellar analysis - sparkling, crisp white, aromatic, etc)
- 
+1. I think we need to capture the find pairing dialogues, this is a gold mine of informaiton about the user's preferences, taste profile, etc and also we should make it intuitive so that the user can give feedback on which option they chose and how they found the pairing, maybe jsut with an easy 1 to 5 scale working in 0.1 increments and a slider or something - what do you think, how can we build this wihtout complicating things but still extracting valuable data and feeding it back into our user profile. On this subject, are we actively building a user profile, is that implicit in the database or should we slightly expand that as well to improve our AI recomendations and the user cellar manager and use experience?
+
+
 
 
 

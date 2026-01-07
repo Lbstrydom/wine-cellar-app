@@ -15,6 +15,27 @@ const NAMESPACE = 'grid';
 // Cache for zone map
 let zoneMapCache = null;
 
+// Zoom state
+const zoomState = {
+  level: 1,
+  minZoom: 0.5,
+  maxZoom: 2,
+  isPinching: false,
+  startDistance: 0,
+  startZoom: 1,
+  panX: 0,
+  panY: 0,
+  isPanning: false,
+  lastPanX: 0,
+  lastPanY: 0
+};
+
+// Load saved zoom preference
+const savedZoom = localStorage.getItem('cellar-zoom-level');
+if (savedZoom) {
+  zoomState.level = parseFloat(savedZoom) || 1;
+}
+
 /**
  * Render the fridge grid.
  * Populates the fridge-grid element with slot elements based on current layout.
@@ -210,11 +231,18 @@ export function createSlotElement(slot) {
       el.classList.add(drinkClass);
     }
 
+    // Add open bottle styling
+    if (slot.is_open) {
+      el.classList.add('is-open');
+      el.dataset.openedAt = slot.opened_at;
+    }
+
     const shortName = shortenWineName(slot.wine_name);
+    const openIcon = slot.is_open ? '<span class="open-indicator" title="Open bottle">🍷</span>' : '';
 
     el.innerHTML = `
       <div class="slot-name">${shortName}</div>
-      <div class="slot-vintage">${slot.vintage || 'NV'}</div>
+      <div class="slot-vintage">${slot.vintage || 'NV'}${openIcon}</div>
       <div class="slot-loc">${slot.location_code}</div>
     `;
   } else {
@@ -223,4 +251,194 @@ export function createSlotElement(slot) {
   }
 
   return el;
+}
+
+// ============================================================
+// Zoom & Pan Functions
+// ============================================================
+
+/**
+ * Initialize zoom controls for the cellar grid.
+ * Sets up pinch-to-zoom, pan gestures, and zoom buttons.
+ */
+export function initZoomControls() {
+  const container = document.getElementById('cellar-container');
+  const grid = document.getElementById('cellar-grid');
+  const zoomInBtn = document.getElementById('zoom-in-btn');
+  const zoomOutBtn = document.getElementById('zoom-out-btn');
+  const zoomResetBtn = document.getElementById('zoom-reset-btn');
+
+  if (!container || !grid) return;
+
+  // Apply initial zoom from localStorage
+  applyZoom();
+
+  // Setup pinch-to-zoom for touch devices
+  container.addEventListener('touchstart', handleZoomTouchStart, { passive: false });
+  container.addEventListener('touchmove', handleZoomTouchMove, { passive: false });
+  container.addEventListener('touchend', handleZoomTouchEnd, { passive: true });
+
+  // Setup zoom buttons
+  if (zoomInBtn) {
+    zoomInBtn.addEventListener('click', () => adjustZoom(0.25));
+  }
+  if (zoomOutBtn) {
+    zoomOutBtn.addEventListener('click', () => adjustZoom(-0.25));
+  }
+  if (zoomResetBtn) {
+    zoomResetBtn.addEventListener('click', resetZoom);
+  }
+
+  // Mouse wheel zoom (desktop)
+  container.addEventListener('wheel', handleWheelZoom, { passive: false });
+}
+
+/**
+ * Handle touch start for pinch-to-zoom.
+ * @param {TouchEvent} e
+ */
+function handleZoomTouchStart(e) {
+  if (e.touches.length === 2) {
+    // Pinch gesture started
+    e.preventDefault();
+    zoomState.isPinching = true;
+    zoomState.startDistance = getTouchDistance(e.touches);
+    zoomState.startZoom = zoomState.level;
+  } else if (e.touches.length === 1 && zoomState.level > 1) {
+    // Single touch when zoomed - could be pan
+    zoomState.lastPanX = e.touches[0].clientX;
+    zoomState.lastPanY = e.touches[0].clientY;
+  }
+}
+
+/**
+ * Handle touch move for pinch-to-zoom and pan.
+ * @param {TouchEvent} e
+ */
+function handleZoomTouchMove(e) {
+  if (e.touches.length === 2 && zoomState.isPinching) {
+    // Pinch gesture
+    e.preventDefault();
+    const currentDistance = getTouchDistance(e.touches);
+    const scale = currentDistance / zoomState.startDistance;
+    const newZoom = Math.min(zoomState.maxZoom, Math.max(zoomState.minZoom, zoomState.startZoom * scale));
+
+    zoomState.level = newZoom;
+    applyZoom();
+  } else if (e.touches.length === 1 && zoomState.level > 1 && !zoomState.isPinching) {
+    // Pan when zoomed in
+    const dx = e.touches[0].clientX - zoomState.lastPanX;
+    const dy = e.touches[0].clientY - zoomState.lastPanY;
+
+    // Only start panning if movement is significant
+    if (Math.abs(dx) > 5 || Math.abs(dy) > 5) {
+      zoomState.isPanning = true;
+      zoomState.panX += dx;
+      zoomState.panY += dy;
+      zoomState.lastPanX = e.touches[0].clientX;
+      zoomState.lastPanY = e.touches[0].clientY;
+      applyZoom();
+
+      // Prevent scroll when panning
+      e.preventDefault();
+    }
+  }
+}
+
+/**
+ * Handle touch end for pinch-to-zoom.
+ */
+function handleZoomTouchEnd() {
+  zoomState.isPinching = false;
+
+  // Small delay before clearing pan state to allow scroll to happen
+  setTimeout(() => {
+    zoomState.isPanning = false;
+  }, 100);
+
+  // Save zoom level
+  localStorage.setItem('cellar-zoom-level', zoomState.level.toString());
+}
+
+/**
+ * Handle mouse wheel zoom.
+ * @param {WheelEvent} e
+ */
+function handleWheelZoom(e) {
+  // Only zoom if Ctrl is held (standard convention)
+  if (!e.ctrlKey) return;
+
+  e.preventDefault();
+  const delta = e.deltaY > 0 ? -0.1 : 0.1;
+  adjustZoom(delta);
+}
+
+/**
+ * Calculate distance between two touch points.
+ * @param {TouchList} touches
+ * @returns {number}
+ */
+function getTouchDistance(touches) {
+  const dx = touches[0].clientX - touches[1].clientX;
+  const dy = touches[0].clientY - touches[1].clientY;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+/**
+ * Adjust zoom level by delta.
+ * @param {number} delta - Amount to change zoom
+ */
+function adjustZoom(delta) {
+  zoomState.level = Math.min(zoomState.maxZoom, Math.max(zoomState.minZoom, zoomState.level + delta));
+  applyZoom();
+  localStorage.setItem('cellar-zoom-level', zoomState.level.toString());
+}
+
+/**
+ * Reset zoom to default.
+ */
+function resetZoom() {
+  zoomState.level = 1;
+  zoomState.panX = 0;
+  zoomState.panY = 0;
+  applyZoom();
+  localStorage.setItem('cellar-zoom-level', '1');
+}
+
+/**
+ * Apply current zoom and pan to the grid.
+ */
+function applyZoom() {
+  const grid = document.getElementById('cellar-grid');
+  const zoomDisplay = document.getElementById('zoom-level');
+
+  if (grid) {
+    grid.style.transform = `scale(${zoomState.level}) translate(${zoomState.panX / zoomState.level}px, ${zoomState.panY / zoomState.level}px)`;
+    grid.style.transformOrigin = 'top left';
+  }
+
+  if (zoomDisplay) {
+    zoomDisplay.textContent = `${Math.round(zoomState.level * 100)}%`;
+  }
+
+  // Update container overflow based on zoom
+  const container = document.getElementById('cellar-container');
+  if (container) {
+    if (zoomState.level > 1) {
+      container.classList.add('zoomed');
+    } else {
+      container.classList.remove('zoomed');
+      // Reset pan when at 1x
+      zoomState.panX = 0;
+      zoomState.panY = 0;
+    }
+  }
+}
+
+/**
+ * Get current zoom level.
+ * @returns {number}
+ */
+export function getZoomLevel() {
+  return zoomState.level;
 }

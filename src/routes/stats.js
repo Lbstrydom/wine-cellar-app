@@ -27,13 +27,15 @@ router.get('/', async (req, res) => {
       SELECT COUNT(*) as count FROM consumption_log
       WHERE consumed_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
     `).get();
+    const openBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE is_open = TRUE').get();
 
     res.json({
       total_bottles: totalBottles?.count || 0,
       by_colour: byColour || [],
       reduce_now_count: reduceNowCount?.count || 0,
       empty_slots: emptySlots?.count || 0,
-      consumed_last_30_days: recentConsumption?.count || 0
+      consumed_last_30_days: recentConsumption?.count || 0,
+      open_bottles: openBottles?.count || 0
     });
   } catch (error) {
     console.error('Stats error:', error);
@@ -56,6 +58,8 @@ router.get('/layout', async (req, res) => {
         s.location_code,
         s.row_num,
         s.col_num,
+        s.is_open,
+        s.opened_at,
         w.id as wine_id,
         w.style,
         w.colour,
@@ -101,7 +105,9 @@ router.get('/layout', async (req, res) => {
       drink_until: slot.drink_until,
       tasting_notes: slot.tasting_notes,
       reduce_priority: slot.reduce_priority,
-      reduce_reason: slot.reduce_reason
+      reduce_reason: slot.reduce_reason,
+      is_open: slot.is_open,
+      opened_at: slot.opened_at
     };
 
       if (slot.zone === 'fridge') {

@@ -274,6 +274,31 @@ UPDATE wines SET search_vector = to_tsvector('english',
 CREATE INDEX IF NOT EXISTS idx_wines_zone ON wines(zone_id);
 CREATE INDEX IF NOT EXISTS idx_palate_feedback_wine ON palate_feedback(wine_id);
 
+-- 6. Cellar Analysis Cache (added 2026-01-07)
+-- =============================================================================
+
+CREATE TABLE IF NOT EXISTS cellar_analysis_cache (
+    id SERIAL PRIMARY KEY,
+    analysis_type VARCHAR(50) NOT NULL UNIQUE,
+    analysis_data JSONB NOT NULL,
+    wine_count INTEGER,
+    slot_hash VARCHAR(64),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_cache_type ON cellar_analysis_cache(analysis_type);
+CREATE INDEX IF NOT EXISTS idx_analysis_cache_expires ON cellar_analysis_cache(expires_at);
+
+-- 7. Open Bottle Tracking (added 2026-01-07)
+-- =============================================================================
+
+ALTER TABLE slots ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT FALSE;
+ALTER TABLE slots ADD COLUMN IF NOT EXISTS opened_at TIMESTAMP;
+
+-- Index for quickly finding open bottles
+CREATE INDEX IF NOT EXISTS idx_slots_open ON slots(is_open) WHERE is_open = TRUE;
+
 -- =============================================================================
 -- End of migration
 -- =============================================================================
