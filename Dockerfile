@@ -19,10 +19,10 @@ RUN npm ci --only=production
 # Copy application code
 COPY src/ ./src/
 COPY public/ ./public/
-COPY data/schema.sql ./data/
+COPY data/schema.postgres.sql ./data/
 COPY data/migrations/ ./data/migrations/
 
-# Create data directory (for local SQLite development)
+# Create data directory for runtime files
 RUN mkdir -p /app/data
 
 # Copy startup script and fix line endings
