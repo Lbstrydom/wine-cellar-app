@@ -451,6 +451,46 @@
       </div>
     </div>
 
+    <!-- Storage Conditions Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Storage Conditions</h3>
+      <p class="settings-section-desc">Adjust drinking window estimates based on your storage temperature. Warmer storage accelerates wine ageing.</p>
+
+      <div class="settings-toggle-row">
+        <label class="toggle-switch">
+          <input type="checkbox" id="storage-adjustment-enabled" />
+          <span class="toggle-slider"></span>
+        </label>
+        <span class="toggle-label">Enable storage-based window adjustment</span>
+      </div>
+
+      <div id="storage-options-container" class="settings-rules">
+        <div class="settings-rule">
+          <label for="storage-temp-bucket">Storage temperature range</label>
+          <div class="rule-input-group">
+            <select id="storage-temp-bucket">
+              <option value="cool">Cool (10-15°C / 50-59°F)</option>
+              <option value="moderate">Moderate (15-20°C / 59-68°F)</option>
+              <option value="warm">Warm (20-24°C / 68-75°F)</option>
+              <option value="hot">Hot (24°C+ / 75°F+)</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="storage-temp-description" class="settings-rule-desc">
+          10-15°C - Ideal cellar conditions, no window adjustment
+        </div>
+
+        <div class="settings-toggle-row settings-rule">
+          <label class="toggle-switch">
+            <input type="checkbox" id="storage-heat-risk" />
+            <span class="toggle-slider"></span>
+          </label>
+          <span class="toggle-label">Heat risk - Wines exposed to 30°C+ temps (adds warning flag)</span>
+        </div>
+      </div>
+    </div>
+
     <!-- Account Credentials Section -->
     <div class="settings-section">
       <h3 class="settings-section-title">Account Credentials</h3>

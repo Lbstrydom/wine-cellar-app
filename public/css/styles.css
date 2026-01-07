@@ -3342,6 +3342,13 @@ body.slot-picker-mode .slot.picker-placed::after {
   width: 100%;
 }
 
+.settings-rule-desc {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
 /* Reduce Candidates */
 .reduce-candidates-actions {
   display: flex;

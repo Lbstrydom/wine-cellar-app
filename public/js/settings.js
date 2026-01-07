@@ -115,6 +115,9 @@ export async function loadSettings() {
       includeNoWindow.checked = settings.reduce_include_no_window !== 'false';
     }
 
+    // Load storage conditions settings
+    loadStorageSettings(settings);
+
     // Load credentials status
     await loadCredentialsStatus();
 
@@ -474,6 +477,9 @@ export function initSettings() {
     });
   }
 
+  // Storage conditions settings
+  initStorageSettings();
+
   // Evaluate rules button
   document.getElementById('evaluate-rules-btn')?.addEventListener('click', handleEvaluateRules);
 
@@ -496,6 +502,110 @@ export function initSettings() {
 
   // Awards Database
   initAwardsSection();
+}
+
+// ============================================
+// Storage Conditions Settings
+// ============================================
+
+/**
+ * Initialize storage conditions settings event listeners.
+ */
+function initStorageSettings() {
+  // Storage adjustment enabled toggle
+  const storageEnabled = document.getElementById('storage-adjustment-enabled');
+  if (storageEnabled) {
+    storageEnabled.addEventListener('change', async () => {
+      updateStorageVisibility(storageEnabled.checked);
+      try {
+        await updateSetting('storage_adjustment_enabled', storageEnabled.checked ? 'true' : 'false');
+        showToast(storageEnabled.checked ? 'Storage adjustment enabled' : 'Storage adjustment disabled');
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+
+  // Temperature bucket selector
+  const tempBucket = document.getElementById('storage-temp-bucket');
+  if (tempBucket) {
+    tempBucket.addEventListener('change', async () => {
+      try {
+        await updateSetting('storage_temp_bucket', tempBucket.value);
+        updateTempDescription(tempBucket.value);
+        showToast('Storage temperature updated');
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+
+  // Heat risk checkbox
+  const heatRisk = document.getElementById('storage-heat-risk');
+  if (heatRisk) {
+    heatRisk.addEventListener('change', async () => {
+      try {
+        await updateSetting('storage_heat_risk', heatRisk.checked ? 'true' : 'false');
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+}
+
+/**
+ * Load storage settings into UI.
+ * @param {object} settings - Settings object from API
+ */
+function loadStorageSettings(settings) {
+  const storageEnabled = document.getElementById('storage-adjustment-enabled');
+  if (storageEnabled) {
+    storageEnabled.checked = settings.storage_adjustment_enabled === 'true';
+    updateStorageVisibility(storageEnabled.checked);
+  }
+
+  const tempBucket = document.getElementById('storage-temp-bucket');
+  if (tempBucket && settings.storage_temp_bucket) {
+    tempBucket.value = settings.storage_temp_bucket;
+    updateTempDescription(settings.storage_temp_bucket);
+  }
+
+  const heatRisk = document.getElementById('storage-heat-risk');
+  if (heatRisk) {
+    heatRisk.checked = settings.storage_heat_risk === 'true';
+  }
+}
+
+/**
+ * Update visibility of storage options based on enabled state.
+ * @param {boolean} enabled
+ */
+function updateStorageVisibility(enabled) {
+  const container = document.getElementById('storage-options-container');
+  if (container) {
+    container.style.opacity = enabled ? '1' : '0.5';
+    container.querySelectorAll('select, input').forEach(el => {
+      el.disabled = !enabled;
+    });
+  }
+}
+
+/**
+ * Update temperature bucket description text.
+ * @param {string} bucket - Temperature bucket value
+ */
+function updateTempDescription(bucket) {
+  const descriptions = {
+    'cool': '10-15°C - Ideal cellar conditions, no window adjustment',
+    'moderate': '15-20°C - Typical home storage, 10% window reduction',
+    'warm': '20-24°C - Warm room, 20% window reduction',
+    'hot': '24°C+ - Garage or hot climate, 30% window reduction'
+  };
+
+  const desc = document.getElementById('storage-temp-description');
+  if (desc) {
+    desc.textContent = descriptions[bucket] || '';
+  }
 }
 
 // ============================================

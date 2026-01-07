@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { stringAgg, nullsLast } from '../db/helpers.js';
-import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
+import { getDefaultDrinkingWindow, adjustForStorage, getStorageSettings } from '../services/windowDefaults.js';
 
 const router = Router();
 
@@ -101,6 +101,10 @@ router.post('/evaluate', async (_req, res) => {
     const ageThreshold = parseInt(settings.reduce_age_threshold || '10', 10);
     const ratingMinimum = parseFloat(settings.reduce_rating_minimum || '3.0');
 
+    // Get storage settings for window adjustment
+    const storageSettings = await getStorageSettings();
+    const storageEnabled = storageSettings.storage_adjustment_enabled === 'true';
+
     if (!rulesEnabled) {
       return res.json({
         enabled: false,
@@ -141,31 +145,56 @@ router.post('/evaluate', async (_req, res) => {
 
       // Has drinking window data
       if (wine.drink_by_year !== null) {
+        // Apply storage adjustment if enabled
+        let effectiveDrinkBy = wine.drink_by_year;
+        let storageAdjusted = false;
+        let storageNote = '';
+
+        if (storageEnabled) {
+          const adjusted = adjustForStorage(
+            { drink_from: wine.drink_from_year, drink_by: wine.drink_by_year, peak: wine.peak_year },
+            wine.vintage,
+            storageSettings
+          );
+          if (adjusted.storage_adjusted) {
+            effectiveDrinkBy = adjusted.drink_by;
+            storageAdjusted = true;
+            storageNote = ` (adjusted from ${wine.drink_by_year} for ${storageSettings.storage_temp_bucket} storage)`;
+          }
+          if (adjusted.heat_warning) {
+            storageNote += ' ⚠️ Heat risk';
+          }
+        }
+
         // Priority 1: Past drinking window (critical)
-        if (wine.drink_by_year < currentYear) {
+        if (effectiveDrinkBy < currentYear) {
           seenWineIds.add(wine.wine_id);
           candidates.push({
             ...wine,
             priority: 1,
-            suggested_reason: `Past drinking window (ended ${wine.drink_by_year})`,
+            suggested_reason: `Past drinking window (ended ${effectiveDrinkBy})${storageNote}`,
             suggested_priority: 1,
-            urgency: 'critical'
+            urgency: 'critical',
+            storage_adjusted: storageAdjusted,
+            effective_drink_by: effectiveDrinkBy
           });
           continue;
         }
 
         // Priority 2: Within urgency threshold (closing soon)
-        if (wine.drink_by_year >= currentYear && wine.drink_by_year <= urgencyYear) {
+        if (effectiveDrinkBy >= currentYear && effectiveDrinkBy <= urgencyYear) {
           seenWineIds.add(wine.wine_id);
-          const yearsRemaining = wine.drink_by_year - currentYear;
+          const yearsRemaining = effectiveDrinkBy - currentYear;
           candidates.push({
             ...wine,
             priority: 2,
             suggested_reason: yearsRemaining === 0
-              ? `Final year of drinking window (${wine.drink_by_year})`
-              : `Drinking window closes ${wine.drink_by_year} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left)`,
+              ? `Final year of drinking window (${effectiveDrinkBy})${storageNote}`
+              : `Drinking window closes ${effectiveDrinkBy} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left)${storageNote}`,
             suggested_priority: yearsRemaining === 0 ? 1 : 2,
-            urgency: yearsRemaining === 0 ? 'high' : 'medium'
+            urgency: yearsRemaining === 0 ? 'high' : 'medium',
+            storage_adjusted: storageAdjusted,
+            effective_drink_by: effectiveDrinkBy
           });
           continue;
         }
@@ -187,9 +216,25 @@ router.post('/evaluate', async (_req, res) => {
       // Priority 4-6: No critic window data - try default matrix estimates
       if (includeNoWindow && wine.drink_by_year === null && wine.vintage !== null) {
         // Try to get a default window estimate
-        const defaultWindow = getDefaultDrinkingWindow(wine, wine.vintage);
+        let defaultWindow = getDefaultDrinkingWindow(wine, wine.vintage);
 
         if (defaultWindow && defaultWindow.source !== 'colour_fallback') {
+          // Apply storage adjustment to default window if enabled
+          let storageAdjusted = false;
+          let storageNote = '';
+
+          if (storageEnabled) {
+            const adjusted = adjustForStorage(defaultWindow, wine.vintage, storageSettings);
+            if (adjusted.storage_adjusted) {
+              storageAdjusted = true;
+              storageNote = ` [${storageSettings.storage_temp_bucket} storage]`;
+              defaultWindow = { ...defaultWindow, ...adjusted };
+            }
+            if (adjusted.heat_warning) {
+              storageNote += ' ⚠️ Heat risk';
+            }
+          }
+
           const yearsRemaining = defaultWindow.drink_by - currentYear;
 
           if (yearsRemaining <= 0) {
@@ -197,13 +242,14 @@ router.post('/evaluate', async (_req, res) => {
             candidates.push({
               ...wine,
               priority: 4,
-              suggested_reason: `Estimated past drinking window (ended ${defaultWindow.drink_by}) - ${defaultWindow.notes}`,
+              suggested_reason: `Estimated past drinking window (ended ${defaultWindow.drink_by})${storageNote} - ${defaultWindow.notes}`,
               suggested_priority: 2,
               drink_by_year: defaultWindow.drink_by,
               peak_year: defaultWindow.peak,
               window_source: defaultWindow.source,
               urgency: 'estimated_critical',
-              confidence: defaultWindow.confidence
+              confidence: defaultWindow.confidence,
+              storage_adjusted: storageAdjusted
             });
             continue;
           } else if (yearsRemaining <= Math.ceil(urgencyMonths / 12)) {
@@ -211,13 +257,14 @@ router.post('/evaluate', async (_req, res) => {
             candidates.push({
               ...wine,
               priority: 5,
-              suggested_reason: `Estimated window closes ${defaultWindow.drink_by} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left) - ${defaultWindow.notes}`,
+              suggested_reason: `Estimated window closes ${defaultWindow.drink_by} (${yearsRemaining} year${yearsRemaining > 1 ? 's' : ''} left)${storageNote} - ${defaultWindow.notes}`,
               suggested_priority: 3,
               drink_by_year: defaultWindow.drink_by,
               peak_year: defaultWindow.peak,
               window_source: defaultWindow.source,
               urgency: 'estimated_medium',
-              confidence: defaultWindow.confidence
+              confidence: defaultWindow.confidence,
+              storage_adjusted: storageAdjusted
             });
             continue;
           } else if (defaultWindow.peak && defaultWindow.peak === currentYear) {
@@ -225,13 +272,14 @@ router.post('/evaluate', async (_req, res) => {
             candidates.push({
               ...wine,
               priority: 5,
-              suggested_reason: `Estimated peak year (${defaultWindow.peak}) - ${defaultWindow.notes}`,
+              suggested_reason: `Estimated peak year (${defaultWindow.peak})${storageNote} - ${defaultWindow.notes}`,
               suggested_priority: 3,
               drink_by_year: defaultWindow.drink_by,
               peak_year: defaultWindow.peak,
               window_source: defaultWindow.source,
               urgency: 'estimated_peak',
-              confidence: defaultWindow.confidence
+              confidence: defaultWindow.confidence,
+              storage_adjusted: storageAdjusted
             });
             continue;
           }
@@ -276,7 +324,10 @@ router.post('/evaluate', async (_req, res) => {
         urgency_months: urgencyMonths,
         include_no_window: includeNoWindow,
         age_threshold: ageThreshold,
-        rating_minimum: ratingMinimum
+        rating_minimum: ratingMinimum,
+        storage_adjustment_enabled: storageEnabled,
+        storage_temp_bucket: storageSettings.storage_temp_bucket || null,
+        storage_heat_risk: storageSettings.storage_heat_risk === 'true'
       },
       summary: {
         total: candidates.length,
@@ -288,7 +339,8 @@ router.post('/evaluate', async (_req, res) => {
         estimated_medium: candidates.filter(c => c.urgency === 'estimated_medium').length,
         estimated_peak: candidates.filter(c => c.urgency === 'estimated_peak').length,
         unknown: candidates.filter(c => c.urgency === 'unknown').length,
-        low: candidates.filter(c => c.urgency === 'low').length
+        low: candidates.filter(c => c.urgency === 'low').length,
+        storage_adjusted: candidates.filter(c => c.storage_adjusted).length
       }
     });
   } catch (error) {

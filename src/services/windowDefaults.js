@@ -309,6 +309,92 @@ export function normaliseColour(colour) {
 }
 
 /**
+ * Storage temperature adjustment factors.
+ * Based on simplified Q10 approximation - warmer storage = faster ageing.
+ * Values represent percentage reduction of drinking window.
+ */
+const STORAGE_ADJUSTMENT_FACTORS = {
+  'cool': 0,        // 10-15°C - ideal cellar, no adjustment
+  'moderate': 0.10, // 15-20°C - typical home, 10% reduction
+  'warm': 0.20,     // 20-24°C - warm room, 20% reduction
+  'hot': 0.30       // 24°C+ - garage/hot climate, 30% reduction
+};
+
+/**
+ * Adjust a drinking window based on storage conditions.
+ * This is a global adjustment applied to all windows when storage settings are configured.
+ *
+ * @param {object} window - Drinking window { drink_from, drink_by, peak, ... }
+ * @param {number} vintage - Vintage year
+ * @param {object} storageSettings - User's storage settings from user_settings
+ * @returns {object} - Adjusted window with storage_adjusted flag
+ */
+export function adjustForStorage(window, vintage, storageSettings) {
+  // If no window or adjustment disabled, return as-is
+  if (!window || !storageSettings) return window;
+  if (storageSettings.storage_adjustment_enabled !== 'true') return window;
+
+  // Get adjustment factor based on temperature bucket
+  const tempBucket = storageSettings.storage_temp_bucket || 'cool';
+  const factor = STORAGE_ADJUSTMENT_FACTORS[tempBucket] || 0;
+
+  // If no adjustment needed, return original
+  if (factor === 0 && storageSettings.storage_heat_risk !== 'true') {
+    return window;
+  }
+
+  // Calculate the window span and reduction
+  const drinkFrom = window.drink_from || vintage;
+  const drinkBy = window.drink_by || (vintage + 10);
+  const windowSpan = drinkBy - drinkFrom;
+  const reduction = Math.round(windowSpan * factor);
+
+  // Build adjusted window
+  const adjusted = {
+    ...window,
+    drink_by: drinkBy - reduction,
+    storage_adjusted: factor > 0,
+    storage_adjustment_years: reduction,
+    storage_temp_bucket: tempBucket
+  };
+
+  // Adjust peak if present (reduce by half the amount)
+  if (window.peak) {
+    adjusted.peak = window.peak - Math.round(reduction / 2);
+  }
+
+  // Add heat risk warning if flagged
+  if (storageSettings.storage_heat_risk === 'true') {
+    adjusted.heat_warning = true;
+    adjusted.confidence = 'low'; // Override confidence when heat risk present
+  }
+
+  return adjusted;
+}
+
+/**
+ * Get storage settings from database.
+ * @returns {Promise<object>} Storage settings object
+ */
+export async function getStorageSettings() {
+  try {
+    const rows = await db.prepare(`
+      SELECT key, value FROM user_settings
+      WHERE key IN ('storage_mode', 'storage_temp_bucket', 'storage_heat_risk', 'storage_adjustment_enabled')
+    `).all();
+
+    const settings = {};
+    for (const row of rows) {
+      settings[row.key] = row.value;
+    }
+    return settings;
+  } catch (error) {
+    console.error('Error loading storage settings:', error);
+    return {};
+  }
+}
+
+/**
  * Ultimate fallback by colour
  * @param {string} colour - Wine colour
  * @param {number} vintage - Vintage year
