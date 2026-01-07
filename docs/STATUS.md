@@ -1008,6 +1008,31 @@ Discovered and fixed silent failures caused by CSP blocking inline event handler
 - Fails build if inline handlers are reintroduced
 - Audit guide: `docs/EVENT_HANDLER_AUDIT.md`
 
+### Pairing Feedback & User Profile - 7 January 2026
+Implemented comprehensive feedback loop for wine pairing recommendations:
+
+**Database Migrations**:
+- `023_pairing_sessions.sql` - Tracks every pairing interaction (dish, recommendations, user choice, feedback)
+- `024_user_taste_profile.sql` - Derived user preferences (colours, styles, regions, failure patterns)
+
+**Backend**:
+- `src/services/pairingSession.js` - Session persistence, choice recording, feedback collection
+- API endpoints: `/api/pairing/sessions/:id/choose`, `/api/pairing/sessions/:id/feedback`
+- `sessionId` returned from sommelier recommendations for tracking
+- Failure reasons vocabulary (12 controlled terms)
+
+**Frontend**:
+- "Choose This Wine" button on recommendation cards
+- Feedback modal with rating slider (1-5) and "would pair again" toggle
+- Failure reasons checkboxes (shown when rating ≤ 2.5)
+- Modal triggered after wine selection
+
+**Data Flow**:
+1. User requests pairing → session saved with dish, signals, recommendations
+2. User clicks "Choose This Wine" → choice recorded with rank
+3. Feedback modal → rating and failure reasons stored
+4. Future: Profile recalculation from accumulated feedback
+
 ### Security & Code Quality - January 2026
 - **CSP Headers**: Content Security Policy middleware with production/dev modes
 - **Rate Limiting**: In-memory rate limiter (100 req/15min general, 10 req/1min for AI)
@@ -1282,7 +1307,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **API Endpoints** | 50+ |
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
-| **Database Migrations** | 22 |
+| **Database Migrations** | 24 |
 | **Unit Tests** | 249 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
@@ -1291,7 +1316,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v45 |
+| **Service Worker Version** | v46 |
 
 ---
 

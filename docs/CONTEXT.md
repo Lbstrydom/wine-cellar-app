@@ -658,10 +658,75 @@ const message = await anthropic.messages.create({
 4. **Caching Layer:** Cache frequent extractions (e.g., popular wines) to reduce API costs
 
 ### Long-Term
-1. **Personalization:** Learn user preferences over time for better recommendations
+1. **Personalization:** Learn user preferences over time for better recommendations ✅ *Implemented via Pairing Feedback (see below)*
 2. **Collection Analytics:** "Your cellar favours Burgundy reds from 2015-2018"
 3. **Price Tracking:** Monitor wine values and alert to price changes
 4. **Vintage Reports:** Auto-fetch vintage quality assessments from critics
+
+---
+
+## Pairing Feedback & User Profile System (NEW)
+
+### Overview
+A feedback loop system that captures user pairing choices and outcomes to build a taste profile over time. This enables future AI-powered personalization.
+
+### Database Tables
+1. **`pairing_sessions`** - Records every Find Pairing interaction:
+   - Dish description and food signals
+   - AI's analysis and recommendations
+   - Which wine the user chose (if any)
+   - Feedback ratings and failure reasons
+
+2. **`user_taste_profile`** - Derived snapshot (recomputable cache):
+   - Colour, style, region, grape preferences
+   - Food-wine affinities learned from feedback
+   - Failure patterns to avoid
+
+### API Endpoints
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/pairing/sessions/:id/choose` | POST | Record which wine user selected |
+| `/api/pairing/sessions/:id/feedback` | POST | Submit pairing rating and feedback |
+| `/api/pairing/sessions/pending-feedback` | GET | Sessions awaiting feedback |
+| `/api/pairing/history` | GET | User's pairing history |
+| `/api/pairing/stats` | GET | Aggregate pairing statistics |
+| `/api/pairing/failure-reasons` | GET | Controlled vocabulary for feedback |
+
+### Feedback Schema
+```javascript
+{
+  "pairingFitRating": 4.5,    // 1.0-5.0 in 0.5 steps
+  "wouldPairAgain": true,     // Boolean
+  "failureReasons": [         // If rating <= 2.5
+    "too_tannic",
+    "clashed_with_spice"
+  ],
+  "notes": "Optional free text"
+}
+```
+
+### Controlled Failure Vocabulary
+```javascript
+FAILURE_REASONS = [
+  'too_tannic', 'too_acidic', 'too_sweet', 'too_oaky',
+  'too_light', 'too_heavy', 'clashed_with_spice',
+  'clashed_with_sauce', 'overwhelmed_dish', 'underwhelmed_dish',
+  'wrong_temperature', 'other'
+]
+```
+
+### Integration Points
+- **Session Creation:** `getSommelierRecommendation()` now returns `sessionId` for tracking
+- **Choice Recording:** "Choose This Wine" button sends wine selection to API
+- **Feedback Modal:** Triggered after wine choice for rating collection
+- **Profile Building:** (Future) Aggregate feedback to personalize recommendations
+
+### Files
+- `src/services/pairingSession.js` - Session CRUD and feedback logic
+- `src/routes/pairing.js` - REST endpoints (lines 339-443)
+- `public/js/pairing.js` - Frontend choice/feedback UI
+- `src/db/migrations/023_pairing_sessions.sql` - Main table
+- `src/db/migrations/024_user_taste_profile.sql` - Derived profile table
 
 ---
 
@@ -672,4 +737,4 @@ For questions about Claude integration or to suggest improvements to prompts:
 - **Documentation:** See `AGENTS.md` for coding standards
 - **API Reference:** See `src/services/claude.js` for implementation details
 
-**Last Updated:** January 3, 2026
+**Last Updated:** January 7, 2026

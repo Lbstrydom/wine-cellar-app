@@ -78,8 +78,8 @@ async function handleChooseWine(wineId, rank, buttonElement) {
     buttonElement.disabled = false;
     buttonElement.textContent = 'Choose This Wine';
   }
+}
 
-// Move to outer scope to avoid compile error
 /**
  * Open the pairing feedback modal and store session/wine context.
  */
@@ -89,7 +89,6 @@ function openPairingFeedbackModal(sessionId, wineId) {
   modal.style.display = 'flex';
   modal.dataset.sessionId = sessionId;
   modal.dataset.wineId = wineId;
-}
 }
 
 /**
