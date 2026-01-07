@@ -353,9 +353,19 @@ function renderZoneNarratives(narratives) {
  * @param {number} index - Candidate index
  */
 async function moveFridgeCandidate(index) {
-  if (!currentAnalysis?.fridgeStatus?.candidates?.[index]) return;
+  console.log('[CellarAnalysis] moveFridgeCandidate called with index:', index);
+  console.log('[CellarAnalysis] currentAnalysis:', currentAnalysis);
+  console.log('[CellarAnalysis] candidates:', currentAnalysis?.fridgeStatus?.candidates);
+
+  if (!currentAnalysis?.fridgeStatus?.candidates?.[index]) {
+    console.error('[CellarAnalysis] No candidate at index', index);
+    showToast('Error: Candidate not found');
+    return;
+  }
 
   const candidate = currentAnalysis.fridgeStatus.candidates[index];
+  console.log('[CellarAnalysis] Selected candidate:', candidate);
+
   const emptySlots = currentAnalysis.fridgeStatus.emptySlots;
 
   if (emptySlots <= 0) {
@@ -366,14 +376,29 @@ async function moveFridgeCandidate(index) {
   // Find an empty fridge slot
   const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
   const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
+  console.log('[CellarAnalysis] Occupied slots:', [...occupiedSlots]);
+
   const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
+  console.log('[CellarAnalysis] Target slot:', targetSlot);
 
   if (!targetSlot) {
     showToast('No empty fridge slots available');
     return;
   }
 
+  if (!candidate.fromSlot) {
+    console.error('[CellarAnalysis] Candidate has no fromSlot:', candidate);
+    showToast('Error: Wine location unknown');
+    return;
+  }
+
   try {
+    console.log('[CellarAnalysis] Executing move:', {
+      wineId: candidate.wineId,
+      from: candidate.fromSlot,
+      to: targetSlot
+    });
+
     await executeCellarMoves([{
       wineId: candidate.wineId,
       from: candidate.fromSlot,
@@ -385,6 +410,7 @@ async function moveFridgeCandidate(index) {
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
+    console.error('[CellarAnalysis] Move error:', err);
     showToast(`Error: ${err.message}`);
   }
 }
