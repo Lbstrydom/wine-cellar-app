@@ -167,7 +167,13 @@ export async function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  report.suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  const moveSuggestions = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  report.suggestedMoves = moveSuggestions;
+
+  // DEBUG: Include debug info in report (temporary)
+  if (moveSuggestions._debug) {
+    report._debug = moveSuggestions._debug;
+  }
 
   // Check if reorganisation is recommended
   const shouldReorg =
@@ -352,9 +358,9 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     if (slotId) occupiedSlots.add(slotId);
   });
 
-  // DEBUG: Log R15 slots in occupied set
-  const r15Occupied = Array.from(occupiedSlots).filter(s => s.startsWith('R15')).sort();
-  console.log('[DEBUG] R15 slots in occupiedSlots:', r15Occupied);
+  // DEBUG: Track R15 slots for debugging
+  const debugR15Initial = Array.from(occupiedSlots).filter(s => s.startsWith('R15')).sort();
+  const debugInfo = { r15Initial: debugR15Initial, moves: [] };
 
   const suggestions = [];
   const pendingMoves = new Map();
@@ -381,11 +387,15 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
 
-    // DEBUG: Log for appassimento wines targeting R15
+    // DEBUG: Track for appassimento wines targeting R15
     if (wine.suggestedZoneId === 'appassimento' && slot?.slotId?.startsWith('R15')) {
       const r15InCurrent = Array.from(currentlyOccupied).filter(s => s.startsWith('R15')).sort();
-      console.log('[DEBUG] Processing:', wine.name, 'from', wine.currentSlot, 'to', slot?.slotId);
-      console.log('[DEBUG] R15 in currentlyOccupied:', r15InCurrent);
+      debugInfo.moves.push({
+        wine: wine.name,
+        from: wine.currentSlot,
+        to: slot?.slotId,
+        r15OccupiedAtTime: r15InCurrent
+      });
     }
 
     if (slot) {
@@ -417,7 +427,12 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     }
   }
 
-  return suggestions.sort((a, b) => a.priority - b.priority);
+  const sortedSuggestions = suggestions.sort((a, b) => a.priority - b.priority);
+
+  // Attach debug info to return value (temporary for debugging)
+  sortedSuggestions._debug = debugInfo;
+
+  return sortedSuggestions;
 }
 
 /**
