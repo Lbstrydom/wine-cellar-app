@@ -160,11 +160,15 @@ async function loadRecommendations() {
       <div class="recommendation-error">
         <div class="error-icon">⚠️</div>
         <p>Couldn't load recommendations</p>
-        <button class="btn btn-small btn-secondary" onclick="document.getElementById('refresh-recommendations').click()">
+        <button class="btn btn-small btn-secondary retry-btn">
           Try again
         </button>
       </div>
     `;
+    // Attach event listener (CSP-compliant)
+    cardsContainer.querySelector('.retry-btn')?.addEventListener('click', () => {
+      document.getElementById('refresh-recommendations')?.click();
+    });
   } finally {
     recState.isLoading = false;
   }

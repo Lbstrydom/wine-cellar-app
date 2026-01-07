@@ -255,10 +255,10 @@ function renderFridgeStatus(fridgeStatus) {
     const candidateItems = fridgeStatus.candidates.slice(0, 5).map((c, i) => `
       <div class="fridge-candidate">
         <div class="fridge-candidate-info">
-          <div class="fridge-candidate-name">${c.wineName} ${c.vintage || ''}</div>
-          <div class="fridge-candidate-reason">${c.reason}</div>
+          <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}</div>
+          <div class="fridge-candidate-reason">${escapeHtml(c.reason)}</div>
         </div>
-        <button class="btn btn-secondary btn-small" onclick="window.cellarAnalysis.moveFridgeCandidate(${i})">
+        <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="${i}">
           Add
         </button>
       </div>
@@ -283,6 +283,14 @@ function renderFridgeStatus(fridgeStatus) {
     ${gapsHtml}
     ${candidatesHtml}
   `;
+
+  // Attach event listeners for fridge candidate add buttons (CSP-compliant)
+  contentEl.querySelectorAll('.fridge-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.candidateIndex, 10);
+      moveFridgeCandidate(index);
+    });
+  });
 }
 
 /**
@@ -353,19 +361,12 @@ function renderZoneNarratives(narratives) {
  * @param {number} index - Candidate index
  */
 async function moveFridgeCandidate(index) {
-  console.log('[CellarAnalysis] moveFridgeCandidate called with index:', index);
-  console.log('[CellarAnalysis] currentAnalysis:', currentAnalysis);
-  console.log('[CellarAnalysis] candidates:', currentAnalysis?.fridgeStatus?.candidates);
-
   if (!currentAnalysis?.fridgeStatus?.candidates?.[index]) {
-    console.error('[CellarAnalysis] No candidate at index', index);
     showToast('Error: Candidate not found');
     return;
   }
 
   const candidate = currentAnalysis.fridgeStatus.candidates[index];
-  console.log('[CellarAnalysis] Selected candidate:', candidate);
-
   const emptySlots = currentAnalysis.fridgeStatus.emptySlots;
 
   if (emptySlots <= 0) {
@@ -376,10 +377,7 @@ async function moveFridgeCandidate(index) {
   // Find an empty fridge slot
   const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
   const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
-  console.log('[CellarAnalysis] Occupied slots:', [...occupiedSlots]);
-
   const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
-  console.log('[CellarAnalysis] Target slot:', targetSlot);
 
   if (!targetSlot) {
     showToast('No empty fridge slots available');
@@ -387,18 +385,11 @@ async function moveFridgeCandidate(index) {
   }
 
   if (!candidate.fromSlot) {
-    console.error('[CellarAnalysis] Candidate has no fromSlot:', candidate);
     showToast('Error: Wine location unknown');
     return;
   }
 
   try {
-    console.log('[CellarAnalysis] Executing move:', {
-      wineId: candidate.wineId,
-      from: candidate.fromSlot,
-      to: targetSlot
-    });
-
     await executeCellarMoves([{
       wineId: candidate.wineId,
       from: candidate.fromSlot,
@@ -410,7 +401,6 @@ async function moveFridgeCandidate(index) {
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
-    console.error('[CellarAnalysis] Move error:', err);
     showToast(`Error: ${err.message}`);
   }
 }
@@ -447,13 +437,13 @@ function renderMoves(moves, needsZoneSetup) {
       return `
         <div class="move-item priority-3">
           <div class="move-details">
-            <div class="move-wine-name">${move.wineName}</div>
+            <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
             <div class="move-path">
               <span class="from">${move.currentSlot}</span>
               <span class="arrow">→</span>
               <span class="to">${move.suggestedZone} (full)</span>
             </div>
-            <div class="move-reason">${move.reason}</div>
+            <div class="move-reason">${escapeHtml(move.reason)}</div>
           </div>
           <span class="move-confidence ${move.confidence}">${move.confidence}</span>
         </div>
@@ -463,22 +453,36 @@ function renderMoves(moves, needsZoneSetup) {
     return `
       <div class="move-item priority-${move.priority}" data-move-index="${index}">
         <div class="move-details">
-          <div class="move-wine-name">${move.wineName}</div>
+          <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
           <div class="move-path">
             <span class="from">${move.from}</span>
             <span class="arrow">→</span>
             <span class="to">${move.to}</span>
           </div>
-          <div class="move-reason">${move.reason}</div>
+          <div class="move-reason">${escapeHtml(move.reason)}</div>
         </div>
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>
         <div class="move-actions">
-          <button class="btn btn-primary btn-small" onclick="window.cellarAnalysis.executeMove(${index})">Move</button>
-          <button class="btn btn-secondary btn-small" onclick="window.cellarAnalysis.dismissMove(${index})">Dismiss</button>
+          <button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}">Move</button>
+          <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}">Dismiss</button>
         </div>
       </div>
     `;
   }).join('');
+
+  // Attach event listeners for move buttons (CSP-compliant)
+  listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.moveIndex, 10);
+      executeMove(index);
+    });
+  });
+  listEl.querySelectorAll('.move-dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.moveIndex, 10);
+      dismissMove(index);
+    });
+  });
 
   const actionableMoves = moves.filter(m => m.type === 'move');
   actionsEl.style.display = actionableMoves.length > 0 ? 'flex' : 'none';
@@ -775,9 +779,10 @@ function renderZoneMovesList() {
       <div class="moves-complete">
         <h4>All bottles are already in their correct zones!</h4>
         <p>No moves needed. Your cellar is organized.</p>
-        <button class="btn btn-primary" onclick="window.cellarAnalysis.finishZoneSetup()">Finish</button>
+        <button class="btn btn-primary finish-setup-btn">Finish</button>
       </div>
     `;
+    container.querySelector('.finish-setup-btn')?.addEventListener('click', finishZoneSetup);
     return;
   }
 
@@ -794,25 +799,25 @@ function renderZoneMovesList() {
     const isComplete = idx < currentZoneIndex;
 
     html += `
-      <div class="zone-moves-section ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}" data-zone="${zoneId}">
-        <div class="zone-moves-header" onclick="window.cellarAnalysis.expandZone('${zoneId}', ${idx})">
+      <div class="zone-moves-section ${isActive ? 'active' : ''} ${isComplete ? 'complete' : ''}" data-zone="${escapeHtml(zoneId)}" data-zone-idx="${idx}">
+        <div class="zone-moves-header expand-zone-btn" data-zone="${escapeHtml(zoneId)}" data-zone-idx="${idx}">
           <span class="zone-status-icon">${isComplete ? '✓' : isActive ? '→' : '○'}</span>
-          <span class="zone-name">${zoneId}</span>
+          <span class="zone-name">${escapeHtml(zoneId)}</span>
           <span class="zone-move-count">${moves.length} moves</span>
         </div>
         <div class="zone-moves-body" style="display: ${isActive ? 'block' : 'none'}">
           ${moves.map((m, mIdx) => `
             <div class="move-item" data-move-idx="${mIdx}">
-              <span class="move-wine">${m.wineName} ${m.vintage || ''}</span>
+              <span class="move-wine">${escapeHtml(m.wineName)} ${m.vintage || ''}</span>
               <span class="move-arrow">→</span>
               <span class="move-from">${m.fromSlot}</span>
               <span class="move-to">${m.toSlot}</span>
-              <button class="btn btn-small btn-primary" onclick="window.cellarAnalysis.executeZoneMove('${zoneId}', ${mIdx})">Move</button>
+              <button class="btn btn-small btn-primary zone-move-btn" data-zone="${escapeHtml(zoneId)}" data-move-idx="${mIdx}">Move</button>
             </div>
           `).join('')}
           <div class="zone-moves-actions">
-            <button class="btn btn-primary" onclick="window.cellarAnalysis.executeAllZoneMoves('${zoneId}')">Execute All ${moves.length} Moves</button>
-            <button class="btn btn-secondary" onclick="window.cellarAnalysis.skipZone()">Skip Zone</button>
+            <button class="btn btn-primary zone-execute-all-btn" data-zone="${escapeHtml(zoneId)}" data-move-count="${moves.length}">Execute All ${moves.length} Moves</button>
+            <button class="btn btn-secondary skip-zone-btn">Skip Zone</button>
           </div>
         </div>
       </div>
@@ -822,11 +827,39 @@ function renderZoneMovesList() {
   html += `
     </div>
     <div class="wizard-footer">
-      <button class="btn btn-secondary" onclick="window.cellarAnalysis.finishZoneSetup()">Finish Setup</button>
+      <button class="btn btn-secondary finish-setup-btn">Finish Setup</button>
     </div>
   `;
 
   container.innerHTML = html;
+
+  // Attach event listeners (CSP-compliant)
+  container.querySelectorAll('.expand-zone-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const zoneId = btn.dataset.zone;
+      const idx = Number.parseInt(btn.dataset.zoneIdx, 10);
+      expandZone(zoneId, idx);
+    });
+  });
+  container.querySelectorAll('.zone-move-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const zoneId = btn.dataset.zone;
+      const moveIdx = Number.parseInt(btn.dataset.moveIdx, 10);
+      executeZoneMove(zoneId, moveIdx);
+    });
+  });
+  container.querySelectorAll('.zone-execute-all-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const zoneId = btn.dataset.zone;
+      executeAllZoneMoves(zoneId);
+    });
+  });
+  container.querySelectorAll('.skip-zone-btn').forEach(btn => {
+    btn.addEventListener('click', skipZone);
+  });
+  container.querySelectorAll('.finish-setup-btn').forEach(btn => {
+    btn.addEventListener('click', finishZoneSetup);
+  });
 }
 
 /**
@@ -994,9 +1027,8 @@ async function sendZoneChatMessage() {
 
     // If there are reclassifications, show action buttons
     if (result.reclassifications && result.reclassifications.length > 0) {
-      const actionsEl = document.createElement('div');
-      actionsEl.innerHTML = renderReclassificationActions(result.reclassifications);
-      messagesEl.appendChild(actionsEl.firstElementChild);
+      const actionsEl = renderReclassificationActions(result.reclassifications);
+      messagesEl.appendChild(actionsEl);
     }
 
     messagesEl.scrollTop = messagesEl.scrollHeight;
@@ -1029,31 +1061,45 @@ function formatZoneChatResponse(result) {
 /**
  * Render reclassification action buttons.
  * @param {Array} reclassifications - Suggested reclassifications
- * @returns {string} HTML
+ * @returns {HTMLElement} Actions element with event listeners attached
  */
 function renderReclassificationActions(reclassifications) {
-  let html = '<div class="zone-chat-actions">';
-  html += '<p class="actions-title">Suggested zone changes:</p>';
+  const container = document.createElement('div');
+  container.className = 'zone-chat-actions';
+  container.innerHTML = '<p class="actions-title">Suggested zone changes:</p>';
 
   reclassifications.forEach((r) => {
-    // Escape reason for use in onclick attribute
-    const escapedReason = (r.reason || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    html += `
-      <div class="reclassification-item" data-wine-id="${r.wineId}">
-        <div class="reclassification-info">
-          <span class="wine-name">${escapeHtml(r.wineName)}</span>
-          <span class="zone-change">${escapeHtml(r.currentZone)} → ${escapeHtml(r.suggestedZone)}</span>
-          ${r.reason ? `<span class="reclassification-reason">${escapeHtml(r.reason)}</span>` : ''}
-        </div>
-        <button class="btn btn-small btn-primary apply-btn" onclick="window.cellarAnalysis.applyReclassification(${r.wineId}, '${r.suggestedZone}', '${escapedReason}', this)">Apply</button>
+    const itemEl = document.createElement('div');
+    itemEl.className = 'reclassification-item';
+    itemEl.dataset.wineId = r.wineId;
+    itemEl.dataset.suggestedZone = r.suggestedZone;
+    itemEl.dataset.reason = r.reason || '';
+
+    itemEl.innerHTML = `
+      <div class="reclassification-info">
+        <span class="wine-name">${escapeHtml(r.wineName)}</span>
+        <span class="zone-change">${escapeHtml(r.currentZone)} → ${escapeHtml(r.suggestedZone)}</span>
+        ${r.reason ? `<span class="reclassification-reason">${escapeHtml(r.reason)}</span>` : ''}
       </div>
+      <button class="btn btn-small btn-primary apply-btn">Apply</button>
     `;
+
+    // Attach event listener for apply button
+    const applyBtn = itemEl.querySelector('.apply-btn');
+    applyBtn.addEventListener('click', () => {
+      applyReclassification(r.wineId, r.suggestedZone, r.reason || '', applyBtn);
+    });
+
+    container.appendChild(itemEl);
   });
 
-  html += `<button class="btn btn-secondary apply-all-btn" onclick="window.cellarAnalysis.applyAllReclassifications()">Apply All (${reclassifications.length})</button>`;
-  html += '</div>';
+  const applyAllBtn = document.createElement('button');
+  applyAllBtn.className = 'btn btn-secondary apply-all-btn';
+  applyAllBtn.textContent = `Apply All (${reclassifications.length})`;
+  applyAllBtn.addEventListener('click', applyAllReclassifications);
+  container.appendChild(applyAllBtn);
 
-  return html;
+  return container;
 }
 
 /**
@@ -1189,19 +1235,5 @@ function clearZoneChat() {
   zoneChatContext = null;
 }
 
-// Expose functions for inline onclick handlers
-window.cellarAnalysis = {
-  executeMove,
-  dismissMove,
-  moveFridgeCandidate,
-  executeZoneMove,
-  executeAllZoneMoves,
-  skipZone,
-  expandZone,
-  finishZoneSetup,
-  toggleZoneChat,
-  sendZoneChatMessage,
-  applyReclassification,
-  applyAllReclassifications,
-  clearZoneChat
-};
+// Note: All onclick handlers have been refactored to use addEventListener
+// for CSP compliance. The window.cellarAnalysis object is no longer needed.

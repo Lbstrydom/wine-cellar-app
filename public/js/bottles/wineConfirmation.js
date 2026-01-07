@@ -196,6 +196,11 @@ function renderResults(parsedWine, matches, error) {
     card.addEventListener('click', () => handleMatchSelect(card));
   });
 
+  // Stop propagation on Vivino links to prevent card click handler (CSP-compliant)
+  content.querySelectorAll('.match-meta-link a').forEach(link => {
+    link.addEventListener('click', (e) => e.stopPropagation());
+  });
+
   content.querySelector('#confirmation-skip-btn').addEventListener('click', handleSkip);
 }
 
@@ -237,7 +242,7 @@ function renderMatches(matches) {
           ${wine.grapeVariety ? `<p class="match-grape">${escapeHtml(wine.grapeVariety)}</p>` : ''}
         ` : `
           <p class="match-meta match-meta-link">
-            ${wine.vivinoUrl ? `<a href="${escapeHtml(wine.vivinoUrl)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">View on Vivino ↗</a>` : 'Found on Vivino'}
+            ${wine.vivinoUrl ? `<a href="${escapeHtml(wine.vivinoUrl)}" target="_blank" rel="noopener">View on Vivino ↗</a>` : 'Found on Vivino'}
           </p>
           <p class="match-note">Click to confirm this is the correct wine</p>
         `}

@@ -65,9 +65,11 @@ function showErrorToast(title, message) {
     <div class="error-toast-content">
       <strong>${escapeHtml(title)}</strong>
       <p>${escapeHtml(message)}</p>
-      <button onclick="this.parentElement.parentElement.remove()">Dismiss</button>
+      <button class="dismiss-btn">Dismiss</button>
     </div>
   `;
+  // Attach event listener (CSP-compliant)
+  toast.querySelector('.dismiss-btn').addEventListener('click', () => toast.remove());
   
   // Add styles if not already present
   if (!document.getElementById('error-boundary-styles')) {
