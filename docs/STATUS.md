@@ -955,6 +955,24 @@ Comprehensive code quality audit addressing security, maintainability, and best 
 
 **ESLint Status**: 0 errors, 0 warnings (clean)
 
+### CSP Event Handler Audit - 7 January 2026
+Discovered and fixed silent failures caused by CSP blocking inline event handlers.
+
+**Root Cause**: CSP `script-src 'self'` blocks inline `onclick="..."` handlers without visible errors.
+
+**Files Refactored**:
+- `public/js/cellarAnalysis.js` - 12 inline onclick handlers → addEventListener
+- `public/js/errorBoundary.js` - 1 inline onclick handler → addEventListener
+- `public/js/recommendations.js` - 1 inline onclick handler → addEventListener
+- `public/js/bottles/wineConfirmation.js` - 1 inline onerror handler → addEventListener
+- `public/index.html` - 4 inline handlers in Zone Chat UI → wired in JS
+
+**Prevention**:
+- Added regression test: `tests/unit/utils/cspInlineHandlers.test.js`
+- Test scans all `public/` files for `on*="..."` patterns and `javascript:` URLs
+- Fails build if inline handlers are reintroduced
+- Audit guide: `docs/EVENT_HANDLER_AUDIT.md`
+
 ### Security & Code Quality - January 2026
 - **CSP Headers**: Content Security Policy middleware with production/dev modes
 - **Rate Limiting**: In-memory rate limiter (100 req/15min general, 10 req/1min for AI)
@@ -995,10 +1013,11 @@ Comprehensive code quality audit addressing security, maintainability, and best 
 - Railway cloud deployment with custom domain
 
 ### Testing Infrastructure - January 2025
-- Vitest test framework with 249 passing tests
+- Vitest test framework with 270 passing tests
 - 85% service coverage, 60% route coverage
 - Unit tests for all core services
 - Integration tests for API endpoints
+- CSP compliance regression test (scans public/ for inline handlers)
 - Continuous testing in development
 
 ### Data Provenance System - January 2025
@@ -1076,7 +1095,7 @@ Comprehensive code quality audit addressing security, maintainability, and best 
 - ~45 backend JavaScript modules
 - ~20 frontend JavaScript modules
 - ~15,000 lines of code
-- 249 unit tests (85% service coverage)
+- 270 unit tests (85% service coverage)
 - 15 database migrations
 
 ---

@@ -4,7 +4,8 @@ Observed issues:
 3. Feature - on mobile allow to sweitch to horisontal viewing so we can see more of thje cellar
 4. Feature - wine does not always get drunki in one go, so we should also have an "open" classification - if there are open bottles an additional suggestion for pairing could be to include them if it makes sense, and also we can have them a different color visually onnthe cellar
 5. Once cellar analysis is done we should keep it in memory/database - so that it does not have to redo it every time you go to that tab, and only update when we actually click refresh analysis - in general check what needs to be stored to create an easy PWA experience for the user so that information is easily available for useful items
-
+6. We should have a ordering in the fridge as well, it is very well classified in the cellar analysis but in our actual cellar we only order the wines in the cellar and categorise them, not in the fridge (although we can use the categories more practically as per the cellar analysis - sparkling, crisp white, aromatic, etc)
+ 
 
 
 

@@ -196,6 +196,13 @@ function renderResults(parsedWine, matches, error) {
     card.addEventListener('click', () => handleMatchSelect(card));
   });
 
+  // CSP-compliant image fallback (replaces inline onerror handlers)
+  content.querySelectorAll('img[data-fallback-src]').forEach((img) => {
+    img.addEventListener('error', () => {
+      img.src = img.dataset.fallbackSrc;
+    }, { once: true });
+  });
+
   // Stop propagation on Vivino links to prevent card click handler (CSP-compliant)
   content.querySelectorAll('.match-meta-link a').forEach(link => {
     link.addEventListener('click', (e) => e.stopPropagation());
@@ -219,7 +226,7 @@ function renderMatches(matches) {
       <div class="match-image">
         ${wine.imageUrl ? `
           <img src="${escapeHtml(wine.imageUrl)}" alt="${escapeHtml(wine.name)}"
-               onerror="this.src='/images/wine-placeholder.svg'; this.onerror=null;">
+               data-fallback-src="/images/wine-placeholder.svg">
         ` : `
           <div class="image-placeholder"></div>
         `}

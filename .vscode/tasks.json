@@ -19,6 +19,20 @@
 			"type": "shell",
 			"command": "$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if (-not $pids) { Write-Output 'No LISTENing process on port 3000.' } else { Write-Output ('Killing PIDs on port 3000: ' + ($pids -join ', ')); foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 300; if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { Write-Output 'Port 3000 still has LISTENers.' } else { Write-Output 'Port 3000 is now closed (no LISTENers).' } }",
 			"isBackground": false
+		},
+		{
+			"label": "Smoke check dev server",
+			"type": "shell",
+			"command": "powershell",
+			"args": [
+				"-NoProfile",
+				"-ExecutionPolicy",
+				"Bypass",
+				"-Command",
+				"cd 'c:\\GIT\\wine-cellar-app';\n$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique;\nif ($pids) { Write-Output ('Killing PIDs on port 3000: ' + ($pids -join ', ')); foreach ($pid in $pids) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue } } else { Write-Output 'No LISTENing process on port 3000.' }\n\n$npm = Get-Command npm -ErrorAction Stop;\n$proc = Start-Process -FilePath $npm.Source -ArgumentList @('run','dev') -WorkingDirectory (Get-Location) -PassThru;\nWrite-Output ('Started dev server process PID: ' + $proc.Id);\nStart-Sleep -Seconds 3;\n\ntry {\n  $resp = Invoke-WebRequest -UseBasicParsing -Uri 'http://localhost:3000/health/live' -TimeoutSec 10;\n  Write-Output ('Health status: ' + $resp.StatusCode);\n  Write-Output $resp.Content;\n} catch {\n  Write-Error $_;\n} finally {\n  $pids2 = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique;\n  if ($pids2) {\n    Write-Output ('Stopping PIDs on port 3000: ' + ($pids2 -join ', '));\n    foreach ($pid in $pids2) { Stop-Process -Id $pid -Force -ErrorAction SilentlyContinue }\n  }\n}"
+			],
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

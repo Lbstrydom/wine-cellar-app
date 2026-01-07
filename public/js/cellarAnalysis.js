@@ -33,6 +33,10 @@ export function initCellarAnalysis() {
   const setupZonesBtn = document.getElementById('setup-zones-btn');
   const confirmLayoutBtn = document.getElementById('confirm-layout-btn');
   const cancelSetupBtn = document.getElementById('cancel-setup-btn');
+  const toggleZoneChatBtn = document.getElementById('toggle-zone-chat-btn');
+  const closeZoneChatBtn = document.getElementById('zone-chat-close-btn');
+  const zoneChatSendBtn = document.getElementById('zone-chat-send-btn');
+  const zoneChatInput = document.getElementById('zone-chat-input');
 
   if (refreshBtn) {
     refreshBtn.addEventListener('click', loadAnalysis);
@@ -56,6 +60,27 @@ export function initCellarAnalysis() {
 
   if (cancelSetupBtn) {
     cancelSetupBtn.addEventListener('click', cancelZoneSetup);
+  }
+
+  if (toggleZoneChatBtn) {
+    toggleZoneChatBtn.addEventListener('click', toggleZoneChat);
+  }
+
+  if (closeZoneChatBtn) {
+    closeZoneChatBtn.addEventListener('click', toggleZoneChat);
+  }
+
+  if (zoneChatSendBtn) {
+    zoneChatSendBtn.addEventListener('click', sendZoneChatMessage);
+  }
+
+  if (zoneChatInput) {
+    zoneChatInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        sendZoneChatMessage();
+      }
+    });
   }
 }
 
@@ -986,7 +1011,7 @@ function toggleZoneChat() {
 async function sendZoneChatMessage() {
   const input = document.getElementById('zone-chat-input');
   const messagesEl = document.getElementById('zone-chat-messages');
-  const sendBtn = input?.nextElementSibling; // Get the send button next to input
+  const sendBtn = document.getElementById('zone-chat-send-btn');
 
   if (!input || !messagesEl) return;
 

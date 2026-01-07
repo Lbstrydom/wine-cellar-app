@@ -102,7 +102,7 @@ describe('validate middleware', () => {
   });
 
   describe('validateQuery()', () => {
-    it('should validate query parameters', () => {
+    it('should validate query parameters and store in req.validated.query', () => {
       const querySchema = z.object({
         limit: z.coerce.number().int().positive().default(50)
       });
@@ -112,7 +112,8 @@ describe('validate middleware', () => {
       middleware(req, res, next);
 
       expect(next).toHaveBeenCalled();
-      expect(req.query.limit).toBe(10); // Coerced to number
+      // Express 5: req.query is getter-only, so coerced values go to req.validated.query
+      expect(req.validated.query.limit).toBe(10);
     });
   });
 

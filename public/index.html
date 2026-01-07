@@ -150,7 +150,7 @@
       <div class="wizard-header">
         <h3>Zone Setup Wizard</h3>
         <p class="wizard-subtitle">Review and confirm the proposed zone layout for your cellar</p>
-        <button class="btn btn-small btn-secondary" id="toggle-zone-chat-btn" onclick="window.cellarAnalysis.toggleZoneChat()">
+        <button class="btn btn-small btn-secondary" id="toggle-zone-chat-btn">
           💬 Chat About Zones
         </button>
       </div>
@@ -159,7 +159,7 @@
       <div class="zone-chat-panel" id="zone-chat-panel" style="display: none;">
         <div class="zone-chat-header">
           <span>Zone Classification Chat</span>
-          <button class="btn-icon" onclick="window.cellarAnalysis.toggleZoneChat()" title="Close chat">✕</button>
+          <button class="btn-icon" id="zone-chat-close-btn" title="Close chat">✕</button>
         </div>
         <div class="zone-chat-messages" id="zone-chat-messages">
           <div class="chat-message assistant">
@@ -177,8 +177,8 @@
         </div>
         <div class="zone-chat-input-container">
           <input type="text" id="zone-chat-input" placeholder="Ask about zone classifications..."
-                 onkeypress="if(event.key==='Enter') window.cellarAnalysis.sendZoneChatMessage()">
-          <button class="btn btn-primary btn-small" onclick="window.cellarAnalysis.sendZoneChatMessage()">Send</button>
+                 >
+          <button class="btn btn-primary btn-small" id="zone-chat-send-btn">Send</button>
         </div>
       </div>
 
