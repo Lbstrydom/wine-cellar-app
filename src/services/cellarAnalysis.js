@@ -352,6 +352,10 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     if (slotId) occupiedSlots.add(slotId);
   });
 
+  // DEBUG: Log R15 slots in occupied set
+  const r15Occupied = Array.from(occupiedSlots).filter(s => s.startsWith('R15')).sort();
+  console.log('[DEBUG] R15 slots in occupiedSlots:', r15Occupied);
+
   const suggestions = [];
   const pendingMoves = new Map();
   
@@ -376,6 +380,13 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     allocatedTargets.forEach(target => currentlyOccupied.add(target));
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
+
+    // DEBUG: Log for appassimento wines targeting R15
+    if (wine.suggestedZoneId === 'appassimento' && slot?.slotId?.startsWith('R15')) {
+      const r15InCurrent = Array.from(currentlyOccupied).filter(s => s.startsWith('R15')).sort();
+      console.log('[DEBUG] Processing:', wine.name, 'from', wine.currentSlot, 'to', slot?.slotId);
+      console.log('[DEBUG] R15 in currentlyOccupied:', r15InCurrent);
+    }
 
     if (slot) {
       suggestions.push({
