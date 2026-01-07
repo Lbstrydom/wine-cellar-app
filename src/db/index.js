@@ -1,30 +1,25 @@
 /**
- * @fileoverview Database connection module.
- * Automatically selects PostgreSQL or SQLite based on DATABASE_URL env var.
+ * @fileoverview Database connection module (PostgreSQL only).
+ * Connects to PostgreSQL via DATABASE_URL environment variable.
  * @module db
  */
 
-// Choose database backend based on environment
-const usePostgres = !!process.env.DATABASE_URL;
-console.log(`[DB] Backend: ${usePostgres ? 'PostgreSQL' : 'SQLite'}`);
-
-let db, awardsDb, preparedStatements, pool;
-
-if (usePostgres) {
-  // PostgreSQL mode (Railway/Supabase)
-  const postgres = await import('./postgres.js');
-  db = postgres.default;
-  awardsDb = postgres.awardsDb;
-  preparedStatements = postgres.preparedStatements;
-  pool = postgres.pool;
-} else {
-  // SQLite mode (local development)
-  const sqlite = await import('./sqlite.js');
-  db = sqlite.default;
-  awardsDb = sqlite.awardsDb;
-  preparedStatements = sqlite.preparedStatements;
-  pool = null;
+// Require DATABASE_URL for PostgreSQL connection
+if (!process.env.DATABASE_URL) {
+  throw new Error(
+    'DATABASE_URL environment variable is required. ' +
+    'Set it to your PostgreSQL connection string (e.g., postgresql://user:pass@host/db)'
+  );
 }
+
+console.log('[DB] Backend: PostgreSQL (production)');
+
+// PostgreSQL mode
+const postgres = await import('./postgres.js');
+const db = postgres.default;
+const awardsDb = postgres.awardsDb;
+const preparedStatements = postgres.preparedStatements;
+const pool = postgres.pool;
 
 export default db;
 export { awardsDb, preparedStatements, pool };

@@ -41,16 +41,10 @@ router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
     }
 
     // Perform move atomically using transaction
-    if (db.transaction) {
-      await db.transaction(async (client) => {
-        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [from_location]);
-        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [sourceSlot.wine_id, to_location]);
-      });
-    } else {
-      // SQLite fallback (uses internal transaction handling)
-      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(from_location);
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(sourceSlot.wine_id, to_location);
-    }
+    await db.transaction(async (client) => {
+      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [from_location]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [sourceSlot.wine_id, to_location]);
+    });
 
     res.json({ message: 'Bottle moved' });
   } catch (error) {
@@ -88,21 +82,14 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
     }
 
     // Perform the swap atomically using transaction
-    if (db.transaction) {
-      await db.transaction(async (client) => {
-        // Move wine from slot_b to displaced_to
-        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, displaced_to]);
-        // Move wine from slot_a to slot_b
-        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
-        // Clear slot_a
-        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [slot_a]);
-      });
-    } else {
-      // SQLite fallback
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, displaced_to);
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
-      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(slot_a);
-    }
+    await db.transaction(async (client) => {
+      // Move wine from slot_b to displaced_to
+      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, displaced_to]);
+      // Move wine from slot_a to slot_b
+      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+      // Clear slot_a
+      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [slot_a]);
+    });
 
     res.json({
       message: 'Bottles swapped',
@@ -144,16 +131,10 @@ router.post('/direct-swap', validateBody(directSwapSchema), async (req, res) => 
     }
 
     // Perform the direct swap atomically using transaction
-    if (db.transaction) {
-      await db.transaction(async (client) => {
-        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, slot_a]);
-        await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
-      });
-    } else {
-      // SQLite fallback
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotB.wine_id, slot_a);
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(slotA.wine_id, slot_b);
-    }
+    await db.transaction(async (client) => {
+      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, slot_a]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+    });
 
     res.json({
       message: 'Bottles swapped',
@@ -183,44 +164,27 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     const wineId = slot.wine_id;
     let remainingCount = 0;
 
-    // Perform drink operation atomically using transaction
-    if (db.transaction) {
-      await db.transaction(async (client) => {
-        // Log consumption
-        await client.query(
-          `INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
-           VALUES ($1, $2, $3, $4, $5, $6)`,
-          [wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null]
-        );
+    // Perform drink operation atomically using PostgreSQL transaction
+    await db.transaction(async (client) => {
+      // Log consumption
+      await client.query(
+        `INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null]
+      );
 
-        // Clear slot
-        await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [location]);
+      // Clear slot
+      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [location]);
 
-        // Check remaining bottles
-        const remaining = await client.query('SELECT COUNT(*) as count FROM slots WHERE wine_id = $1', [wineId]);
-        remainingCount = parseInt(remaining.rows[0].count) || 0;
+      // Check remaining bottles
+      const remaining = await client.query('SELECT COUNT(*) as count FROM slots WHERE wine_id = $1', [wineId]);
+      remainingCount = parseInt(remaining.rows[0].count) || 0;
 
-        // Remove from reduce_now if no bottles left
-        if (remainingCount === 0) {
-          await client.query('DELETE FROM reduce_now WHERE wine_id = $1', [wineId]);
-        }
-      });
-    } else {
-      // SQLite fallback
-      await db.prepare(`
-        INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null);
-
-      await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
-
-      const remaining = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?').get(wineId);
-      remainingCount = parseInt(remaining.count) || 0;
-
+      // Remove from reduce_now if no bottles left
       if (remainingCount === 0) {
-        await db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(wineId);
+        await client.query('DELETE FROM reduce_now WHERE wine_id = $1', [wineId]);
       }
-    }
+    });
 
     res.json({
       message: 'Bottle consumed and logged',

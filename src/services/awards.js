@@ -6,7 +6,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import db, { awardsDb } from '../db/index.js';
-import { isPostgres } from '../db/helpers.js';
+import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 import { fetchPageContent } from './searchProviders.js';
 import * as ocrService from './ocrService.js';
@@ -275,17 +275,12 @@ export async function importAwards(sourceId, awards) {
   let skipped = 0;
   const errors = [];
 
-  // PostgreSQL uses ON CONFLICT DO NOTHING, SQLite uses INSERT OR IGNORE
-  const insertSQL = isPostgres()
-    ? `INSERT INTO competition_awards (
-        source_id, producer, wine_name, wine_name_normalized, vintage,
-        award, award_normalized, category, region, extra_info
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT DO NOTHING`
-    : `INSERT OR IGNORE INTO competition_awards (
-        source_id, producer, wine_name, wine_name_normalized, vintage,
-        award, award_normalized, category, region, extra_info
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+  // PostgreSQL ON CONFLICT DO NOTHING for duplicate entries
+  const insertSQL = `INSERT INTO competition_awards (
+    source_id, producer, wine_name, wine_name_normalized, vintage,
+    award, award_normalized, category, region, extra_info
+  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT DO NOTHING`;
 
   for (const award of awards) {
     try {
@@ -1112,46 +1107,29 @@ export async function getKnownCompetitions() {
 export async function addCompetition(competition) {
   const id = competition.id || competition.name.toLowerCase().replaceAll(/\s+/g, '_');
 
-  if (isPostgres()) {
-    await awardsDb.prepare(`
-      INSERT INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT (id) DO UPDATE SET
-        name = EXCLUDED.name,
-        short_name = EXCLUDED.short_name,
-        country = EXCLUDED.country,
-        scope = EXCLUDED.scope,
-        website = EXCLUDED.website,
-        award_types = EXCLUDED.award_types,
-        credibility = EXCLUDED.credibility,
-        notes = EXCLUDED.notes
-    `).run(
-      id,
-      competition.name,
-      competition.short_name || null,
-      competition.country || null,
-      competition.scope || 'regional',
-      competition.website || null,
-      competition.award_types ? JSON.stringify(competition.award_types) : null,
-      competition.credibility || 0.85,
-      competition.notes || null
-    );
-  } else {
-    await awardsDb.prepare(`
-      INSERT OR REPLACE INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      id,
-      competition.name,
-      competition.short_name || null,
-      competition.country || null,
-      competition.scope || 'regional',
-      competition.website || null,
-      competition.award_types ? JSON.stringify(competition.award_types) : null,
-      competition.credibility || 0.85,
-      competition.notes || null
-    );
-  }
+  await awardsDb.prepare(`
+    INSERT INTO known_competitions (id, name, short_name, country, scope, website, award_types, credibility, notes)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT (id) DO UPDATE SET
+      name = EXCLUDED.name,
+      short_name = EXCLUDED.short_name,
+      country = EXCLUDED.country,
+      scope = EXCLUDED.scope,
+      website = EXCLUDED.website,
+      award_types = EXCLUDED.award_types,
+      credibility = EXCLUDED.credibility,
+      notes = EXCLUDED.notes
+  `).run(
+    id,
+    competition.name,
+    competition.short_name || null,
+    competition.country || null,
+    competition.scope || 'regional',
+    competition.website || null,
+    competition.award_types ? JSON.stringify(competition.award_types) : null,
+    competition.credibility || 0.85,
+    competition.notes || null
+  );
 
   return id;
 }

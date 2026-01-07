@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { stringAgg, ilike, isPostgres } from '../db/helpers.js';
+import { stringAgg, ilike } from '../db/helpers.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
 import {
   wineIdSchema,
@@ -39,27 +39,7 @@ router.get('/styles', async (req, res) => {
 });
 
 /**
- * Check if FTS5 table exists (SQLite only feature).
- * @returns {Promise<boolean>} True if wines_fts table exists
- */
-async function hasFTS5() {
-  // FTS5 is SQLite-specific, not available in PostgreSQL
-  if (isPostgres()) {
-    return false;
-  }
-  try {
-    const result = await db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='wines_fts'"
-    ).get();
-    return !!result;
-  } catch {
-    return false;
-  }
-}
-
-/**
- * Search wines using FTS5 full-text search (with LIKE fallback).
- * FTS5 provides sub-millisecond search with relevance ranking.
+ * Search wines using ILIKE (PostgreSQL case-insensitive search).
  * @route GET /api/wines/search
  */
 router.get('/search', async (req, res) => {
@@ -70,50 +50,15 @@ router.get('/search', async (req, res) => {
     }
 
     const searchLimit = Math.min(parseInt(limit) || 10, 50);
+    const likePattern = `%${q}%`;
 
-    // Try FTS5 first (SQLite only, much faster for large datasets)
-    if (await hasFTS5()) {
-      try {
-        // Escape special FTS5 characters and add prefix matching
-        const ftsQuery = q
-          .replace(/['"]/g, '')  // Remove quotes
-          .split(/\s+/)
-          .filter(term => term.length > 0)
-          .map(term => `${term}*`)  // Add prefix matching
-          .join(' ');
-
-        if (ftsQuery) {
-          const wines = await db.prepare(`
-            SELECT
-              w.id, w.wine_name, w.vintage, w.style, w.colour,
-              w.vivino_rating, w.price_eur, w.country,
-              w.purchase_stars,
-              bm25(wines_fts, 10.0, 5.0, 1.0, 0.5) as relevance
-            FROM wines_fts
-            JOIN wines w ON wines_fts.rowid = w.id
-            WHERE wines_fts MATCH ?
-            ORDER BY relevance
-            LIMIT ?
-          `).all(ftsQuery, searchLimit);
-
-          return res.json(wines);
-        }
-      } catch (ftsError) {
-        // FTS5 query failed (malformed query), fall back to LIKE
-        console.warn('FTS5 search failed, falling back to LIKE:', ftsError.message);
-      }
-    }
-
-    // Fallback to LIKE search (works on both SQLite and PostgreSQL)
-    // PostgreSQL uses ILIKE for case-insensitive search
-    const likeOp = ilike();
     const wines = await db.prepare(`
       SELECT id, wine_name, vintage, style, colour, vivino_rating, price_eur, country, purchase_stars
       FROM wines
-      WHERE wine_name ${likeOp} ? OR style ${likeOp} ? OR country ${likeOp} ?
+      WHERE wine_name ILIKE ? OR style ILIKE ? OR country ILIKE ?
       ORDER BY wine_name
       LIMIT ?
-    `).all(`%${q}%`, `%${q}%`, `%${q}%`, searchLimit);
+    `).all(likePattern, likePattern, likePattern, searchLimit);
 
     res.json(wines);
   } catch (error) {
@@ -136,51 +81,26 @@ router.get('/global-search', async (req, res) => {
 
     const searchLimit = Math.min(parseInt(limit) || 5, 20);
     const likePattern = `%${q}%`;
-    const likeOp = ilike();
 
-    // Search wines (with FTS5 if available - SQLite only)
-    let wines = [];
-    if (await hasFTS5()) {
-      try {
-        const ftsQuery = q.split(/\s+/).filter(t => t).map(t => `${t}*`).join(' ');
-        if (ftsQuery) {
-          wines = await db.prepare(`
-            SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
-                   COUNT(s.id) as bottle_count
-            FROM wines_fts
-            JOIN wines w ON wines_fts.rowid = w.id
-            LEFT JOIN slots s ON s.wine_id = w.id
-            WHERE wines_fts MATCH ?
-            GROUP BY w.id
-            ORDER BY bm25(wines_fts)
-            LIMIT ?
-          `).all(ftsQuery, searchLimit);
-        }
-      } catch {
-        // Fall through to LIKE
-      }
-    }
-    if (wines.length === 0) {
-      wines = await db.prepare(`
-        SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
-               COUNT(s.id) as bottle_count
-        FROM wines w
-        LEFT JOIN slots s ON s.wine_id = w.id
-        WHERE w.wine_name ${likeOp} ?
-        GROUP BY w.id
-        ORDER BY w.wine_name
-        LIMIT ?
-      `).all(likePattern, searchLimit);
-    }
+    // Search wines with bottle counts
+    const wines = await db.prepare(`
+      SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
+             COUNT(s.id) as bottle_count
+      FROM wines w
+      LEFT JOIN slots s ON s.wine_id = w.id
+      WHERE w.wine_name ILIKE ?
+      GROUP BY w.id
+      ORDER BY w.wine_name
+      LIMIT ?
+    `).all(likePattern, searchLimit);
 
-    // Search distinct producers - simplified for PostgreSQL compatibility
-    // PostgreSQL doesn't have the same string functions as SQLite
+    // Search distinct producers
     const producers = await db.prepare(`
       SELECT DISTINCT
         SPLIT_PART(wine_name, ' ', 1) as producer,
         COUNT(*) as wine_count
       FROM wines
-      WHERE wine_name ${likeOp} ?
+      WHERE wine_name ILIKE ?
       GROUP BY SPLIT_PART(wine_name, ' ', 1)
       HAVING SPLIT_PART(wine_name, ' ', 1) != ''
       ORDER BY wine_count DESC
@@ -191,7 +111,7 @@ router.get('/global-search', async (req, res) => {
     const countries = await db.prepare(`
       SELECT country, COUNT(*) as wine_count
       FROM wines
-      WHERE country ${likeOp} ? AND country IS NOT NULL AND country != ''
+      WHERE country ILIKE ? AND country IS NOT NULL AND country != ''
       GROUP BY country
       ORDER BY wine_count DESC
       LIMIT ?
@@ -201,7 +121,7 @@ router.get('/global-search', async (req, res) => {
     const styles = await db.prepare(`
       SELECT style, COUNT(*) as wine_count
       FROM wines
-      WHERE style ${likeOp} ?
+      WHERE style ILIKE ?
       GROUP BY style
       ORDER BY wine_count DESC
       LIMIT ?

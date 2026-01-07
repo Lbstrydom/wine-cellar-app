@@ -1,20 +1,18 @@
 #!/usr/bin/env node
 /**
- * PostgreSQL Compatibility Test Script
+ * PostgreSQL Test Script
  *
- * Runs critical SQL queries against the database to verify PostgreSQL compatibility.
- * Use with DATABASE_URL set to test against PostgreSQL, or without to test SQLite.
+ * Runs SQL queries against PostgreSQL to verify the database layer works correctly.
+ * Requires DATABASE_URL environment variable to be set.
  *
  * Usage:
- *   node scripts/test-pg-compat.js           # Test current DB (SQLite or PG based on DATABASE_URL)
- *   DATABASE_URL="..." node scripts/test-pg-compat.js  # Test against specific PostgreSQL
+ *   DATABASE_URL="..." node scripts/test-pg-compat.js
  */
 
 import db from '../src/db/index.js';
-import { stringAgg, nowFunc, ilike, upsert, nullsLast, isPostgres } from '../src/db/helpers.js';
+import { stringAgg, nowFunc, ilike, upsert, nullsLast } from '../src/db/helpers.js';
 
-const isPg = isPostgres();
-console.log(`\n🔍 Testing ${isPg ? 'PostgreSQL' : 'SQLite'} compatibility...\n`);
+console.log('\n🔍 Testing PostgreSQL database layer...\n');
 
 const tests = [];
 let passed = 0;
@@ -102,11 +100,8 @@ async function runTests() {
 
   await test('stringAgg() helper generates correct SQL', async () => {
     const sql = stringAgg('location_code', ',', true);
-    if (isPg && !sql.includes('STRING_AGG')) {
-      throw new Error('PostgreSQL should use STRING_AGG');
-    }
-    if (!isPg && !sql.includes('GROUP_CONCAT')) {
-      throw new Error('SQLite should use GROUP_CONCAT');
+    if (!sql.includes('STRING_AGG')) {
+      throw new Error('Should use STRING_AGG');
     }
   });
 
@@ -158,11 +153,8 @@ async function runTests() {
 
   await test('upsert() helper generates correct SQL', async () => {
     const sql = upsert('user_settings', ['key', 'value'], 'key', ['value']);
-    if (isPg && !sql.includes('ON CONFLICT')) {
-      throw new Error('PostgreSQL should use ON CONFLICT');
-    }
-    if (!isPg && !sql.includes('INSERT OR REPLACE')) {
-      throw new Error('SQLite should use INSERT OR REPLACE');
+    if (!sql.includes('ON CONFLICT')) {
+      throw new Error('Should use ON CONFLICT');
     }
   });
 
@@ -182,9 +174,7 @@ async function runTests() {
 
   await test('INSERT with ON CONFLICT DO NOTHING pattern', async () => {
     // This pattern is used in awards.js for INSERT OR IGNORE
-    const insertSQL = isPg
-      ? `INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING`
-      : `INSERT OR IGNORE INTO user_settings (key, value) VALUES (?, ?)`;
+    const insertSQL = `INSERT INTO user_settings (key, value) VALUES (?, ?) ON CONFLICT DO NOTHING`;
 
     // First insert
     await db.prepare(insertSQL).run('_test_ignore', 'first');
@@ -316,11 +306,8 @@ async function runTests() {
 
   await test('ilike() helper generates correct SQL', async () => {
     const op = ilike();
-    if (isPg && op !== 'ILIKE') {
-      throw new Error('PostgreSQL should use ILIKE');
-    }
-    if (!isPg && op !== 'LIKE') {
-      throw new Error('SQLite should use LIKE');
+    if (op !== 'ILIKE') {
+      throw new Error('Should use ILIKE');
     }
   });
 
@@ -341,11 +328,8 @@ async function runTests() {
 
   await test('nullsLast() helper generates correct SQL', async () => {
     const sql = nullsLast('drink_until', 'ASC');
-    if (isPg && !sql.includes('NULLS LAST')) {
-      throw new Error('PostgreSQL should use NULLS LAST');
-    }
-    if (!isPg && !sql.includes('CASE WHEN')) {
-      throw new Error('SQLite should use CASE workaround');
+    if (!sql.includes('NULLS LAST')) {
+      throw new Error('Should use NULLS LAST');
     }
   });
 
@@ -410,9 +394,7 @@ async function runTests() {
   await test('Sequential async operations', async () => {
     // Insert, select, delete sequence
     await db.prepare(
-      isPg
-        ? "INSERT INTO user_settings (key, value) VALUES ('_seq_test', 'a') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
-        : "INSERT OR REPLACE INTO user_settings (key, value) VALUES ('_seq_test', 'a')"
+      "INSERT INTO user_settings (key, value) VALUES ('_seq_test', 'a') ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value"
     ).run();
 
     const row = await db.prepare('SELECT value FROM user_settings WHERE key = ?').get('_seq_test');

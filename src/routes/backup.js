@@ -6,7 +6,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { stringAgg, isPostgres } from '../db/helpers.js';
+import { stringAgg } from '../db/helpers.js';
 
 const router = Router();
 
@@ -177,11 +177,6 @@ router.post('/import', async (req, res) => {
   try {
     const stats = { imported: 0, skipped: 0, errors: [] };
 
-    // Use ON CONFLICT for PostgreSQL (also works with SQLite 3.24+)
-    const upsertSuffix = isPostgres()
-      ? 'ON CONFLICT (id) DO UPDATE SET'
-      : 'OR REPLACE';
-
     // If replace mode, clear existing data
     if (mergeMode === 'replace') {
       await db.prepare('DELETE FROM slots').run();
@@ -193,35 +188,33 @@ router.post('/import', async (req, res) => {
       await db.prepare('DELETE FROM wines').run();
     }
 
-    // Import wines
+    // Import wines - using PostgreSQL ON CONFLICT syntax
     if (backup.data.wines) {
       for (const wine of backup.data.wines) {
         try {
-          if (isPostgres()) {
-            // PostgreSQL: use INSERT ... ON CONFLICT
-            await db.prepare(`
-              INSERT INTO wines (
-                id, style, colour, wine_name, vintage, vivino_rating, price_eur,
-                country, drink_from, drink_peak, drink_until, personal_rating,
-                personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET
-                style = EXCLUDED.style,
-                colour = EXCLUDED.colour,
-                wine_name = EXCLUDED.wine_name,
-                vintage = EXCLUDED.vintage,
-                vivino_rating = EXCLUDED.vivino_rating,
-                price_eur = EXCLUDED.price_eur,
-                country = EXCLUDED.country,
-                drink_from = EXCLUDED.drink_from,
-                drink_peak = EXCLUDED.drink_peak,
-                drink_until = EXCLUDED.drink_until,
-                personal_rating = EXCLUDED.personal_rating,
-                personal_notes = EXCLUDED.personal_notes,
-                personal_rated_at = EXCLUDED.personal_rated_at,
-                purchase_stars = EXCLUDED.purchase_stars,
-                updated_at = EXCLUDED.updated_at
-            `).run(
+          await db.prepare(`
+            INSERT INTO wines (
+              id, style, colour, wine_name, vintage, vivino_rating, price_eur,
+              country, drink_from, drink_peak, drink_until, personal_rating,
+              personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              style = EXCLUDED.style,
+              colour = EXCLUDED.colour,
+              wine_name = EXCLUDED.wine_name,
+              vintage = EXCLUDED.vintage,
+              vivino_rating = EXCLUDED.vivino_rating,
+              price_eur = EXCLUDED.price_eur,
+              country = EXCLUDED.country,
+              drink_from = EXCLUDED.drink_from,
+              drink_peak = EXCLUDED.drink_peak,
+              drink_until = EXCLUDED.drink_until,
+              personal_rating = EXCLUDED.personal_rating,
+              personal_notes = EXCLUDED.personal_notes,
+              personal_rated_at = EXCLUDED.personal_rated_at,
+              purchase_stars = EXCLUDED.purchase_stars,
+              updated_at = EXCLUDED.updated_at
+          `).run(
               wine.id,
               wine.style || null,
               wine.colour || null,
@@ -240,34 +233,6 @@ router.post('/import', async (req, res) => {
               wine.created_at || new Date().toISOString(),
               wine.updated_at || new Date().toISOString()
             );
-          } else {
-            // SQLite: use INSERT OR REPLACE
-            await db.prepare(`
-              INSERT OR REPLACE INTO wines (
-                id, style, colour, wine_name, vintage, vivino_rating, price_eur,
-                country, drink_from, drink_peak, drink_until, personal_rating,
-                personal_notes, personal_rated_at, purchase_stars, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              wine.id,
-              wine.style || null,
-              wine.colour || null,
-              wine.wine_name,
-              wine.vintage || null,
-              wine.vivino_rating || null,
-              wine.price_eur || null,
-              wine.country || null,
-              wine.drink_from || null,
-              wine.drink_peak || null,
-              wine.drink_until || null,
-              wine.personal_rating || null,
-              wine.personal_notes || null,
-              wine.personal_rated_at || null,
-              wine.purchase_stars || null,
-              wine.created_at || new Date().toISOString(),
-              wine.updated_at || new Date().toISOString()
-            );
-          }
           stats.imported++;
         } catch (err) {
           stats.errors.push(`Wine ${wine.id}: ${err.message}`);
@@ -279,20 +244,13 @@ router.post('/import', async (req, res) => {
     if (backup.data.slots) {
       for (const slot of backup.data.slots) {
         try {
-          if (isPostgres()) {
-            await db.prepare(`
-              INSERT INTO slots (id, location_code, wine_id)
-              VALUES (?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET
-                location_code = EXCLUDED.location_code,
-                wine_id = EXCLUDED.wine_id
-            `).run(slot.id, slot.location_code, slot.wine_id);
-          } else {
-            await db.prepare(`
-              INSERT OR REPLACE INTO slots (id, location_code, wine_id)
-              VALUES (?, ?, ?)
-            `).run(slot.id, slot.location_code, slot.wine_id);
-          }
+          await db.prepare(`
+            INSERT INTO slots (id, location_code, wine_id)
+            VALUES (?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              location_code = EXCLUDED.location_code,
+              wine_id = EXCLUDED.wine_id
+          `).run(slot.id, slot.location_code, slot.wine_id);
         } catch (err) {
           stats.errors.push(`Slot ${slot.location_code}: ${err.message}`);
         }
@@ -303,38 +261,25 @@ router.post('/import', async (req, res) => {
     if (backup.data.wine_ratings) {
       for (const rating of backup.data.wine_ratings) {
         try {
-          if (isPostgres()) {
-            await db.prepare(`
-              INSERT INTO wine_ratings (
-                id, wine_id, source_id, score, normalized_score, review_count,
-                source_url, fetched_at, confidence
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET
-                wine_id = EXCLUDED.wine_id,
-                source_id = EXCLUDED.source_id,
-                score = EXCLUDED.score,
-                normalized_score = EXCLUDED.normalized_score,
-                review_count = EXCLUDED.review_count,
-                source_url = EXCLUDED.source_url,
-                fetched_at = EXCLUDED.fetched_at,
-                confidence = EXCLUDED.confidence
-            `).run(
-              rating.id, rating.wine_id, rating.source_id, rating.score,
-              rating.normalized_score, rating.review_count, rating.source_url,
-              rating.fetched_at, rating.confidence
-            );
-          } else {
-            await db.prepare(`
-              INSERT OR REPLACE INTO wine_ratings (
-                id, wine_id, source_id, score, normalized_score, review_count,
-                source_url, fetched_at, confidence
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              rating.id, rating.wine_id, rating.source_id, rating.score,
-              rating.normalized_score, rating.review_count, rating.source_url,
-              rating.fetched_at, rating.confidence
-            );
-          }
+          await db.prepare(`
+            INSERT INTO wine_ratings (
+              id, wine_id, source_id, score, normalized_score, review_count,
+              source_url, fetched_at, confidence
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              wine_id = EXCLUDED.wine_id,
+              source_id = EXCLUDED.source_id,
+              score = EXCLUDED.score,
+              normalized_score = EXCLUDED.normalized_score,
+              review_count = EXCLUDED.review_count,
+              source_url = EXCLUDED.source_url,
+              fetched_at = EXCLUDED.fetched_at,
+              confidence = EXCLUDED.confidence
+          `).run(
+            rating.id, rating.wine_id, rating.source_id, rating.score,
+            rating.normalized_score, rating.review_count, rating.source_url,
+            rating.fetched_at, rating.confidence
+          );
         } catch (err) {
           stats.errors.push(`Rating: ${err.message}`);
         }
@@ -346,46 +291,31 @@ router.post('/import', async (req, res) => {
     if (consumptionData && consumptionData.length > 0) {
       for (const history of consumptionData) {
         try {
-          if (isPostgres()) {
-            await db.prepare(`
-              INSERT INTO consumption_log (
-                id, wine_id, wine_name, vintage, style, colour, country,
-                location_code, consumed_at, occasion, pairing_dish,
-                consumption_notes, consumption_rating
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT (id) DO UPDATE SET
-                wine_id = EXCLUDED.wine_id,
-                wine_name = EXCLUDED.wine_name,
-                vintage = EXCLUDED.vintage,
-                style = EXCLUDED.style,
-                colour = EXCLUDED.colour,
-                country = EXCLUDED.country,
-                location_code = EXCLUDED.location_code,
-                consumed_at = EXCLUDED.consumed_at,
-                occasion = EXCLUDED.occasion,
-                pairing_dish = EXCLUDED.pairing_dish,
-                consumption_notes = EXCLUDED.consumption_notes,
-                consumption_rating = EXCLUDED.consumption_rating
-            `).run(
-              history.id, history.wine_id, history.wine_name, history.vintage,
-              history.style, history.colour, history.country, history.location_code,
-              history.consumed_at, history.occasion, history.pairing_dish,
-              history.consumption_notes, history.consumption_rating
-            );
-          } else {
-            await db.prepare(`
-              INSERT OR REPLACE INTO consumption_log (
-                id, wine_id, wine_name, vintage, style, colour, country,
-                location_code, consumed_at, occasion, pairing_dish,
-                consumption_notes, consumption_rating
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(
-              history.id, history.wine_id, history.wine_name, history.vintage,
-              history.style, history.colour, history.country, history.location_code,
-              history.consumed_at, history.occasion, history.pairing_dish,
-              history.consumption_notes, history.consumption_rating
-            );
-          }
+          await db.prepare(`
+            INSERT INTO consumption_log (
+              id, wine_id, wine_name, vintage, style, colour, country,
+              location_code, consumed_at, occasion, pairing_dish,
+              consumption_notes, consumption_rating
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (id) DO UPDATE SET
+              wine_id = EXCLUDED.wine_id,
+              wine_name = EXCLUDED.wine_name,
+              vintage = EXCLUDED.vintage,
+              style = EXCLUDED.style,
+              colour = EXCLUDED.colour,
+              country = EXCLUDED.country,
+              location_code = EXCLUDED.location_code,
+              consumed_at = EXCLUDED.consumed_at,
+              occasion = EXCLUDED.occasion,
+              pairing_dish = EXCLUDED.pairing_dish,
+              consumption_notes = EXCLUDED.consumption_notes,
+              consumption_rating = EXCLUDED.consumption_rating
+          `).run(
+            history.id, history.wine_id, history.wine_name, history.vintage,
+            history.style, history.colour, history.country, history.location_code,
+            history.consumed_at, history.occasion, history.pairing_dish,
+            history.consumption_notes, history.consumption_rating
+          );
         } catch (err) {
           stats.errors.push(`History: ${err.message}`);
         }
