@@ -360,7 +360,7 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
 
   // DEBUG: Track R15 slots for debugging
   const debugR15Initial = Array.from(occupiedSlots).filter(s => s.startsWith('R15')).sort();
-  const debugInfo = { r15Initial: debugR15Initial, moves: [] };
+  const debugInfo = { r15Initial: debugR15Initial, moves: [], allMoves: [] };
 
   const suggestions = [];
   const pendingMoves = new Map();
@@ -387,9 +387,18 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
 
-    // DEBUG: Track for appassimento wines targeting R15
+    // DEBUG: Track ALL moves processing order
+    const r15InCurrent = Array.from(currentlyOccupied).filter(s => s.startsWith('R15')).sort();
+    debugInfo.allMoves.push({
+      wine: wine.name,
+      conf: wine.confidence,
+      from: wine.currentSlot,
+      to: slot?.slotId || 'NONE',
+      r15: r15InCurrent
+    });
+
+    // Also track just R15-targeting moves
     if (wine.suggestedZoneId === 'appassimento' && slot?.slotId?.startsWith('R15')) {
-      const r15InCurrent = Array.from(currentlyOccupied).filter(s => s.startsWith('R15')).sort();
       debugInfo.moves.push({
         wine: wine.name,
         from: wine.currentSlot,
