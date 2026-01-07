@@ -167,13 +167,7 @@ export async function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  const moveSuggestions = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
-  report.suggestedMoves = moveSuggestions;
-
-  // DEBUG: Include debug info in report (temporary)
-  if (moveSuggestions._debug) {
-    report._debug = moveSuggestions._debug;
-  }
+  report.suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
 
   // Check if reorganisation is recommended
   const shouldReorg =
@@ -358,10 +352,6 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     if (slotId) occupiedSlots.add(slotId);
   });
 
-  // DEBUG: Track R15 slots for debugging
-  const debugR15Initial = Array.from(occupiedSlots).filter(s => s.startsWith('R15')).sort();
-  const debugInfo = { r15Initial: debugR15Initial, moves: [], allMoves: [] };
-
   const suggestions = [];
   const pendingMoves = new Map();
   
@@ -389,26 +379,6 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     allocatedTargets.forEach(target => currentlyOccupied.add(target));
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
-
-    // DEBUG: Track ALL moves processing order
-    const r15InCurrent = Array.from(currentlyOccupied).filter(s => s.startsWith('R15')).sort();
-    debugInfo.allMoves.push({
-      wine: wine.name,
-      conf: wine.confidence,
-      from: wine.currentSlot,
-      to: slot?.slotId || 'NONE',
-      r15: r15InCurrent
-    });
-
-    // Also track just R15-targeting moves
-    if (wine.suggestedZoneId === 'appassimento' && slot?.slotId?.startsWith('R15')) {
-      debugInfo.moves.push({
-        wine: wine.name,
-        from: wine.currentSlot,
-        to: slot?.slotId,
-        r15OccupiedAtTime: r15InCurrent
-      });
-    }
 
     if (slot) {
       suggestions.push({
@@ -439,12 +409,7 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     }
   }
 
-  const sortedSuggestions = suggestions.sort((a, b) => a.priority - b.priority);
-
-  // Attach debug info to return value (temporary for debugging)
-  sortedSuggestions._debug = debugInfo;
-
-  return sortedSuggestions;
+  return suggestions.sort((a, b) => a.priority - b.priority);
 }
 
 /**
