@@ -682,7 +682,10 @@ function getAffectedZoneIdsFromPlan(plan) {
   for (const action of actions) {
     if (!action || typeof action !== 'object') continue;
 
-    if (action.type === 'expand_zone' && action.zoneId) {
+    if (action.type === 'reallocate_row') {
+      if (action.fromZoneId) zoneIds.add(action.fromZoneId);
+      if (action.toZoneId) zoneIds.add(action.toZoneId);
+    } else if (action.type === 'expand_zone' && action.zoneId) {
       zoneIds.add(action.zoneId);
     } else if (action.type === 'merge_zones') {
       if (Array.isArray(action.sourceZones)) {
@@ -786,6 +789,68 @@ async function mergeZonesTransactional(client, sourceZoneId, targetZoneId) {
 }
 
 /**
+ * Reallocate a specific row from one zone to another.
+ * Works within the fixed physical constraints of the cellar.
+ */
+async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber) {
+  if (fromZoneId === toZoneId) return;
+
+  const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
+
+  // Get current allocations
+  const fromAlloc = await client.query(
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
+    [fromZoneId]
+  );
+  const toAlloc = await client.query(
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
+    [toZoneId]
+  );
+
+  const fromRows = fromAlloc.rows[0]?.assigned_rows ? JSON.parse(fromAlloc.rows[0].assigned_rows) : [];
+  const toRows = toAlloc.rows[0]?.assigned_rows ? JSON.parse(toAlloc.rows[0].assigned_rows) : [];
+
+  // Verify the row belongs to fromZone
+  if (!fromRows.includes(rowId)) {
+    throw new Error(`Row ${rowId} is not assigned to zone ${fromZoneId}`);
+  }
+
+  // Remove from source zone
+  const updatedFromRows = fromRows.filter(r => r !== rowId);
+  // Add to target zone
+  const updatedToRows = [...toRows, rowId].filter(Boolean);
+
+  // Update source zone allocation
+  if (updatedFromRows.length > 0) {
+    await client.query(
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
+      [JSON.stringify(updatedFromRows), fromZoneId]
+    );
+  } else {
+    // Zone has no rows left - keep the allocation record but empty
+    await client.query(
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
+      [JSON.stringify([]), fromZoneId]
+    );
+  }
+
+  // Update or create target zone allocation
+  if (toAlloc.rows.length > 0) {
+    await client.query(
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
+      [JSON.stringify(updatedToRows), toZoneId]
+    );
+  } else {
+    await client.query(
+      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
+      [toZoneId, JSON.stringify(updatedToRows), 0]
+    );
+  }
+
+  return { fromRows: updatedFromRows, toRows: updatedToRows };
+}
+
+/**
  * POST /api/cellar/reconfiguration-plan/apply
  * Apply a previously generated holistic plan.
  */
@@ -841,7 +906,13 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
         const action = actions[i];
         if (!action || typeof action !== 'object') continue;
 
-        if (action.type === 'expand_zone') {
+        if (action.type === 'reallocate_row') {
+          // Move a row from one zone to another (within fixed 19-row limit)
+          const { fromZoneId, toZoneId, rowNumber } = action;
+          if (!fromZoneId || !toZoneId || rowNumber == null) continue;
+          await reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber);
+          zonesChanged++;
+        } else if (action.type === 'expand_zone') {
           const zoneId = action.zoneId;
           if (!zoneId) continue;
 

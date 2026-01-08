@@ -6,7 +6,16 @@
 import { getReconfigurationPlan, applyReconfigurationPlan, analyseCellar } from '../api.js';
 import { escapeHtml, showToast } from '../utils.js';
 
-let current = null; // { planId, plan }
+let current = null;
+
+function setApplyReadyState(isReady) {
+  const { applyBtn } = getEls();
+  if (!applyBtn) return;
+
+  // During loading, don't show an action that can't be taken yet.
+  applyBtn.style.display = isReady ? '' : 'none';
+  applyBtn.disabled = !isReady;
+}
 
 function getEls() {
   const overlay = document.getElementById('reconfig-modal-overlay');
@@ -30,17 +39,21 @@ function closeOverlay() {
   const { overlay } = getEls();
   overlay?.classList.remove('active');
   current = null;
+  setApplyReadyState(false);
 }
 
 function renderLoading(message) {
   const { body, subtitle } = getEls();
   if (subtitle) subtitle.textContent = '';
   if (body) body.innerHTML = `<div class="analysis-loading">${escapeHtml(message)}</div>`;
+  setApplyReadyState(false);
 }
 
 function renderPlan(plan) {
   const { subtitle, body } = getEls();
   if (!body) return;
+
+  setApplyReadyState(true);
 
   const summary = plan?.summary || {};
 
@@ -59,9 +72,10 @@ function renderPlan(plan) {
     </div>
   `;
 
-  const actionsHtml = actions.length
-    ? actions.map((a, idx) => renderAction(a, idx)).join('')
-    : '<div class="reconfig-action">No actions suggested.</div>';
+  let actionsHtml = '<div class="reconfig-action">No actions suggested.</div>';
+  if (actions.length > 0) {
+    actionsHtml = actions.map((a, idx) => renderAction(a, idx)).join('');
+  }
 
   body.innerHTML = `
     ${summaryHtml}
@@ -74,17 +88,28 @@ function renderPlan(plan) {
 function renderAction(action, idx) {
   const type = action?.type;
   const reason = escapeHtml(action?.reason || '');
-  const bottles = action?.bottlesAffected != null ? `• Bottles affected: ${escapeHtml(String(action.bottlesAffected))}` : '';
+  const bottlesAffected = action?.bottlesAffected;
 
   let title = escapeHtml(String(type || 'action'));
 
-  if (type === 'expand_zone') {
+  if (type === 'reallocate_row') {
+    title = `Reallocate Row ${escapeHtml(String(action.rowNumber || '?'))} from ${escapeHtml(action.fromZoneId || '')} → ${escapeHtml(action.toZoneId || '')}`;
+  } else if (type === 'expand_zone') {
     title = `Expand ${escapeHtml(action.zoneId || '')}`;
   } else if (type === 'merge_zones') {
     title = `Merge ${escapeHtml((action.sourceZones || []).join(', '))} → ${escapeHtml(action.targetZoneId || '')}`;
   } else if (type === 'retire_zone') {
     title = `Retire ${escapeHtml(action.zoneId || '')} → ${escapeHtml(action.mergeIntoZoneId || '')}`;
   }
+
+  const reasonHtml = reason ? `<div class="reconfig-action-reason">${reason}</div>` : '';
+  const bottlesAffectedNumber = typeof bottlesAffected === 'number'
+    ? bottlesAffected
+    : Number(bottlesAffected);
+  const hasBottlesAffected = Number.isFinite(bottlesAffectedNumber);
+  const bottlesHtml = hasBottlesAffected
+    ? `<div class="reconfig-action-meta">• Bottles affected: ${escapeHtml(String(bottlesAffectedNumber))}</div>`
+    : '';
 
   return `
     <div class="reconfig-action">
@@ -95,8 +120,8 @@ function renderAction(action, idx) {
           <span>Skip</span>
         </label>
       </div>
-      ${reason ? `<div class="reconfig-action-reason">${reason}</div>` : ''}
-      ${bottles ? `<div class="reconfig-action-meta">${bottles}</div>` : ''}
+      ${reasonHtml}
+      ${bottlesHtml}
     </div>
   `;
 }
@@ -104,27 +129,28 @@ function renderAction(action, idx) {
 function getSkipIndices() {
   const { body } = getEls();
   if (!body) return [];
-  const boxes = body.querySelectorAll('[data-reconfig-skip]');
+
+  const boxes = body.querySelectorAll('input[data-reconfig-skip]');
   const skip = [];
-  boxes.forEach(b => {
-    if (b.checked) {
-      const idx = parseInt(b.getAttribute('data-reconfig-skip'), 10);
-      if (Number.isFinite(idx)) skip.push(idx);
-    }
+  boxes.forEach((input) => {
+    if (!input.checked) return;
+    const idx = Number.parseInt(input.dataset.reconfigSkip, 10);
+    if (Number.isFinite(idx)) skip.push(idx);
   });
   return skip;
 }
 
 async function handleApply(onRenderAnalysis) {
   const { applyBtn } = getEls();
-  if (!current?.planId) throw new Error('No plan loaded');
+  const planId = current?.planId;
+  if (planId == null || planId === '') throw new Error('No plan loaded');
 
   const skipActions = getSkipIndices();
 
   if (applyBtn) applyBtn.disabled = true;
   try {
-    const result = await applyReconfigurationPlan(current.planId, skipActions);
-    if (!result?.success) throw new Error(result?.error || 'Failed to apply plan');
+    const result = await applyReconfigurationPlan(planId, skipActions);
+    if (result?.success !== true) throw new Error(result?.error || 'Failed to apply plan');
 
     closeOverlay();
     showToast('Applied zone reconfiguration');
@@ -162,7 +188,7 @@ export async function openReconfigurationModal({ onRenderAnalysis } = {}) {
     stabilityBias: 'moderate'
   });
 
-  if (!planResult?.success) {
+  if (planResult?.success !== true) {
     throw new Error(planResult?.error || 'Failed to generate plan');
   }
 

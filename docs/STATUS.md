@@ -925,16 +925,26 @@ Implemented proactive AI-assisted zone management to prevent illogical overflow 
 - Addresses "alert spam" when multiple zones overflow simultaneously
 - Single grouped banner replaces 6+ individual alerts
 - Two-path UX: Quick Fix (per-zone) vs Full Reconfiguration (cellar-wide)
+- **Physical Constraint Enforcement** (8 Jan - critical fix):
+  - Cellar has fixed 19-row limit - planner now works WITHIN this constraint
+  - New action type: `reallocate_row` - moves rows between zones (not expand beyond limit)
+  - AI prompt explicitly forbids adding rows beyond physical limit
+  - Heuristic fallback also works within constraints
+  - Red/white row allocation can flex for seasonality (more whites in summer, more reds in winter)
+  - AI can suggest zone restructuring (geographic → style-based or vice versa)
 - New files:
-  - `src/services/zoneReconfigurationPlanner.js` - Claude-powered plan generation
+  - `src/services/zoneReconfigurationPlanner.js` - Claude-powered plan generation with physical constraints
   - `src/services/reconfigurationPlanStore.js` - In-memory plan storage with 15min TTL
   - `src/services/reconfigurationTables.js` - PostgreSQL tables for zone_pins and history
   - `src/services/zonePins.js` - Zone pin constraints (never_merge)
   - `public/js/cellarAnalysis/zoneReconfigurationBanner.js` - Grouped banner UI
-  - `public/js/cellarAnalysis/zoneReconfigurationModal.js` - Plan preview modal
+  - `public/js/cellarAnalysis/zoneReconfigurationModal.js` - Plan preview modal (supports reallocate_row action)
+- Helper functions in `cellar.js`:
+  - `reallocateRowTransactional()` - moves a row from one zone to another safely
+  - `getAffectedZoneIdsFromPlan()` - extracts zone IDs including from reallocate_row actions
 - New API endpoints:
   - `POST /api/cellar/reconfiguration-plan` - Generate holistic plan
-  - `POST /api/cellar/reconfiguration-plan/apply` - Apply plan with optional skips
+  - `POST /api/cellar/reconfiguration-plan/apply` - Apply plan with optional skips (supports reallocate_row)
 - Database tables: `zone_pins`, `zone_reconfigurations`
 - Trigger logic: ≥3 capacity alerts OR ≥10% misplacement rate
 
