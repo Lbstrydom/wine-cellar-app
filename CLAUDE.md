@@ -650,6 +650,43 @@ This forces browsers to reload fresh assets instead of using cached versions
 
 ---
 
+## JavaScript Gotchas
+
+### The `||` vs `??` Falsy Bug
+
+**CRITICAL**: When using `||` for default values, remember that `0` is falsy in JavaScript!
+
+```javascript
+// BUG: 0 is falsy, so this returns 2 instead of 0
+const confOrder = { high: 0, medium: 1, low: 2 };
+const priority = confOrder['high'] || 2;  // Returns 2, not 0!
+
+// This broke confidence sorting - HIGH confidence items (0) were treated as LOW (2)
+items.sort((a, b) => {
+  return (confOrder[a.confidence] || 2) - (confOrder[b.confidence] || 2);
+  // All 'high' items got priority 2 instead of 0!
+});
+```
+
+**FIX**: Use nullish coalescing (`??`) which only falls back for `null`/`undefined`:
+
+```javascript
+// CORRECT: ?? only triggers for null/undefined, not 0
+const priority = confOrder['high'] ?? 2;  // Returns 0 correctly
+
+items.sort((a, b) => {
+  const aConf = confOrder[a.confidence] ?? 2;  // 0 stays 0
+  const bConf = confOrder[b.confidence] ?? 2;
+  return aConf - bConf;
+});
+```
+
+**When to use which:**
+- `??` - When 0, '', or false are valid values you want to keep
+- `||` - When you want ANY falsy value to trigger the default
+
+---
+
 ## Do NOT
 
 - Put API keys in code
@@ -664,6 +701,7 @@ This forces browsers to reload fresh assets instead of using cached versions
 - Assume batch operations won't have collisions - always validate
 - Use wine name for identity in move/swap logic - use wine ID
 - Execute multi-step operations without transaction wrapping
+- Use `||` for default values when 0 is valid (use `??` instead - see below)
 
 ---
 
