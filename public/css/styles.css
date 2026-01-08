@@ -1595,6 +1595,40 @@ header .search-trigger {
   color: #ffc107;
 }
 
+.swap-warning .swap-badge {
+  vertical-align: middle;
+}
+
+.swap-badge {
+  display: inline-block;
+  background: rgba(255, 193, 7, 0.25);
+  color: #ffc107;
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+  letter-spacing: 0.5px;
+}
+
+.move-item.is-swap {
+  border-left-color: #ffc107 !important;
+  background: rgba(255, 193, 7, 0.05);
+}
+
+.swap-arrow {
+  color: #ffc107;
+  font-weight: bold;
+}
+
+.swap-info {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
 .fridge-organize-actions {
   display: flex;
   gap: 0.5rem;

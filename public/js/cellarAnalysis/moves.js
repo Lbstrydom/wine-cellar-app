@@ -37,12 +37,20 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     return;
   }
 
+  // Count swaps vs regular moves
+  const swapCount = moves.filter(m => m.isSwap === true).length;
+  const regularMoveCount = moves.filter(m => m.type === 'move' && !m.isSwap).length;
+
   // If moves have swaps, show warning and disable individual moves
-  const swapWarning = hasSwaps
-    ? `<div class="swap-warning">
-        <strong>Note:</strong> These moves involve swaps - execute them together to avoid losing bottles.
-       </div>`
-    : '';
+  let swapWarning = '';
+  if (hasSwaps) {
+    const swapPairs = swapCount / 2; // Each swap involves 2 moves
+    swapWarning = `<div class="swap-warning">
+        <strong>Note:</strong> ${swapPairs} swap${swapPairs !== 1 ? 's' : ''} detected (marked with <span class="swap-badge">SWAP</span>).
+        ${regularMoveCount > 0 ? `Plus ${regularMoveCount} regular move${regularMoveCount !== 1 ? 's' : ''}.` : ''}
+        Execute all moves together to avoid losing bottles.
+       </div>`;
+  }
 
   listEl.innerHTML = swapWarning + moves.map((move, index) => {
     if (move.type === 'manual') {
@@ -67,15 +75,24 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       ? '<span class="move-locked" title="Execute all moves together">🔒</span>'
       : `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}">Move</button>`;
 
+    // Show swap indicator and bidirectional arrow for swaps
+    const isSwap = move.isSwap === true;
+    const arrow = isSwap ? '↔' : '→';
+    const swapBadge = isSwap ? '<span class="swap-badge">SWAP</span>' : '';
+    const swapInfo = isSwap && move.swapPartnerWineName
+      ? `<div class="swap-info">Swapping with: ${escapeHtml(move.swapPartnerWineName)} at ${move.swapWith}</div>`
+      : '';
+
     return `
-      <div class="move-item priority-${move.priority}" data-move-index="${index}">
+      <div class="move-item priority-${move.priority}${isSwap ? ' is-swap' : ''}" data-move-index="${index}">
         <div class="move-details">
-          <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
+          <div class="move-wine-name">${escapeHtml(move.wineName)}${swapBadge}</div>
           <div class="move-path">
             <span class="from">${move.from}</span>
-            <span class="arrow">→</span>
+            <span class="arrow${isSwap ? ' swap-arrow' : ''}">${arrow}</span>
             <span class="to">${move.to}</span>
           </div>
+          ${swapInfo}
           <div class="move-reason">${escapeHtml(move.reason)}</div>
         </div>
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>

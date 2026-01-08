@@ -414,9 +414,25 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
   const sortedSuggestions = suggestions.sort((a, b) => a.priority - b.priority);
 
   // Check if any moves involve swaps (source of one move is target of another)
-  const sources = new Set(sortedSuggestions.filter(s => s.type === 'move').map(m => m.from));
-  const targets = new Set(sortedSuggestions.filter(s => s.type === 'move').map(m => m.to));
+  // Also mark individual moves with their swap partner for UI clarity
+  const moveSuggestions = sortedSuggestions.filter(s => s.type === 'move');
+  const sources = new Set(moveSuggestions.map(m => m.from));
+  const targets = new Set(moveSuggestions.map(m => m.to));
   const hasSwaps = [...sources].some(s => targets.has(s));
+
+  // Mark individual moves that are part of a swap
+  if (hasSwaps) {
+    for (const move of moveSuggestions) {
+      // Find if this move's target is another move's source (swap partner)
+      const swapPartner = moveSuggestions.find(m => m.from === move.to && m.to === move.from);
+      if (swapPartner) {
+        move.isSwap = true;
+        move.swapWith = swapPartner.from;
+        move.swapPartnerWineId = swapPartner.wineId;
+        move.swapPartnerWineName = swapPartner.wineName;
+      }
+    }
+  }
 
   // Attach swap flag to the result (will be used by caller)
   sortedSuggestions._hasSwaps = hasSwaps;

@@ -877,7 +877,9 @@ Critical fix for bottle loss bug during cellar reorganization moves:
 - Individual move buttons show 🔒 when swaps detected - forces batch execution
 - Swap status re-calculated after each move/dismiss (if one swap completes, remaining may unlock)
 - Applied to both cellar reorganization and fridge organization features
-- Frontend warning: "These moves involve swaps - they must be executed together to avoid losing bottles"
+- **Individual swap marking**: Each swap move includes `isSwap`, `swapWith`, `swapPartnerWineName`
+- **UI clarity**: Swap moves display bidirectional arrow (↔), SWAP badge, and swap partner info
+- Warning shows count: "X swap(s) detected. Plus Y regular move(s)."
 
 **Modular cellarAnalysis.js Refactoring** ✨ NEW (8 Jan):
 - Split 1,699-line monolith into 8 focused modules (all <425 LOC)
