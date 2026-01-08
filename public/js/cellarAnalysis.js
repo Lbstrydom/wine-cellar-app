@@ -97,8 +97,11 @@ export async function loadAnalysis(forceRefresh = false) {
   const movesActionsEl = document.getElementById('moves-actions');
   const cacheStatusEl = document.getElementById('analysis-cache-status');
 
-  // Show loading state
-  summaryEl.innerHTML = '<div class="analysis-loading">Analysing cellar organisation...</div>';
+  // Show appropriate loading message based on whether we're forcing refresh
+  const loadingMessage = forceRefresh
+    ? 'Analysing cellar organisation...'
+    : 'Loading cellar analysis...';
+  summaryEl.innerHTML = `<div class="analysis-loading">${loadingMessage}</div>`;
   alertsEl.innerHTML = '';
   movesListEl.innerHTML = '';
   movesActionsEl.style.display = 'none';
