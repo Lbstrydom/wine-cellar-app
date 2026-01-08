@@ -23,40 +23,55 @@ export function renderZoneCapacityAlert(analysis, { onRenderAnalysis }) {
   const el = document.getElementById('analysis-alerts');
   const alerts = Array.isArray(analysis.alerts) ? analysis.alerts : [];
 
-  const capacityAlert = alerts.find(a => a.type === 'zone_capacity_issue');
-  if (!capacityAlert) {
-    return { remainingAlerts: alerts, rendered: false };
-  }
+    const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
+    if (capacityAlerts.length === 0) {
+      return { remainingAlerts: alerts, rendered: false };
+    }
 
-  const remainingAlerts = alerts.filter(a => a !== capacityAlert);
+    const remainingAlerts = alerts.filter(a => a.type !== 'zone_capacity_issue');
 
-  el.innerHTML = renderAlertMarkup(capacityAlert);
+    el.innerHTML = capacityAlerts.map((a, idx) => renderAlertMarkup(a, idx)).join('');
 
-  const getAiBtn = el.querySelector('[data-action="zone-capacity-get-ai"]');
-  const fallbackBtn = el.querySelector('[data-action="zone-capacity-use-fallback"]');
+    // Event delegation: handle clicks for any alert panel.
+    el.addEventListener('click', async (event) => {
+      const target = event.target.closest('[data-action]');
+      if (!target) return;
 
-  if (getAiBtn) {
-    getAiBtn.addEventListener('click', async () => {
-      await handleGetAi(capacityAlert, el, onRenderAnalysis);
-    });
-  }
+      const action = target.getAttribute('data-action');
+      const idxStr = target.getAttribute('data-alert-index');
+      const idx = idxStr ? parseInt(idxStr, 10) : NaN;
+      const alert = Number.isFinite(idx) ? capacityAlerts[idx] : null;
+      const alertRoot = target.closest('.zone-capacity-alert');
+      if (!alert || !alertRoot) return;
 
-  if (fallbackBtn) {
-    fallbackBtn.addEventListener('click', async () => {
-      try {
-        const response = await analyseCellar(true, { allowFallback: true });
-        onRenderAnalysis(response.report);
-        showToast('Using fallback placement for this analysis run');
-      } catch (err) {
-        showToast(`Error: ${err.message}`);
+      if (action === 'zone-capacity-get-ai') {
+        target.disabled = true;
+        try {
+          await handleGetAi(alert, alertRoot, onRenderAnalysis);
+        } finally {
+          target.disabled = false;
+        }
+        return;
+      }
+
+      if (action === 'zone-capacity-use-fallback') {
+        target.disabled = true;
+        try {
+          const response = await analyseCellar(true, { allowFallback: true });
+          onRenderAnalysis(response.report);
+          showToast('Using fallback placement for this analysis run');
+        } catch (err) {
+          showToast(`Error: ${err.message}`);
+        } finally {
+          target.disabled = false;
+        }
       }
     });
-  }
 
-  return { remainingAlerts, rendered: true };
+    return { remainingAlerts, rendered: true };
 }
 
-function renderAlertMarkup(alert) {
+  function renderAlertMarkup(alert, index) {
   const data = alert.data || {};
   const zoneName = escapeHtml(data.overflowingZoneName || data.overflowingZoneId || 'zone');
   const wines = Array.isArray(data.winesNeedingPlacement) ? data.winesNeedingPlacement : [];
@@ -76,8 +91,8 @@ function renderAlertMarkup(alert) {
         </div>
         ${wineList}
         <div class="zone-capacity-alert-actions">
-          <button class="btn btn-primary" data-action="zone-capacity-get-ai">Get AI Suggestions</button>
-          <button class="btn btn-secondary" data-action="zone-capacity-use-fallback">Ignore &amp; Use Fallback</button>
+          <button class="btn btn-primary" data-action="zone-capacity-get-ai" data-alert-index="${index}">Get AI Suggestions</button>
+          <button class="btn btn-secondary" data-action="zone-capacity-use-fallback" data-alert-index="${index}">Ignore &amp; Use Fallback</button>
         </div>
         <div class="zone-capacity-advice" data-zone-capacity-advice></div>
       </div>

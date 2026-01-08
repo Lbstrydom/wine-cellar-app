@@ -430,6 +430,16 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 - **Automatic Execution**: Apply buttons execute zone changes and refresh analysis
 - **Fallback Option**: User can ignore alert and use fallback placement if preferred
 
+**Holistic Zone Reconfiguration** ✨ NEW (8 Jan 2026):
+- **Grouped Banner**: When ≥3 zones overflow OR ≥10% bottles misplaced, shows single grouped banner instead of multiple alerts
+- **Two-Path UX**: "Quick Fix Individual Zones" for minor issues vs "Full Reconfiguration" for systemic issues
+- **AI-Powered Plan**: Claude generates cellar-wide restructuring plan with expand/merge/retire actions
+- **Skip Individual Actions**: User can uncheck specific actions before applying
+- **Plan Preview Modal**: Shows summary (zones changed, bottles affected, misplaced reduction estimate)
+- **Heuristic Fallback**: Conservative row expansion when Claude not configured
+- **Zone Pins**: Protect zones from being merged (never_merge constraint)
+- **15-minute Plan TTL**: Generated plans expire after 15 minutes for security
+
 ---
 
 ### 12. Awards Database
@@ -675,6 +685,8 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 | POST | `/api/cellar/zone-capacity-advice` | **✨ NEW** Get AI recommendations for zone overflow |
 | POST | `/api/cellar/zones/allocate-row` | **✨ NEW** Assign additional row to zone |
 | POST | `/api/cellar/zones/merge` | **✨ NEW** Merge two zones together |
+| POST | `/api/cellar/reconfiguration-plan` | **✨ NEW** Generate holistic reconfiguration plan |
+| POST | `/api/cellar/reconfiguration-plan/apply` | **✨ NEW** Apply generated plan with optional skips |
 
 ### Zone Chat ✨ NEW (Phase 7)
 | Method | Endpoint | Description |
@@ -908,6 +920,23 @@ Implemented proactive AI-assisted zone management to prevent illogical overflow 
 - When `enforceAffinity` is true, buffer zones now skip rows that are allocated to specific zones
 - This prevents Appassimento wines from being suggested into Rioja-allocated rows just because they're both "red"
 - Fix location: `cellarPlacement.js` line 297-316
+
+**Holistic Zone Reconfiguration** (8 Jan - follow-up):
+- Addresses "alert spam" when multiple zones overflow simultaneously
+- Single grouped banner replaces 6+ individual alerts
+- Two-path UX: Quick Fix (per-zone) vs Full Reconfiguration (cellar-wide)
+- New files:
+  - `src/services/zoneReconfigurationPlanner.js` - Claude-powered plan generation
+  - `src/services/reconfigurationPlanStore.js` - In-memory plan storage with 15min TTL
+  - `src/services/reconfigurationTables.js` - PostgreSQL tables for zone_pins and history
+  - `src/services/zonePins.js` - Zone pin constraints (never_merge)
+  - `public/js/cellarAnalysis/zoneReconfigurationBanner.js` - Grouped banner UI
+  - `public/js/cellarAnalysis/zoneReconfigurationModal.js` - Plan preview modal
+- New API endpoints:
+  - `POST /api/cellar/reconfiguration-plan` - Generate holistic plan
+  - `POST /api/cellar/reconfiguration-plan/apply` - Apply plan with optional skips
+- Database tables: `zone_pins`, `zone_reconfigurations`
+- Trigger logic: ≥3 capacity alerts OR ≥10% misplacement rate
 
 ---
 

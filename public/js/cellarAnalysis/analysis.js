@@ -9,6 +9,7 @@ import { renderMoves } from './moves.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
+import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js';
 
 /**
  * Load analysis when tab is opened.
@@ -79,8 +80,13 @@ export async function refreshAnalysis() {
 function renderAnalysis(analysis, onRenderAnalysis) {
   renderSummary(analysis.summary, analysis.needsZoneSetup);
 
-  const { remainingAlerts, rendered } = renderZoneCapacityAlert(analysis, { onRenderAnalysis });
-  renderAlerts(remainingAlerts, { append: rendered });
+  const bannerResult = renderZoneReconfigurationBanner(analysis, { onRenderAnalysis });
+  if (bannerResult.rendered) {
+    renderAlerts(bannerResult.remainingAlerts, { append: true });
+  } else {
+    const { remainingAlerts, rendered } = renderZoneCapacityAlert(analysis, { onRenderAnalysis });
+    renderAlerts(remainingAlerts, { append: rendered });
+  }
 
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);

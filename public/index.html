@@ -143,6 +143,7 @@
         <button class="btn btn-primary" id="refresh-analysis-btn">Refresh Analysis</button>
         <button class="btn btn-secondary" id="get-ai-advice-btn">Get AI Advice</button>
         <button class="btn btn-secondary" id="setup-zones-btn">Setup Zones</button>
+        <button class="btn btn-secondary" id="reconfigure-zones-btn">Reconfigure Zones</button>
         <span class="analysis-cache-status" id="analysis-cache-status"></span>
       </div>
     </div>
@@ -1034,6 +1035,22 @@
           <button type="button" class="btn btn-danger" id="bottle-delete-btn" style="display: none; margin-left: auto;">Remove</button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Zone Reconfiguration Plan Modal -->
+  <div class="modal-overlay" id="reconfig-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reconfig-modal-title">
+    <div class="modal modal-large" id="reconfig-modal">
+      <div class="reconfig-modal-header">
+        <h2 id="reconfig-modal-title">Cellar Zone Reconfiguration Plan</h2>
+        <button class="btn btn-secondary btn-small" id="reconfig-modal-close">Close</button>
+      </div>
+      <div class="modal-subtitle" id="reconfig-modal-subtitle"></div>
+      <div id="reconfig-modal-body"></div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="reconfig-modal-apply">Apply All Changes</button>
+        <button class="btn btn-secondary" id="reconfig-modal-cancel">Cancel</button>
+      </div>
     </div>
   </div>
 

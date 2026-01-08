@@ -5,7 +5,7 @@
 
 import express from 'express';
 import db from '../db/index.js';
-import { CELLAR_ZONES } from '../config/cellarZones.js';
+import { CELLAR_ZONES, getZoneById } from '../config/cellarZones.js';
 import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellarAnalysis.js';
 import { findBestZone, findAvailableSlot } from '../services/cellarPlacement.js';
 import { getCellarOrganisationAdvice } from '../services/cellarAI.js';
@@ -33,6 +33,9 @@ import {
   getAnalysisCacheInfo
 } from '../services/cacheService.js';
 import { validateMovePlan } from '../services/movePlanner.js';
+import { ensureReconfigurationTables } from '../services/reconfigurationTables.js';
+import { putPlan, getPlan, deletePlan } from '../services/reconfigurationPlanStore.js';
+import { generateReconfigurationPlan } from '../services/zoneReconfigurationPlanner.js';
 
 const router = express.Router();
 
@@ -626,6 +629,364 @@ router.post('/zones/merge', async (req, res) => {
     });
   } catch (err) {
     console.error('[CellarAPI] Merge zones error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// ============================================================
+// Holistic Reconfiguration Endpoints
+// ============================================================
+
+/**
+ * POST /api/cellar/reconfiguration-plan
+ * Generate a holistic zone reconfiguration plan.
+ */
+router.post('/reconfiguration-plan', async (req, res) => {
+  try {
+    const {
+      includeRetirements = true,
+      includeNewZones = true,
+      stabilityBias = 'moderate'
+    } = req.body || {};
+
+    const wines = await getAllWinesWithSlots();
+    const report = await runAnalysis(wines);
+
+    const plan = await generateReconfigurationPlan(report, {
+      includeRetirements,
+      includeNewZones,
+      stabilityBias
+    });
+
+    const planId = putPlan({
+      generatedAt: new Date().toISOString(),
+      options: { includeRetirements, includeNewZones, stabilityBias },
+      plan
+    });
+
+    res.json({
+      success: true,
+      planId,
+      plan
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Reconfiguration plan error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+function getAffectedZoneIdsFromPlan(plan) {
+  const zoneIds = new Set();
+  const actions = Array.isArray(plan?.actions) ? plan.actions : [];
+
+  for (const action of actions) {
+    if (!action || typeof action !== 'object') continue;
+
+    if (action.type === 'expand_zone' && action.zoneId) {
+      zoneIds.add(action.zoneId);
+    } else if (action.type === 'merge_zones') {
+      if (Array.isArray(action.sourceZones)) {
+        action.sourceZones.forEach(z => zoneIds.add(z));
+      }
+      if (action.targetZoneId) zoneIds.add(action.targetZoneId);
+    } else if (action.type === 'retire_zone') {
+      if (action.zoneId) zoneIds.add(action.zoneId);
+      if (action.mergeIntoZoneId) zoneIds.add(action.mergeIntoZoneId);
+    }
+  }
+
+  return Array.from(zoneIds);
+}
+
+async function allocateRowTransactional(client, zoneId, usedRows) {
+  const zone = getZoneById(zoneId);
+  if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
+
+  const preferredRange = zone.preferredRowRange || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+  let assignedRow = null;
+
+  for (const rowNum of preferredRange) {
+    const rowId = `R${rowNum}`;
+    if (!usedRows.has(rowId)) {
+      assignedRow = rowId;
+      break;
+    }
+  }
+
+  if (!assignedRow) {
+    for (let rowNum = 1; rowNum <= 19; rowNum++) {
+      const rowId = `R${rowNum}`;
+      if (!usedRows.has(rowId)) {
+        assignedRow = rowId;
+        break;
+      }
+    }
+  }
+
+  if (!assignedRow) throw new Error('No available rows - cellar at maximum zone capacity');
+
+  const existing = await client.query(
+    'SELECT assigned_rows, wine_count, first_wine_date FROM zone_allocations WHERE zone_id = $1',
+    [zoneId]
+  );
+
+  if (existing.rows.length > 0) {
+    const rows = JSON.parse(existing.rows[0].assigned_rows || '[]');
+    rows.push(assignedRow);
+    await client.query(
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
+      [JSON.stringify(rows), zoneId]
+    );
+  } else {
+    await client.query(
+      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
+      [zoneId, JSON.stringify([assignedRow]), 0]
+    );
+  }
+
+  usedRows.add(assignedRow);
+  return assignedRow;
+}
+
+async function mergeZonesTransactional(client, sourceZoneId, targetZoneId) {
+  if (sourceZoneId === targetZoneId) return;
+
+  const sourceAlloc = await client.query(
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
+    [sourceZoneId]
+  );
+  const targetAlloc = await client.query(
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
+    [targetZoneId]
+  );
+
+  const sourceRows = sourceAlloc.rows[0]?.assigned_rows ? JSON.parse(sourceAlloc.rows[0].assigned_rows) : [];
+  const targetRows = targetAlloc.rows[0]?.assigned_rows ? JSON.parse(targetAlloc.rows[0].assigned_rows) : [];
+  const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
+
+  await client.query('UPDATE wines SET zone_id = $1 WHERE zone_id = $2', [targetZoneId, sourceZoneId]);
+
+  const mergedWineCount = (targetAlloc.rows[0]?.wine_count || 0) + (sourceAlloc.rows[0]?.wine_count || 0);
+
+  if (targetAlloc.rows.length > 0) {
+    await client.query(
+      'UPDATE zone_allocations SET assigned_rows = $1, wine_count = $2, updated_at = NOW() WHERE zone_id = $3',
+      [JSON.stringify(mergedRows), mergedWineCount, targetZoneId]
+    );
+  } else {
+    await client.query(
+      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
+      [targetZoneId, JSON.stringify(mergedRows), mergedWineCount]
+    );
+  }
+
+  await client.query('DELETE FROM zone_allocations WHERE zone_id = $1', [sourceZoneId]);
+
+  return mergedRows;
+}
+
+/**
+ * POST /api/cellar/reconfiguration-plan/apply
+ * Apply a previously generated holistic plan.
+ */
+router.post('/reconfiguration-plan/apply', async (req, res) => {
+  try {
+    const { planId, skipActions = [] } = req.body || {};
+    if (!planId) {
+      return res.status(400).json({ success: false, error: 'planId required' });
+    }
+
+    const stored = getPlan(planId);
+    if (!stored?.plan) {
+      return res.status(400).json({ success: false, error: 'Plan not found or expired. Generate a new plan.' });
+    }
+
+    await ensureReconfigurationTables();
+
+    const plan = stored.plan;
+    const actions = Array.isArray(plan.actions) ? plan.actions : [];
+    const skipSet = new Set(Array.isArray(skipActions) ? skipActions : []);
+    const affectedZones = getAffectedZoneIdsFromPlan(plan);
+
+    const result = await db.transaction(async (client) => {
+      // Snapshot before-state for undo
+      const beforeAlloc = affectedZones.length
+        ? await client.query(
+          'SELECT zone_id, assigned_rows, wine_count, first_wine_date, updated_at FROM zone_allocations WHERE zone_id = ANY($1::text[])',
+          [affectedZones]
+        )
+        : { rows: [] };
+      const beforeWines = affectedZones.length
+        ? await client.query(
+          'SELECT id, zone_id FROM wines WHERE zone_id = ANY($1::text[])',
+          [affectedZones]
+        )
+        : { rows: [] };
+
+      // Build used row set
+      const allAlloc = await client.query('SELECT assigned_rows FROM zone_allocations');
+      const usedRows = new Set();
+      for (const r of allAlloc.rows) {
+        try {
+          JSON.parse(r.assigned_rows || '[]').forEach(rowId => usedRows.add(rowId));
+        } catch {
+          // ignore
+        }
+      }
+
+      let zonesChanged = 0;
+
+      for (let i = 0; i < actions.length; i++) {
+        if (skipSet.has(i)) continue;
+        const action = actions[i];
+        if (!action || typeof action !== 'object') continue;
+
+        if (action.type === 'expand_zone') {
+          const zoneId = action.zoneId;
+          if (!zoneId) continue;
+
+          const currentRows = Array.isArray(action.currentRows) ? action.currentRows : [];
+          const proposedRows = Array.isArray(action.proposedRows) ? action.proposedRows : [];
+          const needed = Math.max(1, proposedRows.length - currentRows.length);
+
+          for (let n = 0; n < needed; n++) {
+            await allocateRowTransactional(client, zoneId, usedRows);
+          }
+          zonesChanged++;
+        } else if (action.type === 'merge_zones') {
+          const targetZoneId = action.targetZoneId;
+          const sources = Array.isArray(action.sourceZones) ? action.sourceZones : [];
+          if (!targetZoneId || sources.length === 0) continue;
+          for (const sourceZoneId of sources) {
+            await mergeZonesTransactional(client, sourceZoneId, targetZoneId);
+          }
+          zonesChanged++;
+        } else if (action.type === 'retire_zone') {
+          const zoneId = action.zoneId;
+          const mergeIntoZoneId = action.mergeIntoZoneId;
+          if (!zoneId || !mergeIntoZoneId) continue;
+          await mergeZonesTransactional(client, zoneId, mergeIntoZoneId);
+          zonesChanged++;
+        }
+      }
+
+      const planJson = {
+        planId,
+        plan,
+        options: stored.options || null,
+        applied: {
+          skipped: Array.from(skipSet),
+          appliedAt: new Date().toISOString()
+        },
+        before: {
+          affectedZones,
+          zone_allocations: beforeAlloc.rows,
+          wines: beforeWines.rows
+        }
+      };
+
+      const insert = await client.query(
+        `INSERT INTO zone_reconfigurations
+         (plan_json, changes_summary, bottles_affected, misplaced_before, misplaced_after)
+         VALUES ($1::jsonb, $2, $3, $4, $5)
+         RETURNING id`,
+        [
+          JSON.stringify(planJson),
+          plan.reasoning || null,
+          plan.summary?.bottlesAffected ?? null,
+          plan.summary?.misplacedBefore ?? null,
+          plan.summary?.misplacedAfter ?? null
+        ]
+      );
+
+      return {
+        reconfigurationId: insert.rows[0].id,
+        zonesChanged
+      };
+    });
+
+    deletePlan(planId);
+    await invalidateAnalysisCache();
+
+    res.json({
+      success: true,
+      reconfigurationId: result.reconfigurationId,
+      applied: {
+        zonesChanged: result.zonesChanged,
+        bottlesMoved: 0
+      },
+      canUndo: true
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Apply reconfiguration error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/reconfiguration/:id/undo
+ * Undo an applied reconfiguration.
+ */
+router.post('/reconfiguration/:id/undo', async (req, res) => {
+  try {
+    const reconfigurationId = Number.parseInt(req.params.id, 10);
+    if (!Number.isFinite(reconfigurationId)) {
+      return res.status(400).json({ success: false, error: 'Invalid reconfiguration id' });
+    }
+
+    await ensureReconfigurationTables();
+
+    await db.transaction(async (client) => {
+      const row = await client.query(
+        'SELECT id, plan_json, undone_at FROM zone_reconfigurations WHERE id = $1',
+        [reconfigurationId]
+      );
+
+      const rec = row.rows[0];
+      if (!rec) throw new Error('Reconfiguration not found');
+      if (rec.undone_at) throw new Error('Reconfiguration already undone');
+
+      const planJson = typeof rec.plan_json === 'string' ? JSON.parse(rec.plan_json) : rec.plan_json;
+      const before = planJson?.before || {};
+      const affectedZones = Array.isArray(before.affectedZones) ? before.affectedZones : [];
+      const beforeAlloc = Array.isArray(before.zone_allocations) ? before.zone_allocations : [];
+      const beforeWines = Array.isArray(before.wines) ? before.wines : [];
+
+      if (affectedZones.length > 0) {
+        await client.query('DELETE FROM zone_allocations WHERE zone_id = ANY($1::text[])', [affectedZones]);
+      }
+
+      for (const alloc of beforeAlloc) {
+        await client.query(
+          `INSERT INTO zone_allocations (zone_id, assigned_rows, wine_count, first_wine_date, updated_at)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (zone_id) DO UPDATE SET
+             assigned_rows = EXCLUDED.assigned_rows,
+             wine_count = EXCLUDED.wine_count,
+             first_wine_date = EXCLUDED.first_wine_date,
+             updated_at = EXCLUDED.updated_at`,
+          [
+            alloc.zone_id,
+            alloc.assigned_rows,
+            alloc.wine_count ?? 0,
+            alloc.first_wine_date || null,
+            alloc.updated_at || null
+          ]
+        );
+      }
+
+      for (const wine of beforeWines) {
+        await client.query('UPDATE wines SET zone_id = $1 WHERE id = $2', [wine.zone_id, wine.id]);
+      }
+
+      await client.query('UPDATE zone_reconfigurations SET undone_at = NOW() WHERE id = $1', [reconfigurationId]);
+    });
+
+    await invalidateAnalysisCache();
+
+    res.json({ success: true, undone: true });
+  } catch (err) {
+    console.error('[CellarAPI] Undo reconfiguration error:', err);
     res.status(500).json({ success: false, error: err.message });
   }
 });

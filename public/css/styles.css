@@ -679,6 +679,95 @@ header .search-trigger {
   font-weight: 500;
 }
 
+/* Holistic Zone Reconfiguration */
+.zone-reconfig-banner {
+  padding: 1rem;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.15);
+  border-left: 3px solid #ff9800;
+}
+
+.zone-reconfig-banner-header {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.zone-reconfig-banner-list {
+  margin: 0.75rem 0 0;
+  padding-left: 1rem;
+  color: var(--text-muted);
+}
+
+.zone-reconfig-banner-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.modal.modal-large {
+  max-width: 720px;
+}
+
+.reconfig-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reconfig-summary {
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  margin-bottom: 0.75rem;
+}
+
+.reconfig-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.reconfig-action {
+  padding: 0.75rem;
+  background: var(--bg-card);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.reconfig-action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.reconfig-action-title {
+  font-weight: 500;
+}
+
+.reconfig-action-reason {
+  margin-top: 0.5rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.reconfig-action-meta {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.reconfig-skip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
 .analysis-moves h4 {
   margin-bottom: 0.75rem;
   font-size: 1rem;

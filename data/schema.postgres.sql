@@ -198,6 +198,29 @@ CREATE TABLE IF NOT EXISTS cache_config (
     description TEXT
 );
 
+-- ============================================================
+-- Holistic zone reconfiguration (pins + history)
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS zone_pins (
+    zone_id TEXT PRIMARY KEY,
+    pin_type TEXT CHECK (pin_type IN ('never_merge', 'minimum_rows', 'never_delete')),
+    minimum_rows INTEGER DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT
+);
+
+CREATE TABLE IF NOT EXISTS zone_reconfigurations (
+    id BIGSERIAL PRIMARY KEY,
+    applied_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    plan_json JSONB NOT NULL,
+    changes_summary TEXT,
+    bottles_affected INTEGER,
+    misplaced_before INTEGER,
+    misplaced_after INTEGER,
+    undone_at TIMESTAMP
+);
+
 -- Background Job Queue
 CREATE TABLE IF NOT EXISTS job_queue (
     id SERIAL PRIMARY KEY,

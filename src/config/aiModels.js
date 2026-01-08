@@ -52,6 +52,9 @@ export const TASK_MODELS = {
   // Zone capacity advice should be high-quality
   zoneCapacityAdvice: 'claude-opus-4-20250514',
 
+  // Holistic zone reconfiguration planning should be high-quality
+  zoneReconfigurationPlan: 'claude-opus-4-20250514',
+
   // Complex extraction tasks use Opus
   awardExtraction: 'claude-opus-4-20250514',
 

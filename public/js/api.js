@@ -699,6 +699,48 @@ export async function mergeZones(sourceZoneId, targetZoneId) {
 }
 
 /**
+ * Generate a holistic reconfiguration plan.
+ * @param {{includeRetirements?: boolean, includeNewZones?: boolean, stabilityBias?: 'low'|'moderate'|'high'}} options
+ * @returns {Promise<Object>}
+ */
+export async function getReconfigurationPlan(options = {}) {
+  const res = await fetch(`${API_BASE}/api/cellar/reconfiguration-plan`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return handleResponse(res, 'Failed to generate reconfiguration plan');
+}
+
+/**
+ * Apply a previously generated reconfiguration plan.
+ * @param {string} planId
+ * @param {number[]} [skipActions]
+ * @returns {Promise<Object>}
+ */
+export async function applyReconfigurationPlan(planId, skipActions = []) {
+  const res = await fetch(`${API_BASE}/api/cellar/reconfiguration-plan/apply`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ planId, skipActions })
+  });
+  return handleResponse(res, 'Failed to apply reconfiguration plan');
+}
+
+/**
+ * Undo an applied reconfiguration.
+ * @param {number} reconfigurationId
+ * @returns {Promise<Object>}
+ */
+export async function undoReconfiguration(reconfigurationId) {
+  const res = await fetch(`${API_BASE}/api/cellar/reconfiguration/${reconfigurationId}/undo`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(res, 'Failed to undo reconfiguration');
+}
+
+/**
  * Get AI-enhanced cellar analysis.
  * AI analysis can take 60-120 seconds, so we use a long timeout.
  * @returns {Promise<Object>}
