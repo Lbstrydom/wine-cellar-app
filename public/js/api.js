@@ -642,12 +642,60 @@ export async function suggestPlacement(wine) {
  * @param {boolean} [forceRefresh=false] - Force fresh analysis ignoring cache
  * @returns {Promise<Object>}
  */
-export async function analyseCellar(forceRefresh = false) {
-  const url = forceRefresh
-    ? `${API_BASE}/api/cellar/analyse?refresh=true`
+export async function analyseCellar(forceRefresh = false, options = {}) {
+  const { allowFallback = false } = options;
+  const params = new URLSearchParams();
+  if (forceRefresh) params.set('refresh', 'true');
+  if (allowFallback) params.set('allowFallback', 'true');
+  const qs = params.toString();
+  const url = qs
+    ? `${API_BASE}/api/cellar/analyse?${qs}`
     : `${API_BASE}/api/cellar/analyse`;
   const res = await fetch(url);
   return handleResponse(res, 'Failed to analyse cellar');
+}
+
+/**
+ * Get AI advice for a zone capacity issue.
+ * @param {Object} payload
+ * @returns {Promise<Object>}
+ */
+export async function getZoneCapacityAdvice(payload) {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-capacity-advice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to get zone capacity advice');
+}
+
+/**
+ * Allocate a new row to a zone.
+ * @param {string} zoneId
+ * @returns {Promise<Object>}
+ */
+export async function allocateZoneRow(zoneId) {
+  const res = await fetch(`${API_BASE}/api/cellar/zones/allocate-row`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ zoneId })
+  });
+  return handleResponse(res, 'Failed to allocate row to zone');
+}
+
+/**
+ * Merge one zone into another.
+ * @param {string} sourceZoneId
+ * @param {string} targetZoneId
+ * @returns {Promise<Object>}
+ */
+export async function mergeZones(sourceZoneId, targetZoneId) {
+  const res = await fetch(`${API_BASE}/api/cellar/zones/merge`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceZoneId, targetZoneId })
+  });
+  return handleResponse(res, 'Failed to merge zones');
 }
 
 /**

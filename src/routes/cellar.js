@@ -9,10 +9,12 @@ import { CELLAR_ZONES } from '../config/cellarZones.js';
 import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellarAnalysis.js';
 import { findBestZone, findAvailableSlot } from '../services/cellarPlacement.js';
 import { getCellarOrganisationAdvice } from '../services/cellarAI.js';
+import { getZoneCapacityAdvice } from '../services/zoneCapacityAdvisor.js';
 import {
   getActiveZoneMap,
   getZoneStatuses,
   getAllZoneAllocations,
+  allocateRowToZone,
   updateZoneWineCount
 } from '../services/cellarAllocation.js';
 import {
@@ -246,10 +248,12 @@ async function runAnalysis(wines) {
 router.get('/analyse', async (req, res) => {
   try {
     const forceRefresh = req.query.refresh === 'true';
+    const allowFallback = req.query.allowFallback === 'true';
+    const cacheKey = allowFallback ? 'full_fallback' : 'full';
 
     // Check cache first (unless force refresh)
     if (!forceRefresh) {
-      const cached = await getCachedAnalysis('full');
+      const cached = await getCachedAnalysis(cacheKey);
       if (cached) {
         return res.json({
           success: true,
@@ -263,11 +267,25 @@ router.get('/analyse', async (req, res) => {
 
     // No valid cache, run analysis
     const wines = await getAllWinesWithSlots();
-    const report = await runAnalysis(wines);
+    const report = await analyseCellar(wines, { allowFallback });
+
+    // Add fridge candidates (legacy)
+    report.fridgeCandidates = getFridgeCandidates(wines);
+
+    // Add fridge status with par-levels
+    const fridgeWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('F');
+    });
+    const cellarWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('R');
+    });
+    report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines);
 
     // Cache the result
     const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
-    await cacheAnalysis('full', report, wineCount);
+    await cacheAnalysis(cacheKey, report, wineCount);
 
     res.json({
       success: true,
@@ -416,6 +434,199 @@ router.get('/analyse/ai', async (req, res) => {
   } catch (err) {
     console.error('[CellarAPI] AI analyse error:', err);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Zone Capacity Advice (AI)
+// ============================================================
+
+/**
+ * POST /api/cellar/zone-capacity-advice
+ * Get AI recommendations when a zone is at capacity.
+ */
+router.post('/zone-capacity-advice', async (req, res) => {
+  try {
+    const {
+      overflowingZoneId,
+      winesNeedingPlacement,
+      currentZoneAllocation,
+      availableRows,
+      adjacentZones
+    } = req.body || {};
+
+    const result = await getZoneCapacityAdvice({
+      overflowingZoneId,
+      winesNeedingPlacement,
+      currentZoneAllocation,
+      availableRows,
+      adjacentZones
+    });
+
+    if (!result.success) {
+      const status = result.error?.includes('ANTHROPIC_API_KEY') ? 503 : 400;
+      return res.status(status).json({
+        success: false,
+        error: result.error
+      });
+    }
+
+    const advice = result.advice;
+
+    // Enrich move_wine actions with concrete slot targets (best-effort)
+    if (Array.isArray(advice?.actions) && advice.actions.some(a => a?.type === 'move_wine')) {
+      const occupiedSlots = await getOccupiedSlots();
+
+      for (const action of advice.actions) {
+        if (action?.type !== 'move_wine') continue;
+
+        const wineId = action.wineId;
+        const toZoneId = action.toZone;
+        if (!wineId || !toZoneId) {
+          action.error = 'Missing wineId or toZone';
+          continue;
+        }
+
+        const wine = await db.prepare(`
+          SELECT w.*, s.location_code as slot_id
+          FROM wines w
+          LEFT JOIN slots s ON s.wine_id = w.id
+          WHERE w.id = ?
+        `).get(wineId);
+
+        const from = wine?.slot_id;
+        if (!from) {
+          action.error = 'Wine location unknown';
+          continue;
+        }
+
+        const slotResult = await findAvailableSlot(toZoneId, occupiedSlots, wine, {
+          allowFallback: false,
+          enforceAffinity: false
+        });
+
+        if (!slotResult?.slotId) {
+          action.error = `No available slot in ${toZoneId}`;
+          continue;
+        }
+
+        action.from = from;
+        action.to = slotResult.slotId;
+        action.zoneId = toZoneId;
+
+        // Update occupied set so subsequent moves don't collide
+        occupiedSlots.delete(from);
+        occupiedSlots.add(slotResult.slotId);
+      }
+    }
+
+    res.json({ success: true, advice });
+  } catch (err) {
+    console.error('[CellarAPI] Zone capacity advice error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Zone Action Endpoints
+// ============================================================
+
+/**
+ * POST /api/cellar/zones/allocate-row
+ * Assign an additional row to an existing zone.
+ */
+router.post('/zones/allocate-row', async (req, res) => {
+  try {
+    const { zoneId } = req.body || {};
+    if (!zoneId) {
+      return res.status(400).json({ success: false, error: 'zoneId required' });
+    }
+
+    const row = await allocateRowToZone(zoneId, { incrementWineCount: false });
+    await invalidateAnalysisCache();
+
+    res.json({
+      success: true,
+      zoneId,
+      row
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Allocate row error:', err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * POST /api/cellar/zones/merge
+ * Merge all wines and allocated rows from sourceZoneId into targetZoneId.
+ */
+router.post('/zones/merge', async (req, res) => {
+  try {
+    const { sourceZoneId, targetZoneId } = req.body || {};
+    if (!sourceZoneId || !targetZoneId) {
+      return res.status(400).json({ success: false, error: 'sourceZoneId and targetZoneId required' });
+    }
+    if (sourceZoneId === targetZoneId) {
+      return res.status(400).json({ success: false, error: 'sourceZoneId and targetZoneId must differ' });
+    }
+
+    const sourceAlloc = await db.prepare(
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = ?'
+    ).get(sourceZoneId);
+    const targetAlloc = await db.prepare(
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = ?'
+    ).get(targetZoneId);
+
+    const sourceRows = sourceAlloc ? JSON.parse(sourceAlloc.assigned_rows) : [];
+    const targetRows = targetAlloc ? JSON.parse(targetAlloc.assigned_rows) : [];
+
+    const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
+
+    try {
+      await db.prepare('BEGIN TRANSACTION').run();
+
+      // Move wines
+      await db.prepare('UPDATE wines SET zone_id = ? WHERE zone_id = ?').run(targetZoneId, sourceZoneId);
+
+      // Update target allocation
+      const mergedWineCount = (targetAlloc?.wine_count || 0) + (sourceAlloc?.wine_count || 0);
+      if (targetAlloc) {
+        await db.prepare(
+          `UPDATE zone_allocations
+           SET assigned_rows = ?, wine_count = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE zone_id = ?`
+        ).run(JSON.stringify(mergedRows), mergedWineCount, targetZoneId);
+      } else {
+        await db.prepare(
+          `INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count)
+           VALUES (?, ?, CURRENT_TIMESTAMP, ?)`
+        ).run(targetZoneId, JSON.stringify(mergedRows), mergedWineCount);
+      }
+
+      // Remove source allocation
+      await db.prepare('DELETE FROM zone_allocations WHERE zone_id = ?').run(sourceZoneId);
+
+      await db.prepare('COMMIT').run();
+    } catch (execError) {
+      try {
+        await db.prepare('ROLLBACK').run();
+      } catch (rollbackError) {
+        console.error('[CellarAPI] Merge rollback failed:', rollbackError);
+      }
+      throw execError;
+    }
+
+    await invalidateAnalysisCache();
+
+    res.json({
+      success: true,
+      sourceZoneId,
+      targetZoneId,
+      mergedRows
+    });
+  } catch (err) {
+    console.error('[CellarAPI] Merge zones error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

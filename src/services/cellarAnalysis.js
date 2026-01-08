@@ -16,6 +16,10 @@ import { getZoneWithIntent } from './zoneMetadata.js';
  * @returns {Promise<Object>} Analysis report
  */
 export async function analyseCellar(wines) {
+  let options = arguments.length > 1 ? arguments[1] : undefined;
+  if (!options) options = {};
+  const { allowFallback = false } = options;
+
   const report = {
     timestamp: new Date().toISOString(),
     summary: {
@@ -34,6 +38,7 @@ export async function analyseCellar(wines) {
     misplacedWines: [],
     suggestedMoves: [],
     alerts: [],
+    zoneCapacityIssues: [],
     needsZoneSetup: false
   };
 
@@ -167,9 +172,48 @@ export async function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine, { allowFallback });
   report.suggestedMoves = suggestedMoves;
   report.movesHaveSwaps = suggestedMoves._hasSwaps || false;
+
+  // Attach zone capacity issues (if any)
+  const zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
+  report.zoneCapacityIssues = zoneCapacityIssues;
+
+  if (zoneCapacityIssues.length > 0 && !report.needsZoneSetup && !allowFallback) {
+    const issuesByZone = new Map();
+    for (const issue of zoneCapacityIssues) {
+      if (!issuesByZone.has(issue.overflowingZoneId)) {
+        issuesByZone.set(issue.overflowingZoneId, []);
+      }
+      issuesByZone.get(issue.overflowingZoneId).push(issue.wine);
+    }
+
+    for (const [overflowingZoneId, winesNeedingPlacement] of issuesByZone) {
+      const zone = getZoneById(overflowingZoneId);
+      const zoneRows = await getActiveZoneRowsForZone(overflowingZoneId);
+      const currentZoneAllocation = await getCurrentZoneAllocation();
+      const availableRows = await getAvailableCellarRows();
+      const adjacentZones = getAdjacentZonesFromAllocation(zoneRows, currentZoneAllocation.rowToZoneId)
+        .filter(z => z !== overflowingZoneId);
+
+      const affectedCount = winesNeedingPlacement.length;
+
+      report.alerts.unshift({
+        type: 'zone_capacity_issue',
+        severity: 'warning',
+        message: `The "${zone?.displayName || overflowingZoneId}" zone is full. ${affectedCount} wine(s) need placement but would fall back to unrelated areas.`,
+        data: {
+          overflowingZoneId,
+          overflowingZoneName: zone?.displayName || overflowingZoneId,
+          winesNeedingPlacement,
+          currentZoneAllocation: currentZoneAllocation.zoneToRows,
+          availableRows,
+          adjacentZones
+        }
+      });
+    }
+  }
 
   // Check if reorganisation is recommended
   const shouldReorg =
@@ -347,7 +391,8 @@ function parseSlot(slotId) {
  * @param {Map} slotToWine
  * @returns {Promise<Array>} Move suggestions
  */
-async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
+async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine, options = {}) {
+  const { allowFallback = false } = options;
   const occupiedSlots = new Set();
   allWines.forEach(w => {
     const slotId = w.slot_id || w.location_code;
@@ -356,6 +401,7 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
 
   const suggestions = [];
   const pendingMoves = new Map();
+  const zoneCapacityIssues = [];
   
   // Track allocated target slots to prevent collisions
   const allocatedTargets = new Set();
@@ -380,7 +426,10 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     // Add already-allocated targets to the occupied set
     allocatedTargets.forEach(target => currentlyOccupied.add(target));
 
-    const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine);
+    const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine, {
+      allowFallback,
+      enforceAffinity: true
+    });
 
     if (slot) {
       suggestions.push({
@@ -398,6 +447,16 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
       pendingMoves.set(wine.currentSlot, slot.slotId);
       allocatedTargets.add(slot.slotId); // Mark this target as allocated
     } else {
+      if (!allowFallback) {
+        zoneCapacityIssues.push({
+          overflowingZoneId: wine.suggestedZoneId,
+          wine: {
+            wineId: wine.wineId,
+            wineName: wine.name,
+            currentSlot: wine.currentSlot
+          }
+        });
+      }
       suggestions.push({
         type: 'manual',
         wineId: wine.wineId,
@@ -422,7 +481,63 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
   // Attach swap flag to the result (frontend calculates individual swap pairs)
   sortedSuggestions._hasSwaps = hasSwaps;
 
+  // Attach zone capacity issues for alert rendering
+  sortedSuggestions._zoneCapacityIssues = zoneCapacityIssues;
+
   return sortedSuggestions;
+}
+
+async function getActiveZoneRowsForZone(zoneId) {
+  const zoneMap = await getActiveZoneMap();
+  const rows = [];
+  for (const [rowId, info] of Object.entries(zoneMap)) {
+    if (info.zoneId === zoneId) rows.push(rowId);
+  }
+  return rows.sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10));
+}
+
+async function getCurrentZoneAllocation() {
+  const zoneMap = await getActiveZoneMap();
+  const zoneToRows = {};
+  const rowToZoneId = {};
+
+  for (const [rowId, info] of Object.entries(zoneMap)) {
+    rowToZoneId[rowId] = info.zoneId;
+    if (!zoneToRows[info.zoneId]) zoneToRows[info.zoneId] = [];
+    zoneToRows[info.zoneId].push(rowId);
+  }
+
+  for (const rows of Object.values(zoneToRows)) {
+    rows.sort((a, b) => parseInt(a.slice(1), 10) - parseInt(b.slice(1), 10));
+  }
+
+  return { zoneToRows, rowToZoneId };
+}
+
+async function getAvailableCellarRows() {
+  const zoneMap = await getActiveZoneMap();
+  const used = new Set(Object.keys(zoneMap));
+  const available = [];
+  for (let rowNum = 1; rowNum <= 19; rowNum++) {
+    const rowId = `R${rowNum}`;
+    if (!used.has(rowId)) available.push(rowId);
+  }
+  return available;
+}
+
+function getAdjacentZonesFromAllocation(zoneRows, rowToZoneId) {
+  const adjacent = new Set();
+
+  for (const rowId of zoneRows) {
+    const rowNum = parseInt(rowId.slice(1), 10);
+    const prev = `R${rowNum - 1}`;
+    const next = `R${rowNum + 1}`;
+
+    if (rowToZoneId[prev]) adjacent.add(rowToZoneId[prev]);
+    if (rowToZoneId[next]) adjacent.add(rowToZoneId[next]);
+  }
+
+  return [...adjacent];
 }
 
 /**

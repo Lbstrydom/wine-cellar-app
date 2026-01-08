@@ -420,6 +420,16 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 - Preview move outcomes
 - Rollback capability via history
 
+**Zone Capacity Management** ✨ NEW (8 Jan 2026):
+- **Proactive Detection**: Alerts when zone reaches capacity and wines would fall back to unrelated zones
+- **AI-Assisted Recommendations**: Claude Opus analyzes situation and suggests:
+  - **Expand**: Allocate additional row to overflowing zone
+  - **Merge**: Combine related zones (e.g., Appassimento + Amarone → "Italian Dried-Grape")
+  - **Reorganize**: Move lower-priority wines to make room
+- **Human-in-the-Loop**: User reviews AI reasoning and approves individual actions
+- **Automatic Execution**: Apply buttons execute zone changes and refresh analysis
+- **Fallback Option**: User can ignore alert and use fallback placement if preferred
+
 ---
 
 ### 12. Awards Database
@@ -662,6 +672,9 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 | POST | `/api/cellar/zones/:zoneId/confirm` | Confirm AI suggestion |
 | POST | `/api/cellar/analyse` | Analyze placements |
 | POST | `/api/cellar/execute-moves` | Execute moves |
+| POST | `/api/cellar/zone-capacity-advice` | **✨ NEW** Get AI recommendations for zone overflow |
+| POST | `/api/cellar/zones/allocate-row` | **✨ NEW** Assign additional row to zone |
+| POST | `/api/cellar/zones/merge` | **✨ NEW** Merge two zones together |
 
 ### Zone Chat ✨ NEW (Phase 7)
 | Method | Endpoint | Description |
@@ -862,6 +875,41 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### Zone Capacity AI Management - 8 January 2026
+Implemented proactive AI-assisted zone management to prevent illogical overflow suggestions:
+
+**Problem Solved**: When a zone fills up (e.g., Appassimento), the system was silently falling back to unrelated zones (e.g., Rioja), creating confusing organization suggestions.
+
+**Solution Architecture**:
+- **Detection**: `cellarAnalysis.js` tracks `zoneCapacityIssues` when wines can't be placed in their target zone
+- **Alert UI**: `zoneCapacityAlert.js` displays prominent warning with affected wines list
+- **AI Advisor**: `zoneCapacityAdvisor.js` sends zone context to Claude Opus for analysis
+- **Action Execution**: Three action types (allocate_row, merge_zones, move_wine) with Apply buttons
+
+**New Files**:
+- `src/services/zoneCapacityAdvisor.js` - Claude integration with JSON schema validation
+- `public/js/cellarAnalysis/zoneCapacityAlert.js` - Alert UI and action handlers
+
+**New API Endpoints**:
+- `POST /api/cellar/zone-capacity-advice` - Get AI recommendations
+- `POST /api/cellar/zones/allocate-row` - Assign row to zone
+- `POST /api/cellar/zones/merge` - Merge source zone into target
+
+**Frontend API Functions** (`api.js`):
+- `getZoneCapacityAdvice(payload)` - Request AI analysis
+- `allocateZoneRow(zoneId)` - Execute row allocation
+- `mergeZones(sourceZoneId, targetZoneId)` - Execute zone merge
+
+**CSS Styles**: `.zone-capacity-alert`, `.zone-capacity-advice-panel`, `.zone-capacity-action` classes
+
+**Buffer Zone Fix** (8 Jan - follow-up):
+- Fixed bug where buffer zones (like `red_buffer`) would place wines in rows allocated to other zones
+- When `enforceAffinity` is true, buffer zones now skip rows that are allocated to specific zones
+- This prevents Appassimento wines from being suggested into Rioja-allocated rows just because they're both "red"
+- Fix location: `cellarPlacement.js` line 297-316
+
+---
 
 ### Move Integrity & Data Protection - 7-8 January 2026
 Critical fix for bottle loss bug during cellar reorganization moves:
@@ -1391,7 +1439,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
 | **Database Migrations** | 25 |
-| **Unit Tests** | 249 |
+| **Unit Tests** | 333 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
 | **Lines of Code** | ~15,000+ |
@@ -1399,7 +1447,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v50 |
+| **Service Worker Version** | v52 |
 
 ---
 

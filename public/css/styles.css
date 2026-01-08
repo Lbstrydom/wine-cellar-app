@@ -607,6 +607,78 @@ header .search-trigger {
   font-size: 1.1rem;
 }
 
+/* Zone Capacity Alert */
+.zone-capacity-alert {
+  padding: 1rem;
+  border-radius: 6px;
+  background: rgba(255, 152, 0, 0.15);
+  border-left: 3px solid #ff9800;
+}
+
+.zone-capacity-alert-header {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.zone-capacity-alert-message {
+  color: var(--text);
+  line-height: 1.4;
+}
+
+.zone-capacity-wines {
+  margin: 0.75rem 0 0;
+  padding-left: 1rem;
+  color: var(--text-muted);
+}
+
+.zone-capacity-alert-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.zone-capacity-advice-panel {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
+
+.zone-capacity-advice-header {
+  font-weight: 600;
+  color: var(--accent);
+  margin-bottom: 0.5rem;
+}
+
+.zone-capacity-advice-reasoning {
+  line-height: 1.6;
+  margin-top: 0.5rem;
+}
+
+.zone-capacity-advice-actions {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.zone-capacity-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background: var(--bg-card);
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+
+.zone-capacity-action-title {
+  font-weight: 500;
+}
+
 .analysis-moves h4 {
   margin-bottom: 0.75rem;
   font-size: 1rem;

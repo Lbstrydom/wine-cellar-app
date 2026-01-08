@@ -29,13 +29,18 @@ router.get('/', async (req, res) => {
     `).get();
     const openBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE is_open = TRUE').get();
 
+    const byColourNormalized = (byColour || []).map((row) => ({
+      ...row,
+      count: Number(row?.count ?? 0)
+    }));
+
     res.json({
-      total_bottles: totalBottles?.count || 0,
-      by_colour: byColour || [],
-      reduce_now_count: reduceNowCount?.count || 0,
-      empty_slots: emptySlots?.count || 0,
-      consumed_last_30_days: recentConsumption?.count || 0,
-      open_bottles: openBottles?.count || 0
+      total_bottles: Number(totalBottles?.count ?? 0),
+      by_colour: byColourNormalized,
+      reduce_now_count: Number(reduceNowCount?.count ?? 0),
+      empty_slots: Number(emptySlots?.count ?? 0),
+      consumed_last_30_days: Number(recentConsumption?.count ?? 0),
+      open_bottles: Number(openBottles?.count ?? 0)
     });
   } catch (error) {
     console.error('Stats error:', error);
@@ -163,8 +168,8 @@ router.get('/consumption', async (req, res) => {
     res.json({
       items: log || [],
       total: total?.count || 0,
-      limit: parseInt(limit),
-      offset: parseInt(offset)
+      limit: Number.parseInt(limit, 10),
+      offset: Number.parseInt(offset, 10)
     });
   } catch (error) {
     console.error('Consumption error:', error);

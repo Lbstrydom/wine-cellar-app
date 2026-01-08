@@ -49,6 +49,9 @@ export const TASK_MODELS = {
   drinkRecommendations: 'claude-sonnet-4-5-20250929',
   tastingExtraction: 'claude-sonnet-4-5-20250929',
 
+  // Zone capacity advice should be high-quality
+  zoneCapacityAdvice: 'claude-opus-4-20250514',
+
   // Complex extraction tasks use Opus
   awardExtraction: 'claude-opus-4-20250514',
 

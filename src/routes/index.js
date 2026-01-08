@@ -10,6 +10,7 @@ import bottleRoutes from './bottles.js';
 import pairingRoutes from './pairing.js';
 import reduceNowRoutes from './reduceNow.js';
 import statsRoutes from './stats.js';
+import layoutRoutes from './layout.js';
 import ratingsRoutes from './ratings.js';
 import settingsRoutes from './settings.js';
 import drinkingWindowsRoutes from './drinkingWindows.js';
@@ -30,6 +31,7 @@ router.use('/bottles', bottleRoutes);
 router.use('/pairing', pairingRoutes);
 router.use('/reduce-now', reduceNowRoutes);
 router.use('/stats', statsRoutes);
+router.use('/layout', layoutRoutes);
 router.use('/ratings', ratingsRoutes); // Admin routes: GET /ratings/sources, /ratings/logs, POST /ratings/cleanup
 router.use('/settings', settingsRoutes);
 router.use('/', drinkingWindowsRoutes);  // /wines/:wine_id/drinking-windows and /drinking-windows/urgent

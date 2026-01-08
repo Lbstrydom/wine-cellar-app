@@ -90,10 +90,13 @@ export function createRateLimiter(options = {}) {
     message = 'Too many requests, please try again later.',
     keyGenerator = (req) => {
       // Get real IP from proxy headers or direct connection
-      return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
-             req.headers['x-real-ip'] ||
-             req.socket.remoteAddress ||
-             'unknown';
+      const ip = req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+                 req.headers['x-real-ip'] ||
+                 req.socket.remoteAddress ||
+                 'unknown';
+      // Scope by endpoint to avoid one noisy route throttling the entire API.
+      // Uses the mounted baseUrl (e.g., /api) + path (e.g., /stats).
+      return `${ip}:${req.method}:${req.baseUrl}${req.path}`;
     }
   } = options;
 
@@ -130,6 +133,13 @@ export function strictRateLimiter(options = {}) {
     maxRequests: 30,
     windowMs: 60 * 1000, // 1 minute
     message: 'Too many AI requests, please slow down.',
+    // Keep strict limiter scoped to IP only.
+    keyGenerator: (req) => {
+      return req.headers['x-forwarded-for']?.split(',')[0].trim() ||
+             req.headers['x-real-ip'] ||
+             req.socket.remoteAddress ||
+             'unknown';
+    },
     ...options
   });
 }

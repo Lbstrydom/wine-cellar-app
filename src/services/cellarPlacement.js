@@ -6,7 +6,7 @@
 
 import { ZONE_PRIORITY_ORDER, getZoneById } from '../config/cellarZones.js';
 import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../config/cellarThresholds.js';
-import { getZoneRows, allocateRowToZone } from './cellarAllocation.js';
+import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -255,8 +255,20 @@ function calculateConfidence(bestScore, allMatches) {
  * @returns {Promise<Object|null>} Slot placement result
  */
 export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
+  let options = arguments.length > 3 ? arguments[3] : undefined;
+  if (!options) options = {};
+  const {
+    allowFallback = true,
+    enforceAffinity = false,
+    rootZoneId = zoneId,
+    _visited = new Set()
+  } = options;
+
   const zone = getZoneById(zoneId);
   if (!zone) return null;
+
+  if (_visited.has(zoneId)) return null;
+  _visited.add(zoneId);
 
   const occupied = occupiedSlots instanceof Set ? occupiedSlots : new Set(occupiedSlots);
 
@@ -283,9 +295,20 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   }
 
   // Buffer zones - find gaps in preferred row range
+  // When enforceAffinity is true, only use rows not allocated to other zones
   if (zone.isBufferZone && zone.preferredRowRange) {
+    const zoneMap = enforceAffinity ? await getActiveZoneMap() : null;
+    const allocatedRows = zoneMap ? new Set(Object.keys(zoneMap)) : new Set();
+
     for (const rowNum of zone.preferredRowRange) {
-      const slot = findSlotInRows([`R${rowNum}`], occupied);
+      const rowId = `R${rowNum}`;
+
+      // If enforcing affinity, skip rows allocated to other zones
+      if (enforceAffinity && allocatedRows.has(rowId)) {
+        continue;
+      }
+
+      const slot = findSlotInRows([rowId], occupied);
       if (slot) {
         return { slotId: slot, zoneId, isOverflow: true, requiresSwap: false };
       }
@@ -294,6 +317,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
 
   // Fallback/curated zones - search entire cellar
   if (zone.isFallbackZone || zone.isCuratedZone) {
+    if (!allowFallback) return null;
     const slot = findAnyAvailableSlot(occupied, wine);
     if (slot) {
       return { slotId: slot, zoneId, isOverflow: true, requiresSwap: false };
@@ -302,13 +326,108 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
 
   // Try overflow zone chain
   if (zone.overflowZoneId) {
-    const overflowResult = await findAvailableSlot(zone.overflowZoneId, occupied, wine);
+    const overflowZoneId = zone.overflowZoneId;
+    if (enforceAffinity) {
+      const rootZone = getZoneById(rootZoneId);
+      const overflowZone = getZoneById(overflowZoneId);
+      if (!isSensibleOverflow(rootZone, overflowZone, wine)) {
+        return null;
+      }
+    }
+
+    const overflowResult = await findAvailableSlot(overflowZoneId, occupied, wine, {
+      ...options,
+      rootZoneId,
+      _visited
+    });
     if (overflowResult) {
-      return { ...overflowResult, isOverflow: true };
+      const overflowPath = overflowResult.overflowPath || [];
+      return {
+        ...overflowResult,
+        isOverflow: true,
+        overflowPath: [zoneId, ...overflowPath]
+      };
     }
   }
 
   return null;
+}
+
+/**
+ * Determine whether overflowing from one zone into another is "sensible".
+ * This is intentionally conservative: it allows buffer zones by colour,
+ * or direct rule overlap (grape/country/region/winemaking/keywords).
+ * @param {Object|undefined} fromZone
+ * @param {Object|undefined} toZone
+ * @param {Object|null} wine
+ * @returns {boolean}
+ */
+function isSensibleOverflow(fromZone, toZone, wine) {
+  if (!fromZone || !toZone) return false;
+  if (fromZone.id === toZone.id) return true;
+
+  // Buffer zones are acceptable if colour matches.
+  if (toZone.isBufferZone) {
+    return zonesShareColour(fromZone, toZone, wine);
+  }
+
+  // Never treat the global fallback as a "sensible" overflow.
+  if (toZone.isFallbackZone) return false;
+
+  // If zones share colour and have any direct rule overlap, allow.
+  if (!zonesShareColour(fromZone, toZone, wine)) return false;
+
+  const fromTokens = getZoneAffinityTokens(fromZone);
+  const toTokens = getZoneAffinityTokens(toZone);
+  for (const t of fromTokens) {
+    if (toTokens.has(t)) return true;
+  }
+
+  return false;
+}
+
+function zonesShareColour(fromZone, toZone, wine) {
+  const fromColours = normalizeColours(fromZone.color);
+  const toColours = normalizeColours(toZone.color);
+
+  // If a wine is provided, use its inferred colour as a tie-breaker.
+  const wineColour = (wine?.colour || wine?.color || '').toLowerCase();
+  if (wineColour && toColours.has(wineColour) && fromColours.has(wineColour)) {
+    return true;
+  }
+
+  for (const c of fromColours) {
+    if (toColours.has(c)) return true;
+  }
+  return false;
+}
+
+function normalizeColours(color) {
+  if (!color) return new Set();
+  const arr = Array.isArray(color) ? color : [color];
+  return new Set(arr.map(c => String(c).toLowerCase()));
+}
+
+function getZoneAffinityTokens(zone) {
+  const rules = zone.rules || {};
+  const tokens = new Set();
+
+  addTokens(tokens, rules.grapes, 'grape');
+  addTokens(tokens, rules.countries, 'country');
+  addTokens(tokens, rules.regions, 'region');
+  addTokens(tokens, rules.appellations, 'appellation');
+  addTokens(tokens, rules.winemaking, 'winemaking');
+  addTokens(tokens, rules.keywords, 'keyword');
+
+  return tokens;
+}
+
+function addTokens(tokenSet, values, prefix) {
+  if (!Array.isArray(values)) return;
+  for (const v of values) {
+    if (!v) continue;
+    tokenSet.add(`${prefix}:${String(v).toLowerCase().trim()}`);
+  }
 }
 
 /**

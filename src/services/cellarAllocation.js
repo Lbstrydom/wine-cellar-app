@@ -34,7 +34,8 @@ export async function getZoneRows(zoneId) {
  * @returns {Promise<string>} Assigned row ID
  * @throws {Error} If no rows available
  */
-export async function allocateRowToZone(zoneId) {
+export async function allocateRowToZone(zoneId, options = {}) {
+  const { incrementWineCount = true } = options;
   const zone = getZoneById(zoneId);
   if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
 
@@ -81,17 +82,25 @@ export async function allocateRowToZone(zoneId) {
     // Add to existing allocation
     const rows = JSON.parse(existing.assigned_rows);
     rows.push(assignedRow);
-    await db.prepare(
-      `UPDATE zone_allocations
-       SET assigned_rows = ?, wine_count = wine_count + 1, updated_at = CURRENT_TIMESTAMP
-       WHERE zone_id = ?`
-    ).run(JSON.stringify(rows), zoneId);
+    if (incrementWineCount) {
+      await db.prepare(
+        `UPDATE zone_allocations
+         SET assigned_rows = ?, wine_count = wine_count + 1, updated_at = CURRENT_TIMESTAMP
+         WHERE zone_id = ?`
+      ).run(JSON.stringify(rows), zoneId);
+    } else {
+      await db.prepare(
+        `UPDATE zone_allocations
+         SET assigned_rows = ?, updated_at = CURRENT_TIMESTAMP
+         WHERE zone_id = ?`
+      ).run(JSON.stringify(rows), zoneId);
+    }
   } else {
     // Create new allocation
     await db.prepare(
       `INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count)
-       VALUES (?, ?, CURRENT_TIMESTAMP, 1)`
-    ).run(zoneId, JSON.stringify([assignedRow]));
+       VALUES (?, ?, CURRENT_TIMESTAMP, ?)`
+    ).run(zoneId, JSON.stringify([assignedRow]), incrementWineCount ? 1 : 0);
   }
 
   return assignedRow;

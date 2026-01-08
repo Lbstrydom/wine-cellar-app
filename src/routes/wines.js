@@ -306,13 +306,21 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     } = req.body;
 
     // Build dynamic update based on what's provided
-    const updates = [];
+    const updates = [
+      'style = ?',
+      'colour = ?',
+      'wine_name = ?',
+      'vintage = ?',
+      'vivino_rating = ?',
+      'price_eur = ?',
+      'country = ?',
+      'drink_from = ?',
+      'drink_peak = ?',
+      'drink_until = ?'
+    ];
     const values = [];
 
     // Always update these basic fields
-    updates.push('style = ?', 'colour = ?', 'wine_name = ?', 'vintage = ?');
-    updates.push('vivino_rating = ?', 'price_eur = ?', 'country = ?');
-    updates.push('drink_from = ?', 'drink_peak = ?', 'drink_until = ?');
     values.push(
       style, colour, wine_name, vintage || null,
       vivino_rating || null, price_eur || null, country || null,
@@ -346,6 +354,28 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     res.json({ message: 'Wine updated' });
   } catch (error) {
     console.error('Update wine error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Delete a wine.
+ * @route DELETE /api/wines/:id
+ */
+router.delete('/:id', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    await db.prepare('DELETE FROM wines WHERE id = ?').run(id);
+
+    res.json({ message: `Wine ${id} deleted` });
+  } catch (error) {
+    console.error('Delete wine error:', error);
     res.status(500).json({ error: error.message });
   }
 });

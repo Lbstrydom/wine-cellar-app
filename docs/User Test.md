@@ -1,6 +1,5 @@
 Observed issues:
-1. when I turn my phone horisontally the app stays in vertical mode - I thought we adjsuted so that it picks up if the phone moves horisontal and displays like that?
-2. Our zone structure is not dynamic - so what happened on the apassimento wines is that it suggested some moves and I did them but then we ran out of space and the next Appesimento wine - Passione Real Appesimento it wants to move to Row 8 which is Rioja and does not make sense, so it also needs to be able to flexibly increase collection zones to accomodate more bottles correctly and or group other zones together to the cellar stays organised and logical without doing what is jsut did
+1. 
 
 
 

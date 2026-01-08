@@ -72,14 +72,14 @@ router.get('/live', async (_req, res) => {
     // Get basic stats
     const wineResult = await db.prepare('SELECT COUNT(*) as count FROM wines').get();
     const slotResult = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
-    wineCount = wineResult?.count || 0;
-    slotCount = slotResult?.count || 0;
+    wineCount = Number(wineResult?.count ?? 0);
+    slotCount = Number(slotResult?.count ?? 0);
   } catch {
     dbStatus = 'error';
   }
 
   res.json({
-    status: dbStatus === 'connected' ? 'healthy' : 'degraded',
+    status: dbStatus === 'connected' ? 'alive' : 'degraded',
     timestamp: new Date().toISOString(),
     uptime: {
       seconds: uptimeSeconds,

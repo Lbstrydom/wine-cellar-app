@@ -9,6 +9,7 @@
     "dev": "node --watch src/server.js",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:unit": "vitest run tests/unit",
     "test:coverage": "vitest run --coverage",
     "test:pg": "node scripts/test-pg-compat.js",
     "lint": "eslint src/ public/js/",

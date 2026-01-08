@@ -8,13 +8,14 @@ import { setCurrentAnalysis, setAnalysisLoaded } from './state.js';
 import { renderMoves } from './moves.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
+import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
 
 /**
  * Load analysis when tab is opened.
  * Called by app.js when switching to analysis tab.
  * @param {boolean} [forceRefresh=false] - Force fresh analysis ignoring cache
  */
-export async function loadAnalysis(forceRefresh = false) {
+export async function loadAnalysis(forceRefresh = false, options = {}) {
   const summaryEl = document.getElementById('analysis-summary');
   const alertsEl = document.getElementById('analysis-alerts');
   const movesListEl = document.getElementById('moves-list');
@@ -32,10 +33,16 @@ export async function loadAnalysis(forceRefresh = false) {
   if (cacheStatusEl) cacheStatusEl.textContent = '';
 
   try {
-    const response = await analyseCellar(forceRefresh);
+    const response = await analyseCellar(forceRefresh, options);
     setCurrentAnalysis(response.report);
     setAnalysisLoaded(true);
-    renderAnalysis(response.report);
+
+    const onRenderAnalysis = (report) => {
+      setCurrentAnalysis(report);
+      renderAnalysis(report, onRenderAnalysis);
+    };
+
+    renderAnalysis(response.report, onRenderAnalysis);
 
     // Show cache status
     if (cacheStatusEl) {
@@ -69,9 +76,12 @@ export async function refreshAnalysis() {
  * Render analysis results.
  * @param {Object} analysis - Analysis report from API
  */
-function renderAnalysis(analysis) {
+function renderAnalysis(analysis, onRenderAnalysis) {
   renderSummary(analysis.summary, analysis.needsZoneSetup);
-  renderAlerts(analysis.alerts);
+
+  const { remainingAlerts, rendered } = renderZoneCapacityAlert(analysis, { onRenderAnalysis });
+  renderAlerts(remainingAlerts, { append: rendered });
+
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
@@ -137,15 +147,15 @@ function renderSummary(summary, needsZoneSetup) {
  * Render alerts.
  * @param {Array} alerts
  */
-function renderAlerts(alerts) {
+function renderAlerts(alerts, { append = false } = {}) {
   const el = document.getElementById('analysis-alerts');
 
   if (!alerts || alerts.length === 0) {
-    el.innerHTML = '';
+    if (!append) el.innerHTML = '';
     return;
   }
 
-  el.innerHTML = alerts.map(alert => {
+  const html = alerts.map(alert => {
     const icon = alert.severity === 'warning' ? '⚠️' : 'ℹ️';
     return `
       <div class="alert-item ${alert.severity}">
@@ -154,4 +164,10 @@ function renderAlerts(alerts) {
       </div>
     `;
   }).join('');
+
+  if (append) {
+    el.insertAdjacentHTML('beforeend', html);
+  } else {
+    el.innerHTML = html;
+  }
 }
