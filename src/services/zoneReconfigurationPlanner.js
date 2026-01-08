@@ -215,11 +215,12 @@ function computeSummary(report, actions) {
  * Build list of all zones with their current allocation for AI context.
  */
 function buildZoneList() {
-  return CELLAR_ZONES.map(z => ({
+  const zones = CELLAR_ZONES.zones || [];
+  return zones.map(z => ({
     id: z.id,
-    name: z.name,
+    name: z.displayName || z.name || z.id,
     color: z.color,
-    rows: z.rows || []
+    rows: z.rows || z.preferredRowRange || []
   }));
 }
 
