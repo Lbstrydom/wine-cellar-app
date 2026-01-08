@@ -8,6 +8,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { getZoneById, CELLAR_ZONES } from '../config/cellarZones.js';
 import { getNeverMergeZones } from './zonePins.js';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
+import { getAllZoneAllocations } from './cellarAllocation.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -212,15 +213,26 @@ function computeSummary(report, actions) {
 }
 
 /**
- * Build list of all zones with their current allocation for AI context.
+ * Build list of all zones with their ACTUAL current row allocations from the database.
+ * This is critical for the AI to know which rows each zone actually owns.
  */
-function buildZoneList() {
+async function buildZoneListWithAllocations() {
   const zones = CELLAR_ZONES.zones || [];
+  const allocations = await getAllZoneAllocations();
+
+  // Create a map of zoneId -> assigned_rows from database
+  const allocMap = new Map();
+  for (const alloc of allocations) {
+    allocMap.set(alloc.zone_id, alloc.assigned_rows || []);
+  }
+
   return zones.map(z => ({
     id: z.id,
     name: z.displayName || z.name || z.id,
     color: z.color,
-    rows: z.rows || z.preferredRowRange || []
+    preferredRows: z.rows || z.preferredRowRange || [],
+    // ACTUAL rows currently assigned in the database - this is what the AI must use
+    actualAssignedRows: allocMap.get(z.id) || []
   }));
 }
 
@@ -250,6 +262,9 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const underutilizedZones = findUnderutilizedZones(utilization, 40);
   const mergeCandidates = findMergeCandidates(overflowingZones, allZones);
 
+  // Fetch actual row allocations from database
+  const zonesWithAllocations = await buildZoneListWithAllocations();
+
   // Attempt Claude first if configured.
   if (process.env.ANTHROPIC_API_KEY) {
     const prompt = {
@@ -264,7 +279,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
         misplaced: misplacedBottles,
         misplacementPct
       },
-      zones: buildZoneList(),
+      zones: zonesWithAllocations,
       zoneUtilization: allZones.map(z => ({
         zoneId: z.zoneId,
         zoneName: z.zoneName,
@@ -339,7 +354,9 @@ Action types:
 1. "reallocate_row": Move a row from one zone to another
    - Required fields: fromZoneId, toZoneId, rowNumber, bottlesAffected
    - IMPORTANT: fromZoneId and toZoneId must be exact zone ID strings like "chenin_blanc", "sauvignon_blanc", "rioja_ribera" - NOT numbers!
-   - rowNumber should be a number like 2, 3, 4 etc.
+   - CRITICAL: rowNumber MUST be from the fromZone's "actualAssignedRows" array - these are the ONLY rows that zone currently owns!
+   - rowNumber should be a number like 2, 3, 4 etc. (not "R2", just 2)
+   - Example: if zone X has actualAssignedRows: ["R3", "R5"], you can only reallocate rows 3 or 5 from zone X
    - Use when a zone is underutilized and another needs space
 2. "merge_zones": Combine two similar zones into one
    - Required fields: sourceZones (array of zone ID strings), targetZoneId (string), bottlesAffected
@@ -383,7 +400,13 @@ Constraints:
     if (!json) throw new Error('Invalid AI response (not JSON)');
     const plan = validatePlanShape(json);
 
-    // Filter out any unknown zones defensively.
+    // Build a map of zoneId -> actualAssignedRows for validation
+    const zoneRowMap = new Map();
+    for (const z of zonesWithAllocations) {
+      zoneRowMap.set(z.id, z.actualAssignedRows || []);
+    }
+
+    // Filter out any unknown zones or invalid row assignments defensively.
     const originalCount = plan.actions.length;
     plan.actions = plan.actions.filter(a => {
       if (a.type === 'reallocate_row') {
@@ -391,8 +414,18 @@ Constraints:
         const toValid = !!getZoneById(a.toZoneId);
         if (!fromValid || !toValid) {
           console.warn(`[ZoneReconfigPlanner] Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
+          return false;
         }
-        return fromValid && toValid;
+
+        // Validate that the row is actually assigned to fromZone
+        const fromRows = zoneRowMap.get(a.fromZoneId) || [];
+        const rowId = typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber);
+        if (!fromRows.includes(rowId)) {
+          console.warn(`[ZoneReconfigPlanner] Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
+          return false;
+        }
+
+        return true;
       }
       if (a.type === 'expand_zone') {
         // Legacy support - but shouldn't happen with new prompt
@@ -447,6 +480,12 @@ Constraints:
   const actions = [];
   const rowsReallocated = new Set();
 
+  // Build a map of zoneId -> actualAssignedRows for heuristic fallback
+  const zoneRowMapFallback = new Map();
+  for (const z of zonesWithAllocations) {
+    zoneRowMapFallback.set(z.id, z.actualAssignedRows || []);
+  }
+
   // Strategy 1: Reallocate rows from underutilized zones to overflowing zones
   for (const issue of capacityIssues) {
     const toZoneId = issue.overflowingZoneId;
@@ -458,9 +497,8 @@ Constraints:
       if (donor.rowCount <= 1) continue; // Must keep at least 1 row
       if (neverMerge.has(donor.zoneId)) continue;
 
-      // Get the zone config to find actual row numbers
-      const donorZone = getZoneById(donor.zoneId);
-      const donorRows = donorZone?.rows || [];
+      // Use ACTUAL assigned rows from database, not config preferredRowRange
+      const donorRows = zoneRowMapFallback.get(donor.zoneId) || [];
       const availableRow = donorRows.find(r => !rowsReallocated.has(r));
 
       if (availableRow) {
