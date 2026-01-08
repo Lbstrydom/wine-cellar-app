@@ -37,19 +37,27 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     return;
   }
 
-  // Count swaps vs regular moves
-  const swapCount = moves.filter(m => m.isSwap === true).length;
-  const regularMoveCount = moves.filter(m => m.type === 'move' && !m.isSwap).length;
+  const actionableMoves = moves.filter(m => m.type === 'move');
+  const sources = new Set(actionableMoves.map(m => m.from));
+  const swapMoves = actionableMoves.filter(m => m.isSwap === true);
+  const swapPairs = Math.floor(swapMoves.length / 2); // Each swap involves 2 moves
+  const dependentMovesCount = actionableMoves.filter(m => sources.has(m.to)).length;
 
-  // If moves have swaps, show warning and disable individual moves
+  const swapPlural = swapPairs === 1 ? '' : 's';
+  const dependentPlural = dependentMovesCount === 1 ? '' : 's';
+
+  // If moves depend on each other, show warning and lock only the dependent ones
   let swapWarning = '';
   if (hasSwaps) {
-    const swapPairs = swapCount / 2; // Each swap involves 2 moves
-    swapWarning = `<div class="swap-warning">
-        <strong>Note:</strong> ${swapPairs} swap${swapPairs !== 1 ? 's' : ''} detected (marked with <span class="swap-badge">SWAP</span>).
-        ${regularMoveCount > 0 ? `Plus ${regularMoveCount} regular move${regularMoveCount !== 1 ? 's' : ''}.` : ''}
-        Execute all moves together to avoid losing bottles.
-       </div>`;
+    if (swapPairs > 0) {
+      swapWarning = `<div class="swap-warning">
+        <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected (marked with <span class="swap-badge">SWAP</span>). Execute all moves together to avoid losing bottles.
+      </div>`;
+    } else {
+      swapWarning = `<div class="swap-warning">
+        <strong>Note:</strong> Some moves depend on other moves (${dependentMovesCount} move${dependentPlural} target occupied slots that are being vacated). Execute all moves together to avoid losing bottles.
+      </div>`;
+    }
   }
 
   listEl.innerHTML = swapWarning + moves.map((move, index) => {
@@ -70,13 +78,18 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       `;
     }
 
-    // For swap scenarios, show lock icon instead of individual move button
-    const moveButton = hasSwaps
-      ? '<span class="move-locked" title="Execute all moves together">🔒</span>'
-      : `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}">Move</button>`;
+    const isSwap = move.isSwap === true;
+    const isDependent = sources.has(move.to);
+    const isLocked = hasSwaps && (isSwap || isDependent);
+    const lockTitle = isSwap
+      ? 'Swap move — execute all moves together'
+      : 'This target slot is occupied by a bottle that is also being moved — execute all moves together to avoid losing bottles';
+
+    const moveButton = isLocked
+      ? `<span class="move-locked" title="${escapeHtml(lockTitle)}">🔒</span>`
+      : `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}" title="Move this bottle now">Move</button>`;
 
     // Show swap indicator and bidirectional arrow for swaps
-    const isSwap = move.isSwap === true;
     const arrow = isSwap ? '↔' : '→';
     const swapBadge = isSwap ? '<span class="swap-badge">SWAP</span>' : '';
     const swapInfo = isSwap && move.swapPartnerWineName
@@ -98,22 +111,20 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>
         <div class="move-actions">
           ${moveButton}
-          <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}">Dismiss</button>
+          <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}" title="Ignore this suggestion (does not move the bottle)">Ignore</button>
         </div>
       </div>
     `;
   }).join('');
 
   // Attach event listeners for move buttons (CSP-compliant)
-  // Only enable individual moves if no swaps
-  if (!hasSwaps) {
-    listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const index = Number.parseInt(btn.dataset.moveIndex, 10);
-        executeMove(index);
-      });
+  // Only enabled buttons exist in the DOM (locked items render no button)
+  listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.moveIndex, 10);
+      executeMove(index);
     });
-  }
+  });
   listEl.querySelectorAll('.move-dismiss-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
@@ -121,7 +132,6 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     });
   });
 
-  const actionableMoves = moves.filter(m => m.type === 'move');
   actionsEl.style.display = actionableMoves.length > 0 ? 'flex' : 'none';
 }
 
