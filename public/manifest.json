@@ -4,7 +4,7 @@
   "description": "Manage your wine collection with AI-powered recommendations and multi-source ratings",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait-primary",
+  "orientation": "any",
   "background_color": "#1a1a2e",
   "theme_color": "#722F37",
   "categories": ["lifestyle", "food"],
