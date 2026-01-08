@@ -126,47 +126,7 @@ export function getLogPath() {
   return LOG_FILE;
 }
 
-/**
- * Create a child logger with additional context.
- * @param {Object} meta - Additional metadata
- * @returns {Object} Logger with bound metadata
- */
-export function createLogger(meta) {
-  return {
-    info: (msg, extra = {}) => winstonLogger.info(msg, { ...meta, ...extra }),
-    warn: (msg, extra = {}) => winstonLogger.warn(msg, { ...meta, ...extra }),
-    error: (msg, extra = {}) => winstonLogger.error(msg, { ...meta, ...extra }),
-    debug: (msg, extra = {}) => winstonLogger.debug(msg, { ...meta, ...extra })
-  };
-}
-
-/**
- * Express middleware for request logging.
- * @returns {Function} Express middleware
- */
-export function requestLogger() {
-  return (req, res, next) => {
-    const start = Date.now();
-
-    res.on('finish', () => {
-      const duration = Date.now() - start;
-      const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'info';
-
-      winstonLogger.log(level, `${req.method} ${req.path}`, {
-        category: 'HTTP',
-        method: req.method,
-        path: req.path,
-        status: res.statusCode,
-        duration,
-        ip: req.ip
-      });
-    });
-
-    next();
-  };
-}
-
 // Export Winston instance for advanced use
 export const logger = winstonLogger;
 
-export default { info, warn, error, debug, separator, getLogPath, createLogger, requestLogger, logger };
+export default { info, warn, error, debug, separator, getLogPath, logger };

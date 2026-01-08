@@ -100,6 +100,6 @@ export function displayRecommendations(response) {
   // ...existing display logic to render cards...
 }
 
-function openWineDetail(wineId) {
+function openWineDetail(_wineId) {
   // ...existing logic to open wine detail modal...
 }
