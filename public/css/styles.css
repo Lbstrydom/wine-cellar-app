@@ -719,6 +719,12 @@ header .search-trigger {
   font-size: 0.75rem;
 }
 
+.move-actions .move-locked {
+  opacity: 0.6;
+  cursor: help;
+  padding: 0.3rem 0.5rem;
+}
+
 .moves-actions {
   display: flex;
   gap: 0.5rem;
@@ -1572,6 +1578,21 @@ header .search-trigger {
 
 .fridge-move-item .move-path {
   color: var(--accent);
+}
+
+.fridge-move-item .move-locked {
+  opacity: 0.6;
+  cursor: help;
+}
+
+.swap-warning {
+  background: rgba(255, 193, 7, 0.15);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 4px;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: #ffc107;
 }
 
 .fridge-organize-actions {

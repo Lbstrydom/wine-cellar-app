@@ -164,7 +164,7 @@ function renderAnalysis(analysis) {
   renderAlerts(analysis.alerts);
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
-  renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup);
+  renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
 }
 
 /**
@@ -503,10 +503,19 @@ async function handleOrganizeFridge() {
       return;
     }
 
+    // If moves involve swaps, individual moves would cause data loss
+    const hasSwaps = result.hasSwaps || result.mustExecuteAsBatch;
+    const swapWarning = hasSwaps
+      ? `<div class="swap-warning">
+          <strong>Note:</strong> These moves involve swaps - they must be executed together to avoid losing bottles.
+         </div>`
+      : '';
+
     panel.innerHTML = `
       <div class="fridge-organize-result">
         <h5>Suggested Reorganization</h5>
         <p class="organize-description">Grouping wines by category (coldest at top):</p>
+        ${swapWarning}
         ${renderFridgeSummary(result.summary)}
         <div class="fridge-moves-list">
           ${result.moves.map((m, i) => `
@@ -514,7 +523,10 @@ async function handleOrganizeFridge() {
               <span class="move-wine">${escapeHtml(m.wineName)} ${m.vintage || ''}</span>
               <span class="move-category">${escapeHtml(m.category)}</span>
               <span class="move-path">${m.from} → ${m.to}</span>
-              <button class="btn btn-small btn-primary fridge-move-btn" data-move-index="${i}">Move</button>
+              ${hasSwaps
+                ? '<span class="move-locked" title="Must execute all moves together">🔒</span>'
+                : `<button class="btn btn-small btn-primary fridge-move-btn" data-move-index="${i}">Move</button>`
+              }
             </div>
           `).join('')}
         </div>
@@ -528,13 +540,15 @@ async function handleOrganizeFridge() {
     // Store moves for execution
     panel.dataset.moves = JSON.stringify(result.moves);
 
-    // Attach event listeners
-    panel.querySelectorAll('.fridge-move-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const idx = Number.parseInt(btn.dataset.moveIndex, 10);
-        executeFridgeOrganizeMove(idx);
+    // Attach event listeners (only for individual moves if no swaps)
+    if (!hasSwaps) {
+      panel.querySelectorAll('.fridge-move-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = Number.parseInt(btn.dataset.moveIndex, 10);
+          executeFridgeOrganizeMove(idx);
+        });
       });
-    });
+    }
 
     panel.querySelector('.execute-all-fridge-moves-btn')?.addEventListener('click', executeAllFridgeOrganizeMoves);
     panel.querySelector('.close-organize-btn')?.addEventListener('click', () => {
@@ -634,8 +648,9 @@ async function executeAllFridgeOrganizeMoves() {
  * Render suggested moves.
  * @param {Array} moves
  * @param {boolean} needsZoneSetup
+ * @param {boolean} hasSwaps - True if moves involve swaps that require batch execution
  */
-function renderMoves(moves, needsZoneSetup) {
+function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   const listEl = document.getElementById('moves-list');
   const actionsEl = document.getElementById('moves-actions');
 
@@ -657,7 +672,14 @@ function renderMoves(moves, needsZoneSetup) {
     return;
   }
 
-  listEl.innerHTML = moves.map((move, index) => {
+  // If moves have swaps, show warning and disable individual moves
+  const swapWarning = hasSwaps
+    ? `<div class="swap-warning">
+        <strong>Note:</strong> These moves involve swaps - execute them together to avoid losing bottles.
+       </div>`
+    : '';
+
+  listEl.innerHTML = swapWarning + moves.map((move, index) => {
     if (move.type === 'manual') {
       return `
         <div class="move-item priority-3">
@@ -675,6 +697,11 @@ function renderMoves(moves, needsZoneSetup) {
       `;
     }
 
+    // For swap scenarios, show lock icon instead of individual move button
+    const moveButton = hasSwaps
+      ? '<span class="move-locked" title="Execute all moves together">🔒</span>'
+      : `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}">Move</button>`;
+
     return `
       <div class="move-item priority-${move.priority}" data-move-index="${index}">
         <div class="move-details">
@@ -688,7 +715,7 @@ function renderMoves(moves, needsZoneSetup) {
         </div>
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>
         <div class="move-actions">
-          <button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}">Move</button>
+          ${moveButton}
           <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}">Dismiss</button>
         </div>
       </div>
@@ -696,12 +723,15 @@ function renderMoves(moves, needsZoneSetup) {
   }).join('');
 
   // Attach event listeners for move buttons (CSP-compliant)
-  listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const index = Number.parseInt(btn.dataset.moveIndex, 10);
-      executeMove(index);
+  // Only enable individual moves if no swaps
+  if (!hasSwaps) {
+    listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const index = Number.parseInt(btn.dataset.moveIndex, 10);
+        executeMove(index);
+      });
     });
-  });
+  }
   listEl.querySelectorAll('.move-dismiss-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
@@ -733,7 +763,11 @@ async function executeMove(index) {
 
     // Remove move from list and refresh
     currentAnalysis.suggestedMoves.splice(index, 1);
-    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup);
+    // Re-check if remaining moves have swaps
+    const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
+    const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
+    currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
+    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -748,7 +782,11 @@ function dismissMove(index) {
   if (!currentAnalysis?.suggestedMoves?.[index]) return;
 
   currentAnalysis.suggestedMoves.splice(index, 1);
-  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup);
+  // Re-check if remaining moves have swaps
+  const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
+  const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
+  currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
+  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
 }
 
 /**

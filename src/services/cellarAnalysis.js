@@ -167,7 +167,9 @@ export async function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  report.suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine);
+  report.suggestedMoves = suggestedMoves;
+  report.movesHaveSwaps = suggestedMoves._hasSwaps || false;
 
   // Check if reorganisation is recommended
   const shouldReorg =
@@ -409,7 +411,17 @@ async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine) {
     }
   }
 
-  return suggestions.sort((a, b) => a.priority - b.priority);
+  const sortedSuggestions = suggestions.sort((a, b) => a.priority - b.priority);
+
+  // Check if any moves involve swaps (source of one move is target of another)
+  const sources = new Set(sortedSuggestions.filter(s => s.type === 'move').map(m => m.from));
+  const targets = new Set(sortedSuggestions.filter(s => s.type === 'move').map(m => m.to));
+  const hasSwaps = [...sources].some(s => targets.has(s));
+
+  // Attach swap flag to the result (will be used by caller)
+  sortedSuggestions._hasSwaps = hasSwaps;
+
+  return sortedSuggestions;
 }
 
 /**

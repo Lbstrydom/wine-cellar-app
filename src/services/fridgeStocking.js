@@ -389,11 +389,24 @@ const FRIDGE_CATEGORY_ORDER = [
 /**
  * Generate suggested moves to organize fridge by category.
  * Groups wines by category in optimal temperature order.
+ *
+ * IMPORTANT: These moves must be executed as a batch (all at once) to avoid
+ * data loss. The validation will catch conflicts if executed individually
+ * because after one move, the source/target state changes.
+ *
  * @param {Array} fridgeWines - Current fridge contents with slot info
- * @returns {Array} Suggested moves [{from, to, wine, reason}]
+ * @returns {Object} {moves, slotAssignments, categoryOrder, summary, mustExecuteAsBatch}
  */
 export function suggestFridgeOrganization(fridgeWines) {
-  if (fridgeWines.length === 0) return [];
+  if (fridgeWines.length === 0) {
+    return {
+      moves: [],
+      slotAssignments: {},
+      categoryOrder: FRIDGE_CATEGORY_ORDER,
+      summary: [],
+      mustExecuteAsBatch: false
+    };
+  }
 
   // Map wines to their categories
   const categorizedWines = fridgeWines.map(w => ({
@@ -422,10 +435,22 @@ export function suggestFridgeOrganization(fridgeWines) {
   // Generate moves needed
   const moves = [];
   const slotAssignments = {};
+  const allocatedTargets = new Set();
+  const movedWines = new Set();
 
   sortedWines.forEach((wine, idx) => {
     const targetSlot = sortedSlots[idx];
     const currentSlot = wine.slot_id || wine.location_code;
+
+    // Safety checks to prevent duplicate allocations
+    if (allocatedTargets.has(targetSlot)) {
+      console.warn(`[FridgeOrganize] Target ${targetSlot} already allocated, skipping wine ${wine.id}`);
+      return;
+    }
+    if (movedWines.has(wine.id)) {
+      console.warn(`[FridgeOrganize] Wine ${wine.id} already has a move, skipping`);
+      return;
+    }
 
     if (currentSlot !== targetSlot) {
       moves.push({
@@ -437,15 +462,25 @@ export function suggestFridgeOrganization(fridgeWines) {
         to: targetSlot,
         reason: `Group ${formatCategoryName(wine.category)} wines together`
       });
+      movedWines.add(wine.id);
     }
+    allocatedTargets.add(targetSlot);
     slotAssignments[targetSlot] = wine.category;
   });
+
+  // Check if any moves involve swaps (wine A→B while B→A)
+  // If so, they MUST be executed as a batch
+  const sources = new Set(moves.map(m => m.from));
+  const targets = new Set(moves.map(m => m.to));
+  const hasSwaps = [...sources].some(s => targets.has(s));
 
   return {
     moves,
     slotAssignments,
     categoryOrder: FRIDGE_CATEGORY_ORDER,
-    summary: generateOrganizationSummary(sortedWines)
+    summary: generateOrganizationSummary(sortedWines),
+    mustExecuteAsBatch: hasSwaps,
+    hasSwaps
   };
 }
 
