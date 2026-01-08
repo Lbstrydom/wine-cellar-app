@@ -767,7 +767,15 @@ public/js/
 ├── sommelier.js          # AI pairing interface
 ├── ratings.js            # Rating display/fetch
 ├── settings.js           # User preferences UI
-├── cellarAnalysis.js     # Organization advice
+├── cellarAnalysis.js     # Thin facade (99 lines)
+├── cellarAnalysis/       # ✨ NEW Modular analysis components
+│   ├── state.js          #   Shared module state (133 lines)
+│   ├── analysis.js       #   Load/render analysis (157 lines)
+│   ├── aiAdvice.js       #   AI organization advice (94 lines)
+│   ├── moves.js          #   Move suggestions & execution (384 lines)
+│   ├── fridge.js         #   Fridge organization (346 lines)
+│   ├── zones.js          #   Zone narratives & setup (425 lines)
+│   └── zoneChat.js       #   AI zone chat (342 lines)
 ├── recommendations.js    # ✨ NEW AI drink suggestions UI
 ├── globalSearch.js       # ✨ NEW Cmd+K search palette
 ├── accessibility.js      # ✨ NEW A11y utilities
@@ -857,10 +865,26 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
-### Move Integrity & Data Protection - 7 January 2026
+### Move Integrity & Data Protection - 7-8 January 2026
 Critical fix for bottle loss bug during cellar reorganization moves:
 
 **Root Cause**: Two moves with the same wine name could target the same slot, causing one bottle to be overwritten and lost.
+
+**Swap Detection & Protection** ✨ NEW (8 Jan):
+- Detects when moves involve swaps (Wine A→B while B→A)
+- Swap moves must be executed as a batch to prevent data loss
+- `hasSwaps` / `mustExecuteAsBatch` flags communicate swap status to frontend
+- Individual move buttons show 🔒 when swaps detected - forces batch execution
+- Swap status re-calculated after each move/dismiss (if one swap completes, remaining may unlock)
+- Applied to both cellar reorganization and fridge organization features
+- Frontend warning: "These moves involve swaps - they must be executed together to avoid losing bottles"
+
+**Modular cellarAnalysis.js Refactoring** ✨ NEW (8 Jan):
+- Split 1,699-line monolith into 8 focused modules (all <425 LOC)
+- Pattern matches `bottles/` folder refactoring
+- Modules: state.js, analysis.js, aiAdvice.js, moves.js, fridge.js, zones.js, zoneChat.js
+- Entry point (`cellarAnalysis.js`) reduced to 99-line thin facade
+- All functionality preserved, CSP-compliant event handlers maintained
 
 **Validation System (`movePlanner.js`)**:
 - `validateMovePlan()` function with 5 validation rules:
@@ -1359,7 +1383,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | Metric | Value |
 |--------|-------|
 | **Backend Modules** | 45+ |
-| **Frontend Modules** | 20+ |
+| **Frontend Modules** | 27+ |
 | **Database Tables** | 12 (across 2 DBs) |
 | **API Endpoints** | 50+ |
 | **Rating Sources** | 50+ |
@@ -1373,9 +1397,9 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v46 |
+| **Service Worker Version** | v48 |
 
 ---
 
-*Last updated: 7 January 2026*
+*Last updated: 8 January 2026*
 *Version: 4.0 (All Phases Complete - Production Ready)*
