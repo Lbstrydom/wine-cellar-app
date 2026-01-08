@@ -871,15 +871,17 @@ Critical fix for bottle loss bug during cellar reorganization moves:
 **Root Cause**: Two moves with the same wine name could target the same slot, causing one bottle to be overwritten and lost.
 
 **Swap Detection & Protection** ✨ NEW (8 Jan):
-- Detects when moves involve swaps (Wine A→B while B→A)
-- Swap moves must be executed as a batch to prevent data loss
-- `hasSwaps` / `mustExecuteAsBatch` flags communicate swap status to frontend
-- Individual move buttons show 🔒 when swaps detected - forces batch execution
-- Swap status re-calculated after each move/dismiss (if one swap completes, remaining may unlock)
+- Detects when moves involve swaps (Wine A→B while B→A) or dependencies (move targets occupied slot)
+- Frontend calculates swap pairs and dependent moves directly from move data
+- **Three action types**:
+  - **Swap button**: For swap pairs - executes both moves atomically
+  - **Move button**: For independent moves - executes single move
+  - **🔒 Lock icon**: For dependent moves (target occupied by bottle being moved elsewhere)
+- **Individual swap execution**: `executeSwap()` lets users execute swap pairs one at a time safely
+- **Smart warnings**: Different messages for swaps ("Use Swap buttons") vs dependencies ("Execute all together")
+- Bidirectional arrow (↔), SWAP badge, and swap partner info for swap moves
+- Swap status re-calculated after each action (if dependencies resolve, buttons unlock)
 - Applied to both cellar reorganization and fridge organization features
-- **Individual swap marking**: Each swap move includes `isSwap`, `swapWith`, `swapPartnerWineName`
-- **UI clarity**: Swap moves display bidirectional arrow (↔), SWAP badge, and swap partner info
-- Warning shows count: "X swap(s) detected. Plus Y regular move(s)."
 
 **Modular cellarAnalysis.js Refactoring** ✨ NEW (8 Jan):
 - Split 1,699-line monolith into 8 focused modules (all <425 LOC)
@@ -1399,7 +1401,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
 | **Claude Code Skills** | 1 (Award Extractor) |
-| **Service Worker Version** | v48 |
+| **Service Worker Version** | v50 |
 
 ---
 
