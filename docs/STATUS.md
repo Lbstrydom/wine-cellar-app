@@ -92,46 +92,61 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 ---
 
-### 2. Testing Infrastructure ✨ NEW
+### 2. Testing Infrastructure ✨ UPDATED
 
-**Test Framework**: Vitest (native ESM support, fast execution)
+**Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **249 tests passing**
+- **333 tests passing** (312 unit + 21 integration)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
 
+**Test Commands**:
+
+| Command | What it does | Server needed? |
+|---------|--------------|----------------|
+| `npm run test:unit` | Runs 312 unit tests (~0.5s) | ❌ No |
+| `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
+| `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
+| `npm run test:coverage` | Runs with coverage report | ❌ No |
+
+**Self-Contained Integration Tests** (8 Jan 2026):
+- Uses Vitest's `globalSetup` to automatically spawn/kill server
+- No manual coordination required - just run `npm run test:integration`
+- Falls back gracefully if server already running
+- Debug mode: `DEBUG_INTEGRATION=1 npm run test:integration`
+
 **Test Categories**:
 - **Service layer tests**: ratings, parsing, search providers, AI services
 - **Configuration validation**: score formats, sources, vocabulary
-- **API integration tests**: endpoint testing with mock DB
+- **API integration tests**: endpoint testing against real server
 - **Database query tests**: SQL query validation
 
 **Test Files**:
 ```
-tests/unit/
-├── services/
-│   ├── ratings.test.js           # Score normalization & aggregation
-│   ├── wineNameParser.test.js    # Producer/vintage extraction
-│   ├── searchProviders.test.js   # Multi-provider search logic
-│   ├── drinkNowAI.test.js        # AI recommendations
-│   ├── tastingExtractor.test.js  # Structured tasting profiles
-│   └── provenance.test.js        # Data provenance tracking
-├── config/
-│   ├── scoreFormats.test.js      # Score conversion accuracy
-│   ├── unifiedSources.test.js    # Source configuration validation
-│   └── tastingVocabulary.test.js # Controlled vocabulary
-└── routes/
-    ├── wines.test.js             # Wine CRUD endpoints
-    └── ratings.test.js           # Rating fetch endpoints
+tests/
+├── integration/
+│   ├── api.test.js           # API endpoint tests (21 tests)
+│   ├── setup.js              # Auto-starts/stops server
+│   └── vitest.config.js      # Integration-specific config
+└── unit/
+    ├── config/               # Config module tests
+    ├── middleware/           # Middleware tests
+    ├── services/             # Service tests (ratings, parsing, etc.)
+    └── utils/                # Utility tests
 ```
 
-**Running Tests**:
+**Recommended Workflow**:
 ```bash
-npm test                    # Run all tests
-npm run test:coverage       # Generate coverage report
-npm run test:watch          # Watch mode for development
+# Day-to-day development (fast, no server needed)
+npm run test:unit
+
+# Before commit (full validation)
+npm run test:all
+
+# After Railway deploy (prod smoke check)
+curl -s https://cellar.creathyst.com/health/ready | jq
 ```
 
 ---
@@ -887,6 +902,46 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### Self-Contained Test Infrastructure - 8 January 2026
+Refactored test suite to eliminate manual server coordination:
+
+**Problem Solved**: Integration tests required manually starting the dev server, leading to ECONNREFUSED failures and fragile VS Code task orchestration.
+
+**Solution**:
+- Vitest `globalSetup` in `tests/integration/setup.js` auto-spawns server before tests
+- Server waits for `/health/live` to respond before tests run
+- Server killed automatically after tests complete
+- Graceful fallback: reuses existing server if already running
+
+**New npm Scripts**:
+- `npm run test:unit` - Fast unit tests only (~0.5s, no server)
+- `npm run test:integration` - Integration tests with auto-managed server (~3s)
+- `npm run test:all` - Both in sequence (recommended before commits)
+
+**New Files**:
+- `tests/integration/setup.js` - Server lifecycle management
+- `tests/integration/vitest.config.js` - Integration-specific Vitest config
+
+**Updated Documentation**:
+- `AGENTS.md` and `CLAUDE.md` updated with new test commands
+- "Do" checklist now includes running `npm run test:all` before commits
+
+### Holistic Zone Reconfiguration Audit - 8 January 2026
+Comprehensive audit verified all physical constraint enforcement claims:
+
+**Verified Implementations**:
+1. **Physical Constraint Constant**: `TOTAL_CELLAR_ROWS = 19` enforced in planner (7 references throughout codebase)
+2. **Zone Utilization Tracking**: `buildZoneUtilization()` and `findUnderutilizedZones()` functions calculate row usage per zone
+3. **AI Prompt Prohibitions**: Claude prompts explicitly state "DO NOT suggest expand_zone" and enforce working within fixed row count
+4. **Heuristic Fallback**: When AI unavailable, conservative `reallocate_row` actions from underutilized to overflowing zones
+5. **Transactional Row Moves**: `reallocateRowTransactional()` safely moves rows between zones with atomic updates
+6. **UI Action Rendering**: Modal correctly displays "Reallocate Row X from Zone A → Zone B" for `reallocate_row` actions
+7. **Plan Apply Endpoint**: Handles `reallocate_row` action type alongside legacy `merge_zones` and `retire_zone`
+
+**Test Validation**: All 333 tests passing (312 unit + 21 integration)
+
+---
 
 ### Zone Capacity AI Management - 8 January 2026
 Implemented proactive AI-assisted zone management to prevent illogical overflow suggestions:

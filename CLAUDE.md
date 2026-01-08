@@ -488,18 +488,62 @@ parent.appendChild(el);
 
 ---
 
-## Testing (Future)
+## Testing
 
-### File Naming
+The project uses **Vitest** for testing with self-contained integration tests that automatically manage server lifecycle.
+
+### Test Commands
+
+| Command | What it does | Server needed? |
+|---------|--------------|----------------|
+| `npm run test:unit` | Runs 312 unit tests (~0.5s) | ❌ No |
+| `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
+| `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
+| `npm run test:coverage` | Runs with coverage report | ❌ No |
+
+### Recommended Workflow
+
+```bash
+# Day-to-day development (fast, no server needed)
+npm run test:unit
+
+# Before commit (full validation)
+npm run test:all
+
+# After Railway deploy (prod smoke check)
+curl -s https://cellar.creathyst.com/health/ready | jq
+```
+
+### File Structure
 
 ```
 tests/
-├── routes/
-│   └── wines.test.js
-├── services/
-│   └── pairing.test.js
-└── frontend/
-    └── grid.test.js
+├── integration/
+│   ├── api.test.js         # API endpoint tests
+│   ├── setup.js             # Auto-starts/stops server
+│   └── vitest.config.js     # Integration-specific config
+└── unit/
+    ├── config/              # Config module tests
+    ├── middleware/          # Middleware tests
+    ├── services/            # Service tests
+    └── utils/               # Utility tests
+```
+
+### How Integration Tests Work
+
+Integration tests use Vitest's `globalSetup` to automatically:
+1. Check if a server is already running on port 3000
+2. If not, spawn `node src/server.js` as a child process
+3. Wait for `/health/live` to respond before running tests
+4. Kill the server after tests complete
+
+This means you can run `npm run test:integration` with zero manual setup.
+
+### Debugging Integration Tests
+
+```bash
+# See server output during tests
+DEBUG_INTEGRATION=1 npm run test:integration
 ```
 
 ### Test Structure
@@ -707,7 +751,8 @@ items.sort((a, b) => {
 
 ## Do
 
-- Run the app locally before committing
+- Run `npm run test:all` before committing (runs unit + integration tests)
+- Run `npm run test:unit` for fast iteration during development
 - Update this document when conventions change
 - Ask clarifying questions if requirements are ambiguous
 - Preserve existing functionality when refactoring

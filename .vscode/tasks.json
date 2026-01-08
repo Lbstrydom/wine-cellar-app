@@ -10,7 +10,7 @@
 				"-ExecutionPolicy",
 				"Bypass",
 				"-Command",
-				"$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if (-not $pids) { Write-Output 'No LISTENing process on port 3000.' } else { Write-Output ('Killing PIDs on port 3000: ' + ($pids -join ', ')); foreach ($p in $pids) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 300; if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { Write-Output 'Port 3000 still has LISTENers.' } else { Write-Output 'Port 3000 is now closed.' } }"
+				"$pids = Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess -Unique; if (-not $pids) { Write-Output \"No LISTENing process on port 3000.\" } else { Write-Output (\"Killing PIDs on port 3000: \" + ($pids -join \", \") ); foreach ($p in $pids) { Stop-Process -Id $p -Force -ErrorAction SilentlyContinue }; Start-Sleep -Milliseconds 300; if (Get-NetTCPConnection -LocalPort 3000 -State Listen -ErrorAction SilentlyContinue) { Write-Output \"Port 3000 still has LISTENers.\" } else { Write-Output \"Port 3000 is now closed.\" } }"
 			],
 			"isBackground": false
 		},
@@ -82,7 +82,23 @@
 		{
 			"label": "Tests (full)",
 			"type": "shell",
-			"command": "npm run test:run",
+			"command": "npm run test:all",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Tests (unit only)",
+			"type": "shell",
+			"command": "npm run test:unit",
+			"isBackground": false,
+			"problemMatcher": [],
+			"group": "test"
+		},
+		{
+			"label": "Tests (integration only)",
+			"type": "shell",
+			"command": "npm run test:integration",
 			"isBackground": false,
 			"problemMatcher": [],
 			"group": "test"

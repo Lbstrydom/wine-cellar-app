@@ -1,0 +1,16 @@
+/**
+ * Vitest config specifically for integration tests.
+ * Uses globalSetup to manage server lifecycle.
+ */
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    globals: true,
+    environment: 'node',
+    include: ['tests/integration/**/*.test.js'],
+    globalSetup: './tests/integration/setup.js',
+    testTimeout: 30000, // Integration tests may be slower
+    hookTimeout: 60000  // Allow time for server startup
+  }
+});
