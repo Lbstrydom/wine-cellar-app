@@ -338,13 +338,20 @@ Return JSON with schema:
 Action types:
 1. "reallocate_row": Move a row from one zone to another
    - Required fields: fromZoneId, toZoneId, rowNumber, bottlesAffected
+   - IMPORTANT: fromZoneId and toZoneId must be exact zone ID strings like "chenin_blanc", "sauvignon_blanc", "rioja_ribera" - NOT numbers!
+   - rowNumber should be a number like 2, 3, 4 etc.
    - Use when a zone is underutilized and another needs space
 2. "merge_zones": Combine two similar zones into one
-   - Required fields: sourceZones (array), targetZoneId, bottlesAffected
+   - Required fields: sourceZones (array of zone ID strings), targetZoneId (string), bottlesAffected
    - Use when zones have high affinity (same style, country, or grape variety)
 3. "retire_zone": Close a zone and move all bottles to another
-   - Required fields: zoneId, mergeIntoZoneId, bottlesAffected
+   - Required fields: zoneId (string), mergeIntoZoneId (string), bottlesAffected
    - Use when a zone is nearly empty or redundant
+
+CRITICAL - Zone ID format:
+- Zone IDs are lowercase strings with underscores, like: "chenin_blanc", "sauvignon_blanc", "aromatic_whites", "rioja_ribera", "appassimento"
+- DO NOT use numbers as zone IDs! "2" is NOT a valid zone ID.
+- Check the zones list above for valid zone IDs.
 
 Strategic guidance:
 - Consider restructuring zones by criteria (e.g., changing from geographic organization like "Italian Reds" to style-based like "Full-bodied Reds") if it better fits the collection
@@ -353,7 +360,7 @@ Strategic guidance:
 
 Constraints:
 - NEVER propose adding rows beyond the ${TOTAL_CELLAR_ROWS}-row limit
-- Only propose zone IDs that exist in the zones list
+- Only use zone IDs that EXACTLY match the "id" field in the zones list (e.g., "chenin_blanc", NOT "Chenin Blanc" or "2")
 - Never merge zones in neverMergeZones: ${JSON.stringify(Array.from(neverMerge))}
 - Prefer fewer changes when stabilityBias is "${stability}"
 - Consider underutilizedZones as row donors
@@ -377,26 +384,56 @@ Constraints:
     const plan = validatePlanShape(json);
 
     // Filter out any unknown zones defensively.
+    const originalCount = plan.actions.length;
     plan.actions = plan.actions.filter(a => {
       if (a.type === 'reallocate_row') {
-        return !!getZoneById(a.fromZoneId) && !!getZoneById(a.toZoneId);
+        const fromValid = !!getZoneById(a.fromZoneId);
+        const toValid = !!getZoneById(a.toZoneId);
+        if (!fromValid || !toValid) {
+          console.warn(`[ZoneReconfigPlanner] Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
+        }
+        return fromValid && toValid;
       }
       if (a.type === 'expand_zone') {
         // Legacy support - but shouldn't happen with new prompt
-        return !!getZoneById(a.zoneId);
+        const valid = !!getZoneById(a.zoneId);
+        if (!valid) console.warn(`[ZoneReconfigPlanner] Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
+        return valid;
       }
       if (a.type === 'merge_zones') {
-        if (!Array.isArray(a.sourceZones)) return false;
-        if (!getZoneById(a.targetZoneId)) return false;
-        return a.sourceZones.every(z => getZoneById(z)) && a.sourceZones.every(z => !neverMerge.has(z));
+        if (!Array.isArray(a.sourceZones)) {
+          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: sourceZones is not an array`);
+          return false;
+        }
+        if (!getZoneById(a.targetZoneId)) {
+          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: invalid targetZoneId="${a.targetZoneId}"`);
+          return false;
+        }
+        const invalidSources = a.sourceZones.filter(z => !getZoneById(z));
+        if (invalidSources.length > 0) {
+          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: invalid sourceZones=${JSON.stringify(invalidSources)}`);
+          return false;
+        }
+        return a.sourceZones.every(z => !neverMerge.has(z));
       }
       if (a.type === 'retire_zone') {
-        if (!getZoneById(a.zoneId)) return false;
-        if (!getZoneById(a.mergeIntoZoneId)) return false;
+        if (!getZoneById(a.zoneId)) {
+          console.warn(`[ZoneReconfigPlanner] Filtering retire_zone: invalid zoneId="${a.zoneId}"`);
+          return false;
+        }
+        if (!getZoneById(a.mergeIntoZoneId)) {
+          console.warn(`[ZoneReconfigPlanner] Filtering retire_zone: invalid mergeIntoZoneId="${a.mergeIntoZoneId}"`);
+          return false;
+        }
         return !neverMerge.has(a.zoneId);
       }
+      console.warn(`[ZoneReconfigPlanner] Filtering unknown action type: ${a.type}`);
       return false;
     });
+
+    if (plan.actions.length < originalCount) {
+      console.warn(`[ZoneReconfigPlanner] Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
+    }
 
     const summary = computeSummary(report, plan.actions);
     return {
