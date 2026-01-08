@@ -37,25 +37,59 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     return;
   }
 
+  const getSwapPartnerIndex = (allMoves, moveIndex) => {
+    const move = allMoves[moveIndex];
+    if (!move || move.type !== 'move') return -1;
+    return allMoves.findIndex((m, idx) => {
+      if (idx === moveIndex) return false;
+      if (!m || m.type !== 'move') return false;
+      return m.from === move.to && m.to === move.from;
+    });
+  };
+
   const actionableMoves = moves.filter(m => m.type === 'move');
   const sources = new Set(actionableMoves.map(m => m.from));
-  const swapMoves = actionableMoves.filter(m => m.isSwap === true);
-  const swapPairs = Math.floor(swapMoves.length / 2); // Each swap involves 2 moves
-  const dependentMovesCount = actionableMoves.filter(m => sources.has(m.to)).length;
+
+  const swapPartnerByIndex = new Map();
+  for (let i = 0; i < moves.length; i++) {
+    const partnerIdx = getSwapPartnerIndex(moves, i);
+    if (partnerIdx !== -1) {
+      swapPartnerByIndex.set(i, partnerIdx);
+    }
+  }
+
+  const swapIndices = new Set();
+  let swapPairs = 0;
+  for (const [idx, partnerIdx] of swapPartnerByIndex.entries()) {
+    if (swapIndices.has(idx) || swapIndices.has(partnerIdx)) continue;
+    if (idx < partnerIdx && swapPartnerByIndex.get(partnerIdx) === idx) {
+      swapPairs++;
+      swapIndices.add(idx);
+      swapIndices.add(partnerIdx);
+    }
+  }
+
+  const dependentNonSwapCount = moves.filter((m, idx) => {
+    if (!m || m.type !== 'move') return false;
+    if (swapIndices.has(idx)) return false;
+    return sources.has(m.to);
+  }).length;
 
   const swapPlural = swapPairs === 1 ? '' : 's';
-  const dependentPlural = dependentMovesCount === 1 ? '' : 's';
+  const dependentPlural = dependentNonSwapCount === 1 ? '' : 's';
 
   // If moves depend on each other, show warning and lock only the dependent ones
   let swapWarning = '';
   if (hasSwaps) {
-    if (swapPairs > 0) {
+    if (dependentNonSwapCount > 0) {
       swapWarning = `<div class="swap-warning">
-        <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected (marked with <span class="swap-badge">SWAP</span>). Execute all moves together to avoid losing bottles.
+        <strong>Note:</strong> Some moves depend on other moves (${dependentNonSwapCount} move${dependentPlural} target occupied slots that are being vacated).
+        Execute all moves together to avoid losing bottles.
       </div>`;
-    } else {
+    } else if (swapPairs > 0) {
       swapWarning = `<div class="swap-warning">
-        <strong>Note:</strong> Some moves depend on other moves (${dependentMovesCount} move${dependentPlural} target occupied slots that are being vacated). Execute all moves together to avoid losing bottles.
+        <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected (marked with <span class="swap-badge">SWAP</span>).
+        Use the <strong>Swap</strong> buttons to execute each pair safely, or use <strong>Execute All</strong>.
       </div>`;
     }
   }
@@ -78,22 +112,27 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       `;
     }
 
-    const isSwap = move.isSwap === true;
+    const partnerIndex = swapPartnerByIndex.get(index) ?? -1;
+    const isSwap = partnerIndex !== -1 && swapPartnerByIndex.get(partnerIndex) === index;
     const isDependent = sources.has(move.to);
-    const isLocked = hasSwaps && (isSwap || isDependent);
-    const lockTitle = isSwap
-      ? 'Swap move — execute all moves together'
-      : 'This target slot is occupied by a bottle that is also being moved — execute all moves together to avoid losing bottles';
+    const isLocked = hasSwaps && !isSwap && isDependent;
+    const lockTitle = 'This target slot is occupied by a bottle that is also being moved — execute all moves together to avoid losing bottles';
 
-    const moveButton = isLocked
-      ? `<span class="move-locked" title="${escapeHtml(lockTitle)}">🔒</span>`
-      : `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}" title="Move this bottle now">Move</button>`;
+    let primaryAction = '';
+    if (isSwap) {
+      primaryAction = `<button class="btn btn-primary btn-small move-swap-btn" data-move-index="${index}" title="Swap these two bottles safely">Swap</button>`;
+    } else if (isLocked) {
+      primaryAction = `<span class="move-locked" title="${escapeHtml(lockTitle)}">🔒</span>`;
+    } else {
+      primaryAction = `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}" title="Move this bottle now">Move</button>`;
+    }
 
     // Show swap indicator and bidirectional arrow for swaps
     const arrow = isSwap ? '↔' : '→';
     const swapBadge = isSwap ? '<span class="swap-badge">SWAP</span>' : '';
-    const swapInfo = isSwap && move.swapPartnerWineName
-      ? `<div class="swap-info">Swapping with: ${escapeHtml(move.swapPartnerWineName)} at ${move.swapWith}</div>`
+    const swapPartner = isSwap ? moves[partnerIndex] : null;
+    const swapInfo = isSwap && swapPartner?.wineName
+      ? `<div class="swap-info">Swapping with: ${escapeHtml(swapPartner.wineName)} (${swapPartner.from})</div>`
       : '';
 
     return `
@@ -110,7 +149,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
         </div>
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>
         <div class="move-actions">
-          ${moveButton}
+          ${primaryAction}
           <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}" title="Ignore this suggestion (does not move the bottle)">Ignore</button>
         </div>
       </div>
@@ -125,6 +164,12 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       executeMove(index);
     });
   });
+  listEl.querySelectorAll('.move-swap-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.moveIndex, 10);
+      executeSwap(index);
+    });
+  });
   listEl.querySelectorAll('.move-dismiss-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
@@ -133,6 +178,60 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   });
 
   actionsEl.style.display = actionableMoves.length > 0 ? 'flex' : 'none';
+}
+
+/**
+ * Execute a swap (pair of moves) atomically.
+ * @param {number} index - Move index
+ */
+async function executeSwap(index) {
+  const currentAnalysis = getCurrentAnalysis();
+  if (!currentAnalysis?.suggestedMoves?.[index]) return;
+
+  const moveA = currentAnalysis.suggestedMoves[index];
+  if (!moveA || moveA.type !== 'move') return;
+
+  const partnerIndex = currentAnalysis.suggestedMoves.findIndex((m, idx) => {
+    if (idx === index) return false;
+    if (!m || m.type !== 'move') return false;
+    return m.from === moveA.to && m.to === moveA.from;
+  });
+
+  if (partnerIndex === -1) {
+    showToast('Swap partner not found. Try refreshing analysis.');
+    return;
+  }
+
+  const moveB = currentAnalysis.suggestedMoves[partnerIndex];
+  const movesToExecute = [moveA, moveB].map(m => ({
+    wineId: m.wineId,
+    wineName: m.wineName,
+    from: m.from,
+    to: m.to
+  }));
+
+  try {
+    const result = await executeCellarMoves(movesToExecute);
+    if (result && result.success === false) {
+      showValidationErrorModal(result.validation);
+      return;
+    }
+
+    showToast(`Swapped ${moveA.wineName} with ${moveB.wineName}`);
+
+    // Remove both moves from list (remove higher index first)
+    const indices = [index, partnerIndex].sort((a, b) => b - a);
+    indices.forEach(i => currentAnalysis.suggestedMoves.splice(i, 1));
+
+    // Re-check if remaining moves have swaps/dependencies
+    const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
+    const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
+    currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
+    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
 }
 
 /**
