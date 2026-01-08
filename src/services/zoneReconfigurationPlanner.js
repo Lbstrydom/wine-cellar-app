@@ -468,6 +468,13 @@ Constraints:
       console.warn(`[ZoneReconfigPlanner] Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
     }
 
+    // If all actions were filtered out, provide helpful feedback
+    if (plan.actions.length === 0 && originalCount > 0) {
+      console.warn(`[ZoneReconfigPlanner] All ${originalCount} AI actions were invalid and filtered out`);
+      plan.reasoning = `AI suggested ${originalCount} action(s), but all were invalid (e.g., reallocating rows that zones don't own). ` +
+        `This may indicate the AI misunderstood the current zone allocations. Please try again or use manual zone management.`;
+    }
+
     const summary = computeSummary(report, plan.actions);
     return {
       summary,

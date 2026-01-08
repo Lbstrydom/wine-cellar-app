@@ -899,6 +899,17 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
         }
       }
 
+      // Build current zone allocation map for validation at apply time
+      const zoneAllocMap = new Map();
+      const allocWithZone = await client.query('SELECT zone_id, assigned_rows FROM zone_allocations');
+      for (const r of allocWithZone.rows) {
+        try {
+          zoneAllocMap.set(r.zone_id, JSON.parse(r.assigned_rows || '[]'));
+        } catch {
+          zoneAllocMap.set(r.zone_id, []);
+        }
+      }
+
       let zonesChanged = 0;
 
       for (let i = 0; i < actions.length; i++) {
@@ -910,7 +921,20 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
           // Move a row from one zone to another (within fixed 19-row limit)
           const { fromZoneId, toZoneId, rowNumber } = action;
           if (!fromZoneId || !toZoneId || rowNumber == null) continue;
+
+          // Pre-validate: check that fromZone actually owns this row
+          const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
+          const fromRows = zoneAllocMap.get(fromZoneId) || [];
+          if (!fromRows.includes(rowId)) {
+            console.warn(`[Apply] Skipping invalid reallocate_row: ${rowId} not in ${fromZoneId}'s rows ${JSON.stringify(fromRows)}`);
+            continue; // Skip this action instead of failing the whole transaction
+          }
+
           await reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber);
+          // Update our local map so subsequent actions see the change
+          zoneAllocMap.set(fromZoneId, fromRows.filter(r => r !== rowId));
+          const toRows = zoneAllocMap.get(toZoneId) || [];
+          zoneAllocMap.set(toZoneId, [...toRows, rowId]);
           zonesChanged++;
         } else if (action.type === 'expand_zone') {
           const zoneId = action.zoneId;
