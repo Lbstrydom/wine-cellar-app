@@ -255,7 +255,7 @@ CREATE TABLE data_provenance (
 
 **Unified Configuration** ✨ NEW:
 - `src/config/unifiedSources.js` - Single source of truth (900+ lines)
-- Merged `ratingSources.js` and `sourceRegistry.js` → no duplication
+- Merged legacy configs (`ratingSources.js`, `sourceRegistry.js`, `scoreFormats.js`) into unified sources
 - Includes rate limits, cache TTL, auth requirements, content policies
 
 **Score Normalization**:
@@ -823,9 +823,7 @@ public/js/
 | Config | Purpose |
 |--------|---------|
 | `unifiedSources.js` | **✨ NEW** 50+ source definitions (merged) |
-| `sourceRegistry.js` | Derived from unified sources |
 | `cellarZones.js` | 40+ zone definitions |
-| `scoreFormats.js` | Score normalization rules |
 | `tastingVocabulary.js` | **✨ NEW** Controlled vocabulary (170+ terms) |
 | `vintageSensitivity.js` | Vintage importance by style |
 | `cellarThresholds.js` | Auto-evaluation thresholds |
@@ -1290,8 +1288,8 @@ Implemented comprehensive feedback loop for wine pairing recommendations:
 │  routes/           services/           config/               │
 │  ├─ wines.js       ├─ claude.js        ├─ unifiedSources.js │
 │  ├─ ratings.js     ├─ ratings.js       ├─ cellarZones.js    │
-│  ├─ cellar.js      ├─ awards.js        ├─ scoreFormats.js   │
-│  ├─ pairing.js     ├─ searchProviders  ├─ tastingVocabulary │
+│  ├─ cellar.js      ├─ awards.js        ├─ tastingVocabulary │
+│  ├─ pairing.js     ├─ searchProviders                     │
 │  ├─ awards.js      ├─ drinkNowAI.js    ├─ pairingRules.js   │
 │  ├─ backup.js      ├─ tastingExtractor └─ vintageSensitivity│
 │  └─ settings.js    ├─ provenance.js                         │
