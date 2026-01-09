@@ -716,6 +716,57 @@ header .search-trigger {
   flex-wrap: wrap;
 }
 
+.zone-reconfig-move-list {
+  list-style: none;
+  margin: 0.75rem 0;
+  padding: 0;
+  font-size: 0.9em;
+}
+
+.zone-reconfig-move-list li {
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border-muted, rgba(255,255,255,0.1));
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.zone-reconfig-move-list li:last-child {
+  border-bottom: none;
+}
+
+.zone-reconfig-move-list .wine-name {
+  font-weight: 500;
+}
+
+.zone-reconfig-move-list .move-arrow {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.zone-reconfig-move-list .target-zone {
+  color: #4caf50;
+  font-weight: 500;
+}
+
+.zone-reconfig-move-list .current-slot {
+  color: var(--text-muted);
+  font-size: 0.85em;
+}
+
+.zone-reconfig-move-list .more-items {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.zone-reconfig-banner-hint {
+  margin-top: 0.75rem;
+  font-size: 0.85em;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
 .modal.modal-large {
   max-width: 720px;
 }

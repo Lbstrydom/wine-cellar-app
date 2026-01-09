@@ -75,31 +75,77 @@ function renderBannerMarkup(summary) {
 
 /**
  * Render a success banner after reconfiguration was just applied.
+ * Shows bottles that need to physically move to their new zones.
  */
 function renderPostReconfigBanner(analysis) {
   const result = analysis.__reconfigResult || {};
   const zonesChanged = result.zonesChanged ?? 0;
   const skipped = result.actionsAutoSkipped ?? 0;
 
-  const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
-  const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
-  const bottlesNeedMove = capacityAlerts.reduce((sum, a) => {
-    const wines = Array.isArray(a.data?.winesNeedingPlacement) ? a.data.winesNeedingPlacement : [];
-    return sum + wines.length;
-  }, 0);
+  // Get misplaced wines - these need to physically move to their new zones
+  const misplacedWines = Array.isArray(analysis?.misplacedWines) ? analysis.misplacedWines : [];
 
-  let statusMsg = '';
-  if (bottlesNeedMove > 0) {
-    statusMsg = `<div class="zone-reconfig-banner-message">Zone boundaries updated. ${bottlesNeedMove} bottle(s) may need to be physically moved to their new zones.</div>`;
+  let contentHtml = '';
+
+  if (misplacedWines.length === 0) {
+    contentHtml = `
+      <div class="zone-reconfig-banner-message">
+        Zone boundaries updated successfully. All bottles are correctly placed.
+      </div>
+    `;
   } else {
-    statusMsg = `<div class="zone-reconfig-banner-message">Zone boundaries updated successfully. All bottles are correctly placed.</div>`;
+    // Group by suggested zone for cleaner display
+    const byTargetZone = new Map();
+    for (const wine of misplacedWines) {
+      const targetZone = wine.suggestedZone || 'Unknown';
+      if (!byTargetZone.has(targetZone)) {
+        byTargetZone.set(targetZone, []);
+      }
+      byTargetZone.get(targetZone).push(wine);
+    }
+
+    // Build the move list (show first 8, summarize rest)
+    const moveItems = [];
+    let shown = 0;
+    const maxToShow = 8;
+
+    for (const [targetZone, wines] of byTargetZone) {
+      for (const wine of wines) {
+        if (shown < maxToShow) {
+          moveItems.push(`
+            <li>
+              <span class="wine-name">${escapeHtml(wine.name)}</span>
+              <span class="move-arrow">→</span>
+              <span class="target-zone">${escapeHtml(targetZone)}</span>
+              <span class="current-slot">(currently ${escapeHtml(wine.currentSlot)})</span>
+            </li>
+          `);
+          shown++;
+        }
+      }
+    }
+
+    const remaining = misplacedWines.length - shown;
+
+    contentHtml = `
+      <div class="zone-reconfig-banner-message">
+        Zone boundaries updated. <strong>${misplacedWines.length} bottle(s)</strong> should be physically moved to their new zones:
+      </div>
+      <ul class="zone-reconfig-move-list">
+        ${moveItems.join('')}
+        ${remaining > 0 ? `<li class="more-items">... and ${remaining} more bottle(s)</li>` : ''}
+      </ul>
+      <div class="zone-reconfig-banner-hint">
+        Use the "Suggested Moves" section below to see all moves and apply them.
+      </div>
+    `;
   }
 
   return `
     <div class="zone-reconfig-banner zone-reconfig-banner--success">
-      <div class="zone-reconfig-banner-header">Zone Reconfiguration Applied</div>
+      <div class="zone-reconfig-banner-header">Zone Reconfiguration Complete</div>
       <div class="zone-reconfig-banner-body">
-        ${statusMsg}
+        ${contentHtml}
         <div class="zone-reconfig-banner-details">
           <div>• Zones changed: ${zonesChanged}</div>
           ${skipped > 0 ? `<div>• Actions skipped (stale data): ${skipped}</div>` : ''}
