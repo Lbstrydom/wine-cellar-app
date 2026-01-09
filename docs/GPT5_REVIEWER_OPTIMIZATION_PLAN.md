@@ -77,17 +77,14 @@ const result = response.output_parsed;  // Already validated by SDK
 
 ## Phase 2: Latency Optimization
 
-### 2.1 Change Default Reasoning Effort
+### 2.1 Keep Medium Reasoning Effort
 
 ```javascript
-// OLD
+// KEEP: medium reasoning is essential for complex wine layouts
 reasoning_effort: options.reasoningEffort || 'medium'
-
-// NEW
-reasoning_effort: options.reasoningEffort || 'none'  // Default to none for speed
 ```
 
-**Rationale:** The reviewer is a verifier, not a creative generator. Per OpenAI docs, `reasoning.effort: "none"` is the default and fastest.
+**Rationale:** Zone reconfiguration involves complex spatial reasoning about wine layouts. Medium reasoning catches subtle issues like row ownership violations and zone conflicts. The latency improvement comes primarily from other optimizations (SDK usage, reduced tokens, verbosity).
 
 ### 2.2 Add Verbosity Setting
 
@@ -241,14 +238,14 @@ Use `responses.parse()` with `zodTextFormat()` for type-safe structured outputs:
 import { zodTextFormat } from 'openai/helpers/zod';
 
 const response = await openai.responses.parse({
-  model: 'gpt-5-mini',
+  model: 'gpt-5.2',
   input: [...],
   text: {
     format: zodTextFormat(MySchema, 'result_name'),
     verbosity: 'low'
   },
   max_output_tokens: 1500,
-  reasoning: { effort: 'none' }
+  reasoning: { effort: 'medium' }  // Use medium for complex spatial reasoning
 });
 
 const result = response.output_parsed;  // Already validated
@@ -293,9 +290,9 @@ If issues arise after deployment:
 
 | Variable | Old Default | New Default | Notes |
 |----------|-------------|-------------|-------|
-| `OPENAI_REVIEW_MODEL` | gpt-5.2 | gpt-5-mini | Faster, cheaper |
+| `OPENAI_REVIEW_MODEL` | gpt-5.2 | gpt-5.2 | Keep full model for complex reasoning |
 | `OPENAI_REVIEW_MAX_OUTPUT_TOKENS` | 8000 | 1500 | Reduced for speed |
-| `OPENAI_REVIEW_REASONING_EFFORT` | medium | none | New variable |
+| `OPENAI_REVIEW_REASONING_EFFORT` | medium | medium | Keep medium for spatial reasoning |
 
 ---
 
@@ -303,7 +300,7 @@ If issues arise after deployment:
 
 | Metric | Before | After | Improvement |
 |--------|--------|-------|-------------|
-| Latency | ~54s | <10s | 5-10x |
+| Latency | ~54s | ~10-15s | 4-5x faster |
 | Tokens used | ~8k | ~1.5k | 5x reduction |
 | Parse failures | Occasional | Zero | SDK handles edge cases |
-| Cost per review | Higher (gpt-5.2) | Lower (gpt-5-mini) | ~50% reduction |
+| Cost per review | Same (gpt-5.2) | Same (gpt-5.2) | Quality over cost |

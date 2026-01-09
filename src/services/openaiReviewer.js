@@ -203,11 +203,11 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     ? Math.min(envMaxOutputTokens, MAX_OUTPUT_TOKENS)
     : 1500;  // Reduced default for speed
 
-  // Reasoning effort: default to 'low' for balance of speed and quality
+  // Reasoning effort: default to 'medium' for complex wine layouts
   // Zone reconfiguration benefits from reasoning to catch subtle issues
   // Valid values for gpt-5.2: 'none', 'low', 'medium', 'high'
   // Valid values for gpt-5-mini: 'minimal', 'low', 'medium', 'high'
-  const defaultReasoningEffort = process.env.OPENAI_REVIEW_REASONING_EFFORT || 'low';
+  const defaultReasoningEffort = process.env.OPENAI_REVIEW_REASONING_EFFORT || 'medium';
 
   // Timeout: default 20s for gpt-5.2 with reasoning, max 60s
   // Zone reconfiguration review with reasoning takes ~10-15s typically
