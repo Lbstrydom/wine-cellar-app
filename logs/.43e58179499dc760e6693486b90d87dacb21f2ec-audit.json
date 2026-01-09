@@ -9,6 +9,11 @@
             "date": 1767356793713,
             "name": "C:\\GIT\\wine-cellar-app\\logs\\mcp-puppeteer-2026-01-02.log",
             "hash": "f84443b203416f07bf83b47a19e877d10ddda3278200f897d18997ade5cf413d"
+        },
+        {
+            "date": 1767990085882,
+            "name": "C:\\GIT\\wine-cellar-app\\logs\\mcp-puppeteer-2026-01-09.log",
+            "hash": "2557ea2296fa5a40142063705dab10265231bc60977e105d02f054bcd6026c87"
         }
     ],
     "hashType": "sha256"

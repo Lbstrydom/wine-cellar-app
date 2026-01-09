@@ -24,7 +24,7 @@ async function handleRatingFetch(payload, context) {
 
   // Get wine details
   await updateProgress(5, 'Loading wine details');
-  const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
 
   if (!wine) {
     throw new Error(`Wine not found: ${wineId}`);
@@ -41,9 +41,10 @@ async function handleRatingFetch(payload, context) {
 
   // Check if we got any ratings
   const rawRatings = result.ratings || [];
-  const existingCount = db.prepare(
+  const existingCountRow = await db.prepare(
     'SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0'
-  ).get(wineId)?.count || 0;
+  ).get(wineId);
+  const existingCount = existingCountRow?.count || 0;
 
   // Filter ratings by vintage sensitivity
   const sensitivity = getVintageSensitivity(wine);
@@ -58,11 +59,11 @@ async function handleRatingFetch(payload, context) {
   // Save ratings to database
   if (ratings.length > 0) {
     // Clear existing auto-ratings
-    db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
+    await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
 
     // Insert new ratings
     for (const rating of ratings) {
-      saveRatings(wineId, wine.vintage, [rating]);
+      await saveRatings(wineId, wine.vintage, [rating]);
     }
 
     // Save extracted drinking windows
@@ -75,13 +76,13 @@ async function handleRatingFetch(payload, context) {
   await updateProgress(90, 'Calculating aggregates');
 
   // Get all ratings for this wine and calculate aggregates
-  const allRatings = db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
-  const prefSetting = db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
+  const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
+  const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
   const preference = parseInt(prefSetting?.value || '40');
   const aggregates = calculateWineRatings(allRatings, wine, preference);
 
   // Update wine with aggregates and tasting notes
-  db.prepare(`
+  await db.prepare(`
     UPDATE wines SET
       competition_index = ?,
       critics_index = ?,

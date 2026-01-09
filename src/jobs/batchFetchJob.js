@@ -38,7 +38,7 @@ async function handleBatchFetch(payload, context) {
     try {
       await updateProgress(progress, `Processing wine ${i + 1} of ${wineIds.length}`);
 
-      const wine = db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+      const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
       if (!wine) {
         results.skipped++;
         results.wines.push({ wineId, status: 'skipped', reason: 'not_found' });
@@ -69,9 +69,9 @@ async function handleBatchFetch(payload, context) {
 
       // Save ratings
       if (ratings.length > 0) {
-        db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
+        await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
         for (const rating of ratings) {
-          saveRatings(wineId, wine.vintage, [rating]);
+          await saveRatings(wineId, wine.vintage, [rating]);
         }
         await saveExtractedWindows(wineId, ratings);
       }
@@ -80,7 +80,7 @@ async function handleBatchFetch(payload, context) {
       const aggregates = calculateWineRatings(wineId);
 
       // Update wine
-      db.prepare(`
+      await db.prepare(`
         UPDATE wines SET
           competition_index = ?,
           critics_index = ?,
