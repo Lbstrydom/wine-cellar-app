@@ -592,7 +592,7 @@ ${JSON.stringify(advice, null, 2)}
 Review the advice and flag any issues.`;
 
   const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
-  const timeoutMs = options.timeoutMs ?? 15000;
+  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 60000);
 
   try {
     const requestParams = {
@@ -605,11 +605,11 @@ Review the advice and flag any issues.`;
         format: zodTextFormat(CellarAdviceReviewSchema, 'cellar_advice_review'),
         verbosity: 'low'
       },
-      max_output_tokens: 1200
+      max_output_tokens: 1500
     };
 
     if (modelId.startsWith('gpt-5')) {
-      requestParams.reasoning = { effort: 'low' };
+      requestParams.reasoning = { effort: 'medium' };
     }
 
     const apiCallPromise = openai.responses.parse(requestParams);
@@ -720,7 +720,7 @@ ${JSON.stringify(advice, null, 2)}
 Review and flag issues.`;
 
   const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
-  const timeoutMs = options.timeoutMs ?? 15000;
+  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 60000);
 
   try {
     const requestParams = {
@@ -733,11 +733,11 @@ Review and flag issues.`;
         format: zodTextFormat(ZoneCapacityReviewSchema, 'zone_capacity_review'),
         verbosity: 'low'
       },
-      max_output_tokens: 1200
+      max_output_tokens: 1500
     };
 
     if (modelId.startsWith('gpt-5')) {
-      requestParams.reasoning = { effort: 'low' };
+      requestParams.reasoning = { effort: 'medium' };
     }
 
     const apiCallPromise = openai.responses.parse(requestParams);
