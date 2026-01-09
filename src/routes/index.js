@@ -21,6 +21,7 @@ import wineSearchRoutes from './wineSearch.js';
 import acquisitionRoutes from './acquisition.js';
 import palateProfileRoutes from './palateProfile.js';
 import cellarHealthRoutes from './cellarHealth.js';
+import adminRoutes from './admin.js';
 
 const router = Router();
 
@@ -42,5 +43,6 @@ router.use('/wine-search', wineSearchRoutes);  // /wine-search (POST), /wine-sea
 router.use('/acquisition', acquisitionRoutes);  // /acquisition/workflow, /acquisition/save, etc.
 router.use('/palate', palateProfileRoutes);    // /palate/feedback, /palate/profile, /palate/recommendations
 router.use('/health', cellarHealthRoutes);    // /health, /health/fill-fridge, /health/at-risk, /health/shopping-list
+router.use('/admin', adminRoutes);
 
 export default router;

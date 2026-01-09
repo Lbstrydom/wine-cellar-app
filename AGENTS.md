@@ -549,6 +549,9 @@ refactor/modular-structure
 | `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
+| `OPENAI_API_KEY` | OpenAI API key for GPT reviewer | For AI reviewer |
+| `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT zone reconfig reviewer (`true`/`false`) | No (default: false) |
+| `OPENAI_REVIEW_MODEL` | Override default reviewer model | No (default: gpt-5.2) |
 
 ---
 
@@ -613,6 +616,8 @@ Set these in Railway dashboard → Variables:
 | `BRIGHTDATA_API_KEY` | BrightData API key |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |
+| `OPENAI_API_KEY` | OpenAI API key (GPT reviewer) |
+| `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT reviewer |
 
 ### Custom Domain Setup
 
@@ -640,6 +645,86 @@ When updating frontend files, bump the cache version in two places:
 2. `public/sw.js` - Update `CACHE_VERSION` constant
 
 This forces browsers to reload fresh assets instead of using cached versions
+
+---
+
+## OpenAI API Integration
+
+### Endpoint/Model Mismatch (Common Pitfall)
+
+**CRITICAL**: OpenAI model IDs are endpoint-specific. Using the wrong model ID for an endpoint causes "model not found" errors:
+
+| Model | Endpoint | Correct Model ID |
+|-------|----------|------------------|
+| GPT-5.2 | Responses API (`/v1/responses`) | `gpt-5.2` |
+| GPT-5.2 | Chat Completions (`/v1/chat/completions`) | `gpt-5.2-chat-latest` |
+| GPT-4.1 | Either | `gpt-4.1` |
+| GPT-4o | Either | `gpt-4o` |
+
+```javascript
+// ✅ CORRECT: gpt-5.2 via Responses API
+await openai.responses.create({
+  model: 'gpt-5.2',
+  input: [...],
+  reasoning: { effort: 'medium' }  // Note: reasoning.effort, not reasoning_effort
+});
+
+// ❌ WRONG: gpt-5.2 via Chat Completions - returns "model not found"
+await openai.chat.completions.create({
+  model: 'gpt-5.2',  // Wrong! Use gpt-5.2-chat-latest here
+  messages: [...]
+});
+```
+
+### GPT-5.x Reasoning Configuration
+
+GPT-5.x models support extended thinking via the `reasoning` parameter (Responses API only):
+
+```javascript
+// ✅ CORRECT structure
+await openai.responses.create({
+  model: 'gpt-5.2',
+  reasoning: { effort: 'low' | 'medium' | 'high' },
+  // ...
+});
+
+// ❌ WRONG: reasoning_effort is not a valid API parameter
+await openai.responses.create({
+  model: 'gpt-5.2',
+  reasoning_effort: 'medium',  // Ignored!
+  // ...
+});
+```
+
+### Model Fallback Pattern
+
+Implement graceful degradation for model availability:
+
+```javascript
+const FALLBACK_MODELS = ['gpt-5.2', 'gpt-4.1', 'gpt-4o'];
+
+for (const modelId of FALLBACK_MODELS) {
+  try {
+    response = await openai.responses.create({ model: modelId, ... });
+    break; // Success
+  } catch (err) {
+    // Only fall back on "model not found" errors, not validation errors
+    const isModelNotFound = err.status === 404 ||
+      err.message?.toLowerCase().includes('model');
+    if (!isModelNotFound) throw err;
+    console.warn(`Model ${modelId} unavailable, trying next...`);
+  }
+}
+```
+
+### Verify Model Access
+
+To check which models your API key can access:
+
+```bash
+curl -s https://api.openai.com/v1/models \
+  -H "Authorization: Bearer $OPENAI_API_KEY" | jq '.data[].id' | grep gpt-5
+```
 
 ---
 

@@ -9,6 +9,14 @@ import { getZoneById, CELLAR_ZONES } from '../config/cellarZones.js';
 import { getNeverMergeZones } from './zonePins.js';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { getAllZoneAllocations } from './cellarAllocation.js';
+import db from '../db/index.js';
+import {
+  reviewReconfigurationPlan,
+  applyPatches,
+  saveTelemetry,
+  hashPlan,
+  calculateStabilityScore
+} from './openaiReviewer.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -255,17 +263,16 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const misplacedBottles = report?.summary?.misplacedBottles ?? 0;
   const misplacementPct = totalBottles > 0 ? Math.round((misplacedBottles / totalBottles) * 100) : 0;
 
-  // Build utilization data for smarter planning
   const utilization = buildZoneUtilization(report);
   const allZones = Object.values(utilization);
   const overflowingZones = allZones.filter(z => z.isOverflowing);
   const underutilizedZones = findUnderutilizedZones(utilization, 40);
   const mergeCandidates = findMergeCandidates(overflowingZones, allZones);
 
-  // Fetch actual row allocations from database
   const zonesWithAllocations = await buildZoneListWithAllocations();
 
-  // Attempt Claude first if configured.
+  let planResult = null;
+
   if (process.env.ANTHROPIC_API_KEY) {
     const prompt = {
       physicalConstraints: {
@@ -301,7 +308,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
         utilizationPct: z.utilizationPct,
         rowCount: z.rowCount,
         bottleCount: z.bottleCount,
-        canDonateRows: z.rowCount - 1 // Can donate all but 1 row
+        canDonateRows: z.rowCount - 1
       })),
       mergeCandidates: mergeCandidates.slice(0, 5).map(c => ({
         sourceZone: c.sourceZone,
@@ -313,7 +320,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
         neverMergeZones: Array.from(neverMerge),
         includeRetirements,
         stabilityBias: stability,
-        flexibleColorAllocation: true // Red/white row split can change for seasonality
+        flexibleColorAllocation: true
       }
     };
 
@@ -401,13 +408,11 @@ Constraints:
     if (!json) throw new Error('Invalid AI response (not JSON)');
     const plan = validatePlanShape(json);
 
-    // Build a map of zoneId -> actualAssignedRows for validation
     const zoneRowMap = new Map();
     for (const z of zonesWithAllocations) {
       zoneRowMap.set(z.id, z.actualAssignedRows || []);
     }
 
-    // Filter out any unknown zones or invalid row assignments defensively.
     const originalCount = plan.actions.length;
     plan.actions = plan.actions.filter(a => {
       if (a.type === 'reallocate_row') {
@@ -418,7 +423,6 @@ Constraints:
           return false;
         }
 
-        // Validate that the row is actually assigned to fromZone
         const fromRows = zoneRowMap.get(a.fromZoneId) || [];
         const rowId = typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber);
         if (!fromRows.includes(rowId)) {
@@ -429,14 +433,13 @@ Constraints:
         return true;
       }
       if (a.type === 'expand_zone') {
-        // Legacy support - but shouldn't happen with new prompt
         const valid = !!getZoneById(a.zoneId);
         if (!valid) console.warn(`[ZoneReconfigPlanner] Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
         return valid;
       }
       if (a.type === 'merge_zones') {
         if (!Array.isArray(a.sourceZones)) {
-          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: sourceZones is not an array`);
+          console.warn('[ZoneReconfigPlanner] Filtering merge_zones: sourceZones is not an array');
           return false;
         }
         if (!getZoneById(a.targetZoneId)) {
@@ -469,88 +472,144 @@ Constraints:
       console.warn(`[ZoneReconfigPlanner] Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
     }
 
-    // If all actions were filtered out, provide helpful feedback
     if (plan.actions.length === 0 && originalCount > 0) {
       console.warn(`[ZoneReconfigPlanner] All ${originalCount} AI actions were invalid and filtered out`);
       plan.reasoning = `AI suggested ${originalCount} action(s), but all were invalid (e.g., reallocating rows that zones don't own). ` +
-        `This may indicate the AI misunderstood the current zone allocations. Please try again or use manual zone management.`;
+        'This may indicate the AI misunderstood the current zone allocations. Please try again or use manual zone management.';
     }
 
-    const summary = computeSummary(report, plan.actions);
-    return {
-      summary,
+    planResult = {
+      source: 'anthropic',
       reasoning: plan.reasoning,
       actions: plan.actions
     };
   }
 
-  // Heuristic fallback - work within constraints
-  const actions = [];
-  const rowsReallocated = new Set();
+  if (!planResult) {
+    const actions = [];
+    const rowsReallocated = new Set();
 
-  // Build a map of zoneId -> actualAssignedRows for heuristic fallback
-  const zoneRowMapFallback = new Map();
-  for (const z of zonesWithAllocations) {
-    zoneRowMapFallback.set(z.id, z.actualAssignedRows || []);
-  }
+    const zoneRowMapFallback = new Map();
+    for (const z of zonesWithAllocations) {
+      zoneRowMapFallback.set(z.id, z.actualAssignedRows || []);
+    }
 
-  // Strategy 1: Reallocate rows from underutilized zones to overflowing zones
-  for (const issue of capacityIssues) {
-    const toZoneId = issue.overflowingZoneId;
-    if (!getZoneById(toZoneId)) continue;
+    for (const issue of capacityIssues) {
+      const toZoneId = issue.overflowingZoneId;
+      if (!getZoneById(toZoneId)) continue;
 
-    // Find a donor zone that has spare capacity
-    for (const donor of underutilizedZones) {
-      if (donor.zoneId === toZoneId) continue;
-      if (donor.rowCount <= 1) continue; // Must keep at least 1 row
-      if (neverMerge.has(donor.zoneId)) continue;
+      for (const donor of underutilizedZones) {
+        if (donor.zoneId === toZoneId) continue;
+        if (donor.rowCount <= 1) continue;
+        if (neverMerge.has(donor.zoneId)) continue;
 
-      // Use ACTUAL assigned rows from database, not config preferredRowRange
-      const donorRows = zoneRowMapFallback.get(donor.zoneId) || [];
-      const availableRow = donorRows.find(r => !rowsReallocated.has(r));
+        const donorRows = zoneRowMapFallback.get(donor.zoneId) || [];
+        const availableRow = donorRows.find(r => !rowsReallocated.has(r));
 
-      if (availableRow) {
-        rowsReallocated.add(availableRow);
-        actions.push({
-          type: 'reallocate_row',
-          priority: 2,
-          fromZoneId: donor.zoneId,
-          toZoneId,
-          rowNumber: availableRow,
-          reason: `${donor.zoneName} is ${donor.utilizationPct}% full; reallocate row ${availableRow} to ${issue.overflowingZoneName} which needs space for ${issue.affectedCount} bottle(s)`,
-          bottlesAffected: issue.affectedCount
-        });
-        break; // One row per overflowing zone for now
+        if (availableRow) {
+          rowsReallocated.add(availableRow);
+          actions.push({
+            type: 'reallocate_row',
+            priority: 2,
+            fromZoneId: donor.zoneId,
+            toZoneId,
+            rowNumber: availableRow,
+            reason: `${donor.zoneName} is ${donor.utilizationPct}% full; reallocate row ${availableRow} to ${issue.overflowingZoneName} which needs space for ${issue.affectedCount} bottle(s)`,
+            bottlesAffected: issue.affectedCount
+          });
+          break;
+        }
       }
     }
+
+    if (actions.length === 0 && mergeCandidates.length > 0) {
+      const best = mergeCandidates[0];
+      if (!neverMerge.has(best.sourceZone) && !neverMerge.has(best.targetZone)) {
+        actions.push({
+          type: 'merge_zones',
+          priority: 3,
+          sourceZones: [best.sourceZone],
+          targetZoneId: best.targetZone,
+          reason: `Merge ${best.sourceZone} into ${best.targetZone}: ${best.reason}`,
+          bottlesAffected: best.combinedBottles
+        });
+      }
+    }
+
+    const maxActions = stability === 'high' ? 2 : stability === 'moderate' ? 4 : 6;
+    const trimmedActions = actions.slice(0, maxActions);
+
+    planResult = {
+      source: 'heuristic',
+      reasoning: trimmedActions.length > 0
+        ? `Generated constraint-aware plan: reallocate rows within the ${TOTAL_CELLAR_ROWS}-row limit.`
+        : 'No reconfiguration actions needed or possible within current constraints.',
+      actions: trimmedActions
+    };
   }
 
-  // Strategy 2: If no underutilized zones, suggest merging similar zones
-  if (actions.length === 0 && mergeCandidates.length > 0) {
-    const best = mergeCandidates[0];
-    if (!neverMerge.has(best.sourceZone) && !neverMerge.has(best.targetZone)) {
-      actions.push({
-        type: 'merge_zones',
-        priority: 3,
-        sourceZones: [best.sourceZone],
-        targetZoneId: best.targetZone,
-        reason: `Merge ${best.sourceZone} into ${best.targetZone}: ${best.reason}`,
-        bottlesAffected: best.combinedBottles
-      });
+  const initialSummary = computeSummary(report, planResult.actions);
+  const planWithSummary = { ...planResult, summary: initialSummary };
+
+  const reviewContext = {
+    zones: zonesWithAllocations,
+    physicalConstraints: {
+      totalRows: TOTAL_CELLAR_ROWS,
+      slotsPerRow: SLOTS_PER_ROW,
+      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+    },
+    currentState: {
+      totalBottles,
+      misplaced: misplacedBottles,
+      misplacementPct
+    }
+  };
+
+  const planId = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const reviewResult = await reviewReconfigurationPlan(planWithSummary, reviewContext, { planId });
+
+  let finalPlan = { ...planWithSummary };
+  let reviewTelemetry = reviewResult.telemetry || null;
+
+  if (!reviewResult.skipped) {
+    if (reviewResult.verdict === 'approve') {
+      finalPlan = { ...planWithSummary };
+    } else if (reviewResult.verdict === 'patch') {
+      finalPlan = applyPatches(planWithSummary, reviewResult.patches);
+      if (reviewTelemetry) {
+        reviewTelemetry.output_plan_hash = hashPlan(finalPlan);
+        reviewTelemetry.output_action_count = finalPlan.actions?.length || 0;
+      }
+    } else if (reviewResult.verdict === 'reject') {
+      finalPlan = { ...planWithSummary, _reviewerRejected: true, _rejectionReason: reviewResult.reasoning };
     }
   }
 
-  // Keep it stable: if high stability bias, don't propose more than 2 actions.
-  const maxActions = stability === 'high' ? 2 : stability === 'moderate' ? 4 : 6;
-  const trimmedActions = actions.slice(0, maxActions);
+  if (reviewTelemetry && !reviewTelemetry.output_plan_hash) {
+    reviewTelemetry.output_plan_hash = hashPlan(finalPlan);
+    reviewTelemetry.output_action_count = finalPlan.actions?.length || 0;
+  }
 
-  const summary = computeSummary(report, trimmedActions);
+  if (reviewTelemetry) {
+    saveTelemetry(db, reviewTelemetry, { swallowErrors: false }).catch(err => {
+      console.error('[ZoneReconfigPlanner] Failed to save telemetry:', err.message);
+    });
+  }
+
+  const finalSummary = computeSummary(report, finalPlan.actions);
+  const stabilityScore = reviewTelemetry?.stability_score ?? calculateStabilityScore(finalPlan, { totalBottles });
 
   return {
-    summary,
-    reasoning: trimmedActions.length > 0
-      ? `Generated constraint-aware plan: reallocate rows within the ${TOTAL_CELLAR_ROWS}-row limit.`
-      : 'No reconfiguration actions needed or possible within current constraints.',
-    actions: trimmedActions
+    summary: finalSummary,
+    reasoning: finalPlan.reasoning,
+    actions: finalPlan.actions,
+    _reviewMetadata: reviewTelemetry ? {
+      verdict: reviewTelemetry.verdict,
+      patchesApplied: finalPlan._patchesApplied || 0,
+      stabilityScore,
+      latencyMs: reviewTelemetry.latency_ms
+    } : {
+      stabilityScore
+    }
   };
 }
