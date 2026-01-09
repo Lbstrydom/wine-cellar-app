@@ -271,10 +271,14 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Update config with actual model used for telemetry
     config.model = usedModel;
 
-    // Parse structured output from response
-    const outputText = response.output_text || '';
+    // Parse structured output from response - check multiple possible locations
+    const outputText = response.output_text
+      || response.output?.[0]?.content?.[0]?.text
+      || (typeof response.output === 'string' ? response.output : null)
+      || '';
     if (!outputText) {
-      throw new Error('Empty output_text from model');
+      console.error('[OpenAIReviewer] Response structure:', JSON.stringify(response, null, 2).slice(0, 1000));
+      throw new Error('Empty output from model');
     }
     const result = ReviewResultSchema.parse(JSON.parse(outputText));
     const latencyMs = Date.now() - startTime;
