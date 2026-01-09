@@ -6781,3 +6781,402 @@ textarea:focus-visible {
 .slot:focus:not(:focus-visible) {
   outline: none;
 }
+
+/* ============================================================
+   Tasting & Service Card (Wine Detail Panel Spec v2)
+   ============================================================ */
+
+/* Card container */
+.tasting-service-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin: 1rem 0;
+}
+
+.tasting-service-card .card-title {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem;
+  text-transform: uppercase;
+}
+
+.tasting-service-card .card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+/* Style fingerprint */
+.style-fingerprint {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.25rem;
+}
+
+.style-fingerprint .section-label {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.25rem;
+}
+
+.style-fingerprint .fingerprint-text {
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--text);
+  margin: 0;
+  line-height: 1.4;
+}
+
+/* Tasting sections */
+.tasting-notes-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.tasting-section {
+  padding: 0.5rem 0;
+}
+
+.tasting-section .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.35rem;
+}
+
+.tasting-section .section-label {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+/* Evidence indicator */
+.evidence-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.6rem;
+}
+
+.evidence-indicator .evidence-label {
+  color: var(--text-muted);
+}
+
+.evidence-indicator .evidence-dots {
+  letter-spacing: 1px;
+}
+
+.evidence-indicator .evidence-sources {
+  color: var(--text-muted);
+}
+
+.evidence-indicator.evidence-strong .evidence-dots { color: #4caf50; }
+.evidence-indicator.evidence-medium .evidence-dots { color: #ff9800; }
+.evidence-indicator.evidence-weak .evidence-dots { color: var(--text-muted); }
+
+/* Category bullets */
+.category-bullets {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.category-bullet {
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.category-bullet .bullet-category {
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+
+.category-bullet .bullet-items {
+  color: var(--text);
+  margin-left: 0.25rem;
+}
+
+/* Structure line */
+.structure-line {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 0.5rem;
+}
+
+/* Finish section */
+.finish-text {
+  font-size: 0.8rem;
+  color: var(--text);
+  margin: 0;
+}
+
+/* Show more toggle */
+.show-more-toggle {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0.25rem 0;
+}
+
+.show-more-toggle:hover {
+  text-decoration: underline;
+}
+
+/* Contradiction warning */
+.contradiction-warning {
+  font-size: 0.7rem;
+  color: #ff9800;
+  padding: 0.35rem 0.5rem;
+  background: rgba(255, 152, 0, 0.1);
+  border-radius: 4px;
+  margin-top: 0.25rem;
+}
+
+/* Notes footer */
+.notes-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
+}
+
+.sources-toggle,
+.report-button {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+}
+
+.sources-toggle:hover,
+.report-button:hover {
+  color: var(--text);
+}
+
+/* Sources drawer */
+.sources-drawer {
+  background: var(--bg-slot);
+  border-radius: 4px;
+  padding: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.source-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.source-item:last-child {
+  border-bottom: none;
+}
+
+.source-icon {
+  font-size: 0.9rem;
+}
+
+.source-name {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.source-snippet {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+  width: 100%;
+  margin: 0.25rem 0 0 1.25rem;
+}
+
+/* Card divider */
+.card-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 0.5rem 0;
+}
+
+/* Info cards row */
+.info-cards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.info-card {
+  background: var(--bg-slot);
+  border-radius: 6px;
+  padding: 0.6rem;
+  position: relative;
+}
+
+.info-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+}
+
+.info-card .info-icon {
+  font-size: 1rem;
+}
+
+.info-card .info-label {
+  font-size: 0.6rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.info-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.info-card .no-data {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* Serving temp card */
+.serving-temp-card .temp-display {
+  display: flex;
+  gap: 0.35rem;
+  align-items: baseline;
+}
+
+.serving-temp-card .temp-celsius {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.serving-temp-card .temp-fahrenheit {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.serving-temp-card .temp-source {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+/* Drinking window card */
+.drinking-window-card .window-years {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.drinking-window-card .window-peak {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.drinking-window-card .window-source {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.drinking-window-card .edit-window-btn {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  padding: 0.2rem;
+}
+
+.drinking-window-card .edit-window-btn:hover {
+  color: var(--text);
+}
+
+/* Urgency badges */
+.urgency-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  margin-top: 0.2rem;
+}
+
+.urgency-badge.urgency-danger {
+  background: rgba(255, 68, 68, 0.2);
+  color: #ff4444;
+}
+
+.urgency-badge.urgency-warning {
+  background: rgba(255, 136, 68, 0.2);
+  color: #ff8844;
+}
+
+.urgency-badge.urgency-caution {
+  background: rgba(255, 187, 68, 0.2);
+  color: #ffbb44;
+}
+
+.urgency-badge.urgency-hold {
+  background: rgba(100, 149, 237, 0.2);
+  color: #6495ed;
+}
+
+/* Loading and error states */
+.tasting-service-loading,
+.tasting-service-error {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.tasting-notes-empty .no-data {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin: 0;
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+  .info-cards-row {
+    grid-template-columns: 1fr;
+  }
+
+  .tasting-service-card {
+    padding: 0.75rem;
+  }
+
+  .evidence-indicator {
+    flex-wrap: wrap;
+  }
+}
+

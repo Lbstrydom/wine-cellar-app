@@ -772,20 +772,29 @@
         <label>Reduce Reason</label>
         <span id="modal-reduce-reason">-</span>
       </div>
+      <!-- Tasting & Service Card (consolidated) -->
+      <div id="tasting-service-container">
+        <div class="tasting-service-loading">Loading tasting information...</div>
+      </div>
+      
+      <!-- Legacy tasting notes (hidden, used as fallback) -->
       <div class="modal-field" id="modal-tasting-notes-field" style="display: none;">
         <label>Tasting Notes</label>
         <p id="modal-tasting-notes" class="tasting-notes-text">-</p>
       </div>
-      <div class="modal-field serving-temp-field">
+      
+      <!-- Legacy serving temp (hidden, used as fallback) -->
+      <div class="modal-field serving-temp-field" id="legacy-serving-temp-field" style="display: none;">
         <label>Serving Temperature</label>
         <div id="serving-temp-display">
           <span class="no-data">Loading...</span>
         </div>
       </div>
+      
       <div id="modal-ratings-container"></div>
 
-      <!-- Drinking Window Section -->
-      <div class="drinking-window-section" id="drinking-window-section">
+      <!-- Legacy Drinking Window Section (hidden, used as fallback) -->
+      <div class="drinking-window-section" id="drinking-window-section" style="display: none;">
         <div class="section-header">
           <h4>Drinking Window</h4>
         </div>

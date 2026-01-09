@@ -8,6 +8,7 @@ import { showToast, escapeHtml } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
+import { renderTastingServiceCard } from './tastingService.js';
 
 let currentSlot = null;
 let pendingQuantityWine = null; // { wineId, wineName }
@@ -64,9 +65,24 @@ export async function showWineModal(slot) {
     reduceField.style.display = 'none';
   }
 
-  // Display tasting notes if available
+  // Render consolidated Tasting & Service card
+  const tastingServiceContainer = document.getElementById('tasting-service-container');
+  if (tastingServiceContainer && slot.wine_id) {
+    // Build wine object with all data the card needs
+    const wineData = {
+      id: slot.wine_id,
+      wine_id: slot.wine_id,
+      wine_name: slot.wine_name,
+      style: slot.style,
+      colour: slot.colour,
+      vintage: slot.vintage
+    };
+    renderTastingServiceCard(wineData, tastingServiceContainer);
+  }
+
+  // Legacy tasting notes fallback (hidden by default, shown if new card fails)
   const tastingNotesField = document.getElementById('modal-tasting-notes-field');
-  if (slot.tasting_notes) {
+  if (slot.tasting_notes && !tastingServiceContainer) {
     tastingNotesField.style.display = 'block';
     document.getElementById('modal-tasting-notes').textContent = slot.tasting_notes;
   } else {
@@ -109,12 +125,6 @@ export async function showWineModal(slot) {
 
   // Load personal rating
   await loadPersonalRating(slot.wine_id);
-
-  // Load drinking windows
-  await loadDrinkingWindows(slot.wine_id);
-
-  // Load serving temperature
-  await loadServingTemperature(slot.wine_id);
 
   document.getElementById('modal-overlay').classList.add('active');
 }
