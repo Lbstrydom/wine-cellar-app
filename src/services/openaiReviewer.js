@@ -219,21 +219,13 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
 
     for (const modelId of modelsToTry) {
       try {
-        // gpt-5.2 supports reasoning parameter via Responses API
         const requestParams = {
           model: modelId,
           input: [
             { role: 'system', content: 'You are a precise wine cellar configuration reviewer.' },
             { role: 'user', content: reviewPrompt }
           ],
-          text: {
-            format: {
-              type: 'json_schema',
-              name: schemaFormat.json_schema.name,
-              strict: schemaFormat.json_schema.strict,
-              schema: schemaFormat.json_schema.schema
-            }
-          },
+          response_format: schemaFormat,
           max_output_tokens: config.max_output_tokens
         };
 
@@ -247,7 +239,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
           requestParams.reasoning = { effort: config.reasoning_effort };
         }
 
-        response = await openai.responses.create(requestParams);
+        response = await openai.responses.parse(requestParams);
         usedModel = modelId;
         break; // Success, exit loop
       } catch (modelError) {
@@ -272,9 +264,8 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Update config with actual model used for telemetry
     config.model = usedModel;
 
-    // Parse and validate output with Zod
-    const outputText = response.output_text;
-    const result = ReviewResultSchema.parse(JSON.parse(outputText));
+    // responses.parse already validates; just grab output
+    const result = response.output_parsed;
     const latencyMs = Date.now() - startTime;
 
     circuitBreaker.recordSuccess();
