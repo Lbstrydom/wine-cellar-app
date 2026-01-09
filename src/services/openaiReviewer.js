@@ -225,7 +225,14 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
             { role: 'system', content: 'You are a precise wine cellar configuration reviewer.' },
             { role: 'user', content: reviewPrompt }
           ],
-          response_format: schemaFormat,
+          text: {
+            format: {
+              type: 'json_schema',
+              name: schemaFormat.json_schema.name,
+              strict: schemaFormat.json_schema.strict,
+              schema: schemaFormat.json_schema.schema
+            }
+          },
           max_output_tokens: config.max_output_tokens
         };
 
@@ -264,8 +271,12 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Update config with actual model used for telemetry
     config.model = usedModel;
 
-    // responses.parse already validates; just grab output
-    const result = response.output_parsed;
+    // Parse structured output from response
+    const outputText = response.output_text || '';
+    if (!outputText) {
+      throw new Error('Empty output_text from model');
+    }
+    const result = ReviewResultSchema.parse(JSON.parse(outputText));
     const latencyMs = Date.now() - startTime;
 
     circuitBreaker.recordSuccess();
