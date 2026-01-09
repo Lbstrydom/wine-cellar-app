@@ -197,12 +197,12 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
   const envMaxOutputTokens = envMaxOutputTokensRaw ? Number(envMaxOutputTokensRaw) : null;
   const defaultMaxOutputTokens = Number.isFinite(envMaxOutputTokens) && envMaxOutputTokens > 0
     ? envMaxOutputTokens
-    : 4000;
+    : 8000;  // Increased default to ensure model can complete structured output
 
   const config = {
     model: preferredModel,
     temperature: options.temperature ?? 0.1,
-    max_output_tokens: options.maxOutputTokens ?? defaultMaxOutputTokens,
+    max_output_tokens: Math.max(options.maxOutputTokens ?? defaultMaxOutputTokens, 4000),  // Minimum 4000
     reasoning_effort: options.reasoningEffort || 'medium'
   };
 
