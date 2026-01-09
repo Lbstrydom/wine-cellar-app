@@ -366,9 +366,10 @@ Action types:
    - Use when a zone is nearly empty or redundant
 
 CRITICAL - Zone ID format:
-- Zone IDs are lowercase strings with underscores, like: "chenin_blanc", "sauvignon_blanc", "aromatic_whites", "rioja_ribera", "appassimento"
-- DO NOT use numbers as zone IDs! "2" is NOT a valid zone ID.
-- Check the zones list above for valid zone IDs.
+- Zone IDs are lowercase strings with underscores, like: "chenin_blanc", "sauvignon_blanc", "aromatic_whites", "rioja_ribera", "appassimento", "curiosities"
+- DO NOT use numbers as zone IDs! "2", "4", "10" are NOT valid zone IDs.
+- The "id" field in the zones array contains the EXACT zone ID to use.
+- Example: If a zone has {"id": "curiosities", "name": "Curiosities"}, use "curiosities" NOT "4" or any other number.
 
 Strategic guidance:
 - Consider restructuring zones by criteria (e.g., changing from geographic organization like "Italian Reds" to style-based like "Full-bodied Reds") if it better fits the collection
