@@ -714,7 +714,7 @@ const ResultSchema = z.object({
 });
 
 const response = await openai.responses.parse({
-  model: 'gpt-5-mini',  // Use mini for speed, escalate to gpt-5.2 if needed
+  model: 'gpt-5.2',  // Use full model for complex tasks like zone reconfiguration
   input: [
     { role: 'system', content: 'Be concise.' },
     { role: 'user', content: prompt }
@@ -724,7 +724,7 @@ const response = await openai.responses.parse({
     verbosity: 'low'  // Reduces output tokens
   },
   max_output_tokens: 1500,  // Keep small for speed
-  reasoning: { effort: 'none' }  // Default to none, escalate if needed
+  reasoning: { effort: 'low' }  // Enable reasoning for quality
 });
 
 const result = response.output_parsed;  // Already validated by SDK
@@ -737,13 +737,13 @@ const result = response.output_parsed;  // Already validated by SDK
 
 ### Latency Optimization Checklist
 
-For reviewer/validator tasks, optimize for speed:
+For reviewer/validator tasks, balance speed and quality:
 
-1. **Model**: Use `gpt-5-mini` by default, escalate to `gpt-5.2` only for complex tasks
-2. **Reasoning**: Default to `{ effort: 'none' }` - escalate only if needed
+1. **Model**: Use `gpt-5.2` for complex tasks (zone reconfiguration), `gpt-5-mini` for simple checks
+2. **Reasoning**: Use `{ effort: 'low' }` for balance - enables model thinking without excessive latency
 3. **Verbosity**: Set `text.verbosity: 'low'` to reduce output tokens
-4. **Token cap**: Keep `max_output_tokens` low (1500-2000), treat incomplete as failure
-5. **Temperature**: Omit entirely for deterministic reviewer tasks
+4. **Token cap**: Keep `max_output_tokens` at 1500-2000, treat incomplete as failure
+5. **Timeout**: Default 20s for gpt-5.2 with reasoning, configurable via env var
 6. **Schema bounds**: Add `.max()` to arrays and strings to prevent runaway outputs
 
 ### Endpoint/Model Mismatch (Common Pitfall)
@@ -759,9 +759,9 @@ For reviewer/validator tasks, optimize for speed:
 | GPT-4o | Either | `gpt-4o` |
 
 ```javascript
-// ✅ CORRECT: gpt-5-mini via Responses API with parse()
+// ✅ CORRECT: gpt-5.2 via Responses API with parse()
 const response = await openai.responses.parse({
-  model: 'gpt-5-mini',
+  model: 'gpt-5.2',
   input: [...],
   text: { format: zodTextFormat(Schema, 'name') }
 });
@@ -779,10 +779,10 @@ await openai.chat.completions.create({
 GPT-5.x models support extended thinking via the `reasoning` parameter (Responses API only):
 
 ```javascript
-// ✅ CORRECT structure - default to 'none' for speed
+// ✅ CORRECT structure - use 'low' for balance of speed and quality
 await openai.responses.parse({
-  model: 'gpt-5-mini',
-  reasoning: { effort: 'none' },  // 'none' | 'low' | 'medium' | 'high'
+  model: 'gpt-5.2',
+  reasoning: { effort: 'low' },  // 'none' | 'low' | 'medium' | 'high'
   // ...
 });
 
@@ -812,7 +812,7 @@ if (response.status === 'incomplete') {
 Implement graceful degradation for model availability:
 
 ```javascript
-const FALLBACK_MODELS = ['gpt-5-mini', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'];
+const FALLBACK_MODELS = ['gpt-5.2', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o'];
 
 for (const modelId of FALLBACK_MODELS) {
   try {

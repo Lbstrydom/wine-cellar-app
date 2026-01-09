@@ -188,10 +188,10 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const reviewPrompt = buildReviewPrompt(plan, context);
 
-  // Model fallback chain for Responses API: gpt-5-mini → gpt-5.2 → gpt-4.1 → gpt-4o
-  // gpt-5-mini is faster and cheaper for verification tasks
-  const FALLBACK_MODELS = ['gpt-5-mini', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'];
-  const preferredModel = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5-mini';
+  // Model fallback chain for Responses API: gpt-5.2 → gpt-5-mini → gpt-4.1 → gpt-4o
+  // Zone reconfiguration is complex - use full gpt-5.2 with reasoning for quality
+  const FALLBACK_MODELS = ['gpt-5.2', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o'];
+  const preferredModel = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
   const forceModel = options.forceModel ?? isForceModelEnabled();
 
   // Token limits: review results are small, cap aggressively for speed
@@ -203,12 +203,16 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     ? Math.min(envMaxOutputTokens, MAX_OUTPUT_TOKENS)
     : 1500;  // Reduced default for speed
 
-  // Reasoning effort: default to 'none' for speed, escalate only if needed
-  const defaultReasoningEffort = process.env.OPENAI_REVIEW_REASONING_EFFORT || 'none';
+  // Reasoning effort: default to 'low' for balance of speed and quality
+  // Zone reconfiguration benefits from reasoning to catch subtle issues
+  // Valid values for gpt-5.2: 'none', 'low', 'medium', 'high'
+  // Valid values for gpt-5-mini: 'minimal', 'low', 'medium', 'high'
+  const defaultReasoningEffort = process.env.OPENAI_REVIEW_REASONING_EFFORT || 'low';
 
-  // Timeout: default 10s, max 30s to prevent blocking user
-  const DEFAULT_TIMEOUT_MS = 10000;
-  const MAX_TIMEOUT_MS = 30000;
+  // Timeout: default 20s for gpt-5.2 with reasoning, max 60s
+  // Zone reconfiguration review with reasoning takes ~10-15s typically
+  const DEFAULT_TIMEOUT_MS = 20000;
+  const MAX_TIMEOUT_MS = 60000;
   const envTimeoutMs = process.env.OPENAI_REVIEW_TIMEOUT_MS ? Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) : null;
   const timeoutMs = Math.min(
     options.timeoutMs ?? envTimeoutMs ?? DEFAULT_TIMEOUT_MS,

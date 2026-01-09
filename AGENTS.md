@@ -551,10 +551,10 @@ refactor/modular-structure
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
 | `OPENAI_API_KEY` | OpenAI API key for GPT reviewer | For AI reviewer |
 | `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT zone reconfig reviewer (`true`/`false`) | No (default: false) |
-| `OPENAI_REVIEW_MODEL` | Override default reviewer model | No (default: gpt-5-mini) |
+| `OPENAI_REVIEW_MODEL` | Override default reviewer model | No (default: gpt-5.2) |
 | `OPENAI_REVIEW_MAX_OUTPUT_TOKENS` | Max tokens for reviewer output | No (default: 1500) |
-| `OPENAI_REVIEW_REASONING_EFFORT` | Reasoning effort level (`none`/`low`/`medium`/`high`) | No (default: none) |
-| `OPENAI_REVIEW_TIMEOUT_MS` | Reviewer timeout in milliseconds | No (default: 10000) |
+| `OPENAI_REVIEW_REASONING_EFFORT` | Reasoning effort level (`low`/`medium`/`high`) | No (default: low) |
+| `OPENAI_REVIEW_TIMEOUT_MS` | Reviewer timeout in milliseconds | No (default: 20000) |
 
 ---
 
@@ -668,7 +668,7 @@ const ResultSchema = z.object({
 });
 
 const response = await openai.responses.parse({
-  model: 'gpt-5-mini',  // Use mini for speed, escalate to gpt-5.2 if needed
+  model: 'gpt-5.2',  // Use full model for complex tasks like zone reconfiguration
   input: [
     { role: 'system', content: 'Be concise.' },
     { role: 'user', content: prompt }
@@ -678,7 +678,7 @@ const response = await openai.responses.parse({
     verbosity: 'low'  // Reduces output tokens
   },
   max_output_tokens: 1500,  // Keep small for speed
-  reasoning: { effort: 'none' }  // Default to none, escalate if needed
+  reasoning: { effort: 'low' }  // Enable reasoning for quality
 });
 
 const result = response.output_parsed;  // Already validated by SDK
@@ -691,13 +691,13 @@ const result = response.output_parsed;  // Already validated by SDK
 
 ### Latency Optimization Checklist
 
-For reviewer/validator tasks, optimize for speed:
+For reviewer/validator tasks, balance speed and quality:
 
-1. **Model**: Use `gpt-5-mini` by default, escalate to `gpt-5.2` only for complex tasks
-2. **Reasoning**: Default to `{ effort: 'none' }` - escalate only if needed
+1. **Model**: Use `gpt-5.2` for complex tasks (zone reconfiguration), `gpt-5-mini` for simple checks
+2. **Reasoning**: Use `{ effort: 'low' }` for balance - enables model thinking without excessive latency
 3. **Verbosity**: Set `text.verbosity: 'low'` to reduce output tokens
-4. **Token cap**: Keep `max_output_tokens` low (1500-2000), treat incomplete as failure
-5. **Temperature**: Omit entirely for deterministic reviewer tasks
+4. **Token cap**: Keep `max_output_tokens` at 1500-2000, treat incomplete as failure
+5. **Timeout**: Default 20s for gpt-5.2 with reasoning, configurable via env var
 6. **Schema bounds**: Add `.max()` to arrays and strings to prevent runaway outputs
 
 ### Handle Incomplete Responses
@@ -746,10 +746,10 @@ await openai.chat.completions.create({
 GPT-5.x models support extended thinking via the `reasoning` parameter (Responses API only):
 
 ```javascript
-// ✅ CORRECT structure - default to 'none' for speed
+// ✅ CORRECT structure - use 'low' for balance of speed and quality
 await openai.responses.parse({
-  model: 'gpt-5-mini',
-  reasoning: { effort: 'none' },  // 'none' | 'low' | 'medium' | 'high'
+  model: 'gpt-5.2',
+  reasoning: { effort: 'low' },  // 'none' | 'low' | 'medium' | 'high'
   // ...
 });
 
@@ -766,7 +766,7 @@ await openai.responses.parse({
 Implement graceful degradation for model availability:
 
 ```javascript
-const FALLBACK_MODELS = ['gpt-5-mini', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'];
+const FALLBACK_MODELS = ['gpt-5.2', 'gpt-5-mini', 'gpt-4.1', 'gpt-4o'];
 
 for (const modelId of FALLBACK_MODELS) {
   try {
