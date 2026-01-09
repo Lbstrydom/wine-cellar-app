@@ -522,3 +522,255 @@ export function getCircuitBreakerStatus() {
     resetTimeMs: circuitBreaker.resetTimeMs
   };
 }
+
+// ============================================================================
+// Cellar Analysis Review
+// ============================================================================
+
+const CellarAdviceReviewSchema = z.object({
+  verdict: z.enum(['approve', 'patch', 'reject']).describe('approve = advice is sound, patch = minor fixes needed, reject = fundamentally flawed'),
+  issues: z.array(z.object({
+    field: z.string().max(50).describe('Field with issue (e.g., "confirmedMoves[0]", "fridgePlan")'),
+    issue: z.string().max(200).describe('What is wrong'),
+    severity: z.enum(['critical', 'warning'])
+  })).max(10).describe('Issues found in the advice'),
+  patches: z.array(z.object({
+    field: z.string().max(50),
+    action: z.enum(['remove', 'modify', 'add']),
+    reason: z.string().max(200)
+  })).max(10).describe('Suggested fixes'),
+  reasoning: z.string().max(500).describe('Brief explanation of review'),
+  confidence: z.enum(['high', 'medium', 'low'])
+});
+
+/**
+ * Check if cellar analysis review is enabled.
+ * @returns {boolean}
+ */
+export function isCellarAnalysisReviewEnabled() {
+  return process.env.OPENAI_REVIEW_CELLAR_ANALYSIS === 'true';
+}
+
+/**
+ * Review cellar organisation advice from Claude.
+ * @param {Object} advice - The advice from Claude (confirmedMoves, fridgePlan, etc.)
+ * @param {Object} context - Original analysis context
+ * @param {Object} options - Review options
+ * @returns {Promise<Object>} Review result
+ */
+export async function reviewCellarAdvice(advice, context, options = {}) {
+  if (!isCellarAnalysisReviewEnabled()) {
+    return { skipped: true, reason: 'OPENAI_REVIEW_CELLAR_ANALYSIS not enabled', originalAdvice: advice };
+  }
+
+  if (!circuitBreaker.canAttempt()) {
+    return { skipped: true, reason: 'Circuit breaker open', originalAdvice: advice };
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    return { skipped: true, reason: 'OPENAI_API_KEY not configured', originalAdvice: advice };
+  }
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const startTime = Date.now();
+
+  const prompt = `You are reviewing cellar organisation advice from a sommelier AI.
+
+## Context
+- Total bottles: ${context.totalBottles || 'unknown'}
+- Zones: ${(context.zones || []).map(z => z.id).join(', ') || 'unknown'}
+
+## Advice to Review
+${JSON.stringify(advice, null, 2)}
+
+## Validation Rules
+1. Move Validity: All moves must reference valid wine IDs and slots
+2. Fridge Plan: Should not exceed fridge capacity, must have variety
+3. Zone Health: Assessments should match actual zone data
+4. Consistency: No contradictions between confirmed/rejected moves
+
+Review the advice and flag any issues.`;
+
+  const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
+  const timeoutMs = options.timeoutMs ?? 15000;
+
+  try {
+    const requestParams = {
+      model: modelId,
+      input: [
+        { role: 'system', content: 'You are a precise wine cellar advisor reviewer. Be concise.' },
+        { role: 'user', content: prompt }
+      ],
+      text: {
+        format: zodTextFormat(CellarAdviceReviewSchema, 'cellar_advice_review'),
+        verbosity: 'low'
+      },
+      max_output_tokens: 1200
+    };
+
+    if (modelId.startsWith('gpt-5')) {
+      requestParams.reasoning = { effort: 'low' };
+    }
+
+    const apiCallPromise = openai.responses.parse(requestParams);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Cellar review timeout after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    const response = await Promise.race([apiCallPromise, timeoutPromise]);
+    const result = response.output_parsed;
+
+    if (!result) {
+      throw new Error('No parsed output from model');
+    }
+
+    circuitBreaker.recordSuccess();
+
+    return {
+      reviewed: true,
+      verdict: result.verdict,
+      issues: result.issues,
+      patches: result.patches,
+      reasoning: result.reasoning,
+      confidence: result.confidence,
+      latencyMs: Date.now() - startTime,
+      originalAdvice: advice
+    };
+  } catch (error) {
+    circuitBreaker.recordFailure();
+    console.error('[OpenAIReviewer] Cellar advice review failed:', error.message);
+    return {
+      skipped: true,
+      reason: error.message,
+      originalAdvice: advice
+    };
+  }
+}
+
+// ============================================================================
+// Zone Capacity Advice Review
+// ============================================================================
+
+const ZoneCapacityReviewSchema = z.object({
+  verdict: z.enum(['approve', 'patch', 'reject']).describe('approve = advice is valid, patch = fixable, reject = wrong'),
+  issues: z.array(z.object({
+    action_index: z.number().int().min(0).describe('Index of problematic action'),
+    rule: z.string().max(100),
+    description: z.string().max(200)
+  })).max(10),
+  patches: z.array(z.object({
+    action_index: z.number().int().min(0),
+    field: z.string().max(50),
+    old_value: z.union([z.string().max(100), z.number(), z.null()]),
+    new_value: z.union([z.string().max(100), z.number()]),
+    reason: z.string().max(200)
+  })).max(10),
+  reasoning: z.string().max(500),
+  confidence: z.enum(['high', 'medium', 'low'])
+});
+
+/**
+ * Check if zone capacity review is enabled.
+ * @returns {boolean}
+ */
+export function isZoneCapacityReviewEnabled() {
+  return process.env.OPENAI_REVIEW_ZONE_CAPACITY === 'true';
+}
+
+/**
+ * Review zone capacity advice from Claude.
+ * @param {Object} advice - The advice (recommendation, actions)
+ * @param {Object} context - Zone context
+ * @param {Object} options - Review options
+ * @returns {Promise<Object>} Review result
+ */
+export async function reviewZoneCapacityAdvice(advice, context, options = {}) {
+  if (!isZoneCapacityReviewEnabled()) {
+    return { skipped: true, reason: 'OPENAI_REVIEW_ZONE_CAPACITY not enabled', originalAdvice: advice };
+  }
+
+  if (!circuitBreaker.canAttempt()) {
+    return { skipped: true, reason: 'Circuit breaker open', originalAdvice: advice };
+  }
+
+  if (!process.env.OPENAI_API_KEY) {
+    return { skipped: true, reason: 'OPENAI_API_KEY not configured', originalAdvice: advice };
+  }
+
+  const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const startTime = Date.now();
+
+  const prompt = `You are reviewing zone capacity advice from a sommelier AI.
+
+## Context
+- Overflowing zone: ${context.overflowingZoneId}
+- Available rows: ${JSON.stringify(context.availableRows || [])}
+- Adjacent zones: ${JSON.stringify(context.adjacentZones || [])}
+- Current allocation: ${JSON.stringify(context.currentZoneAllocation || {})}
+
+## Advice to Review
+${JSON.stringify(advice, null, 2)}
+
+## Validation Rules
+1. Row Allocation: Only allocate rows that are actually available
+2. Zone Merges: Source zone must exist and be compatible with target
+3. Wine Moves: Must reference valid wine IDs
+4. Consistency: Recommendation type must match the actions provided
+
+Review and flag issues.`;
+
+  const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
+  const timeoutMs = options.timeoutMs ?? 15000;
+
+  try {
+    const requestParams = {
+      model: modelId,
+      input: [
+        { role: 'system', content: 'You are a precise wine cellar zone reviewer. Be concise.' },
+        { role: 'user', content: prompt }
+      ],
+      text: {
+        format: zodTextFormat(ZoneCapacityReviewSchema, 'zone_capacity_review'),
+        verbosity: 'low'
+      },
+      max_output_tokens: 1200
+    };
+
+    if (modelId.startsWith('gpt-5')) {
+      requestParams.reasoning = { effort: 'low' };
+    }
+
+    const apiCallPromise = openai.responses.parse(requestParams);
+    const timeoutPromise = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Zone capacity review timeout after ${timeoutMs}ms`)), timeoutMs)
+    );
+
+    const response = await Promise.race([apiCallPromise, timeoutPromise]);
+    const result = response.output_parsed;
+
+    if (!result) {
+      throw new Error('No parsed output from model');
+    }
+
+    circuitBreaker.recordSuccess();
+
+    return {
+      reviewed: true,
+      verdict: result.verdict,
+      issues: result.issues,
+      patches: result.patches,
+      reasoning: result.reasoning,
+      confidence: result.confidence,
+      latencyMs: Date.now() - startTime,
+      originalAdvice: advice
+    };
+  } catch (error) {
+    circuitBreaker.recordFailure();
+    console.error('[OpenAIReviewer] Zone capacity review failed:', error.message);
+    return {
+      skipped: true,
+      reason: error.message,
+      originalAdvice: advice
+    };
+  }
+}

@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { getZoneById } from '../config/cellarZones.js';
+import { reviewZoneCapacityAdvice, isZoneCapacityReviewEnabled } from './openaiReviewer.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
@@ -92,6 +93,31 @@ Return only valid JSON.`;
 
     if (!validated.success) {
       return { success: false, error: validated.error };
+    }
+
+    // GPT-5.2 review if enabled
+    if (isZoneCapacityReviewEnabled()) {
+      const reviewContext = {
+        overflowingZoneId,
+        availableRows,
+        adjacentZones,
+        currentZoneAllocation
+      };
+      const reviewResult = await reviewZoneCapacityAdvice(validated.advice, reviewContext);
+      if (reviewResult.reviewed) {
+        console.info(`[ZoneCapacityAdvisor] GPT-5.2 review: ${reviewResult.verdict} (${reviewResult.latencyMs}ms)`);
+        return {
+          success: true,
+          advice: validated.advice,
+          review: {
+            verdict: reviewResult.verdict,
+            issues: reviewResult.issues,
+            reasoning: reviewResult.reasoning,
+            confidence: reviewResult.confidence,
+            latencyMs: reviewResult.latencyMs
+          }
+        };
+      }
     }
 
     return { success: true, advice: validated.advice };

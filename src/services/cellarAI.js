@@ -6,6 +6,7 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import { getModelForTask } from '../config/aiModels.js';
+import { reviewCellarAdvice, isCellarAnalysisReviewEnabled } from './openaiReviewer.js';
 
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
@@ -47,6 +48,29 @@ export async function getCellarOrganisationAdvice(analysisReport) {
 
       // Validate structure
       const validated = validateAdviceSchema(parsed);
+
+      // GPT-5.2 review if enabled
+      if (isCellarAnalysisReviewEnabled()) {
+        const reviewContext = {
+          totalBottles: analysisReport.summary?.totalBottles,
+          zones: analysisReport.zoneNarratives?.map(z => ({ id: z.zoneId })) || []
+        };
+        const reviewResult = await reviewCellarAdvice(validated, reviewContext);
+        if (reviewResult.reviewed) {
+          console.info(`[CellarAI] GPT-5.2 review: ${reviewResult.verdict} (${reviewResult.latencyMs}ms)`);
+          return {
+            success: true,
+            advice: validated,
+            review: {
+              verdict: reviewResult.verdict,
+              issues: reviewResult.issues,
+              reasoning: reviewResult.reasoning,
+              confidence: reviewResult.confidence,
+              latencyMs: reviewResult.latencyMs
+            }
+          };
+        }
+      }
 
       return { success: true, advice: validated };
 

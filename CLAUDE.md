@@ -602,7 +602,12 @@ refactor/modular-structure
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
 | `OPENAI_API_KEY` | OpenAI API key for GPT reviewer | For AI reviewer |
 | `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT zone reconfig reviewer (`true`/`false`) | No (default: false) |
+| `OPENAI_REVIEW_CELLAR_ANALYSIS` | Enable GPT cellar analysis reviewer (`true`/`false`) | No (default: false) |
+| `OPENAI_REVIEW_ZONE_CAPACITY` | Enable GPT zone capacity reviewer (`true`/`false`) | No (default: false) |
 | `OPENAI_REVIEW_MODEL` | Override default reviewer model | No (default: gpt-5.2) |
+| `OPENAI_REVIEW_MAX_OUTPUT_TOKENS` | Max tokens for reviewer output | No (default: 1500) |
+| `OPENAI_REVIEW_REASONING_EFFORT` | Reasoning effort (`low`/`medium`/`high`) | No (default: medium) |
+| `OPENAI_REVIEW_TIMEOUT_MS` | Reviewer timeout in milliseconds | No (default: 20000) |
 
 ---
 
