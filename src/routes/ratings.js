@@ -496,7 +496,7 @@ router.get('/jobs/:jobId/status', async (req, res) => {
   const { jobId } = req.params;
 
   try {
-    const status = await jobQueue.getJobStatus(parseInt(jobId));
+    const status = await jobQueue.getJobStatus(jobId);
 
     if (!status) {
       return res.status(404).json({ error: 'Job not found' });
@@ -530,7 +530,7 @@ router.delete('/jobs/:jobId', async (req, res) => {
   const { jobId } = req.params;
 
   try {
-    const cancelled = await jobQueue.cancelJob(parseInt(jobId));
+    const cancelled = await jobQueue.cancelJob(jobId);
 
     if (!cancelled) {
       return res.status(404).json({ error: 'Job not found or already completed' });
