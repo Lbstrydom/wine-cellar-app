@@ -9,6 +9,14 @@
  * @type {Object.<string, Object>}
  */
 export const MODELS = {
+  'claude-opus-4-5-20251101': {
+    id: 'claude-opus-4-5-20251101',
+    name: 'Claude Opus 4.5',
+    maxTokens: 32000,
+    costTier: 'premium',
+    capabilities: ['complex', 'awards', 'analysis', 'high-accuracy', 'planning'],
+    description: 'Most capable model for complex planning and extraction'
+  },
   'claude-sonnet-4-5-20250929': {
     id: 'claude-sonnet-4-5-20250929',
     name: 'Claude Sonnet 4.5',
@@ -17,17 +25,9 @@ export const MODELS = {
     capabilities: ['fast', 'general', 'pairing', 'parsing'],
     description: 'Fast and capable for most tasks'
   },
-  'claude-opus-4-20250514': {
-    id: 'claude-opus-4-20250514',
-    name: 'Claude Opus 4',
-    maxTokens: 32000,
-    costTier: 'premium',
-    capabilities: ['complex', 'awards', 'analysis', 'high-accuracy'],
-    description: 'Most capable model for complex extraction'
-  },
-  'claude-3-5-haiku-20241022': {
-    id: 'claude-3-5-haiku-20241022',
-    name: 'Claude 3.5 Haiku',
+  'claude-haiku-4-5-20251001': {
+    id: 'claude-haiku-4-5-20251001',
+    name: 'Claude Haiku 4.5',
     maxTokens: 8192,
     costTier: 'economy',
     capabilities: ['fast', 'simple', 'classification'],
@@ -40,27 +40,25 @@ export const MODELS = {
  * @type {Object.<string, string>}
  */
 export const TASK_MODELS = {
-  // High-quality tasks use Sonnet by default
+  // Conversational tasks use Sonnet 4.5
   sommelier: 'claude-sonnet-4-5-20250929',
   parsing: 'claude-sonnet-4-5-20250929',
   ratings: 'claude-sonnet-4-5-20250929',
-  cellarAnalysis: 'claude-sonnet-4-5-20250929',
   zoneChat: 'claude-sonnet-4-5-20250929',
   drinkRecommendations: 'claude-sonnet-4-5-20250929',
   tastingExtraction: 'claude-sonnet-4-5-20250929',
 
-  // Zone capacity advice should be high-quality
-  zoneCapacityAdvice: 'claude-opus-4-20250514',
+  // Complex planning tasks use Opus 4.5 (with GPT-5.2 review)
+  cellarAnalysis: 'claude-opus-4-5-20251101',
+  zoneCapacityAdvice: 'claude-opus-4-5-20251101',
+  zoneReconfigurationPlan: 'claude-opus-4-5-20251101',
 
-  // Holistic zone reconfiguration planning should be high-quality
-  zoneReconfigurationPlan: 'claude-opus-4-20250514',
+  // Complex extraction tasks use Opus 4.5
+  awardExtraction: 'claude-opus-4-5-20251101',
 
-  // Complex extraction tasks use Opus
-  awardExtraction: 'claude-opus-4-20250514',
-
-  // Simple classification tasks use Haiku
-  wineClassification: 'claude-3-5-haiku-20241022',
-  simpleValidation: 'claude-3-5-haiku-20241022'
+  // Simple classification tasks use Haiku 4.5
+  wineClassification: 'claude-haiku-4-5-20251001',
+  simpleValidation: 'claude-haiku-4-5-20251001'
 };
 
 /**

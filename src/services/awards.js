@@ -18,8 +18,8 @@ const anthropic = new Anthropic({
 const PDF_EXTRACTION_METHOD = process.env.PDF_OCR_METHOD || 'auto'; // 'local', 'claude', or 'auto'
 
 // Token limits for Claude API responses
-// Claude Opus 4 for award extraction - higher token limits, better accuracy for complex documents
-const AWARDS_MODEL = 'claude-opus-4-20250514';
+// Claude Opus 4.5 for award extraction - higher token limits, better accuracy for complex documents
+const AWARDS_MODEL = 'claude-opus-4-5-20251101';
 const MAX_TOKENS_PDF = 16000;   // For PDF extraction (Opus supports up to 32K output)
 const MAX_TOKENS_TEXT = 16000;  // For text extraction
 const MAX_TOKENS_CHUNK = 16000; // For chunked extraction of large texts
