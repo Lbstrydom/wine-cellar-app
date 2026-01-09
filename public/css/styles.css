@@ -687,6 +687,17 @@ header .search-trigger {
   border-left: 3px solid #ff9800;
 }
 
+.zone-reconfig-banner--success {
+  background: rgba(76, 175, 80, 0.15);
+  border-left-color: #4caf50;
+}
+
+.zone-reconfig-banner-details {
+  margin-top: 0.5rem;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
 .zone-reconfig-banner-header {
   font-weight: 600;
   margin-bottom: 0.5rem;

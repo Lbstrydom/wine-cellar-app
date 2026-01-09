@@ -74,6 +74,42 @@ function renderBannerMarkup(summary) {
 }
 
 /**
+ * Render a success banner after reconfiguration was just applied.
+ */
+function renderPostReconfigBanner(analysis) {
+  const result = analysis.__reconfigResult || {};
+  const zonesChanged = result.zonesChanged ?? 0;
+  const skipped = result.actionsAutoSkipped ?? 0;
+
+  const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
+  const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
+  const bottlesNeedMove = capacityAlerts.reduce((sum, a) => {
+    const wines = Array.isArray(a.data?.winesNeedingPlacement) ? a.data.winesNeedingPlacement : [];
+    return sum + wines.length;
+  }, 0);
+
+  let statusMsg = '';
+  if (bottlesNeedMove > 0) {
+    statusMsg = `<div class="zone-reconfig-banner-message">Zone boundaries updated. ${bottlesNeedMove} bottle(s) may need to be physically moved to their new zones.</div>`;
+  } else {
+    statusMsg = `<div class="zone-reconfig-banner-message">Zone boundaries updated successfully. All bottles are correctly placed.</div>`;
+  }
+
+  return `
+    <div class="zone-reconfig-banner zone-reconfig-banner--success">
+      <div class="zone-reconfig-banner-header">Zone Reconfiguration Applied</div>
+      <div class="zone-reconfig-banner-body">
+        ${statusMsg}
+        <div class="zone-reconfig-banner-details">
+          <div>• Zones changed: ${zonesChanged}</div>
+          ${skipped > 0 ? `<div>• Actions skipped (stale data): ${skipped}</div>` : ''}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/**
  * Render grouped banner if systemic issues are detected.
  * Returns remaining alerts and whether it rendered.
  */
@@ -84,6 +120,15 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
   // User explicitly requested per-zone quick fix view.
   if (analysis?.__showQuickFixZones) {
     return { remainingAlerts: analysis?.alerts || [], rendered: false };
+  }
+
+  // Just applied a reconfiguration - show success banner instead of issues
+  if (analysis?.__justReconfigured) {
+    el.innerHTML = renderPostReconfigBanner(analysis);
+    // Filter out capacity alerts from remaining since we're handling them
+    const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
+    const remainingAlerts = alerts.filter(a => a.type !== 'zone_capacity_issue');
+    return { remainingAlerts, rendered: true };
   }
 
   if (!shouldShowHolisticBanner(analysis)) {

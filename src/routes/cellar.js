@@ -793,7 +793,7 @@ async function mergeZonesTransactional(client, sourceZoneId, targetZoneId) {
  * Works within the fixed physical constraints of the cellar.
  */
 async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber) {
-  if (fromZoneId === toZoneId) return;
+  if (fromZoneId === toZoneId) return { success: true, skipped: true, reason: 'same zone' };
 
   const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
 
@@ -810,9 +810,10 @@ async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumbe
   const fromRows = fromAlloc.rows[0]?.assigned_rows ? JSON.parse(fromAlloc.rows[0].assigned_rows) : [];
   const toRows = toAlloc.rows[0]?.assigned_rows ? JSON.parse(toAlloc.rows[0].assigned_rows) : [];
 
-  // Verify the row belongs to fromZone
+  // Verify the row belongs to fromZone - return skip status instead of throwing
   if (!fromRows.includes(rowId)) {
-    throw new Error(`Row ${rowId} is not assigned to zone ${fromZoneId}`);
+    console.warn(`[reallocateRowTransactional] Skipping: ${rowId} not in ${fromZoneId}'s rows ${JSON.stringify(fromRows)}`);
+    return { success: false, skipped: true, reason: `Row ${rowId} is not assigned to zone ${fromZoneId}` };
   }
 
   // Remove from source zone
@@ -847,7 +848,7 @@ async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumbe
     );
   }
 
-  return { fromRows: updatedFromRows, toRows: updatedToRows };
+  return { success: true, skipped: false, fromRows: updatedFromRows, toRows: updatedToRows };
 }
 
 /**
@@ -911,6 +912,7 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
       }
 
       let zonesChanged = 0;
+      let actionsAutoSkipped = 0;
 
       for (let i = 0; i < actions.length; i++) {
         if (skipSet.has(i)) continue;
@@ -922,16 +924,18 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
           const { fromZoneId, toZoneId, rowNumber } = action;
           if (!fromZoneId || !toZoneId || rowNumber == null) continue;
 
-          // Pre-validate: check that fromZone actually owns this row
-          const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
-          const fromRows = zoneAllocMap.get(fromZoneId) || [];
-          if (!fromRows.includes(rowId)) {
-            console.warn(`[Apply] Skipping invalid reallocate_row: ${rowId} not in ${fromZoneId}'s rows ${JSON.stringify(fromRows)}`);
-            continue; // Skip this action instead of failing the whole transaction
+          // reallocateRowTransactional now handles validation internally and returns status
+          const result = await reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber);
+
+          if (result.skipped) {
+            console.warn(`[Apply] Skipped reallocate_row action: ${result.reason}`);
+            actionsAutoSkipped++;
+            continue;
           }
 
-          await reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber);
           // Update our local map so subsequent actions see the change
+          const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
+          const fromRows = zoneAllocMap.get(fromZoneId) || [];
           zoneAllocMap.set(fromZoneId, fromRows.filter(r => r !== rowId));
           const toRows = zoneAllocMap.get(toZoneId) || [];
           zoneAllocMap.set(toZoneId, [...toRows, rowId]);
@@ -996,7 +1000,8 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
 
       return {
         reconfigurationId: insert.rows[0].id,
-        zonesChanged
+        zonesChanged,
+        actionsAutoSkipped
       };
     });
 
@@ -1008,6 +1013,7 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
       reconfigurationId: result.reconfigurationId,
       applied: {
         zonesChanged: result.zonesChanged,
+        actionsAutoSkipped: result.actionsAutoSkipped,
         bottlesMoved: 0
       },
       canUndo: true

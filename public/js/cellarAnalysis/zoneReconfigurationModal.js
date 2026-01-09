@@ -153,11 +153,21 @@ async function handleApply(onRenderAnalysis) {
     if (result?.success !== true) throw new Error(result?.error || 'Failed to apply plan');
 
     closeOverlay();
-    showToast('Applied zone reconfiguration');
+
+    const skippedMsg = result.applied?.actionsAutoSkipped > 0
+      ? ` (${result.applied.actionsAutoSkipped} action(s) skipped due to stale data)`
+      : '';
+    showToast(`Applied zone reconfiguration${skippedMsg}`);
 
     if (typeof onRenderAnalysis === 'function') {
       const refreshed = await analyseCellar(true);
-      onRenderAnalysis(refreshed.report);
+      // Mark that we just reconfigured - the banner should show a different message
+      const reportWithFlag = {
+        ...refreshed.report,
+        __justReconfigured: true,
+        __reconfigResult: result.applied
+      };
+      onRenderAnalysis(reportWithFlag);
     }
   } finally {
     if (applyBtn) applyBtn.disabled = false;
