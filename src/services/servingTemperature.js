@@ -9,10 +9,10 @@ import db from '../db/index.js';
 /**
  * Get all serving temperature entries for a category.
  * @param {string} category - Wine category (sparkling, white, red, rose, orange, dessert, fortified)
- * @returns {Array} Temperature entries
+ * @returns {Promise<Array>} Temperature entries
  */
-export function getTemperaturesByCategory(category) {
-  return db.prepare(`
+export async function getTemperaturesByCategory(category) {
+  return await db.prepare(`
     SELECT * FROM wine_serving_temperatures
     WHERE category = ?
     ORDER BY wine_type
@@ -23,9 +23,9 @@ export function getTemperaturesByCategory(category) {
  * Find serving temperature for a wine based on its attributes.
  * Uses fuzzy matching on style, grape varieties, and wine name.
  * @param {Object} wine - Wine object with style, colour, grapes, wine_name, etc.
- * @returns {Object|null} Best matching temperature entry or null
+ * @returns {Promise<Object|null>} Best matching temperature entry or null
  */
-export function findServingTemperature(wine) {
+export async function findServingTemperature(wine) {
   if (!wine) return null;
 
   const style = (wine.style || '').toLowerCase();
@@ -83,7 +83,7 @@ export function findServingTemperature(wine) {
   }
 
   // Get all temperature entries
-  const allTemps = db.prepare(`
+  const allTemps = await db.prepare(`
     SELECT * FROM wine_serving_temperatures
   `).all();
 

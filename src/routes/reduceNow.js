@@ -216,7 +216,7 @@ router.post('/evaluate', async (_req, res) => {
       // Priority 4-6: No critic window data - try default matrix estimates
       if (includeNoWindow && wine.drink_by_year === null && wine.vintage !== null) {
         // Try to get a default window estimate
-        let defaultWindow = getDefaultDrinkingWindow(wine, wine.vintage);
+        let defaultWindow = await getDefaultDrinkingWindow(wine, wine.vintage);
 
         if (defaultWindow && defaultWindow.source !== 'colour_fallback') {
           // Apply storage adjustment to default window if enabled

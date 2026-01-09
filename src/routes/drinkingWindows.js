@@ -33,7 +33,7 @@ router.get('/wines/:wine_id/drinking-windows', async (req, res) => {
     if (windows.length === 0) {
       const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
       if (wine && wine.vintage) {
-        const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
+        const defaultWindow = await getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
         if (defaultWindow) {
           windows.push({
             wine_id: parseInt(wine_id),
@@ -172,7 +172,7 @@ router.get('/wines/:wine_id/drinking-window/best', async (req, res) => {
       // No explicit windows - try to get default based on wine characteristics
       const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
       if (wine && wine.vintage) {
-        const defaultWindow = getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
+        const defaultWindow = await getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
         if (defaultWindow) {
           return res.json({
             wine_id: parseInt(wine_id),

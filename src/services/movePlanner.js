@@ -23,9 +23,9 @@ const MOVE_EFFORT = {
  * @param {Array} misplacedWines - Wines not in their target zone
  * @param {Object} zoneSlots - Map of zone ID to available slots
  * @param {Object} options - Planning options
- * @returns {Object} Optimised move plan
+ * @returns {Promise<Object>} Optimised move plan
  */
-export function planMoves(misplacedWines, zoneSlots, options = {}) {
+export async function planMoves(misplacedWines, zoneSlots, options = {}) {
   const {
     maxMoves = 50,
     preferBatching = true,
@@ -82,7 +82,7 @@ export function planMoves(misplacedWines, zoneSlots, options = {}) {
 
     if (targetSlots.length > 0) {
       // Simple single move - slot available
-      const targetSlot = findBestSlot(targetSlots, wine, preferBatching);
+      const targetSlot = await findBestSlot(targetSlots, wine, preferBatching);
       plan.moves.push({
         type: 'single',
         wineId: wine.wineId,
@@ -101,7 +101,7 @@ export function planMoves(misplacedWines, zoneSlots, options = {}) {
       if (slotIndex > -1) targetSlots.splice(slotIndex, 1);
 
       // Add vacated slot to its zone
-      const vacatedZone = getZoneForSlot(wine.currentSlot);
+      const vacatedZone = await getZoneForSlot(wine.currentSlot);
       if (vacatedZone && availableSlots[vacatedZone]) {
         availableSlots[vacatedZone].push(wine.currentSlot);
       }
@@ -110,7 +110,7 @@ export function planMoves(misplacedWines, zoneSlots, options = {}) {
       plan.stats.totalEffort += MOVE_EFFORT.SINGLE;
     } else if (!minimiseSwaps) {
       // Try to find a swap opportunity
-      const swapResult = findSwapOpportunity(wine, sortedWines, availableSlots);
+      const swapResult = await findSwapOpportunity(wine, sortedWines, availableSlots);
       if (swapResult) {
         plan.swaps.push(swapResult);
         plan.stats.swapMoves++;
@@ -139,15 +139,15 @@ export function planMoves(misplacedWines, zoneSlots, options = {}) {
  * @param {string[]} slots - Available slots
  * @param {Object} wine - Wine being moved
  * @param {boolean} preferBatching - Prefer slots near same wines
- * @returns {string} Best slot
+ * @returns {Promise<string>} Best slot
  */
-function findBestSlot(slots, wine, preferBatching) {
+async function findBestSlot(slots, wine, preferBatching) {
   if (!preferBatching || slots.length === 1) {
     return slots[0];
   }
 
   // Check for adjacent slots with same wine already there
-  const wineSlots = db.prepare(
+  const wineSlots = await db.prepare(
     'SELECT location_code FROM slots WHERE wine_id = ?'
   ).all(wine.wineId);
 
@@ -198,17 +198,17 @@ function calculateProximityScore(slot, existingLocations) {
  * @param {Object} wine - Wine needing swap
  * @param {Array} allWines - All misplaced wines
  * @param {Object} availableSlots - Available slots by zone
- * @returns {Object|null} Swap move or null
+ * @returns {Promise<Object|null>} Swap move or null
  */
-function findSwapOpportunity(wine, allWines, _availableSlots) {
+async function findSwapOpportunity(wine, allWines, _availableSlots) {
   // Look for a wine in the target zone that wants to be where this wine is
-  const wineZone = getZoneForSlot(wine.currentSlot);
+  const wineZone = await getZoneForSlot(wine.currentSlot);
 
   for (const other of allWines) {
     if (other.wineId === wine.wineId) continue;
 
     // Check if other wine is in our target zone and wants to be in our current zone
-    const otherZone = getZoneForSlot(other.currentSlot);
+    const otherZone = await getZoneForSlot(other.currentSlot);
     if (otherZone === wine.targetZone && other.targetZone === wineZone) {
       return {
         type: 'swap',
@@ -261,14 +261,14 @@ function extractRowNumber(slot) {
 /**
  * Get zone for a slot based on zone layout.
  * @param {string} slot - Slot code
- * @returns {string|null} Zone ID
+ * @returns {Promise<string|null>} Zone ID
  */
-function getZoneForSlot(slot) {
+async function getZoneForSlot(slot) {
   const row = extractRowNumber(slot);
   if (row === 0) return 'fridge';
 
   // Look up in zone_layout
-  const layout = db.prepare(
+  const layout = await db.prepare(
     'SELECT zone_id FROM zone_layout WHERE assigned_rows LIKE ?'
   ).get(`%R${row}%`);
 

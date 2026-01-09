@@ -14,7 +14,7 @@ import { parseWineName } from './wineNameParser.js';
  * @param {number} vintage - Vintage year
  * @returns {object|null} - { drink_from, drink_by, peak, confidence, source, notes }
  */
-export function getDefaultDrinkingWindow(wine, vintage) {
+export async function getDefaultDrinkingWindow(wine, vintage) {
   if (!vintage) return null;
 
   // Start with wine's structured fields
@@ -44,7 +44,7 @@ export function getDefaultDrinkingWindow(wine, vintage) {
 
   try {
     // Query with fallback matching - most specific first (lowest priority number)
-    const defaultWindow = db.prepare(`
+    const defaultWindow = await db.prepare(`
       SELECT
         drink_from_offset,
         drink_by_offset,

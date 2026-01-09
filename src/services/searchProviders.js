@@ -1973,11 +1973,11 @@ export async function searchWineRatings(wineName, vintage, country, style = null
 /**
  * Get decrypted credentials for a source.
  * @param {string} sourceId - Source ID (vivino, decanter, cellartracker)
- * @returns {Object|null} { username, password } or null if not configured
+ * @returns {Promise<Object|null>} { username, password } or null if not configured
  */
-export function getCredentials(sourceId) {
+export async function getCredentials(sourceId) {
   try {
-    const cred = db.prepare(
+    const cred = await db.prepare(
       'SELECT username_encrypted, password_encrypted, auth_status FROM source_credentials WHERE source_id = ?'
     ).get(sourceId);
 
@@ -2004,9 +2004,9 @@ export function getCredentials(sourceId) {
  * @param {string} sourceId - Source ID
  * @param {string} status - 'valid', 'failed', or 'none'
  */
-export function updateCredentialStatus(sourceId, status) {
+export async function updateCredentialStatus(sourceId, status) {
   try {
-    db.prepare(
+    await db.prepare(
       'UPDATE source_credentials SET auth_status = ?, last_used_at = CURRENT_TIMESTAMP WHERE source_id = ?'
     ).run(status, sourceId);
   } catch (err) {

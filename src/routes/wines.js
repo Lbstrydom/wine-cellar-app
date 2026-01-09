@@ -591,7 +591,7 @@ router.get('/:id/serving-temperature', async (req, res) => {
     }
 
     const { findServingTemperature, formatTemperature } = await import('../services/servingTemperature.js');
-    const temp = findServingTemperature(wine);
+    const temp = await findServingTemperature(wine);
 
     if (!temp) {
       return res.json({

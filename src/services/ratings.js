@@ -132,20 +132,10 @@ export function normalizeScore(source, scoreType, rawScore) {
  * @param {number} wineId - Wine ID
  * @param {string|number} vintage - Wine vintage
  * @param {Array} ratings - Array of rating objects
- * @returns {number} Number of ratings saved
+ * @returns {Promise<number>} Number of ratings saved
  */
-export function saveRatings(wineId, vintage, ratings) {
+export async function saveRatings(wineId, vintage, ratings) {
   if (!ratings || ratings.length === 0) return 0;
-
-  const insertStmt = db.prepare(`
-    INSERT INTO wine_ratings (
-      wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
-      normalized_min, normalized_max, normalized_mid,
-      award_name, competition_year, rating_count,
-      source_url, evidence_excerpt, matched_wine_label,
-      vintage_match, match_confidence, fetched_at, is_user_override
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
-  `);
 
   let insertedCount = 0;
 
@@ -173,7 +163,15 @@ export function saveRatings(wineId, vintage, ratings) {
 
       const numericScore = parseFloat(String(rating.raw_score).replace(/\/\d+$/, '')) || null;
 
-      insertStmt.run(
+      await db.prepare(`
+        INSERT INTO wine_ratings (
+          wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
+          normalized_min, normalized_max, normalized_mid,
+          award_name, competition_year, rating_count,
+          source_url, evidence_excerpt, matched_wine_label,
+          vintage_match, match_confidence, fetched_at, is_user_override
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+      `).run(
         wineId,
         vintage,
         rating.source,
