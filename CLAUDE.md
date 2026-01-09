@@ -699,24 +699,73 @@ This forces browsers to reload fresh assets instead of using cached versions
 
 ## OpenAI API Integration
 
+### Structured Outputs with responses.parse()
+
+**PREFERRED**: Use `responses.parse()` with `zodTextFormat()` for type-safe structured outputs:
+
+```javascript
+import { zodTextFormat } from 'openai/helpers/zod';
+import { z } from 'zod';
+
+const ResultSchema = z.object({
+  verdict: z.enum(['approve', 'reject']),
+  reasoning: z.string().max(500),
+  items: z.array(z.object({ id: z.number() })).max(20)
+});
+
+const response = await openai.responses.parse({
+  model: 'gpt-5-mini',  // Use mini for speed, escalate to gpt-5.2 if needed
+  input: [
+    { role: 'system', content: 'Be concise.' },
+    { role: 'user', content: prompt }
+  ],
+  text: {
+    format: zodTextFormat(ResultSchema, 'result_name'),
+    verbosity: 'low'  // Reduces output tokens
+  },
+  max_output_tokens: 1500,  // Keep small for speed
+  reasoning: { effort: 'none' }  // Default to none, escalate if needed
+});
+
+const result = response.output_parsed;  // Already validated by SDK
+```
+
+**Benefits over manual parsing:**
+- Eliminates JSON parse failures (whitespace, partial JSON, model warnings)
+- `output_parsed` is the SDK's reliable aggregation point
+- Schema validation happens automatically
+
+### Latency Optimization Checklist
+
+For reviewer/validator tasks, optimize for speed:
+
+1. **Model**: Use `gpt-5-mini` by default, escalate to `gpt-5.2` only for complex tasks
+2. **Reasoning**: Default to `{ effort: 'none' }` - escalate only if needed
+3. **Verbosity**: Set `text.verbosity: 'low'` to reduce output tokens
+4. **Token cap**: Keep `max_output_tokens` low (1500-2000), treat incomplete as failure
+5. **Temperature**: Omit entirely for deterministic reviewer tasks
+6. **Schema bounds**: Add `.max()` to arrays and strings to prevent runaway outputs
+
 ### Endpoint/Model Mismatch (Common Pitfall)
 
 **CRITICAL**: OpenAI model IDs are endpoint-specific. Using the wrong model ID for an endpoint causes "model not found" errors:
 
 | Model | Endpoint | Correct Model ID |
 |-------|----------|------------------|
+| GPT-5-mini | Responses API (`/v1/responses`) | `gpt-5-mini` |
 | GPT-5.2 | Responses API (`/v1/responses`) | `gpt-5.2` |
 | GPT-5.2 | Chat Completions (`/v1/chat/completions`) | `gpt-5.2-chat-latest` |
 | GPT-4.1 | Either | `gpt-4.1` |
 | GPT-4o | Either | `gpt-4o` |
 
 ```javascript
-// ✅ CORRECT: gpt-5.2 via Responses API
-await openai.responses.create({
-  model: 'gpt-5.2',
+// ✅ CORRECT: gpt-5-mini via Responses API with parse()
+const response = await openai.responses.parse({
+  model: 'gpt-5-mini',
   input: [...],
-  reasoning: { effort: 'medium' }  // Note: reasoning.effort, not reasoning_effort
+  text: { format: zodTextFormat(Schema, 'name') }
 });
+const result = response.output_parsed;
 
 // ❌ WRONG: gpt-5.2 via Chat Completions - returns "model not found"
 await openai.chat.completions.create({
@@ -730,19 +779,32 @@ await openai.chat.completions.create({
 GPT-5.x models support extended thinking via the `reasoning` parameter (Responses API only):
 
 ```javascript
-// ✅ CORRECT structure
-await openai.responses.create({
-  model: 'gpt-5.2',
-  reasoning: { effort: 'low' | 'medium' | 'high' },
+// ✅ CORRECT structure - default to 'none' for speed
+await openai.responses.parse({
+  model: 'gpt-5-mini',
+  reasoning: { effort: 'none' },  // 'none' | 'low' | 'medium' | 'high'
   // ...
 });
 
 // ❌ WRONG: reasoning_effort is not a valid API parameter
-await openai.responses.create({
+await openai.responses.parse({
   model: 'gpt-5.2',
   reasoning_effort: 'medium',  // Ignored!
   // ...
 });
+```
+
+### Handle Incomplete Responses
+
+Treat incomplete responses as failures rather than retrying with more tokens:
+
+```javascript
+const response = await openai.responses.parse({ ... });
+
+if (response.status === 'incomplete') {
+  const reason = response.incomplete_details?.reason || 'unknown';
+  throw new Error(`Response incomplete: ${reason}`);
+}
 ```
 
 ### Model Fallback Pattern
@@ -750,11 +812,11 @@ await openai.responses.create({
 Implement graceful degradation for model availability:
 
 ```javascript
-const FALLBACK_MODELS = ['gpt-5.2', 'gpt-4.1', 'gpt-4o'];
+const FALLBACK_MODELS = ['gpt-5-mini', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'];
 
 for (const modelId of FALLBACK_MODELS) {
   try {
-    response = await openai.responses.create({ model: modelId, ... });
+    response = await openai.responses.parse({ model: modelId, ... });
     break; // Success
   } catch (err) {
     // Only fall back on "model not found" errors, not validation errors

@@ -6,7 +6,7 @@
 
 import OpenAI from 'openai';
 import { z } from 'zod';
-import { zodResponseFormat } from 'openai/helpers/zod';
+import { zodTextFormat } from 'openai/helpers/zod';
 import crypto from 'crypto';
 
 // Check feature flag at runtime (not module load) to handle env var changes
@@ -53,25 +53,25 @@ const circuitBreaker = {
 };
 
 const ViolationSchema = z.object({
-  action_id: z.number().describe('Index of the action in the plan (0-based)'),
-  rule: z.string().describe('Which rule was violated'),
+  action_id: z.number().int().min(0).describe('Index of the action in the plan (0-based)'),
+  rule: z.string().max(100).describe('Which rule was violated'),
   severity: z.enum(['critical', 'warning']).describe('Critical = must fix, Warning = recommended fix'),
-  description: z.string().describe('Human-readable explanation')
+  description: z.string().max(200).describe('Human-readable explanation')
 });
 
 const PatchSchema = z.object({
-  action_id: z.number().describe('Index of the action to patch (0-based)'),
-  field: z.string().describe('Field name to modify (e.g., "rowNumber", "toZoneId")'),
-  old_value: z.union([z.string(), z.number(), z.null()]).describe('Original value'),
-  new_value: z.union([z.string(), z.number()]).describe('Corrected value'),
-  reason: z.string().describe('Why this patch is needed')
+  action_id: z.number().int().min(0).describe('Index of the action to patch (0-based)'),
+  field: z.string().max(50).describe('Field name to modify (e.g., "rowNumber", "toZoneId")'),
+  old_value: z.union([z.string().max(100), z.number(), z.null()]).describe('Original value'),
+  new_value: z.union([z.string().max(100), z.number()]).describe('Corrected value'),
+  reason: z.string().max(200).describe('Why this patch is needed')
 });
 
 const ReviewResultSchema = z.object({
   verdict: z.enum(['approve', 'patch', 'reject']).describe('approve = plan is good, patch = fixable issues found, reject = fundamentally flawed'),
-  violations: z.array(ViolationSchema).describe('List of rule violations found'),
-  patches: z.array(PatchSchema).describe('Targeted fixes for violations (only if verdict=patch)'),
-  reasoning: z.string().describe('Brief explanation of the review decision'),
+  violations: z.array(ViolationSchema).max(20).describe('List of rule violations found (max 20)'),
+  patches: z.array(PatchSchema).max(20).describe('Targeted fixes for violations (max 20)'),
+  reasoning: z.string().max(500).describe('Brief explanation of the review decision'),
   stability_score: z.number().min(0).max(1).describe('Estimate of plan stability: 1.0 = minimal disruption, 0.0 = maximum churn'),
   confidence: z.enum(['high', 'medium', 'low']).describe('Reviewer confidence in this assessment')
 });
@@ -188,28 +188,41 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
   const reviewPrompt = buildReviewPrompt(plan, context);
 
-  // Model fallback chain for Responses API: gpt-5.2 → gpt-4.1 → gpt-4o
-  const FALLBACK_MODELS = ['gpt-5.2', 'gpt-4.1', 'gpt-4o'];
-  const preferredModel = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
+  // Model fallback chain for Responses API: gpt-5-mini → gpt-5.2 → gpt-4.1 → gpt-4o
+  // gpt-5-mini is faster and cheaper for verification tasks
+  const FALLBACK_MODELS = ['gpt-5-mini', 'gpt-5.2', 'gpt-4.1', 'gpt-4o'];
+  const preferredModel = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5-mini';
   const forceModel = options.forceModel ?? isForceModelEnabled();
 
+  // Token limits: review results are small, cap aggressively for speed
   const envMaxOutputTokensRaw = process.env.OPENAI_REVIEW_MAX_OUTPUT_TOKENS;
   const envMaxOutputTokens = envMaxOutputTokensRaw ? Number(envMaxOutputTokensRaw) : null;
+  const MIN_OUTPUT_TOKENS = 800;
+  const MAX_OUTPUT_TOKENS = 2000;  // Hard cap - if model can't complete in 2k, something is wrong
   const defaultMaxOutputTokens = Number.isFinite(envMaxOutputTokens) && envMaxOutputTokens > 0
-    ? envMaxOutputTokens
-    : 8000;  // Increased default to ensure model can complete structured output
+    ? Math.min(envMaxOutputTokens, MAX_OUTPUT_TOKENS)
+    : 1500;  // Reduced default for speed
+
+  // Reasoning effort: default to 'none' for speed, escalate only if needed
+  const defaultReasoningEffort = process.env.OPENAI_REVIEW_REASONING_EFFORT || 'none';
+
+  // Timeout: default 10s, max 30s to prevent blocking user
+  const DEFAULT_TIMEOUT_MS = 10000;
+  const MAX_TIMEOUT_MS = 30000;
+  const envTimeoutMs = process.env.OPENAI_REVIEW_TIMEOUT_MS ? Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) : null;
+  const timeoutMs = Math.min(
+    options.timeoutMs ?? envTimeoutMs ?? DEFAULT_TIMEOUT_MS,
+    MAX_TIMEOUT_MS
+  );
 
   const config = {
     model: preferredModel,
-    temperature: options.temperature ?? 0.1,
-    max_output_tokens: Math.max(options.maxOutputTokens ?? defaultMaxOutputTokens, 4000),  // Minimum 4000
-    reasoning_effort: options.reasoningEffort || 'medium'
+    max_output_tokens: Math.max(Math.min(options.maxOutputTokens ?? defaultMaxOutputTokens, MAX_OUTPUT_TOKENS), MIN_OUTPUT_TOKENS),
+    reasoning_effort: options.reasoningEffort || defaultReasoningEffort,
+    timeout_ms: timeoutMs
   };
 
   try {
-    // Build JSON schema from Zod for structured output
-    const schemaFormat = zodResponseFormat(ReviewResultSchema, 'review_result');
-
     // Try models in fallback order if we get "model not found" errors
     let response = null;
     let usedModel = config.model;
@@ -222,34 +235,37 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
         const requestParams = {
           model: modelId,
           input: [
-            { role: 'system', content: 'You are a precise wine cellar configuration reviewer.' },
+            { role: 'system', content: 'You are a precise wine cellar configuration reviewer. Be concise.' },
             { role: 'user', content: reviewPrompt }
           ],
           text: {
-            format: {
-              type: 'json_schema',
-              name: schemaFormat.json_schema.name,
-              strict: schemaFormat.json_schema.strict,
-              schema: schemaFormat.json_schema.schema
-            }
+            format: zodTextFormat(ReviewResultSchema, 'review_result'),
+            verbosity: 'low'  // Reduce output tokens for speed
           },
           max_output_tokens: config.max_output_tokens
         };
 
-        // Some GPT-5.x models reject temperature; omit it for those.
-        if (!modelId.startsWith('gpt-5')) {
-          requestParams.temperature = config.temperature;
-        }
-
-        // Add reasoning parameter for models that support it (gpt-5.2)
+        // Add reasoning parameter for GPT-5.x models
         if (modelId.startsWith('gpt-5')) {
           requestParams.reasoning = { effort: config.reasoning_effort };
         }
+        // No temperature - reviewer should be deterministic, schema provides control
 
-        response = await openai.responses.create(requestParams);
+        // Use responses.parse() with timeout to prevent blocking
+        const apiCallPromise = openai.responses.parse(requestParams);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`Reviewer timeout after ${timeoutMs}ms`)), timeoutMs)
+        );
+
+        response = await Promise.race([apiCallPromise, timeoutPromise]);
         usedModel = modelId;
         break; // Success, exit loop
       } catch (modelError) {
+        // Check if it's a timeout error - don't fall back, just fail
+        if (modelError?.message?.includes('timeout')) {
+          throw modelError;
+        }
+
         // Only fall back on "model not found" type errors
         const status = modelError?.status;
         const code = modelError?.error?.code || modelError?.code;
@@ -268,19 +284,22 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
       throw new Error('No available model could process the request');
     }
 
+    // Check for incomplete response - treat as failure, don't retry with more tokens
+    if (response.status === 'incomplete') {
+      const reason = response.incomplete_details?.reason || 'unknown';
+      console.warn(`[OpenAIReviewer] Incomplete response: ${reason}`);
+      throw new Error(`Reviewer response incomplete: ${reason}`);
+    }
+
     // Update config with actual model used for telemetry
     config.model = usedModel;
 
-    // Parse structured output from response - check multiple possible locations
-    const outputText = response.output_text
-      || response.output?.[0]?.content?.[0]?.text
-      || (typeof response.output === 'string' ? response.output : null)
-      || '';
-    if (!outputText) {
-      console.error('[OpenAIReviewer] Response structure:', JSON.stringify(response, null, 2).slice(0, 1000));
-      throw new Error('Empty output from model');
+    // Use output_parsed from responses.parse() - already validated by SDK
+    const result = response.output_parsed;
+    if (!result) {
+      console.error('[OpenAIReviewer] No parsed output. Response status:', response.status);
+      throw new Error('No parsed output from model');
     }
-    const result = ReviewResultSchema.parse(JSON.parse(outputText));
     const latencyMs = Date.now() - startTime;
 
     circuitBreaker.recordSuccess();
@@ -293,7 +312,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
       input_summary: plan.summary || {},
       reviewer_model: config.model,
       reasoning_effort: config.reasoning_effort,
-      temperature: config.temperature,
+      temperature: null,  // No longer used - reviewer is deterministic
       max_output_tokens: config.max_output_tokens,
       verdict: result.verdict,
       violations_count: result.violations?.length || 0,
