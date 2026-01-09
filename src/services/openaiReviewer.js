@@ -14,8 +14,9 @@ function isFeatureEnabled() {
   return process.env.OPENAI_REVIEW_ZONE_RECONFIG === 'true';
 }
 
-// Log feature flag status on module load for debugging
-console.log('[OpenAIReviewer] Feature flag OPENAI_REVIEW_ZONE_RECONFIG:', process.env.OPENAI_REVIEW_ZONE_RECONFIG);
+function isForceModelEnabled() {
+  return process.env.OPENAI_REVIEW_FORCE_MODEL === 'true';
+}
 
 // Simple circuit breaker to avoid repeated failures
 const circuitBreaker = {
@@ -190,11 +191,18 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
   // Model fallback chain for Responses API: gpt-5.2 → gpt-4.1 → gpt-4o
   const FALLBACK_MODELS = ['gpt-5.2', 'gpt-4.1', 'gpt-4o'];
   const preferredModel = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
+  const forceModel = options.forceModel ?? isForceModelEnabled();
+
+  const envMaxOutputTokensRaw = process.env.OPENAI_REVIEW_MAX_OUTPUT_TOKENS;
+  const envMaxOutputTokens = envMaxOutputTokensRaw ? Number(envMaxOutputTokensRaw) : null;
+  const defaultMaxOutputTokens = Number.isFinite(envMaxOutputTokens) && envMaxOutputTokens > 0
+    ? envMaxOutputTokens
+    : 4000;
 
   const config = {
     model: preferredModel,
     temperature: options.temperature ?? 0.1,
-    max_output_tokens: options.maxOutputTokens || 2000,
+    max_output_tokens: options.maxOutputTokens ?? defaultMaxOutputTokens,
     reasoning_effort: options.reasoningEffort || 'medium'
   };
 
@@ -205,9 +213,9 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Try models in fallback order if we get "model not found" errors
     let response = null;
     let usedModel = config.model;
-    const modelsToTry = config.model === preferredModel
-      ? [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)]
-      : [config.model];
+    const modelsToTry = forceModel
+      ? [preferredModel]
+      : [preferredModel, ...FALLBACK_MODELS.filter(m => m !== preferredModel)];
 
     for (const modelId of modelsToTry) {
       try {
@@ -226,9 +234,13 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
               schema: schemaFormat.json_schema.schema
             }
           },
-          temperature: config.temperature,
           max_output_tokens: config.max_output_tokens
         };
+
+        // Some GPT-5.x models reject temperature; omit it for those.
+        if (!modelId.startsWith('gpt-5')) {
+          requestParams.temperature = config.temperature;
+        }
 
         // Add reasoning parameter for models that support it (gpt-5.2)
         if (modelId.startsWith('gpt-5')) {
@@ -240,10 +252,12 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
         break; // Success, exit loop
       } catch (modelError) {
         // Only fall back on "model not found" type errors
-        const isModelNotFound = modelError.status === 404 ||
-          (modelError.message && modelError.message.toLowerCase().includes('model'));
+        const status = modelError?.status;
+        const code = modelError?.error?.code || modelError?.code;
+        const msg = String(modelError?.message || '').toLowerCase();
+        const isModelNotFound = status === 404 || code === 'model_not_found' || msg.includes('model not found');
 
-        if (isModelNotFound && modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
+        if (!forceModel && isModelNotFound && modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
           console.warn(`[OpenAIReviewer] Model ${modelId} not available, trying fallback...`);
           continue;
         }

@@ -591,9 +591,12 @@ Constraints:
   }
 
   if (reviewTelemetry) {
-    saveTelemetry(db, reviewTelemetry, { swallowErrors: false }).catch(err => {
+    try {
+      // Await persistence so telemetry is reliably available immediately after the request.
+      await saveTelemetry(db, reviewTelemetry, { swallowErrors: false });
+    } catch (err) {
       console.error('[ZoneReconfigPlanner] Failed to save telemetry:', err.message);
-    });
+    }
   }
 
   const finalSummary = computeSummary(report, finalPlan.actions);
@@ -607,7 +610,9 @@ Constraints:
       verdict: reviewTelemetry.verdict,
       patchesApplied: finalPlan._patchesApplied || 0,
       stabilityScore,
-      latencyMs: reviewTelemetry.latency_ms
+      latencyMs: reviewTelemetry.latency_ms,
+      reviewerModel: reviewTelemetry.reviewer_model,
+      wasFallback: Boolean(reviewTelemetry.was_fallback)
     } : {
       stabilityScore
     }
