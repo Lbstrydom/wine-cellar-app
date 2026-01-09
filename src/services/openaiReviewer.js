@@ -9,7 +9,13 @@ import { z } from 'zod';
 import { zodResponseFormat } from 'openai/helpers/zod';
 import crypto from 'crypto';
 
-const FEATURE_ENABLED = process.env.OPENAI_REVIEW_ZONE_RECONFIG === 'true';
+// Check feature flag at runtime (not module load) to handle env var changes
+function isFeatureEnabled() {
+  return process.env.OPENAI_REVIEW_ZONE_RECONFIG === 'true';
+}
+
+// Log feature flag status on module load for debugging
+console.log('[OpenAIReviewer] Feature flag OPENAI_REVIEW_ZONE_RECONFIG:', process.env.OPENAI_REVIEW_ZONE_RECONFIG);
 
 // Simple circuit breaker to avoid repeated failures
 const circuitBreaker = {
@@ -151,7 +157,9 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
   const planId = options.planId || `plan_${Date.now()}`;
   const inputHash = hashPlan(plan);
 
-  if (!FEATURE_ENABLED) {
+  // Check feature flag at runtime
+  if (!isFeatureEnabled()) {
+    console.log('[OpenAIReviewer] Skipping - feature flag not enabled. Value:', process.env.OPENAI_REVIEW_ZONE_RECONFIG);
     return {
       skipped: true,
       reason: 'Feature flag OPENAI_REVIEW_ZONE_RECONFIG not enabled',
