@@ -592,7 +592,7 @@ ${JSON.stringify(advice, null, 2)}
 Review the advice and flag any issues.`;
 
   const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
-  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 60000);
+  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 120000);
 
   try {
     const requestParams = {
@@ -720,7 +720,7 @@ ${JSON.stringify(advice, null, 2)}
 Review and flag issues.`;
 
   const modelId = options.model || process.env.OPENAI_REVIEW_MODEL || 'gpt-5.2';
-  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 60000);
+  const timeoutMs = options.timeoutMs ?? (Number(process.env.OPENAI_REVIEW_TIMEOUT_MS) || 120000);
 
   try {
     const requestParams = {
