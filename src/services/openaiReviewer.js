@@ -239,7 +239,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
           requestParams.reasoning = { effort: config.reasoning_effort };
         }
 
-        response = await openai.responses.parse(requestParams);
+        response = await openai.responses.create(requestParams);
         usedModel = modelId;
         break; // Success, exit loop
       } catch (modelError) {
