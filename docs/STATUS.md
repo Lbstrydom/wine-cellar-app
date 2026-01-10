@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 9 January 2026
+## 10 January 2026
 
 ---
 
@@ -15,10 +15,11 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Claude AI integration for pairing, drink recommendations, and tasting analysis
 - **Cloud-native deployment**: Railway + Supabase PostgreSQL
 - **Award Extractor Skill** for structured PDF processing
+- **Consolidated Tasting & Service card** ✨ NEW: unified wine detail with evidence indicators
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (249 tests, 85% coverage)
+- Comprehensive testing infrastructure (333 tests, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
@@ -99,7 +100,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **333 tests passing** (312 unit + 21 integration)
+- **333+ tests passing** (312+ unit + 21 integration)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -108,7 +109,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 312 unit tests (~0.5s) | ❌ No |
+| `npm run test:unit` | Runs 312+ unit tests (~0.5s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -338,59 +339,108 @@ Sommelier: "For grilled lamb with rosemary, I recommend:
 
 ---
 
-### 9. Structured Tasting Profiles ✨ NEW
+### 9. Structured Tasting Profiles & Tasting Service Card ✨ UPDATED (10 Jan 2026)
 
-**Why**: Transform prose tasting notes into searchable, filterable structured data without storing verbatim text.
+**Why**: Transform prose tasting notes into searchable, filterable structured data without storing verbatim text, and consolidate all tasting/service info into one unified card.
 
-**Structured Profile Schema**:
+**Consolidated Tasting & Service Card** (Wine Detail Panel Spec v2):
+The wine detail modal now features a single consolidated card combining:
+- **Style Fingerprint**: One-line summary (max 120 chars) describing the wine's character
+- **Tasting Notes**: Nose/palate/finish sections with categorised descriptors
+- **Evidence Indicators**: Strength (strong/medium/weak), source count, agreement score
+- **Serving Temperature**: Recommended temp with glass icon and range
+- **Drinking Window**: Timeline with peak marker and urgency badges
+
+**Schema Version 2.0**:
 ```javascript
 {
+  "schema_version": "2.0",
+  "normaliser_version": "1.0.0",
+  "wine_type": "still_red",
+  "style_fingerprint": "Full-bodied, oaked red with dark fruit and firm tannins",
   "nose": {
-    "primary_fruit": ["dark_berry", "black_cherry", "plum"],
-    "secondary": ["vanilla", "oak", "toast"],
-    "tertiary": ["leather", "tobacco", "earth"],
+    "descriptors": [
+      { "term": "black_cherry", "category": "fruit", "confidence": 0.9 },
+      { "term": "vanilla", "category": "oak", "confidence": 0.85 }
+    ],
     "intensity": "pronounced"
   },
   "palate": {
-    "sweetness": "dry",
-    "body": "full",
-    "acidity": "medium",
-    "tannin": "high",
-    "alcohol": "medium",
+    "structure": {
+      "sweetness": "dry",
+      "acidity": "medium-plus",
+      "body": "full",
+      "tannin": "high",
+      "finish_length": "long"
+    },
+    "descriptors": [...],
     "texture": ["velvety", "grippy"]
   },
   "finish": {
     "length": "long",
-    "notes": ["spice", "dark_fruit", "mineral"]
+    "descriptors": [...]
   },
-  "style_tags": ["full_bodied", "oaked", "age_worthy"],
-  "summary_bullets": [
-    "Full-bodied with ripe dark fruit",
-    "Integrated oak and spice notes",
-    "Firm tannins, long finish"
-  ]
+  "evidence": {
+    "source_count": 3,
+    "agreement_score": 0.85,
+    "strength": "strong",
+    "sources": ["vivino", "wine_spectator", "decanter"]
+  },
+  "contradictions": [],
+  "quality_flags": []
 }
 ```
 
-**Controlled Vocabulary**:
-- 170+ standardized tasting terms
-- Categories: fruit, oak, floral, herbal, spice, earthy, savory
-- Consistent across all wines
-- Enables filtering ("show me wines with black cherry notes")
+**Vocabulary Normaliser** (`vocabularyNormaliser.js`):
+- 60+ synonym mappings (e.g., "citrus peel" → "citrus")
+- 100+ category mappings (fruit, oak, floral, herbal, spice, earthy, mineral, autolytic, savoury)
+- Structure value normalisation for sweetness (6 levels), acidity (6), body (5), tannin (7), finish (6)
+- Version tracking (NORMALISER_VERSION 1.0.0) for reprocessing
 
-**AI Extraction**:
-- Claude extracts structured descriptors from prose notes
-- Deterministic fallback using keyword matching
-- No verbatim storage (copyright-friendly)
-- Summary bullets provide human-readable highlights
+**Noise Filtering** (`noiseTerms.js`):
+- 30 food pairing noise terms (pairs well with, serve with, etc.)
+- 30 marketing hyperbole terms (superb, excellent, outstanding, etc.)
+- Pairing context phrases to filter from extraction
 
-**Database**:
-- `tasting_profile_json` column in wines table
-- `tasting_summary_bullets` for quick display
-- FTS5 indexing for searchable descriptors
+**Evidence System**:
+- **Strong**: 3+ sources with 0.7+ agreement
+- **Medium**: 2+ sources with 0.5+ agreement
+- **Weak**: Single source or low agreement
+- Contradiction detection for structural fields (e.g., "dry" vs "sweet")
 
-**Service**: `src/services/tastingExtractor.js`
-**Config**: `src/config/tastingVocabulary.js`
+**API Endpoints** (per spec section 8):
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/wines/:id/tasting-notes` | Get structured tasting notes |
+| GET | `/api/wines/:id/tasting-notes/sources` | Get source attribution |
+| POST | `/api/wines/:id/tasting-notes/regenerate` | Regenerate from sources |
+| POST | `/api/wines/:id/tasting-notes/report` | Flag quality issue |
+| GET | `/api/wines/tasting-notes/reports` | List flagged wines |
+| PUT | `/api/wines/tasting-notes/reports/:id` | Update report status |
+
+**Frontend Module** (`tastingService.js`):
+- `renderTastingServiceCard()` - Main consolidated card
+- `StyleFingerprint` component with category-coloured term chips
+- `NoseSection`, `PalateSection`, `FinishSection` components
+- `EvidenceIndicator` with source count and agreement display
+- `SourcesDrawer` (collapsible) showing data provenance
+- `ServingTempCard` with temperature and glass icon
+- `DrinkingWindowCard` with urgency badges
+
+**Database Migration** (019):
+- `tasting_notes_structured` - JSON column for v2 data
+- `tasting_notes_version` - Schema version tracking
+- `normaliser_version` - Vocabulary version tracking
+- `tasting_notes_generated_at` - Timestamp for cache invalidation
+- `tasting_note_sources` table - Source provenance
+- `tasting_note_reports` table - Quality issue tracking
+
+**Files**:
+- `src/services/tastingNotesV2.js` - V2 schema conversion and storage
+- `src/services/vocabularyNormaliser.js` - Synonym/category mapping
+- `src/config/noiseTerms.js` - Noise term filtering
+- `src/routes/tastingNotes.js` - API endpoints
+- `public/js/tastingService.js` - Frontend card module
 
 ---
 
@@ -904,6 +954,37 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 ---
 
 ## Recent Development (December 2024 - January 2026)
+
+### Wine Detail Panel Spec v2 - Tasting & Service Card - 10 January 2026
+Implemented the consolidated Wine Detail Panel per the v2 specification, combining tasting notes, serving temperature, and drinking window into a unified "Tasting & Service" card with structured data and evidence indicators.
+
+**New Files Created**:
+- `data/migrations/019_structured_tasting_notes.sql` - Database schema for v2 notes
+- `src/config/noiseTerms.js` - Food pairing and marketing hyperbole filters
+- `src/services/vocabularyNormaliser.js` - Synonym maps, category maps, normalisation functions
+- `src/services/tastingNotesV2.js` - V2 schema conversion, extraction, storage
+- `src/routes/tastingNotes.js` - API endpoints per spec section 8
+- `public/js/tastingService.js` - Frontend Tasting & Service card module
+- `docs/Wine_Detail_Panel_Spec.md` - Full specification document
+
+**Files Modified**:
+- `src/routes/index.js` - Added tastingNotesRoutes import and registration
+- `public/js/modals.js` - Updated to use consolidated card
+- `public/index.html` - Added card container, hid legacy sections
+- `public/css/styles.css` - Added ~300 lines for new components
+
+**Key Features**:
+1. **Style Fingerprint**: One-line summary (max 120 chars) describing wine character
+2. **Structured Schema v2.0**: JSON format with wine type, descriptors, structure, evidence
+3. **Vocabulary Normaliser v1.0.0**: 60+ synonyms, 100+ category mappings, structure scales
+4. **Evidence System**: Strong/medium/weak based on source count and agreement score
+5. **Contradiction Detection**: Flags conflicting structural values from different sources
+6. **Noise Filtering**: Removes food pairing terms and marketing hyperbole from extraction
+7. **Source Provenance**: Tracks extraction source, timestamp, confidence per descriptor
+
+**Commit**: `6c9c042`
+
+---
 
 ### Zone Reconfiguration Robustness - 9 January 2026
 Fixed critical issues with AI-generated zone reconfiguration plans and improved post-reconfiguration UX:
