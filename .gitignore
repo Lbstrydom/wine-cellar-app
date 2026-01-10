@@ -15,6 +15,9 @@ data/awards.db-shm
 nul
 .DS_Store
 *.log
-.claude/
+# Claude Code local settings (private)
+.claude/settings.local.json
+
+# Track skills (shared)
 .env
 .credential_key
