@@ -611,6 +611,117 @@ refactor/modular-structure
 
 ---
 
+## MCP Servers (Model Context Protocol)
+
+This project uses MCP servers to extend Claude Code's capabilities. MCP servers are configured in `.mcp.json` (gitignored as it contains API keys).
+
+### Available MCP Servers
+
+| Server | Purpose | Key Tools |
+|--------|---------|-----------|
+| **pdf-reader** | Extract text, metadata, and images from PDFs | `read_pdf` |
+| **filesystem** | Secure file operations within project directory | `read_text_file`, `write_file`, `edit_file`, `search_files`, `directory_tree` |
+| **memory** | Persistent knowledge graph across sessions | `create_entities`, `create_relations`, `search_nodes`, `read_graph` |
+| **brightdata** | Web scraping, SERP, browser automation | `search_engine`, `scrape_as_markdown`, `web_data_*` APIs |
+
+### Configuration (`.mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "pdf-reader": {
+      "command": "npx",
+      "args": ["-y", "@sylphx/pdf-reader-mcp"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "c:/GIT/wine-cellar-app"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "brightdata": {
+      "command": "npx",
+      "args": ["-y", "@brightdata/mcp"],
+      "env": {
+        "API_TOKEN": "<your-brightdata-api-key>",
+        "PRO_MODE": "true"
+      }
+    }
+  }
+}
+```
+
+### When to Use Each MCP Server
+
+#### PDF Reader (`mcp__pdf-reader__read_pdf`)
+Use for wine award extraction from PDF booklets:
+```javascript
+// Extract awards from a competition PDF
+mcp__pdf-reader__read_pdf({
+  sources: [{ path: "awards/michelangelo-2024.pdf" }],
+  include_full_text: true
+})
+```
+
+#### Filesystem (`mcp__filesystem__*`)
+Use for file operations when you need more control than built-in tools:
+- `directory_tree` - Get recursive JSON structure of directories
+- `search_files` - Find files matching patterns
+- `edit_file` - Pattern-based edits with dry-run preview
+
+#### Memory (`mcp__memory__*`)
+Use for persistent context across sessions:
+```javascript
+// Remember user preferences
+mcp__memory__create_entities({
+  entities: [{
+    name: "user_preferences",
+    entityType: "config",
+    observations: ["Prefers South African wines", "Serves reds at 16-18°C"]
+  }]
+})
+
+// Create relationships
+mcp__memory__create_relations({
+  relations: [{
+    from: "Kanonkop_Pinotage",
+    to: "user_preferences",
+    relationType: "FAVORITE_OF"
+  }]
+})
+
+// Query the knowledge graph
+mcp__memory__search_nodes({ query: "wine preferences" })
+```
+
+#### Bright Data (`mcp__brightdata__*`)
+Use for web scraping when built-in fetch isn't sufficient:
+- `search_engine` - AI-optimized web search
+- `scrape_as_markdown` - Convert any webpage to clean markdown
+- `web_data_*` - Structured data from Amazon, LinkedIn, etc.
+
+### MCP vs Built-in Tools
+
+| Task | Use MCP | Use Built-in |
+|------|---------|--------------|
+| Read project files | ❌ | ✅ `Read` tool |
+| Edit specific lines | ❌ | ✅ `Edit` tool |
+| Search code | ❌ | ✅ `Grep`/`Glob` tools |
+| Extract PDF text | ✅ `pdf-reader` | ❌ |
+| Persistent memory | ✅ `memory` | ❌ |
+| Scrape blocked sites | ✅ `brightdata` | ❌ `WebFetch` may fail |
+| Directory tree JSON | ✅ `filesystem` | ❌ |
+
+### Adding New MCP Servers
+
+1. Add server config to `.mcp.json`
+2. Add server name to `.claude/settings.local.json` → `enabledMcpjsonServers`
+3. Restart Claude Code
+
+---
+
 ## Deployment
 
 The app is deployed to **Railway** with auto-deploy from GitHub. Database is hosted on **Supabase** (PostgreSQL).

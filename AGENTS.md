@@ -558,6 +558,55 @@ refactor/modular-structure
 
 ---
 
+## MCP Servers (Model Context Protocol)
+
+This project uses MCP servers to extend Claude Code's capabilities. MCP servers are configured in `.mcp.json` (gitignored as it contains API keys).
+
+### Available MCP Servers
+
+| Server | Purpose | Key Tools |
+|--------|---------|-----------|
+| **pdf-reader** | Extract text, metadata, and images from PDFs | `read_pdf` |
+| **filesystem** | Secure file operations within project directory | `read_text_file`, `write_file`, `edit_file`, `search_files`, `directory_tree` |
+| **memory** | Persistent knowledge graph across sessions | `create_entities`, `create_relations`, `search_nodes`, `read_graph` |
+| **brightdata** | Web scraping, SERP, browser automation | `search_engine`, `scrape_as_markdown`, `web_data_*` APIs |
+
+### When to Use Each MCP Server
+
+#### PDF Reader
+Use for wine award extraction from PDF competition booklets. The skill `/award-extractor` uses this internally.
+
+#### Filesystem
+Use when you need advanced file operations beyond built-in tools:
+- `directory_tree` - Get recursive JSON structure
+- `search_files` - Pattern-based file finding
+- `edit_file` - Pattern matching with dry-run preview
+
+#### Memory
+Use to persist context across Claude Code sessions:
+- Store user wine preferences
+- Remember past decisions and patterns
+- Build knowledge graph of wine relationships
+
+#### Bright Data
+Use for web scraping when `WebFetch` fails due to anti-bot protection:
+- `search_engine` - AI-optimized web search (replaces Google SERP)
+- `scrape_as_markdown` - Clean markdown from any site
+- `web_data_*` - Structured product data APIs
+
+### MCP vs Built-in Tools Decision Matrix
+
+| Task | Use MCP | Use Built-in |
+|------|---------|--------------|
+| Read project files | ❌ | ✅ `Read` tool |
+| Edit specific lines | ❌ | ✅ `Edit` tool |
+| Search code | ❌ | ✅ `Grep`/`Glob` |
+| Extract PDF text | ✅ `pdf-reader` | ❌ |
+| Persistent memory | ✅ `memory` | ❌ |
+| Scrape protected sites | ✅ `brightdata` | ❌ |
+
+---
+
 ## Deployment
 
 The app is deployed to **Railway** with auto-deploy from GitHub. Database is hosted on **Supabase** (PostgreSQL).

@@ -538,55 +538,64 @@ The wine detail modal now features a single consolidated card combining:
 
 ---
 
-### 13. MCP Integration ✨ NEW
+### 13. MCP Integration ✨ UPDATED (10 Jan 2026)
 
-**Model Context Protocol (MCP)** servers extend Claude Code's capabilities with specialized tools.
+**Model Context Protocol (MCP)** servers extend Claude Code's capabilities with specialized tools for development workflows.
 
 **Configured MCP Servers**:
 
 | Server | Package | Purpose |
 |--------|---------|---------|
-| **puppeteer** | `puppeteer-mcp-server` | Headless browser for JS-rendered sites (Vivino, Decanter) |
 | **pdf-reader** | `@sylphx/pdf-reader-mcp` | Fast PDF text extraction (5-10x faster than OCR) |
-| **sqlite** | `mcp-sqlite` | Direct database queries for analytics |
+| **filesystem** | `@modelcontextprotocol/server-filesystem` | Secure file operations within project directory |
+| **memory** | `@modelcontextprotocol/server-memory` | Persistent knowledge graph across sessions |
+| **brightdata** | `@brightdata/mcp` | Web scraping, SERP, browser automation (60+ tools) |
 
-**Configuration File**: `.mcp.json`
-
-**Puppeteer MCP Features**:
-- `puppeteer_navigate` - Navigate to URLs
-- `puppeteer_click` - Click elements
-- `puppeteer_evaluate` - Execute JavaScript in page context
-- `puppeteer_screenshot` - Capture page screenshots
-- Cookie consent auto-handling
+**Configuration File**: `.mcp.json` (gitignored - contains API keys)
 
 **PDF Reader MCP Features**:
-- Direct text extraction from PDFs
-- Parallel processing for speed
-- No OCR needed for text-based PDFs
-- Page range selection
+- `read_pdf` - Extract text, metadata, images from PDFs
+- Parallel processing for speed (5-10x faster than OCR)
+- Page range selection (`pages: "1-5,10"`)
+- Batch processing multiple PDFs
 
-**SQLite MCP Features**:
-- Execute arbitrary SQL queries
-- Schema introspection
-- Direct access to cellar.db and awards.db
+**Filesystem MCP Features**:
+- `read_text_file`, `write_file`, `edit_file` - File operations
+- `directory_tree` - Recursive JSON structure
+- `search_files` - Pattern-based file finding
+- `list_directory_with_sizes` - Directory listings with metadata
+
+**Memory MCP Features**:
+- `create_entities`, `create_relations` - Build knowledge graph
+- `search_nodes`, `read_graph` - Query persistent memory
+- `add_observations` - Append facts to entities
+- Persists across Claude Code sessions
+
+**Bright Data MCP Features** (PRO_MODE enabled):
+- `search_engine` - AI-optimized web search (Google, Bing, Yandex)
+- `scrape_as_markdown` - Convert any webpage to clean markdown
+- `scrape_batch` - Batch scraping capability
+- `web_data_*` - 50+ structured data APIs (Amazon, LinkedIn, etc.)
+- `scraping_browser_*` - Full browser automation with screenshots
 
 **Skills Created**:
 
 | Skill | Location | Purpose |
 |-------|----------|---------|
 | **award-extractor** | `.claude/skills/award-extractor/SKILL.md` | Structured extraction of wine awards from PDFs |
+| **wine-data-importer** | `.claude/skills/wine-data-importer/SKILL.md` | Import wines from CSV/spreadsheets |
+| **cellar-health-analyzer** | `.claude/skills/cellar-health-analyzer/SKILL.md` | Analyze cellar health and drinking priorities |
+| **database-migrator** | `.claude/skills/database-migrator/SKILL.md` | Generate SQLite/PostgreSQL migrations |
 
-**Award Extractor Skill**:
-- Recognizes IWSC, Decanter, Tim Atkin, Platter's formats
-- Extracts: wine_name, producer, vintage, medal, score, category
-- Validates data and checks for duplicates
-- Imports directly to awards.db via SQLite MCP
+**Documentation**:
+- `docs/MCP_USE_CASES.md` - Specific development use cases
+- `scripts/test-mcp-servers.md` - MCP connectivity test guide
+- `CLAUDE.md` / `AGENTS.md` - MCP section with configuration and tool decision matrix
 
 **Files**:
-- `.mcp.json` - MCP server configuration
-- `src/services/puppeteerScraper.js` - Puppeteer MCP wrapper
-- `src/config/scraperConfig.js` - Scraping constants
-- `.claude/skills/award-extractor/SKILL.md` - Award extraction skill
+- `.mcp.json` - MCP server configuration (gitignored)
+- `.claude/settings.local.json` - Enabled MCP servers list
+- `.claude/skills/` - Custom skill definitions
 
 ---
 
@@ -1715,11 +1724,11 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Lines of Code** | ~15,000+ |
 | **Tasting Vocabulary Terms** | 170+ |
 | **Performance Indexes** | 15+ |
-| **MCP Servers** | 3 (Puppeteer, PDF Reader, SQLite) |
-| **Claude Code Skills** | 1 (Award Extractor) |
+| **MCP Servers** | 4 (PDF Reader, Filesystem, Memory, Bright Data) |
+| **Claude Code Skills** | 4 (Award Extractor, Wine Importer, Cellar Health, DB Migrator) |
 | **Service Worker Version** | v52 |
 
 ---
 
-*Last updated: 9 January 2026*
-*Version: 4.3 (GPT-5.2 AI Reviewer for Zone Reconfiguration, Cellar Analysis & Zone Capacity)*
+*Last updated: 10 January 2026*
+*Version: 4.4 (MCP Integration - PDF Reader, Filesystem, Memory, Bright Data + 4 Skills)*

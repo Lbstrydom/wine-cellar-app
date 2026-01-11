@@ -18,6 +18,9 @@ nul
 # Claude Code local settings (private)
 .claude/settings.local.json
 
+# MCP config (contains API keys)
+.mcp.json
+
 # Track skills (shared)
 .env
 .credential_key

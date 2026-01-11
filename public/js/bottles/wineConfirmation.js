@@ -222,7 +222,7 @@ function renderMatches(matches) {
     return `
     <div class="match-card ${index === 0 ? 'top-match' : ''}"
          data-vivino-id="${wine.vivinoId || ''}"
-         data-wine='${escapeHtml(JSON.stringify(wine))}'>
+         data-wine='${JSON.stringify(wine).replace(/'/g, "&#39;")}'>
       <div class="match-image">
         ${wine.imageUrl ? `
           <img src="${escapeHtml(wine.imageUrl)}" alt="${escapeHtml(wine.name)}"
@@ -321,7 +321,14 @@ function renderError(parsedWine, message) {
  * @param {HTMLElement} card - Selected card element
  */
 function handleMatchSelect(card) {
-  const wineData = JSON.parse(card.dataset.wine);
+  let wineData;
+  try {
+    wineData = JSON.parse(card.dataset.wine);
+  } catch (err) {
+    console.error('Failed to parse wine data:', err, card.dataset.wine);
+    alert('Error selecting wine. Please try again or skip verification.');
+    return;
+  }
   closeConfirmation();
 
   if (currentCallbacks?.onConfirm) {
