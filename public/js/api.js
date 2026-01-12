@@ -16,7 +16,22 @@ async function handleResponse(res, defaultError = 'Request failed') {
   if (!res.ok) {
     try {
       const data = await res.json();
-      throw new Error(data.error || defaultError);
+      // Handle both string and object error formats
+      // Object format: { error: { code, message, details } } (from validation middleware)
+      // String format: { error: "message" }
+      let errorMessage = defaultError;
+      if (typeof data.error === 'string') {
+        errorMessage = data.error;
+      } else if (data.error?.message) {
+        // Structured error from validation middleware
+        errorMessage = data.error.message;
+        if (data.error.details?.length) {
+          // Include first validation issue for context
+          const firstIssue = data.error.details[0];
+          errorMessage += `: ${firstIssue.field} ${firstIssue.message}`;
+        }
+      }
+      throw new Error(errorMessage);
     } catch (e) {
       // If it's already our error, rethrow it
       if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {
