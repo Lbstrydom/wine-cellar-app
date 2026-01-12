@@ -23,6 +23,7 @@ import palateProfileRoutes from './palateProfile.js';
 import cellarHealthRoutes from './cellarHealth.js';
 import adminRoutes from './admin.js';
 import tastingNotesRoutes from './tastingNotes.js';
+import searchMetricsRoutes from './searchMetrics.js';
 
 const router = Router();
 
@@ -46,5 +47,6 @@ router.use('/palate', palateProfileRoutes);    // /palate/feedback, /palate/prof
 router.use('/health', cellarHealthRoutes);    // /health, /health/fill-fridge, /health/at-risk, /health/shopping-list
 router.use('/admin', adminRoutes);
 router.use('/wines', tastingNotesRoutes);     // /wines/:id/tasting-notes, /wines/:id/tasting-notes/regenerate, etc.
+router.use('/metrics', searchMetricsRoutes);  // /metrics/search/summary, /metrics/search/history, /metrics/search/stats
 
 export default router;

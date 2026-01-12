@@ -317,4 +317,179 @@ describe('Input Validation (Phase 8.4)', () => {
       expect(result.error.code).toBe('VALIDATION_ERROR');
     });
   });
+
+  describe('Search Metrics API', () => {
+    const metricsBase = `${API_BASE}/metrics`;
+
+    it('GET /metrics/search/summary should return null when no metrics collected', async () => {
+      // Clear any existing metrics
+      await fetch(`${metricsBase}/search/clear`, { method: 'DELETE' });
+
+      const response = await fetch(`${metricsBase}/search/summary`);
+      expect(response.status).toBe(200);
+
+      const result = await response.json();
+      expect(result.data).toBe(null);
+      expect(result.message).toBe('No search metrics collected yet');
+    });
+
+    it('POST /metrics/search/record should store metrics', async () => {
+      const testMetrics = {
+        summary: {
+          totalDuration: 1234,
+          totalCost: '$0.08',
+          costCents: 8
+        },
+        apiCalls: {
+          serpCalls: 2,
+          unlockerCalls: 1,
+          claudeExtractions: 1
+        },
+        cache: {
+          hits: 1,
+          misses: 2,
+          hitRate: '0.333'
+        },
+        byDomain: {
+          'vivino.com': { calls: 2, hits: 2, hitRate: 1.0 }
+        },
+        byLens: {
+          competition: { hits: 1, misses: 0, hitRate: 1.0 }
+        }
+      };
+
+      const response = await fetch(`${metricsBase}/search/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(testMetrics)
+      });
+
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.message).toBe('Metrics recorded successfully');
+      expect(result.data).toHaveProperty('timestamp');
+      expect(result.data.summary.costCents).toBe(8);
+    });
+
+    it('GET /metrics/search/summary should return latest metrics after recording', async () => {
+      const response = await fetch(`${metricsBase}/search/summary`);
+      expect(response.status).toBe(200);
+
+      const result = await response.json();
+      expect(result.data).not.toBe(null);
+      expect(result.data).toHaveProperty('timestamp');
+      expect(result.data.summary.totalDuration).toBe(1234);
+    });
+
+    it('GET /metrics/search/history should return recorded metrics', async () => {
+      const response = await fetch(`${metricsBase}/search/history?limit=10`);
+      expect(response.status).toBe(200);
+
+      const result = await response.json();
+      expect(result.data).toBeInstanceOf(Array);
+      expect(result.data.length).toBeGreaterThan(0);
+      expect(result).toHaveProperty('count');
+      expect(result).toHaveProperty('totalCollected');
+    });
+
+    it('GET /metrics/search/stats should calculate aggregated statistics', async () => {
+      // Record multiple metrics
+      const metricsToRecord = [
+        {
+          summary: { totalDuration: 1000, totalCost: '$0.05', costCents: 5 },
+          apiCalls: { serpCalls: 1, unlockerCalls: 0, claudeExtractions: 1 },
+          cache: { hits: 1, misses: 1, hitRate: '0.500' },
+          byDomain: {},
+          byLens: {}
+        },
+        {
+          summary: { totalDuration: 2000, totalCost: '$0.10', costCents: 10 },
+          apiCalls: { serpCalls: 2, unlockerCalls: 1, claudeExtractions: 0 },
+          cache: { hits: 2, misses: 0, hitRate: '1.0' },
+          byDomain: {},
+          byLens: {}
+        }
+      ];
+
+      for (const metrics of metricsToRecord) {
+        await fetch(`${metricsBase}/search/record`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(metrics)
+        });
+      }
+
+      const response = await fetch(`${metricsBase}/search/stats`);
+      expect(response.status).toBe(200);
+
+      const result = await response.json();
+      expect(result.data).toHaveProperty('totalSearches');
+      expect(result.data).toHaveProperty('totalCostCents');
+      expect(result.data).toHaveProperty('averageCostPerSearch');
+      expect(result.data).toHaveProperty('averageDurationMs');
+      expect(result.data).toHaveProperty('breakdown');
+      expect(result.data.breakdown).toHaveProperty('serpCalls');
+      expect(result.data.breakdown).toHaveProperty('unlockerCalls');
+      expect(result.data.breakdown).toHaveProperty('claudeExtractions');
+    });
+
+    it('DELETE /metrics/search/clear should clear all metrics', async () => {
+      const response = await fetch(`${metricsBase}/search/clear`, {
+        method: 'DELETE'
+      });
+
+      expect(response.status).toBe(200);
+      const result = await response.json();
+      expect(result.message).toBe('Metrics history cleared');
+
+      // Verify history is empty
+      const summaryResponse = await fetch(`${metricsBase}/search/summary`);
+      const summaryResult = await summaryResponse.json();
+      expect(summaryResult.data).toBe(null);
+    });
+
+    it('POST /metrics/search/record should validate required fields', async () => {
+      const invalidMetrics = {
+        summary: { totalDuration: 1000 }
+        // Missing apiCalls
+      };
+
+      const response = await fetch(`${metricsBase}/search/record`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(invalidMetrics)
+      });
+
+      expect(response.status).toBe(400);
+      const result = await response.json();
+      expect(result.error).toBe('Missing required metrics fields');
+    });
+
+    it('GET /metrics/search/history should respect limit parameter', async () => {
+      // Clear and record multiple entries
+      await fetch(`${metricsBase}/search/clear`, { method: 'DELETE' });
+
+      for (let i = 0; i < 5; i++) {
+        await fetch(`${metricsBase}/search/record`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            summary: { totalDuration: 1000 + i, totalCost: '$0.05', costCents: 5 },
+            apiCalls: { serpCalls: 1, unlockerCalls: 0, claudeExtractions: 0 },
+            cache: { hits: 0, misses: 1, hitRate: '0.0' },
+            byDomain: {},
+            byLens: {}
+          })
+        });
+      }
+
+      const response = await fetch(`${metricsBase}/search/history?limit=3`);
+      const result = await response.json();
+
+      expect(result.data.length).toBeLessThanOrEqual(3);
+      expect(result.count).toBeLessThanOrEqual(3);
+      expect(result.totalCollected).toBe(5);
+    });
+  });
 });
+
