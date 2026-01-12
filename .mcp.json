@@ -2,15 +2,30 @@
   "mcpServers": {
     "pdf-reader": {
       "type": "stdio",
-      "command": "npx -y @sylphx/pdf-reader-mcp",
-      "args": [],
+      "command": "npx",
+      "args": ["-y", "@sylphx/pdf-reader-mcp"],
       "env": {}
     },
-    "sqlite": {
+    "filesystem": {
       "type": "stdio",
-      "command": "npx -y mcp-sqlite --db-path data/cellar.db",
-      "args": [],
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "c:/GIT/wine-cellar-app"],
       "env": {}
+    },
+    "memory": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"],
+      "env": {}
+    },
+    "brightdata": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@brightdata/mcp"],
+      "env": {
+        "API_TOKEN": "53b7ea32-a533-4a82-88e9-cd5b0404702c",
+        "PRO_MODE": "true"
+      }
     }
   }
 }

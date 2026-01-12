@@ -197,8 +197,8 @@ export function getQueryTemplate(sourceId, wine, vintage = 'NV') {
   }
 
   return template
-    .replace(/{wine}/g, wine)
-    .replace(/{vintage}/g, String(vintage));
+    .replaceAll('{wine}', wine)
+    .replaceAll('{vintage}', String(vintage));
 }
 
 /**

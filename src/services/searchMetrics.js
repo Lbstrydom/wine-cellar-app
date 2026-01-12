@@ -93,17 +93,17 @@ export class SearchMetricsCollector {
 
   /**
    * Record a cache hit
-   * @param {string} type - Type of cache (e.g., 'ratings', 'vivino')
+   * @param {string} _type - Type of cache (reserved for future use)
    */
-  recordCacheHit(type = 'general') {
+  recordCacheHit(_type = 'general') {
     this.metrics.cacheHits++;
   }
 
   /**
    * Record a cache miss
-   * @param {string} type - Type of cache (e.g., 'ratings', 'vivino')
+   * @param {string} _type - Type of cache (reserved for future use)
    */
-  recordCacheMiss(type = 'general') {
+  recordCacheMiss(_type = 'general') {
     this.metrics.cacheMisses++;
   }
 
@@ -190,7 +190,7 @@ export class SearchMetricsCollector {
    * @returns {Object} Current metrics
    */
   getCurrent() {
-    return JSON.parse(JSON.stringify(this.metrics));
+    return structuredClone(this.metrics);
   }
 
   /**
@@ -231,7 +231,7 @@ Search Metrics Summary
 Duration: ${summary.summary.totalDuration}ms
 Total Cost: ${summary.summary.totalCost}
 API Calls: ${summary.apiCalls.serpCalls} SERP, ${summary.apiCalls.unlockerCalls} Unlocker, ${summary.apiCalls.claudeExtractions} Claude
-Cache Hit Rate: ${(parseFloat(summary.cache.hitRate) * 100).toFixed(1)}%
+Cache Hit Rate: ${(Number.parseFloat(summary.cache.hitRate) * 100).toFixed(1)}%
     `;
   }
 }

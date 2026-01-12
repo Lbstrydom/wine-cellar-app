@@ -52,10 +52,10 @@ router.get('/search', async (req, res) => {
     const wines = await db.prepare(`
       SELECT id, wine_name, vintage, style, colour, vivino_rating, price_eur, country, purchase_stars
       FROM wines
-      WHERE wine_name ILIKE ? OR style ILIKE ? OR country ILIKE ?
+      WHERE cellar_id = $1 AND (wine_name ILIKE $2 OR style ILIKE $2 OR country ILIKE $2)
       ORDER BY wine_name
-      LIMIT ?
-    `).all(likePattern, likePattern, likePattern, searchLimit);
+      LIMIT $3
+    `).all(req.cellarId, likePattern, searchLimit);
 
     res.json(wines);
   } catch (error) {
@@ -84,12 +84,12 @@ router.get('/global-search', async (req, res) => {
       SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
              COUNT(s.id) as bottle_count
       FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE w.wine_name ILIKE ?
+      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+      WHERE w.cellar_id = $1 AND w.wine_name ILIKE $2
       GROUP BY w.id
       ORDER BY w.wine_name
-      LIMIT ?
-    `).all(likePattern, searchLimit);
+      LIMIT $3
+    `).all(req.cellarId, likePattern, searchLimit);
 
     // Search distinct producers
     const producers = await db.prepare(`
@@ -97,32 +97,32 @@ router.get('/global-search', async (req, res) => {
         SPLIT_PART(wine_name, ' ', 1) as producer,
         COUNT(*) as wine_count
       FROM wines
-      WHERE wine_name ILIKE ?
+      WHERE cellar_id = $1 AND wine_name ILIKE $2
       GROUP BY SPLIT_PART(wine_name, ' ', 1)
       HAVING SPLIT_PART(wine_name, ' ', 1) != ''
       ORDER BY wine_count DESC
-      LIMIT ?
-    `).all(likePattern, searchLimit);
+      LIMIT $3
+    `).all(req.cellarId, likePattern, searchLimit);
 
     // Search countries
     const countries = await db.prepare(`
       SELECT country, COUNT(*) as wine_count
       FROM wines
-      WHERE country ILIKE ? AND country IS NOT NULL AND country != ''
+      WHERE cellar_id = $1 AND country ILIKE $2 AND country IS NOT NULL AND country != ''
       GROUP BY country
       ORDER BY wine_count DESC
-      LIMIT ?
-    `).all(likePattern, searchLimit);
+      LIMIT $3
+    `).all(req.cellarId, likePattern, searchLimit);
 
     // Search styles
     const styles = await db.prepare(`
       SELECT style, COUNT(*) as wine_count
       FROM wines
-      WHERE style ILIKE ?
+      WHERE cellar_id = $1 AND style ILIKE $2
       GROUP BY style
       ORDER BY wine_count DESC
-      LIMIT ?
-    `).all(likePattern, searchLimit);
+      LIMIT $3
+    `).all(req.cellarId, likePattern, searchLimit);
 
     res.json({ wines, producers, countries, styles });
   } catch (error) {
@@ -143,7 +143,7 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
     const { limit = 50, offset = 0 } = req.validated?.query || req.query;
 
     // Get total count for pagination metadata
-    const countResult = await db.prepare('SELECT COUNT(*) as total FROM wines').get();
+    const countResult = await db.prepare('SELECT COUNT(*) as total FROM wines WHERE cellar_id = $1').get(req.cellarId);
     const total = Number.parseInt(countResult?.total || 0, 10);
 
     // Get paginated wines
@@ -159,11 +159,12 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
         COUNT(s.id) as bottle_count,
         ${stringAgg('s.location_code')} as locations
       FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id
+      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+      WHERE w.cellar_id = $1
       GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur
       ORDER BY w.colour, w.style, w.wine_name
-      LIMIT ? OFFSET ?
-    `).all(limit, offset);
+      LIMIT $2 OFFSET $3
+    `).all(req.cellarId, limit, offset);
 
     res.json({
       data: wines,

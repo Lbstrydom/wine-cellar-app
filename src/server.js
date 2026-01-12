@@ -47,6 +47,10 @@ app.use('/health', healthRoutes);
 // Metrics endpoint (Prometheus-compatible)
 app.get('/metrics', metricsHandler);
 
+// NOTE: Authentication is mounted per-router in routes/index.js, not globally
+// This allows mixing of authenticated and public endpoints in the same route file
+// See routes/index.js for auth mounting strategy
+
 // API routes
 app.use('/api', routes);
 
