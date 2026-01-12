@@ -183,7 +183,6 @@ async function createFirstTimeUser(authUser, inviteCode) {
         return null;  // Maxed out
       }
 
-    try {
       // 1. Create profile
       const profile = await db.prepare(`
         INSERT INTO profiles (id, email, display_name, avatar_url)
@@ -232,6 +231,7 @@ async function createFirstTimeUser(authUser, inviteCode) {
       return null;
     }
   } catch (err) {
+    // Outer catch for any unexpected errors (JWKS fetch, etc.)
     console.error('Invite validation error:', err);
     return null;
   }

@@ -25,18 +25,20 @@ router.get('/:wineId/ratings', async (req, res) => {
     const { wineId } = req.params;
     const vintage = req.query.vintage;
 
-    let query = `SELECT * FROM wine_ratings WHERE wine_id = ?`;
+    let query = `SELECT * FROM wine_ratings WHERE wine_id = $1`;
     const params = [wineId];
+    let paramIdx = 1;
 
     if (vintage) {
-      query += ` AND (vintage = ? OR vintage IS NULL)`;
+      paramIdx++;
+      query += ` AND (vintage = $${paramIdx} OR vintage IS NULL)`;
       params.push(vintage);
     }
 
     query += ` ORDER BY source_lens, normalized_mid DESC`;
 
     const ratings = await db.prepare(query).all(...params);
-    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -90,7 +92,7 @@ router.get('/:wineId/ratings', async (req, res) => {
 router.post('/:wineId/ratings/fetch', async (req, res) => {
   const { wineId } = req.params;
 
-  const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
   if (!wine) {
     return res.status(404).json({ error: 'Wine not found' });
   }
@@ -100,7 +102,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     // Get existing ratings count for comparison
     const existingRatings = await db.prepare(
-      'SELECT * FROM wine_ratings WHERE wine_id = ? AND (is_user_override != 1 OR is_user_override IS NULL)'
+      'SELECT * FROM wine_ratings WHERE wine_id = $1 AND (is_user_override != 1 OR is_user_override IS NULL)'
     ).all(wineId);
 
     const rawRatings = result.ratings || [];
@@ -209,7 +211,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     logger.info('Ratings', `Inserted ${insertedCount} ratings for wine ${wineId}`);
 
     // Update aggregates
-    const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
+    const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = $1').all(wineId);
     const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
     const preference = parseInt(prefSetting?.value || '40');
     const aggregates = calculateWineRatings(ratings, wine, preference);
@@ -218,11 +220,11 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     await db.prepare(`
       UPDATE wines SET
-        competition_index = ?, critics_index = ?, community_index = ?,
-        purchase_score = ?, purchase_stars = ?, confidence_level = ?,
-        tasting_notes = COALESCE(?, tasting_notes),
+        competition_index = $1, critics_index = $2, community_index = $3,
+        purchase_score = $4, purchase_stars = $5, confidence_level = $6,
+        tasting_notes = COALESCE($7, tasting_notes),
         ratings_updated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
+      WHERE cellar_id = $8 AND id = $9
     `).run(
       aggregates.competition_index,
       aggregates.critics_index,
@@ -231,6 +233,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       aggregates.purchase_stars,
       aggregates.confidence_level,
       tastingNotes,
+      req.cellarId,
       wineId
     );
 

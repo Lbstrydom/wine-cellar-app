@@ -27,7 +27,7 @@ const router = Router();
  */
 router.get('/styles', async (req, res) => {
   try {
-    const styles = await db.prepare('SELECT DISTINCT style FROM wines ORDER BY style').all();
+    const styles = await db.prepare('SELECT DISTINCT style FROM wines WHERE cellar_id = $1 ORDER BY style').all(req.cellarId);
     res.json(styles.map(s => s.style));
   } catch (error) {
     console.error('Styles error:', error);
@@ -247,10 +247,10 @@ router.get('/:id', async (req, res) => {
         COUNT(s.id) as bottle_count,
         ${stringAgg('s.location_code')} as locations
       FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE w.id = ?
+      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+      WHERE w.cellar_id = $1 AND w.id = $2
       GROUP BY w.id
-    `).get(req.params.id);
+    `).get(req.cellarId, req.params.id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -275,13 +275,13 @@ router.post('/', validateBody(createWineSchema), async (req, res) => {
 
     const result = await db.prepare(`
       INSERT INTO wines (
-        style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+        cellar_id, style, colour, wine_name, vintage, vivino_rating, price_eur, country,
         vivino_id, vivino_url, vivino_confirmed, vivino_confirmed_at
       )
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       RETURNING id
     `).get(
-      style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null, country || null,
+      req.cellarId, style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null, country || null,
       vivino_id || null, vivino_url || null,
       vivino_confirmed ? 1 : 0,
       vivino_confirmed ? new Date().toISOString() : null
@@ -308,18 +308,19 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
 
     // Build dynamic update based on what's provided
     const updates = [
-      'style = ?',
-      'colour = ?',
-      'wine_name = ?',
-      'vintage = ?',
-      'vivino_rating = ?',
-      'price_eur = ?',
-      'country = ?',
-      'drink_from = ?',
-      'drink_peak = ?',
-      'drink_until = ?'
+      'style = $1',
+      'colour = $2',
+      'wine_name = $3',
+      'vintage = $4',
+      'vivino_rating = $5',
+      'price_eur = $6',
+      'country = $7',
+      'drink_from = $8',
+      'drink_peak = $9',
+      'drink_until = $10'
     ];
     const values = [];
+    let paramIdx = 10;
 
     // Always update these basic fields
     values.push(
@@ -330,26 +331,34 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
 
     // Only update Vivino fields if explicitly provided
     if (vivino_id !== undefined) {
-      updates.push('vivino_id = ?');
+      paramIdx++;
+      updates.push(`vivino_id = $${paramIdx}`);
       values.push(vivino_id || null);
     }
     if (vivino_url !== undefined) {
-      updates.push('vivino_url = ?');
+      paramIdx++;
+      updates.push(`vivino_url = $${paramIdx}`);
       values.push(vivino_url || null);
     }
     if (vivino_confirmed !== undefined) {
-      updates.push('vivino_confirmed = ?', 'vivino_confirmed_at = ?');
-      values.push(
-        vivino_confirmed ? 1 : 0,
-        vivino_confirmed ? new Date().toISOString() : null
-      );
+      paramIdx++;
+      updates.push(`vivino_confirmed = $${paramIdx}`);
+      values.push(vivino_confirmed ? 1 : 0);
+      paramIdx++;
+      updates.push(`vivino_confirmed_at = $${paramIdx}`);
+      values.push(vivino_confirmed ? new Date().toISOString() : null);
     }
 
     updates.push('updated_at = CURRENT_TIMESTAMP');
+    paramIdx++;
+    values.push(req.cellarId);
+    const cellarIdParam = paramIdx;
+    paramIdx++;
     values.push(req.params.id);
+    const idParam = paramIdx;
 
     await db.prepare(`
-      UPDATE wines SET ${updates.join(', ')} WHERE id = ?
+      UPDATE wines SET ${updates.join(', ')} WHERE cellar_id = $${cellarIdParam} AND id = $${idParam}
     `).run(...values);
 
     res.json({ message: 'Wine updated' });
@@ -367,12 +376,12 @@ router.delete('/:id', validateParams(wineIdSchema), async (req, res) => {
   try {
     const { id } = req.params;
 
-    const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(id);
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
 
-    await db.prepare('DELETE FROM wines WHERE id = ?').run(id);
+    await db.prepare('DELETE FROM wines WHERE cellar_id = $1 AND id = $2').run(req.cellarId, id);
 
     res.json({ message: `Wine ${id} deleted` });
   } catch (error) {
@@ -392,9 +401,9 @@ router.put('/:id/personal-rating', validateParams(wineIdSchema), validateBody(pe
 
     await db.prepare(`
       UPDATE wines
-      SET personal_rating = ?, personal_notes = ?, personal_rated_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `).run(rating || null, notes || null, id);
+      SET personal_rating = $1, personal_notes = $2, personal_rated_at = CURRENT_TIMESTAMP
+      WHERE cellar_id = $3 AND id = $4
+    `).run(rating || null, notes || null, req.cellarId, id);
 
     res.json({ message: 'Personal rating saved' });
   } catch (error) {
@@ -413,8 +422,8 @@ router.get('/:id/personal-rating', async (req, res) => {
 
     const wine = await db.prepare(`
       SELECT personal_rating, personal_notes, personal_rated_at
-      FROM wines WHERE id = ?
-    `).get(id);
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -437,8 +446,8 @@ router.get('/:id/tasting-profile', async (req, res) => {
 
     const wine = await db.prepare(`
       SELECT id, wine_name, tasting_profile_json
-      FROM wines WHERE id = ?
-    `).get(id);
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -475,8 +484,8 @@ router.post('/:id/tasting-profile/extract', validateParams(wineIdSchema), valida
   try {
     const wine = await db.prepare(`
       SELECT id, wine_name, colour, style
-      FROM wines WHERE id = ?
-    `).get(id);
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -532,7 +541,7 @@ router.put('/:id/tasting-profile', validateParams(wineIdSchema), validateBody(ta
     const { id } = req.params;
     const { profile } = req.body;
 
-    const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(id);
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
@@ -540,8 +549,8 @@ router.put('/:id/tasting-profile', validateParams(wineIdSchema), validateBody(ta
     const profileJson = JSON.stringify(profile);
 
     await db.prepare(`
-      UPDATE wines SET tasting_profile_json = ? WHERE id = ?
-    `).run(profileJson, id);
+      UPDATE wines SET tasting_profile_json = $1 WHERE cellar_id = $2 AND id = $3
+    `).run(profileJson, req.cellarId, id);
 
     res.json({ message: 'Tasting profile saved', wine_id: id });
   } catch (error) {
@@ -561,9 +570,9 @@ router.get('/:id/tasting-profile/history', async (req, res) => {
     const history = await db.prepare(`
       SELECT id, source_id, extraction_method, confidence, extracted_at
       FROM tasting_profile_extractions
-      WHERE wine_id = ?
+      WHERE wine_id = $1 AND cellar_id = $2
       ORDER BY extracted_at DESC
-    `).all(id);
+    `).all(id, req.cellarId);
 
     res.json(history);
   } catch {
@@ -584,8 +593,8 @@ router.get('/:id/serving-temperature', async (req, res) => {
   try {
     const wine = await db.prepare(`
       SELECT id, wine_name, style, colour, grapes, sweetness, winemaking
-      FROM wines WHERE id = ?
-    `).get(id);
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });

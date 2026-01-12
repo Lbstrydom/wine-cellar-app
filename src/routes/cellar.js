@@ -41,9 +41,10 @@ const router = express.Router();
 
 /**
  * Get all wines with their slot assignments and drinking windows.
+ * @param {string} cellarId - Cellar ID to filter by
  * @returns {Promise<Array>} Wines with location data and drink_by_year
  */
-async function getAllWinesWithSlots() {
+async function getAllWinesWithSlots(cellarId) {
   return await db.prepare(`
     SELECT
       w.id,
@@ -66,19 +67,21 @@ async function getAllWinesWithSlots() {
       dw.drink_from_year,
       dw.peak_year
     FROM wines w
-    LEFT JOIN slots s ON s.wine_id = w.id
+    LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
     LEFT JOIN drinking_windows dw ON dw.wine_id = w.id
-  `).all();
+    WHERE w.cellar_id = $1
+  `).all(cellarId);
 }
 
 /**
  * Get currently occupied slots.
+ * @param {string} cellarId - Cellar ID to filter by
  * @returns {Promise<Set<string>>} Set of occupied slot IDs
  */
-async function getOccupiedSlots() {
+async function getOccupiedSlots(cellarId) {
   const slots = await db.prepare(
-    'SELECT location_code FROM slots WHERE wine_id IS NOT NULL'
-  ).all();
+    'SELECT location_code FROM slots WHERE cellar_id = $1 AND wine_id IS NOT NULL'
+  ).all(cellarId);
   return new Set(slots.map(s => s.location_code));
 }
 
@@ -162,7 +165,7 @@ router.post('/suggest-placement', async (req, res) => {
       return res.status(400).json({ error: 'Wine object required' });
     }
 
-    const occupiedSlots = await getOccupiedSlots();
+    const occupiedSlots = await getOccupiedSlots(req.cellarId);
     const zoneMatch = findBestZone(wine);
     const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
@@ -186,13 +189,13 @@ router.post('/suggest-placement', async (req, res) => {
 router.get('/suggest-placement/:wineId', async (req, res) => {
   try {
     const wineId = parseInt(req.params.wineId, 10);
-    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
 
-    const occupiedSlots = await getOccupiedSlots();
+    const occupiedSlots = await getOccupiedSlots(req.cellarId);
     const zoneMatch = findBestZone(wine);
     const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
 
@@ -269,7 +272,7 @@ router.get('/analyse', async (req, res) => {
     }
 
     // No valid cache, run analysis
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
     const report = await analyseCellar(wines, { allowFallback });
 
     // Add fridge candidates (legacy)
@@ -341,9 +344,9 @@ router.delete('/analyse/cache', async (_req, res) => {
  * GET /api/cellar/fridge-status
  * Get lightweight fridge status only (without full cellar analysis).
  */
-router.get('/fridge-status', async (_req, res) => {
+router.get('/fridge-status', async (req, res) => {
   try {
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
 
     const fridgeWines = wines.filter(w => {
       const slot = w.slot_id || w.location_code;
@@ -370,9 +373,9 @@ router.get('/fridge-status', async (_req, res) => {
  * GET /api/cellar/fridge-organize
  * Get suggestions for organizing fridge wines by category.
  */
-router.get('/fridge-organize', async (_req, res) => {
+router.get('/fridge-organize', async (req, res) => {
   try {
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
 
     const fridgeWines = wines.filter(w => {
       const slot = w.slot_id || w.location_code;
@@ -416,7 +419,7 @@ router.get('/analyse/ai', async (req, res) => {
       report = cached.data;
       fromCache = true;
     } else {
-      const wines = await getAllWinesWithSlots();
+      const wines = await getAllWinesWithSlots(req.cellarId);
       report = await runAnalysis(wines);
 
       // Cache the result
@@ -478,7 +481,7 @@ router.post('/zone-capacity-advice', async (req, res) => {
 
     // Enrich move_wine actions with concrete slot targets (best-effort)
     if (Array.isArray(advice?.actions) && advice.actions.some(a => a?.type === 'move_wine')) {
-      const occupiedSlots = await getOccupiedSlots();
+      const occupiedSlots = await getOccupiedSlots(req.cellarId);
 
       for (const action of advice.actions) {
         if (action?.type !== 'move_wine') continue;
@@ -493,9 +496,9 @@ router.post('/zone-capacity-advice', async (req, res) => {
         const wine = await db.prepare(`
           SELECT w.*, s.location_code as slot_id
           FROM wines w
-          LEFT JOIN slots s ON s.wine_id = w.id
-          WHERE w.id = ?
-        `).get(wineId);
+          LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+          WHERE w.cellar_id = $1 AND w.id = $2
+        `).get(req.cellarId, wineId);
 
         const from = wine?.slot_id;
         if (!from) {
@@ -574,10 +577,10 @@ router.post('/zones/merge', async (req, res) => {
     }
 
     const sourceAlloc = await db.prepare(
-      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = ?'
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1'
     ).get(sourceZoneId);
     const targetAlloc = await db.prepare(
-      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = ?'
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1'
     ).get(targetZoneId);
 
     const sourceRows = sourceAlloc ? JSON.parse(sourceAlloc.assigned_rows) : [];
@@ -589,25 +592,25 @@ router.post('/zones/merge', async (req, res) => {
       await db.prepare('BEGIN TRANSACTION').run();
 
       // Move wines
-      await db.prepare('UPDATE wines SET zone_id = ? WHERE zone_id = ?').run(targetZoneId, sourceZoneId);
+      await db.prepare('UPDATE wines SET zone_id = $1 WHERE cellar_id = $2 AND zone_id = $3').run(targetZoneId, req.cellarId, sourceZoneId);
 
       // Update target allocation
       const mergedWineCount = (targetAlloc?.wine_count || 0) + (sourceAlloc?.wine_count || 0);
       if (targetAlloc) {
         await db.prepare(
           `UPDATE zone_allocations
-           SET assigned_rows = ?, wine_count = ?, updated_at = CURRENT_TIMESTAMP
-           WHERE zone_id = ?`
+           SET assigned_rows = $1, wine_count = $2, updated_at = CURRENT_TIMESTAMP
+           WHERE zone_id = $3`
         ).run(JSON.stringify(mergedRows), mergedWineCount, targetZoneId);
       } else {
         await db.prepare(
           `INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count)
-           VALUES (?, ?, CURRENT_TIMESTAMP, ?)`
+           VALUES ($1, $2, CURRENT_TIMESTAMP, $3)`
         ).run(targetZoneId, JSON.stringify(mergedRows), mergedWineCount);
       }
 
       // Remove source allocation
-      await db.prepare('DELETE FROM zone_allocations WHERE zone_id = ?').run(sourceZoneId);
+      await db.prepare('DELETE FROM zone_allocations WHERE zone_id = $1').run(sourceZoneId);
 
       await db.prepare('COMMIT').run();
     } catch (execError) {
@@ -649,7 +652,7 @@ router.post('/reconfiguration-plan', async (req, res) => {
       stabilityBias = 'moderate'
     } = req.body || {};
 
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
     const report = await runAnalysis(wines);
 
     const plan = await generateReconfigurationPlan(report, {
@@ -1128,15 +1131,15 @@ router.post('/execute-moves', async (req, res) => {
 
       for (const move of moves) {
         // Clear source slot
-        await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(null, move.from);
+        await db.prepare('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3').run(null, req.cellarId, move.from);
 
         // Set target slot
-        await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(move.wineId, move.to);
+        await db.prepare('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3').run(move.wineId, req.cellarId, move.to);
 
         // Update wine zone assignment
         if (move.zoneId) {
-          await db.prepare('UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?').run(
-            move.zoneId, move.confidence || 'medium', move.wineId
+          await db.prepare('UPDATE wines SET zone_id = $1, zone_confidence = $2 WHERE cellar_id = $3 AND id = $4').run(
+            move.zoneId, move.confidence || 'medium', req.cellarId, move.wineId
           );
         }
 
@@ -1492,7 +1495,7 @@ router.post('/zone-chat', async (req, res) => {
 
     // Get current wine data for context
     // Note: getAllWinesWithSlots returns slot_id (from location_code alias)
-    const allWines = await getAllWinesWithSlots();
+    const allWines = await getAllWinesWithSlots(req.cellarId);
     const wines = allWines.filter(w => {
       const slot = w.slot_id || w.location_code;
       return slot?.startsWith('R');

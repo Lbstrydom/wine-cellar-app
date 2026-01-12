@@ -28,12 +28,12 @@ router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
     const { from_location, to_location } = req.body;
 
     // Validate slots exist and have correct state before transaction
-    const sourceSlot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(from_location);
+    const sourceSlot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, from_location);
     if (!sourceSlot?.wine_id) {
       return res.status(400).json({ error: 'Source slot is empty' });
     }
 
-    const targetSlot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(to_location);
+    const targetSlot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, to_location);
     if (!targetSlot) {
       return res.status(404).json({ error: 'Target slot not found' });
     }
@@ -43,8 +43,8 @@ router.post('/move', validateBody(moveBottleSchema), async (req, res) => {
 
     // Perform move atomically using transaction
     await db.transaction(async (client) => {
-      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [from_location]);
-      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [sourceSlot.wine_id, to_location]);
+      await client.query('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2', [req.cellarId, from_location]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3', [sourceSlot.wine_id, req.cellarId, to_location]);
     });
 
     // Invalidate analysis cache since slot assignments changed
@@ -67,8 +67,8 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
     const { slot_a, slot_b, displaced_to } = req.body;
 
     // Get wine IDs from both slots
-    const slotA = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
-    const slotB = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_b);
+    const slotA = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, slot_a);
+    const slotB = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, slot_b);
 
     if (!slotA?.wine_id) {
       return res.status(400).json({ error: 'First slot is empty' });
@@ -77,7 +77,7 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
       return res.status(400).json({ error: 'Second slot is empty - use move instead' });
     }
 
-    const displacedSlot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(displaced_to);
+    const displacedSlot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, displaced_to);
     if (!displacedSlot) {
       return res.status(404).json({ error: 'Destination slot not found' });
     }
@@ -88,11 +88,11 @@ router.post('/swap', validateBody(swapBottleSchema), async (req, res) => {
     // Perform the swap atomically using transaction
     await db.transaction(async (client) => {
       // Move wine from slot_b to displaced_to
-      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, displaced_to]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3', [slotB.wine_id, req.cellarId, displaced_to]);
       // Move wine from slot_a to slot_b
-      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3', [slotA.wine_id, req.cellarId, slot_b]);
       // Clear slot_a
-      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [slot_a]);
+      await client.query('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2', [req.cellarId, slot_a]);
     });
 
     // Invalidate analysis cache since slot assignments changed
@@ -121,8 +121,8 @@ router.post('/direct-swap', validateBody(directSwapSchema), async (req, res) => 
     const { slot_a, slot_b } = req.body;
 
     // Get wine IDs from both slots
-    const slotA = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_a);
-    const slotB = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(slot_b);
+    const slotA = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, slot_a);
+    const slotB = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, slot_b);
 
     if (!slotA) {
       return res.status(404).json({ error: `Slot ${slot_a} not found` });
@@ -139,8 +139,8 @@ router.post('/direct-swap', validateBody(directSwapSchema), async (req, res) => 
 
     // Perform the direct swap atomically using transaction
     await db.transaction(async (client) => {
-      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotB.wine_id, slot_a]);
-      await client.query('UPDATE slots SET wine_id = $1 WHERE location_code = $2', [slotA.wine_id, slot_b]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3', [slotB.wine_id, req.cellarId, slot_a]);
+      await client.query('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3', [slotA.wine_id, req.cellarId, slot_b]);
     });
 
     // Invalidate analysis cache since slot assignments changed
@@ -166,7 +166,7 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     const { location } = req.params;
     const { occasion, pairing_dish, rating, notes } = req.body;
 
-    const slot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(location);
+    const slot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
     if (!slot?.wine_id) {
       return res.status(400).json({ error: 'Slot is empty' });
     }
@@ -178,21 +178,21 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     await db.transaction(async (client) => {
       // Log consumption
       await client.query(
-        `INSERT INTO consumption_log (wine_id, slot_location, occasion, pairing_dish, rating, notes)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [wineId, location, occasion || null, pairing_dish || null, rating || null, notes || null]
+        `INSERT INTO consumption_log (wine_id, slot_location, cellar_id, occasion, pairing_dish, rating, notes)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [wineId, location, req.cellarId, occasion || null, pairing_dish || null, rating || null, notes || null]
       );
 
       // Clear slot
-      await client.query('UPDATE slots SET wine_id = NULL WHERE location_code = $1', [location]);
+      await client.query('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2', [req.cellarId, location]);
 
       // Check remaining bottles
-      const remaining = await client.query('SELECT COUNT(*) as count FROM slots WHERE wine_id = $1', [wineId]);
+      const remaining = await client.query('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id = $2', [req.cellarId, wineId]);
       remainingCount = parseInt(remaining.rows[0].count) || 0;
 
       // Remove from reduce_now if no bottles left
       if (remainingCount === 0) {
-        await client.query('DELETE FROM reduce_now WHERE wine_id = $1', [wineId]);
+        await client.query('DELETE FROM reduce_now WHERE cellar_id = $1 AND wine_id = $2', [req.cellarId, wineId]);
       }
     });
 
@@ -218,7 +218,7 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
     const { location } = req.params;
     const { wine_id } = req.body;
 
-    const slot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(location);
+    const slot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
     if (!slot) {
       return res.status(404).json({ error: 'Slot not found' });
     }
@@ -226,7 +226,7 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
       return res.status(400).json({ error: 'Slot is occupied' });
     }
 
-    await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(wine_id, location);
+    await db.prepare('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3').run(wine_id, req.cellarId, location);
 
     // Invalidate analysis cache since slot assignments changed
     await invalidateAnalysisCache();
@@ -246,7 +246,7 @@ router.delete('/:location/remove', validateParams(locationParamSchema), async (r
   try {
     const { location } = req.params;
 
-    const slot = await db.prepare('SELECT wine_id FROM slots WHERE location_code = ?').get(location);
+    const slot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
     if (!slot) {
       return res.status(404).json({ error: 'Slot not found' });
     }
@@ -254,7 +254,7 @@ router.delete('/:location/remove', validateParams(locationParamSchema), async (r
       return res.status(400).json({ error: 'Slot is already empty' });
     }
 
-    await db.prepare('UPDATE slots SET wine_id = NULL WHERE location_code = ?').run(location);
+    await db.prepare('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2').run(req.cellarId, location);
 
     // Invalidate analysis cache since slot assignments changed
     await invalidateAnalysisCache();
@@ -274,7 +274,7 @@ router.put('/:location/open', validateParams(locationParamSchema), async (req, r
   try {
     const { location } = req.params;
 
-    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE location_code = ?').get(location);
+    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
     if (!slot) {
       return res.status(404).json({ error: 'Slot not found' });
     }
@@ -285,7 +285,7 @@ router.put('/:location/open', validateParams(locationParamSchema), async (req, r
       return res.status(400).json({ error: 'Bottle is already open' });
     }
 
-    await db.prepare('UPDATE slots SET is_open = TRUE, opened_at = CURRENT_TIMESTAMP WHERE location_code = ?').run(location);
+    await db.prepare('UPDATE slots SET is_open = TRUE, opened_at = CURRENT_TIMESTAMP WHERE cellar_id = $1 AND location_code = $2').run(req.cellarId, location);
 
     res.json({ message: 'Bottle marked as open', location });
   } catch (error) {
@@ -302,7 +302,7 @@ router.put('/:location/seal', validateParams(locationParamSchema), async (req, r
   try {
     const { location } = req.params;
 
-    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE location_code = ?').get(location);
+    const slot = await db.prepare('SELECT wine_id, is_open FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
     if (!slot) {
       return res.status(404).json({ error: 'Slot not found' });
     }
@@ -313,7 +313,7 @@ router.put('/:location/seal', validateParams(locationParamSchema), async (req, r
       return res.status(400).json({ error: 'Bottle is not open' });
     }
 
-    await db.prepare('UPDATE slots SET is_open = FALSE, opened_at = NULL WHERE location_code = ?').run(location);
+    await db.prepare('UPDATE slots SET is_open = FALSE, opened_at = NULL WHERE cellar_id = $1 AND location_code = $2').run(req.cellarId, location);
 
     res.json({ message: 'Bottle marked as sealed', location });
   } catch (error) {
@@ -326,7 +326,7 @@ router.put('/:location/seal', validateParams(locationParamSchema), async (req, r
  * Get all open bottles.
  * @route GET /api/slots/open
  */
-router.get('/open', async (_req, res) => {
+router.get('/open', async (req, res) => {
   try {
     const openBottles = await db.prepare(`
       SELECT
@@ -339,10 +339,10 @@ router.get('/open', async (_req, res) => {
         w.colour,
         w.style
       FROM slots s
-      JOIN wines w ON w.id = s.wine_id
-      WHERE s.is_open = TRUE
+      JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+      WHERE s.cellar_id = $1 AND s.is_open = TRUE
       ORDER BY s.opened_at DESC
-    `).all();
+    `).all(req.cellarId);
 
     res.json({
       count: openBottles.length,
