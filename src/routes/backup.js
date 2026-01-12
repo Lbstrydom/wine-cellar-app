@@ -55,10 +55,10 @@ async function safeDelete(sql) {
 router.get('/info', async (req, res) => {
   try {
     const info = {
-      wines: await safeCount('SELECT COUNT(*) as count FROM wines'),
-      slots: await safeCount('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL'),
-      history: await safeCount('SELECT COUNT(*) as count FROM consumption_log'),
-      ratings: await safeCount('SELECT COUNT(*) as count FROM wine_ratings'),
+      wines: await safeCount(`SELECT COUNT(*) as count FROM wines WHERE cellar_id = '${req.cellarId}'`),
+      slots: await safeCount(`SELECT COUNT(*) as count FROM slots WHERE cellar_id = '${req.cellarId}' AND wine_id IS NOT NULL`),
+      history: await safeCount(`SELECT COUNT(*) as count FROM consumption_log WHERE cellar_id = '${req.cellarId}'`),
+      ratings: await safeCount(`SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
       lastBackup: null
     };
     res.json(info);
@@ -80,14 +80,14 @@ router.get('/export/json', backupRateLimiter, async (req, res) => {
       appVersion: '1.0.0',
       exportedAt: new Date().toISOString(),
       data: {
-        wines: await db.prepare('SELECT * FROM wines').all(),
-        slots: await db.prepare('SELECT * FROM slots').all(),
-        wine_ratings: await safeQuery('SELECT * FROM wine_ratings'),
-        consumption_log: await safeQuery('SELECT * FROM consumption_log'),
-        drinking_windows: await safeQuery('SELECT * FROM drinking_windows'),
-        user_settings: await safeQuery('SELECT * FROM user_settings'),
-        data_provenance: await safeQuery('SELECT * FROM data_provenance'),
-        reduce_now: await safeQuery('SELECT * FROM reduce_now')
+        wines: await db.prepare(`SELECT * FROM wines WHERE cellar_id = $1`).all(req.cellarId),
+        slots: await db.prepare(`SELECT * FROM slots WHERE cellar_id = $1`).all(req.cellarId),
+        wine_ratings: await safeQuery(`SELECT * FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
+        consumption_log: await safeQuery(`SELECT * FROM consumption_log WHERE cellar_id = '${req.cellarId}'`),
+        drinking_windows: await safeQuery(`SELECT * FROM drinking_windows WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
+        user_settings: await safeQuery(`SELECT * FROM user_settings WHERE cellar_id = '${req.cellarId}'`),
+        data_provenance: await safeQuery(`SELECT * FROM data_provenance WHERE cellar_id = '${req.cellarId}'`),
+        reduce_now: await safeQuery(`SELECT * FROM reduce_now WHERE cellar_id = '${req.cellarId}'`)
       }
     };
 
@@ -127,10 +127,11 @@ router.get('/export/csv', backupRateLimiter, async (req, res) => {
         COUNT(s.id) as bottle_count,
         ${stringAgg('s.location_code')} as locations
       FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id
+      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+      WHERE w.cellar_id = $1
       GROUP BY w.id
       ORDER BY w.wine_name
-    `).all();
+    `).all(req.cellarId);
 
     // CSV header
     const headers = [

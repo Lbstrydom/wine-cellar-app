@@ -14,20 +14,21 @@ const router = Router();
  */
 router.get('/', async (req, res) => {
   try {
-    const totalBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+    const totalBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id IS NOT NULL').get(req.cellarId);
     const byColour = await db.prepare(`
       SELECT w.colour, COUNT(s.id) as count
       FROM slots s
-      JOIN wines w ON w.id = s.wine_id
+      JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+      WHERE s.cellar_id = $1
       GROUP BY w.colour
-    `).all();
-    const reduceNowCount = await db.prepare('SELECT COUNT(*) as count FROM reduce_now').get();
-    const emptySlots = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NULL').get();
+    `).all(req.cellarId);
+    const reduceNowCount = await db.prepare('SELECT COUNT(*) as count FROM reduce_now WHERE cellar_id = $1').get(req.cellarId);
+    const emptySlots = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id IS NULL').get(req.cellarId);
     const recentConsumption = await db.prepare(`
       SELECT COUNT(*) as count FROM consumption_log
-      WHERE consumed_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
-    `).get();
-    const openBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE is_open = TRUE').get();
+      WHERE cellar_id = $1 AND consumed_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
+    `).get(req.cellarId);
+    const openBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND is_open = TRUE').get(req.cellarId);
 
     const byColourNormalized = (byColour || []).map((row) => ({
       ...row,
@@ -79,10 +80,11 @@ router.get('/layout', async (req, res) => {
         rn.priority as reduce_priority,
         rn.reduce_reason
       FROM slots s
-      LEFT JOIN wines w ON s.wine_id = w.id
-      LEFT JOIN reduce_now rn ON rn.wine_id = w.id
+      LEFT JOIN wines w ON s.wine_id = w.id AND w.cellar_id = $1
+      LEFT JOIN reduce_now rn ON rn.wine_id = w.id AND rn.cellar_id = $1
+      WHERE s.cellar_id = $1
       ORDER BY s.zone DESC, s.row_num, s.col_num
-    `).all();
+    `).all(req.cellarId);
 
   const layout = {
     fridge: { rows: [{ slots: [] }, { slots: [] }] },
