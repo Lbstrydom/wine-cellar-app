@@ -13,7 +13,7 @@ const router = Router();
  * Legacy endpoint kept for integration tests / older clients.
  * @route GET /api/layout
  */
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
     const slots = await db.prepare(`
       SELECT
@@ -37,8 +37,9 @@ router.get('/', async (_req, res) => {
         w.tasting_notes
       FROM slots s
       LEFT JOIN wines w ON s.wine_id = w.id
+      WHERE s.cellar_id = $1
       ORDER BY s.zone DESC, s.row_num, s.col_num
-    `).all();
+    `).all(req.cellarId);
 
     const fridge = [];
     const cellar = [];

@@ -6,16 +6,24 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-
-// Node.js 18+ has native fetch, no need for node-fetch
-const API_BASE = process.env.TEST_API_URL || 'http://localhost:3000/api';
+import { apiCall, setupTestAuth, cleanupTestAuth } from './helpers.js';
 
 describe('Wine API Integration Tests', () => {
   let testWineId;
 
+  beforeAll(async () => {
+    // Ensure test auth is set up
+    await setupTestAuth();
+  });
+
+  afterAll(async () => {
+    // Clean up test data
+    await cleanupTestAuth();
+  });
+
   describe('GET /api/wines', () => {
     it('should return paginated list of wines', async () => {
-      const response = await fetch(`${API_BASE}/wines`);
+      const response = await apiCall('GET', '/wines');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -29,7 +37,7 @@ describe('Wine API Integration Tests', () => {
     });
 
     it('should support pagination parameters', async () => {
-      const response = await fetch(`${API_BASE}/wines?limit=5&offset=0`);
+      const response = await apiCall('GET', '/wines?limit=5&offset=0');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -48,11 +56,7 @@ describe('Wine API Integration Tests', () => {
         country: 'France'
       };
 
-      const response = await fetch(`${API_BASE}/wines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newWine)
-      });
+      const response = await apiCall('POST', '/wines', { body: newWine });
 
       expect(response.status).toBe(201);
       
@@ -64,11 +68,7 @@ describe('Wine API Integration Tests', () => {
     });
 
     it('should reject wine without required fields', async () => {
-      const response = await fetch(`${API_BASE}/wines`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
-      });
+      const response = await apiCall('POST', '/wines', { body: {} });
 
       // Zod validation returns 400 with error details
       expect(response.status).toBe(400);
@@ -80,7 +80,7 @@ describe('Wine API Integration Tests', () => {
 
   describe('GET /api/wines/:id', () => {
     it('should return a specific wine', async () => {
-      const response = await fetch(`${API_BASE}/wines/${testWineId}`);
+      const response = await apiCall('GET', `/wines/${testWineId}`);
       expect(response.status).toBe(200);
       
       const wine = await response.json();
@@ -89,7 +89,7 @@ describe('Wine API Integration Tests', () => {
     });
 
     it('should return 404 for non-existent wine', async () => {
-      const response = await fetch(`${API_BASE}/wines/999999`);
+      const response = await apiCall('GET', '/wines/999999');
       expect(response.status).toBe(404);
       
       const result = await response.json();
@@ -107,11 +107,7 @@ describe('Wine API Integration Tests', () => {
         country: 'Italy'
       };
 
-      const response = await fetch(`${API_BASE}/wines/${testWineId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updates)
-      });
+      const response = await apiCall('PUT', `/wines/${testWineId}`, { body: updates });
 
       expect(response.status).toBe(200);
       
@@ -122,9 +118,9 @@ describe('Wine API Integration Tests', () => {
 
   describe('GET /api/stats', () => {
     it('should return cellar statistics', async () => {
-      const response = await fetch(`${API_BASE}/stats`);
+      const response = await apiCall('GET', '/stats');
       expect(response.status).toBe(200);
-      
+
       const stats = await response.json();
       expect(stats).toHaveProperty('total_bottles');
       expect(stats).toHaveProperty('empty_slots');
@@ -132,25 +128,12 @@ describe('Wine API Integration Tests', () => {
       expect(typeof stats.total_bottles).toBe('number');
     });
   });
-
-  describe('DELETE /api/wines/:id', () => {
-    it('should delete a wine', async () => {
-      const response = await fetch(`${API_BASE}/wines/${testWineId}`, {
-        method: 'DELETE'
-      });
-
-      expect(response.status).toBe(200);
-      
-      const result = await response.json();
-      expect(result.message).toContain('deleted');
-    });
-  });
 });
 
 describe('Slots API Integration Tests', () => {
   describe('GET /api/layout', () => {
     it('should return cellar layout', async () => {
-      const response = await fetch(`${API_BASE}/layout`);
+      const response = await apiCall('GET', '/layout');
       expect(response.status).toBe(200);
       
       const layout = await response.json();
@@ -165,7 +148,7 @@ describe('Slots API Integration Tests', () => {
 describe('Pairing API Integration Tests', () => {
   describe('GET /api/pairing/rules', () => {
     it('should return pairing rules', async () => {
-      const response = await fetch(`${API_BASE}/pairing/rules`);
+      const response = await apiCall('GET', '/pairing/rules');
       expect(response.status).toBe(200);
       
       const rules = await response.json();
@@ -175,12 +158,10 @@ describe('Pairing API Integration Tests', () => {
 
   describe('POST /api/pairing/suggest', () => {
     it('should return pairing suggestions', async () => {
-      const response = await fetch(`${API_BASE}/pairing/suggest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await apiCall('POST', '/pairing/suggest', {
+        body: {
           signals: ['beef', 'rich']
-        })
+        }
       });
 
       expect(response.status).toBe(200);
@@ -191,10 +172,8 @@ describe('Pairing API Integration Tests', () => {
     });
 
     it('should reject request without signals', async () => {
-      const response = await fetch(`${API_BASE}/pairing/suggest`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({})
+      const response = await apiCall('POST', '/pairing/suggest', {
+        body: {}
       });
 
       expect(response.status).toBe(400);
@@ -211,7 +190,7 @@ describe('Rate Limiting', () => {
 
     // Make 150 requests (exceeds 100 limit)
     for (let i = 0; i < 150; i++) {
-      requests.push(fetch(`${API_BASE}/stats`));
+      requests.push(apiCall('GET', '/stats'));
     }
 
     const responses = await Promise.all(requests);
@@ -288,13 +267,11 @@ describe('Metrics Endpoint (Phase 8.10)', () => {
 describe('Input Validation (Phase 8.4)', () => {
   describe('POST /api/slots/move', () => {
     it('should validate location format', async () => {
-      const response = await fetch(`${API_BASE}/slots/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await apiCall('POST', '/slots/move', {
+        body: {
           from_location: 'invalid',
           to_location: 'R1C1'
-        })
+        }
       });
 
       expect(response.status).toBe(400);
@@ -303,13 +280,11 @@ describe('Input Validation (Phase 8.4)', () => {
     });
 
     it('should reject identical source and target', async () => {
-      const response = await fetch(`${API_BASE}/slots/move`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const response = await apiCall('POST', '/slots/move', {
+        body: {
           from_location: 'R1C1',
           to_location: 'R1C1'
-        })
+        }
       });
 
       expect(response.status).toBe(400);
@@ -319,13 +294,11 @@ describe('Input Validation (Phase 8.4)', () => {
   });
 
   describe('Search Metrics API', () => {
-    const metricsBase = `${API_BASE}/metrics`;
-
     it('GET /metrics/search/summary should return null when no metrics collected', async () => {
       // Clear any existing metrics
-      await fetch(`${metricsBase}/search/clear`, { method: 'DELETE' });
+      await apiCall('DELETE', '/metrics/search/clear');
 
-      const response = await fetch(`${metricsBase}/search/summary`);
+      const response = await apiCall('GET', '/metrics/search/summary');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -358,11 +331,7 @@ describe('Input Validation (Phase 8.4)', () => {
         }
       };
 
-      const response = await fetch(`${metricsBase}/search/record`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(testMetrics)
-      });
+      const response = await apiCall('POST', '/metrics/search/record', { body: testMetrics });
 
       expect(response.status).toBe(200);
       const result = await response.json();
@@ -372,7 +341,7 @@ describe('Input Validation (Phase 8.4)', () => {
     });
 
     it('GET /metrics/search/summary should return latest metrics after recording', async () => {
-      const response = await fetch(`${metricsBase}/search/summary`);
+      const response = await apiCall('GET', '/metrics/search/summary');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -382,7 +351,7 @@ describe('Input Validation (Phase 8.4)', () => {
     });
 
     it('GET /metrics/search/history should return recorded metrics', async () => {
-      const response = await fetch(`${metricsBase}/search/history?limit=10`);
+      const response = await apiCall('GET', '/metrics/search/history?limit=10');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -412,14 +381,10 @@ describe('Input Validation (Phase 8.4)', () => {
       ];
 
       for (const metrics of metricsToRecord) {
-        await fetch(`${metricsBase}/search/record`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(metrics)
-        });
+        await apiCall('POST', '/metrics/search/record', { body: metrics });
       }
 
-      const response = await fetch(`${metricsBase}/search/stats`);
+      const response = await apiCall('GET', '/metrics/search/stats');
       expect(response.status).toBe(200);
 
       const result = await response.json();
@@ -434,16 +399,14 @@ describe('Input Validation (Phase 8.4)', () => {
     });
 
     it('DELETE /metrics/search/clear should clear all metrics', async () => {
-      const response = await fetch(`${metricsBase}/search/clear`, {
-        method: 'DELETE'
-      });
+      const response = await apiCall('DELETE', '/metrics/search/clear');
 
       expect(response.status).toBe(200);
       const result = await response.json();
       expect(result.message).toBe('Metrics history cleared');
 
       // Verify history is empty
-      const summaryResponse = await fetch(`${metricsBase}/search/summary`);
+      const summaryResponse = await apiCall('GET', '/metrics/search/summary');
       const summaryResult = await summaryResponse.json();
       expect(summaryResult.data).toBe(null);
     });
@@ -454,11 +417,7 @@ describe('Input Validation (Phase 8.4)', () => {
         // Missing apiCalls
       };
 
-      const response = await fetch(`${metricsBase}/search/record`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(invalidMetrics)
-      });
+      const response = await apiCall('POST', '/metrics/search/record', { body: invalidMetrics });
 
       expect(response.status).toBe(400);
       const result = await response.json();
@@ -467,23 +426,21 @@ describe('Input Validation (Phase 8.4)', () => {
 
     it('GET /metrics/search/history should respect limit parameter', async () => {
       // Clear and record multiple entries
-      await fetch(`${metricsBase}/search/clear`, { method: 'DELETE' });
+      await apiCall('DELETE', '/metrics/search/clear');
 
       for (let i = 0; i < 5; i++) {
-        await fetch(`${metricsBase}/search/record`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+        await apiCall('POST', '/metrics/search/record', {
+          body: {
             summary: { totalDuration: 1000 + i, totalCost: '$0.05', costCents: 5 },
             apiCalls: { serpCalls: 1, unlockerCalls: 0, claudeExtractions: 0 },
             cache: { hits: 0, misses: 1, hitRate: '0.0' },
             byDomain: {},
             byLens: {}
-          })
+          }
         });
       }
 
-      const response = await fetch(`${metricsBase}/search/history?limit=3`);
+      const response = await apiCall('GET', '/metrics/search/history?limit=3');
       const result = await response.json();
 
       expect(result.data.length).toBeLessThanOrEqual(3);

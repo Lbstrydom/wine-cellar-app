@@ -25,6 +25,12 @@ router.get('/:id', async (req, res) => {
     const { id } = req.params;
     const includeSources = req.query.include_sources === 'true';
     
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, Number.parseInt(id, 10));
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+    
     const notes = await getWineTastingNotes(Number.parseInt(id, 10));
     
     if (!notes) {
@@ -59,10 +65,16 @@ router.get('/:id/sources', async (req, res) => {
   try {
     const { id } = req.params;
     
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, Number.parseInt(id, 10));
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+    
     const sources = await db.prepare(`
       SELECT source_name, source_type, source_url, snippet, retrieved_at
       FROM tasting_note_sources
-      WHERE wine_id = ?
+      WHERE wine_id = $1
       ORDER BY retrieved_at DESC
     `).all(Number.parseInt(id, 10));
     
@@ -85,11 +97,11 @@ router.post('/:id/regenerate', async (req, res) => {
     const { id } = req.params;
     const { reason } = req.body;
     
-    // Get wine info
+    // Get wine info and validate cellar ownership
     const wine = await db.prepare(`
       SELECT id, wine_name, colour, style, grapes, vintage, tasting_notes
-      FROM wines WHERE id = ?
-    `).get(Number.parseInt(id, 10));
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, Number.parseInt(id, 10));
     
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -117,10 +129,10 @@ router.post('/:id/regenerate', async (req, res) => {
     // Clear flags
     await db.prepare(`
       UPDATE wines SET 
-        tasting_notes_needs_review = FALSE,
-        tasting_notes_user_reported = FALSE
-      WHERE id = ?
-    `).run(wine.id);
+        tasting_notes_needs_review = $1,
+        tasting_notes_user_reported = $2
+      WHERE cellar_id = $3 AND id = $4
+    `).run(false, false, req.cellarId, wine.id);
     
     logger.info('TastingNotes', `Regenerated notes for wine ${wine.id} (reason: ${reason})`);
     
@@ -143,6 +155,12 @@ router.post('/:id/report', async (req, res) => {
   try {
     const { id } = req.params;
     const { issue_type, details } = req.body;
+    
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, Number.parseInt(id, 10));
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
     
     if (!issue_type) {
       return res.status(400).json({ error: 'issue_type is required' });
@@ -174,7 +192,7 @@ router.post('/:id/report', async (req, res) => {
 });
 
 /**
- * Get pending tasting note reports (admin).
+ * Get pending tasting note reports for this cellar.
  * @route GET /api/tasting-notes/reports
  */
 router.get('/reports', async (req, res) => {
@@ -192,11 +210,11 @@ router.get('/reports', async (req, res) => {
         w.wine_name,
         w.vintage
       FROM tasting_note_reports r
-      JOIN wines w ON w.id = r.wine_id
-      WHERE r.status = ?
+      JOIN wines w ON w.id = r.wine_id AND w.cellar_id = $1
+      WHERE r.status = $2
       ORDER BY r.created_at DESC
       LIMIT 100
-    `).all(status);
+    `).all(req.cellarId, status);
     
     res.json({
       success: true,
@@ -209,7 +227,7 @@ router.get('/reports', async (req, res) => {
 });
 
 /**
- * Update report status (admin).
+ * Update report status.
  * @route PUT /api/tasting-notes/reports/:reportId
  */
 router.put('/reports/:reportId', async (req, res) => {
@@ -224,13 +242,22 @@ router.put('/reports/:reportId', async (req, res) => {
       });
     }
     
-    const resolvedAt = status === 'resolved' ? 'CURRENT_TIMESTAMP' : null;
+    // Verify report belongs to this cellar
+    const report = await db.prepare(`
+      SELECT r.id FROM tasting_note_reports r
+      JOIN wines w ON w.id = r.wine_id
+      WHERE w.cellar_id = $1 AND r.id = $2
+    `).get(req.cellarId, Number.parseInt(reportId, 10));
+    
+    if (!report) {
+      return res.status(404).json({ error: 'Report not found' });
+    }
     
     await db.prepare(`
       UPDATE tasting_note_reports SET 
-        status = ?,
-        resolved_at = ${resolvedAt ? 'CURRENT_TIMESTAMP' : 'NULL'}
-      WHERE id = ?
+        status = $1,
+        resolved_at = CASE WHEN $1 = 'resolved' THEN CURRENT_TIMESTAMP ELSE resolved_at END
+      WHERE id = $2
     `).run(status, Number.parseInt(reportId, 10));
     
     res.json({

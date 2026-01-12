@@ -30,11 +30,11 @@ router.get('/', async (req, res) => {
         COUNT(s.id) as bottle_count,
         ${stringAgg('s.location_code')} as locations
       FROM reduce_now rn
-      JOIN wines w ON w.id = rn.wine_id
+      JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1
       LEFT JOIN slots s ON s.wine_id = w.id
       GROUP BY rn.id, rn.priority, rn.reduce_reason, w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating
       ORDER BY rn.priority, w.wine_name
-    `).all();
+    `).all(req.cellarId);
     res.json(list);
   } catch (error) {
     console.error('Get reduce-now error:', error);
@@ -50,10 +50,16 @@ router.post('/', async (req, res) => {
   try {
     const { wine_id, priority, reduce_reason } = req.body;
 
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
     // PostgreSQL uses ON CONFLICT ... DO UPDATE
     await db.prepare(`
       INSERT INTO reduce_now (wine_id, priority, reduce_reason)
-      VALUES (?, ?, ?)
+      VALUES ($1, $2, $3)
       ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
     `).run(wine_id, priority || 3, reduce_reason || null);
 
@@ -70,7 +76,13 @@ router.post('/', async (req, res) => {
  */
 router.delete('/:wine_id', async (req, res) => {
   try {
-    await db.prepare('DELETE FROM reduce_now WHERE wine_id = ?').run(req.params.wine_id);
+    // Validate wine belongs to this cellar first
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, req.params.wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    await db.prepare('DELETE FROM reduce_now WHERE wine_id = $1').run(req.params.wine_id);
     res.json({ message: 'Removed from reduce-now' });
   } catch (error) {
     console.error('Delete reduce-now error:', error);
@@ -86,11 +98,11 @@ router.delete('/:wine_id', async (req, res) => {
  *
  * Optimized: Single query to fetch all candidate wines, then process in-memory
  */
-router.post('/evaluate', async (_req, res) => {
+router.post('/evaluate', async (req, res) => {
   try {
-    // Get current settings
+    // Get current settings (scoped to cellar)
     const settings = {};
-    const settingsRows = await db.prepare('SELECT key, value FROM user_settings').all();
+    const settingsRows = await db.prepare('SELECT key, value FROM user_settings WHERE cellar_id = $1').all(req.cellarId);
     for (const row of settingsRows) {
       settings[row.key] = row.value;
     }
@@ -130,11 +142,12 @@ router.post('/evaluate', async (_req, res) => {
       JOIN slots s ON s.wine_id = w.id
       LEFT JOIN drinking_windows dw ON w.id = dw.wine_id
       LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-      WHERE rn.id IS NULL
+      WHERE w.cellar_id = ?
+        AND rn.id IS NULL
       GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.purchase_stars, w.vivino_rating, w.country, w.grape, dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source
       HAVING COUNT(s.id) > 0
       ORDER BY ${nullsLast('dw.drink_by_year', 'ASC')}, w.vintage ASC
-    `).all(currentYear);
+    `).all(currentYear, req.cellarId);
 
     const candidates = [];
     const seenWineIds = new Set();
@@ -363,13 +376,13 @@ router.post('/batch', async (req, res) => {
 
     let added = 0;
     for (const wineId of wine_ids) {
-      // Get wine info for reason
-      const wine = await db.prepare('SELECT wine_name, vintage FROM wines WHERE id = ?').get(wineId);
+      // Get wine info for reason and validate it belongs to cellar
+      const wine = await db.prepare('SELECT wine_name, vintage FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
       if (wine) {
         const reason = reason_prefix ? `${reason_prefix}` : 'Auto-suggested';
         await db.prepare(`
           INSERT INTO reduce_now (wine_id, priority, reduce_reason)
-          VALUES (?, ?, ?)
+          VALUES ($1, $2, $3)
           ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
         `).run(wineId, priority || 3, reason);
         added++;

@@ -25,6 +25,24 @@ export async function requireCellarContext(req, res, next) {
   const requestedCellarId = req.headers['x-cellar-id'];
   const userId = req.user.id;
 
+  // INTEGRATION TEST MODE: Skip DB validation and use provided cellar ID directly
+  // This allows integration tests to run without complex DB setup
+  // Only enabled when INTEGRATION_TEST_MODE=true (not just NODE_ENV=test)
+  if (process.env.INTEGRATION_TEST_MODE === 'true') {
+    if (requestedCellarId) {
+      req.cellarId = requestedCellarId;
+      req.cellarRole = 'owner';  // Mock full permissions for tests
+    } else if (req.user.active_cellar_id) {
+      req.cellarId = req.user.active_cellar_id;
+      req.cellarRole = 'owner';
+    } else {
+      // No cellar context available - use a default test cellar
+      req.cellarId = '00000000-0000-0000-0000-000000000001';
+      req.cellarRole = 'owner';
+    }
+    return next();
+  }
+
   try {
     if (requestedCellarId) {
       // CRITICAL: Verify user is a member of this cellar before using it

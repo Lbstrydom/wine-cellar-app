@@ -1,28 +1,31 @@
 # Phase 2b Cellar_ID Filtering - Remaining Work Guide
 
-**Current Status:** 78/137 queries updated (57% complete)  
-**Remaining:** 59 queries across 8 files  
-**Estimated Effort:** 2-3 hours for completion
+**Current Status:** 106/137 queries updated (77% complete)  
+**Remaining:** 31 queries across 10 files  
+**Estimated Effort:** ~1.5-2.0 hours for completion
+**Work Rule:** Finish each file end-to-end before switching to the next; avoid cherry-picking queries.
 
 ---
 
 ## Completed Routes (No Further Work Needed)
 
 ### ✅ wines.js - 20/22 (91%)
-- All critical endpoints updated
-- Only 2 minor queries remaining
+- All critical endpoints updated (2 minor queries remain)
 
 ### ✅ slots.js - 27/17+ (159%)
 - Comprehensively updated with cellar_id filtering
 - All endpoint queries scoped
 
 ### ✅ stats.js - 7/9 (78%)
-- Main statistics queries updated
-- 2 remaining helper queries
+- Main statistics queries updated (2 helper queries remain)
 
 ### ✅ backup.js - 13/12 (108%)
 - Export/import functionality scoped
 - Exceeds requirements
+
+### ✅ cellar.js - 36/23 (scoped, 157%)
+- Zone transactions, reconfiguration apply/undo now scoped with cellar_id (migration 036)
+- All zone_allocations operations use cellar_id and composite key (cellar_id, zone_id)
 
 ---
 
@@ -30,53 +33,7 @@
 
 ### 🔴 HIGH PRIORITY
 
-#### 1. cellar.js - 15 queries remaining (23 total, 35% done)
-
-**What's Completed:**
-- Helper functions (getAllWinesWithSlots, getOccupiedSlots) scoped with cellarId parameter
-- All 9 call sites updated to pass req.cellarId
-- Wine UPDATE queries in move execution scoped
-- Zone merge basic queries converted to parameterized
-
-**What Remains:**
-
-```javascript
-// Line ~576-615: Zone merge transaction queries need cellar context
-// (zone_allocations queries - no cellar_id column yet, but should verify scope)
-
-// Line ~850-900: mergeZonesTransactional function
-// - client.query('SELECT assigned_rows... WHERE zone_id = $1', [sourceZoneId])
-// - client.query('UPDATE wines SET zone_id = $1 WHERE zone_id = $2', [targetZoneId, sourceZoneId])
-// - client.query('UPDATE zone_allocations...')
-// - client.query('DELETE FROM zone_allocations WHERE zone_id = $1', [sourceZoneId])
-
-// Line ~800-850: reallocateRowTransactional function
-// - Multiple client.query() calls for zone_allocations operations
-// - These work on zones (not wine-scoped), but should consider cellar context
-
-// Line ~920-950: Reconfiguration apply transaction
-// - client.query('SELECT assigned_rows FROM zone_allocations WHERE zone_id = ANY($1::text[])', [affectedZones])
-// - client.query('SELECT zone_id, assigned_rows FROM zone_allocations')
-// - Multiple transaction operations
-
-// Action: Review if these zone operations should be scoped by which cellar owns the zones
-// NOTE: zone_allocations table design issue - doesn't have cellar_id column
-```
-
-**Pattern to Apply:**
-```javascript
-// Add cellar_id verification before zone operations:
-const zone = await db.prepare(
-  'SELECT zone_id FROM cellar_zones WHERE cellar_id = $1 AND zone_id = $2'
-).get(req.cellarId, zoneId);
-if (!zone) {
-  return res.status(404).json({ error: 'Zone not found' });
-}
-```
-
----
-
-#### 2. ratings.js - 14 queries remaining (17 total, 18% done)
+#### 1. ratings.js - 14 queries remaining (17 total, 18% done)
 
 **What's Completed:**
 - GET /:wineId/ratings - cellar_id added
@@ -119,6 +76,9 @@ if (!wine) {
 ---
 
 ### 🟡 MEDIUM PRIORITY
+
+#### 2. settings.js - 9 queries (0% done)
+- Add cellar_id scoping to all settings operations (per-cellar future-proofing)
 
 #### 3. drinkingWindows.js - 8 queries (0% done)
 
@@ -168,24 +128,27 @@ if (!wine) {
 
 ### 🟢 LOW PRIORITY (1-3 queries each)
 
-#### 5. bottles.js - 3 queries (0% done)
-#### 6. tastingNotes.js - 5 queries (0% done)
-#### 7. pairing.js - 2 queries (0% done)
-#### 8. Others (layout.js, palateProfile.js, searchMetrics.js) - 1 query each
+#### 5. wines.js - 2 queries remaining (finish file)
+#### 6. stats.js - 2 helper queries remaining
+#### 7. tastingNotes.js - 5 queries (0% done)
+#### 8. bottles.js - 3 queries (0% done)
+#### 9. pairing.js - 2 queries (0% done)
+#### 10. layout.js, palateProfile.js, searchMetrics.js - 1 query each
 
 ---
 
 ## Implementation Strategy
 
 ### Recommended Order (by ROI)
-1. **cellar.js** (15 queries) - Core cellar functionality
-2. **ratings.js** (14 queries) - Wine ratings/scoring
+1. **ratings.js** (14 queries) - Wine ratings/scoring
+2. **settings.js** (9 queries) - Per-cellar settings scope
 3. **drinkingWindows.js** (8 queries) - Wine metadata
 4. **reduceNow.js** (7 queries) - Cellar organization
-5. **tastingNotes.js** (5 queries) - Wine notes
-6. **bottles.js** (3 queries) - Bottle-specific ops
-7. **pairing.js** (2 queries) - Wine pairing suggestions
-8. **Others** (4 queries) - Miscellaneous
+5. **tastingNotes.js** (5 queries)
+6. **bottles.js** (3 queries)
+7. **pairing.js** (2 queries)
+8. **wines.js** (2 remaining), **stats.js** (2 remaining)
+9. **layout.js / palateProfile.js / searchMetrics.js** (1 each)
 
 ### Batch Update Approach
 
@@ -205,6 +168,7 @@ For each file, follow this pattern:
 
 5. Convert all ? to $1, $2, etc. numbered parameters
 6. Update all .get(), .all(), .run() calls with new parameter list
+7. Do not switch files until every query in the current file is updated and double-checked
 ```
 
 ---
@@ -219,10 +183,18 @@ For each file, follow this pattern:
 - Accept zones as cross-cellar resource (limitation)
 - Use cellar verification through wine relationships
 
-**Recommended Action:** Add migration to add cellar_id:
+**Status:** Migration 036 completed (adds cellar_id, FK to cellars, backfill via cellar_zones, NOT NULL, unique index).
+
+**Recommended Action (if re-running or auditing):** Ensure migration 036 is applied and backfill succeeded:
 ```sql
 ALTER TABLE zone_allocations ADD COLUMN cellar_id TEXT;
 CREATE INDEX idx_zone_allocations_cellar ON zone_allocations(cellar_id);
+UPDATE zone_allocations za
+SET cellar_id = cz.cellar_id
+FROM cellar_zones cz
+WHERE za.zone_id = cz.zone_id;
+ALTER TABLE zone_allocations ALTER COLUMN cellar_id SET NOT NULL;
+CREATE UNIQUE INDEX idx_zone_allocations_cellar_zone ON zone_allocations(cellar_id, zone_id);
 ```
 
 ### 2. user_settings Table
@@ -289,21 +261,21 @@ git commit -m "Phase 2b: All tests passing - multi-tenant ready for integration 
 
 ## Summary
 
-**Total Remaining:** 59 queries  
-**High Priority:** 29 queries (cellar.js, ratings.js)  
-**Medium Priority:** 20 queries (drinkingWindows.js, reduceNow.js)  
-**Low Priority:** 10 queries (others)
+**Total Remaining:** 31 queries  
+**High Priority:** 14 queries (ratings.js)  
+**Medium Priority:** 24 queries (settings.js, drinkingWindows.js, reduceNow.js)  
+**Low Priority:**  (tastingNotes.js, bottles.js, pairing.js, wines.js, stats.js, layout.js, palateProfile.js, searchMetrics.js)
 
 **Estimated Effort:**
-- High Priority: 1.5-2 hours
-- Medium Priority: 1-1.5 hours
-- Low Priority: 0.5 hours
-- **Total: 3-4 hours** for 100% completion
+- High Priority: ~0.5 hour
+- Medium Priority: ~0.75-1 hour
+- Low Priority: ~0.25 hour
+- **Total: ~1.5-2.0 hours** for 100% completion
 
 **Next Recommended Action:**
-1. Focus on cellar.js zone transaction queries
-2. Complete ratings.js endpoints
-3. Finish drinkingWindows and reduceNow
+1. Complete ratings.js endpoints (14 queries)
+2. Scope settings.js (9), drinkingWindows.js (8), reduceNow.js (7)
+3. Finish remaining small files (tastingNotes, bottles, pairing, wines, stats, layout, palateProfile, searchMetrics)
 4. Run full test suite
 5. Begin integration testing with multi-user scenario
 

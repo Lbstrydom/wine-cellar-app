@@ -69,12 +69,12 @@ router.get('/feedback/:wineId', async (req, res) => {
 });
 
 /**
- * Get full palate profile.
+ * Get full palate profile for this cellar.
  * @route GET /api/palate/profile
  */
-router.get('/profile', async (_req, res) => {
+router.get('/profile', async (req, res) => {
   try {
-    const profile = await getPalateProfile();
+    const profile = await getPalateProfile(req.cellarId);
     res.json(profile);
   } catch (error) {
     logger.error('PalateProfile', `Get profile error: ${error.message}`);
@@ -90,9 +90,9 @@ router.get('/score/:wineId', async (req, res) => {
   const { wineId } = req.params;
 
   try {
-    // Get wine from database
+    // Get wine from database (scoped to cellar)
     const db = (await import('../db/index.js')).default;
-    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(parseInt(wineId));
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, parseInt(wineId));
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
@@ -115,7 +115,7 @@ router.get('/recommendations', async (req, res) => {
   const limit = parseInt(req.query.limit) || 10;
 
   try {
-    const recommendations = await getPersonalizedRecommendations(limit);
+    const recommendations = await getPersonalizedRecommendations(limit, req.cellarId);
     res.json({ recommendations });
   } catch (error) {
     logger.error('PalateProfile', `Recommendations error: ${error.message}`);

@@ -1,12 +1,7 @@
 Observed issues:
 1. 
 Issues:
-1. The zone_allocations table doesn't have cellar_id column in typical setups, but let me check the migrations. For now, let me update the wines query. Let me also check if we need to add cellar_id to zone_allocations:
 
-Searched for text in migration SQL files
-I see that zone_allocations doesn't have cellar_id. This is a problem for multi-tenancy. However, for now, I should note that wine queries need cellar filtering. The zone operations are complex, so let me focus on adding cellar_id filtering where critical. Let me update the wines update query:
-
-We can't skip or jsut focus onc ritical, we need to be systematic: This file is large. Given that cellar.js has 23 queries that need updating according to the automated checker, let me focus on the most critical queries in key endpoints. Let me read more strategically to find the major database operations. same for wines.js and same for ratings.js
 
 
 4) Buying guide strategy (no code, just product logic)

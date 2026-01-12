@@ -52,8 +52,8 @@ router.get('/:wineId/ratings', async (req, res) => {
       // Awards table may not exist yet
     }
 
-    // Get user preference
-    const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
+    // Get user preference (scoped to cellar)
+    const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'rating_preference');
     const preference = parseInt(prefSetting?.value || '40');
 
     // Calculate aggregates
@@ -143,7 +143,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     // Delete existing auto-fetched ratings (keep user overrides)
     await db.prepare(`
       DELETE FROM wine_ratings
-      WHERE wine_id = ? AND (is_user_override != 1 OR is_user_override IS NULL)
+      WHERE wine_id = $1 AND (is_user_override != 1 OR is_user_override IS NULL)
     `).run(wineId);
 
     logger.info('Ratings', `Cleared ${existingRatings.length} existing auto-ratings for wine ${wineId}`);
@@ -181,7 +181,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
             award_name, competition_year, rating_count,
             source_url, evidence_excerpt, matched_wine_label,
             vintage_match, match_confidence, fetched_at, is_user_override
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, 0)
         `).run(
           wineId,
           wine.vintage,
@@ -212,7 +212,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     // Update aggregates
     const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = $1').all(wineId);
-    const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
+    const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'rating_preference');
     const preference = parseInt(prefSetting?.value || '40');
     const aggregates = calculateWineRatings(ratings, wine, preference);
 
@@ -259,7 +259,7 @@ router.post('/:wineId/ratings', async (req, res) => {
     const { wineId } = req.params;
     const { source, score_type, raw_score, competition_year, award_name, source_url, notes, custom_source_name } = req.body;
 
-    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
@@ -288,12 +288,12 @@ router.post('/:wineId/ratings', async (req, res) => {
         normalized_min, normalized_max, normalized_mid,
         award_name, competition_year, source_url,
         is_user_override, override_note
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
     `).run(
       wineId, wine.vintage, sourceToStore, sourceLens, score_type, raw_score,
       normalized.min, normalized.max, normalized.mid,
       award_name || null, competition_year || null, source_url || null,
-      notes || null
+      1, notes || null
     );
 
     res.json({ id: result.lastInsertRowid, message: 'Rating added' });
@@ -312,11 +312,16 @@ router.put('/:wineId/ratings/:ratingId', async (req, res) => {
     const { wineId, ratingId } = req.params;
     const { override_normalized_mid, override_note } = req.body;
 
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
     await db.prepare(`
       UPDATE wine_ratings
-      SET is_user_override = 1, override_normalized_mid = ?, override_note = ?
-      WHERE id = ? AND wine_id = ?
-    `).run(override_normalized_mid, override_note || null, ratingId, wineId);
+      SET is_user_override = $1, override_normalized_mid = $2, override_note = $3
+      WHERE id = $4 AND wine_id = $5
+    `).run(1, override_normalized_mid, override_note || null, ratingId, wineId);
 
     res.json({ message: 'Rating updated' });
   } catch (error) {
@@ -333,7 +338,12 @@ router.delete('/:wineId/ratings/:ratingId', async (req, res) => {
   try {
     const { wineId, ratingId } = req.params;
 
-    await db.prepare('DELETE FROM wine_ratings WHERE id = ? AND wine_id = ?').run(ratingId, wineId);
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    await db.prepare('DELETE FROM wine_ratings WHERE id = $1 AND wine_id = $2').run(ratingId, wineId);
 
     res.json({ message: 'Rating deleted' });
   } catch (error) {
@@ -346,16 +356,29 @@ router.delete('/:wineId/ratings/:ratingId', async (req, res) => {
  * Cleanup duplicate ratings in database.
  * @route POST /api/ratings/cleanup
  */
-router.post('/cleanup', async (_req, res) => {
+router.post('/cleanup', async (req, res) => {
   try {
-    // Find and remove duplicate ratings (keep lowest ID for each wine_id + source combo)
+    // Find and remove duplicate ratings for this cellar only (keep lowest ID for each wine_id + source combo)
+    const cellarWineIds = await db.prepare(`
+      SELECT id FROM wines WHERE cellar_id = $1
+    `).all(req.cellarId);
+    
+    if (cellarWineIds.length === 0) {
+      return res.json({
+        message: 'No duplicates found',
+        removed_count: 0
+      });
+    }
+
+    const wineIdPlaceholders = cellarWineIds.map((_, i) => `$${i + 2}`).join(',');
     const duplicates = await db.prepare(`
       SELECT id FROM wine_ratings
-      WHERE id NOT IN (
+      WHERE wine_id IN (${wineIdPlaceholders}) AND id NOT IN (
         SELECT MIN(id) FROM wine_ratings
+        WHERE wine_id IN (${wineIdPlaceholders})
         GROUP BY wine_id, source
       )
-    `).all();
+    `).all(req.cellarId, ...cellarWineIds.map(w => w.id));
 
     if (duplicates.length > 0) {
       // Use parameterized query to prevent SQL injection
@@ -379,7 +402,7 @@ router.post('/cleanup', async (_req, res) => {
  * Get available rating sources.
  * @route GET /api/ratings/sources
  */
-router.get('/sources', (_req, res) => {
+router.get('/sources', (req, res) => {
   const sources = Object.entries(RATING_SOURCES).map(([id, config]) => ({
     id,
     name: config.name,
@@ -392,10 +415,10 @@ router.get('/sources', (_req, res) => {
 });
 
 /**
- * Get rating search logs.
+ * Get rating search logs (for this cellar).
  * @route GET /api/ratings/logs
  */
-router.get('/logs', async (_req, res) => {
+router.get('/logs', async (req, res) => {
   const fs = await import('node:fs');
   const logPath = logger.getLogPath();
 
@@ -433,7 +456,7 @@ router.post('/:wineId/ratings/fetch-async', async (req, res) => {
   const { wineId } = req.params;
   const { forceRefresh = false } = req.body;
 
-  const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
   if (!wine) {
     return res.status(404).json({ error: 'Wine not found' });
   }
@@ -474,9 +497,19 @@ router.post('/batch-fetch', async (req, res) => {
     return res.status(400).json({ error: 'Maximum 100 wines per batch' });
   }
 
+  // Validate wineIds belong to this cellar
+  const numericIds = wineIds.map(id => parseInt(id, 10)).filter(Number.isFinite);
+  const placeholders = numericIds.map((_, i) => `$${i + 2}`).join(',');
+  const allowed = await db.prepare(
+    `SELECT id FROM wines WHERE cellar_id = $1 AND id IN (${placeholders})`
+  ).all(req.cellarId, ...numericIds);
+  if (allowed.length !== numericIds.length) {
+    return res.status(403).json({ error: 'One or more wines are not in this cellar' });
+  }
+
   try {
     const jobId = await jobQueue.enqueue('batch_fetch', {
-      wineIds: wineIds.map(id => parseInt(id)),
+      wineIds: numericIds,
       options: { forceRefresh }
     }, { priority: 5 });
 
@@ -547,10 +580,10 @@ router.delete('/jobs/:jobId', async (req, res) => {
 });
 
 /**
- * Get job queue statistics.
+ * Get job queue statistics (for this cellar).
  * @route GET /api/jobs/stats
  */
-router.get('/jobs/stats', async (_req, res) => {
+router.get('/jobs/stats', async (req, res) => {
   try {
     const stats = await jobQueue.getStats();
     res.json(stats);
@@ -565,10 +598,10 @@ router.get('/jobs/stats', async (_req, res) => {
 // =============================================================================
 
 /**
- * Get cache statistics.
+ * Get cache statistics (for this cellar).
  * @route GET /api/cache/stats
  */
-router.get('/cache/stats', async (_req, res) => {
+router.get('/cache/stats', async (req, res) => {
   try {
     const stats = getCacheStats();
     res.json(stats);
@@ -579,10 +612,10 @@ router.get('/cache/stats', async (_req, res) => {
 });
 
 /**
- * Purge expired cache entries.
+ * Purge expired cache entries (for this cellar).
  * @route POST /api/cache/purge
  */
-router.post('/cache/purge', async (_req, res) => {
+router.post('/cache/purge', async (req, res) => {
   try {
     const result = purgeExpiredCache();
     res.json({

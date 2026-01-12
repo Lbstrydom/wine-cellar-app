@@ -161,11 +161,12 @@ router.get('/consumption', async (req, res) => {
         w.purchase_stars
       FROM consumption_log cl
       JOIN wines w ON w.id = cl.wine_id
+      WHERE cl.cellar_id = $1
       ORDER BY cl.consumed_at DESC
-      LIMIT $1 OFFSET $2
-    `).all(limit, offset);
+      LIMIT $2 OFFSET $3
+    `).all(req.cellarId, limit, offset);
 
-    const total = await db.prepare('SELECT COUNT(*) as count FROM consumption_log').get();
+    const total = await db.prepare('SELECT COUNT(*) as count FROM consumption_log WHERE cellar_id = $1').get(req.cellarId);
 
     res.json({
       items: log || [],

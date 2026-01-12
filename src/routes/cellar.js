@@ -576,12 +576,23 @@ router.post('/zones/merge', async (req, res) => {
       return res.status(400).json({ success: false, error: 'sourceZoneId and targetZoneId must differ' });
     }
 
+    const sourceZone = await db
+      .prepare('SELECT zone_id FROM cellar_zones WHERE cellar_id = $1 AND zone_id = $2')
+      .get(req.cellarId, sourceZoneId);
+    const targetZone = await db
+      .prepare('SELECT zone_id FROM cellar_zones WHERE cellar_id = $1 AND zone_id = $2')
+      .get(req.cellarId, targetZoneId);
+
+    if (!sourceZone || !targetZone) {
+      return res.status(404).json({ success: false, error: 'Zone not found in this cellar' });
+    }
+
     const sourceAlloc = await db.prepare(
-      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1'
-    ).get(sourceZoneId);
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2'
+    ).get(req.cellarId, sourceZoneId);
     const targetAlloc = await db.prepare(
-      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1'
-    ).get(targetZoneId);
+      'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2'
+    ).get(req.cellarId, targetZoneId);
 
     const sourceRows = sourceAlloc ? JSON.parse(sourceAlloc.assigned_rows) : [];
     const targetRows = targetAlloc ? JSON.parse(targetAlloc.assigned_rows) : [];
@@ -600,17 +611,17 @@ router.post('/zones/merge', async (req, res) => {
         await db.prepare(
           `UPDATE zone_allocations
            SET assigned_rows = $1, wine_count = $2, updated_at = CURRENT_TIMESTAMP
-           WHERE zone_id = $3`
-        ).run(JSON.stringify(mergedRows), mergedWineCount, targetZoneId);
+           WHERE cellar_id = $3 AND zone_id = $4`
+        ).run(JSON.stringify(mergedRows), mergedWineCount, req.cellarId, targetZoneId);
       } else {
         await db.prepare(
-          `INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count)
-           VALUES ($1, $2, CURRENT_TIMESTAMP, $3)`
-        ).run(targetZoneId, JSON.stringify(mergedRows), mergedWineCount);
+          `INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count)
+           VALUES ($1, $2, $3, CURRENT_TIMESTAMP, $4)`
+        ).run(req.cellarId, targetZoneId, JSON.stringify(mergedRows), mergedWineCount);
       }
 
       // Remove source allocation
-      await db.prepare('DELETE FROM zone_allocations WHERE zone_id = $1').run(sourceZoneId);
+      await db.prepare('DELETE FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2').run(req.cellarId, sourceZoneId);
 
       await db.prepare('COMMIT').run();
     } catch (execError) {
@@ -704,7 +715,7 @@ function getAffectedZoneIdsFromPlan(plan) {
   return Array.from(zoneIds);
 }
 
-async function allocateRowTransactional(client, zoneId, usedRows) {
+async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
   const zone = getZoneById(zoneId);
   if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
 
@@ -732,21 +743,21 @@ async function allocateRowTransactional(client, zoneId, usedRows) {
   if (!assignedRow) throw new Error('No available rows - cellar at maximum zone capacity');
 
   const existing = await client.query(
-    'SELECT assigned_rows, wine_count, first_wine_date FROM zone_allocations WHERE zone_id = $1',
-    [zoneId]
+    'SELECT assigned_rows, wine_count, first_wine_date FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, zoneId]
   );
 
   if (existing.rows.length > 0) {
     const rows = JSON.parse(existing.rows[0].assigned_rows || '[]');
     rows.push(assignedRow);
     await client.query(
-      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
-      [JSON.stringify(rows), zoneId]
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
+      [JSON.stringify(rows), cellarId, zoneId]
     );
   } else {
     await client.query(
-      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
-      [zoneId, JSON.stringify([assignedRow]), 0]
+      'INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, $3, NOW(), $4)',
+      [cellarId, zoneId, JSON.stringify([assignedRow]), 0]
     );
   }
 
@@ -754,39 +765,39 @@ async function allocateRowTransactional(client, zoneId, usedRows) {
   return assignedRow;
 }
 
-async function mergeZonesTransactional(client, sourceZoneId, targetZoneId) {
+async function mergeZonesTransactional(client, cellarId, sourceZoneId, targetZoneId) {
   if (sourceZoneId === targetZoneId) return;
 
   const sourceAlloc = await client.query(
-    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
-    [sourceZoneId]
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, sourceZoneId]
   );
   const targetAlloc = await client.query(
-    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
-    [targetZoneId]
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, targetZoneId]
   );
 
   const sourceRows = sourceAlloc.rows[0]?.assigned_rows ? JSON.parse(sourceAlloc.rows[0].assigned_rows) : [];
   const targetRows = targetAlloc.rows[0]?.assigned_rows ? JSON.parse(targetAlloc.rows[0].assigned_rows) : [];
   const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
 
-  await client.query('UPDATE wines SET zone_id = $1 WHERE zone_id = $2', [targetZoneId, sourceZoneId]);
+  await client.query('UPDATE wines SET zone_id = $1 WHERE cellar_id = $2 AND zone_id = $3', [targetZoneId, cellarId, sourceZoneId]);
 
   const mergedWineCount = (targetAlloc.rows[0]?.wine_count || 0) + (sourceAlloc.rows[0]?.wine_count || 0);
 
   if (targetAlloc.rows.length > 0) {
     await client.query(
-      'UPDATE zone_allocations SET assigned_rows = $1, wine_count = $2, updated_at = NOW() WHERE zone_id = $3',
-      [JSON.stringify(mergedRows), mergedWineCount, targetZoneId]
+      'UPDATE zone_allocations SET assigned_rows = $1, wine_count = $2, updated_at = NOW() WHERE cellar_id = $3 AND zone_id = $4',
+      [JSON.stringify(mergedRows), mergedWineCount, cellarId, targetZoneId]
     );
   } else {
     await client.query(
-      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
-      [targetZoneId, JSON.stringify(mergedRows), mergedWineCount]
+      'INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, $3, NOW(), $4)',
+      [cellarId, targetZoneId, JSON.stringify(mergedRows), mergedWineCount]
     );
   }
 
-  await client.query('DELETE FROM zone_allocations WHERE zone_id = $1', [sourceZoneId]);
+  await client.query('DELETE FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2', [cellarId, sourceZoneId]);
 
   return mergedRows;
 }
@@ -795,19 +806,19 @@ async function mergeZonesTransactional(client, sourceZoneId, targetZoneId) {
  * Reallocate a specific row from one zone to another.
  * Works within the fixed physical constraints of the cellar.
  */
-async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber) {
+async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId, rowNumber) {
   if (fromZoneId === toZoneId) return { success: true, skipped: true, reason: 'same zone' };
 
   const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
 
   // Get current allocations
   const fromAlloc = await client.query(
-    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
-    [fromZoneId]
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, fromZoneId]
   );
   const toAlloc = await client.query(
-    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE zone_id = $1',
-    [toZoneId]
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, toZoneId]
   );
 
   const fromRows = fromAlloc.rows[0]?.assigned_rows ? JSON.parse(fromAlloc.rows[0].assigned_rows) : [];
@@ -827,27 +838,27 @@ async function reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumbe
   // Update source zone allocation
   if (updatedFromRows.length > 0) {
     await client.query(
-      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
-      [JSON.stringify(updatedFromRows), fromZoneId]
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
+      [JSON.stringify(updatedFromRows), cellarId, fromZoneId]
     );
   } else {
     // Zone has no rows left - keep the allocation record but empty
     await client.query(
-      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
-      [JSON.stringify([]), fromZoneId]
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
+      [JSON.stringify([]), cellarId, fromZoneId]
     );
   }
 
   // Update or create target zone allocation
   if (toAlloc.rows.length > 0) {
     await client.query(
-      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE zone_id = $2',
-      [JSON.stringify(updatedToRows), toZoneId]
+      'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
+      [JSON.stringify(updatedToRows), cellarId, toZoneId]
     );
   } else {
     await client.query(
-      'INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, NOW(), $3)',
-      [toZoneId, JSON.stringify(updatedToRows), 0]
+      'INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, $3, NOW(), $4)',
+      [cellarId, toZoneId, JSON.stringify(updatedToRows), 0]
     );
   }
 
@@ -881,19 +892,19 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
       // Snapshot before-state for undo
       const beforeAlloc = affectedZones.length
         ? await client.query(
-          'SELECT zone_id, assigned_rows, wine_count, first_wine_date, updated_at FROM zone_allocations WHERE zone_id = ANY($1::text[])',
-          [affectedZones]
+          'SELECT cellar_id, zone_id, assigned_rows, wine_count, first_wine_date, updated_at FROM zone_allocations WHERE cellar_id = $1 AND zone_id = ANY($2::text[])',
+          [req.cellarId, affectedZones]
         )
         : { rows: [] };
       const beforeWines = affectedZones.length
         ? await client.query(
-          'SELECT id, zone_id FROM wines WHERE zone_id = ANY($1::text[])',
-          [affectedZones]
+          'SELECT id, zone_id FROM wines WHERE cellar_id = $1 AND zone_id = ANY($2::text[])',
+          [req.cellarId, affectedZones]
         )
         : { rows: [] };
 
       // Build used row set
-      const allAlloc = await client.query('SELECT assigned_rows FROM zone_allocations');
+      const allAlloc = await client.query('SELECT assigned_rows FROM zone_allocations WHERE cellar_id = $1', [req.cellarId]);
       const usedRows = new Set();
       for (const r of allAlloc.rows) {
         try {
@@ -905,7 +916,7 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
 
       // Build current zone allocation map for validation at apply time
       const zoneAllocMap = new Map();
-      const allocWithZone = await client.query('SELECT zone_id, assigned_rows FROM zone_allocations');
+      const allocWithZone = await client.query('SELECT zone_id, assigned_rows FROM zone_allocations WHERE cellar_id = $1', [req.cellarId]);
       for (const r of allocWithZone.rows) {
         try {
           zoneAllocMap.set(r.zone_id, JSON.parse(r.assigned_rows || '[]'));
@@ -928,7 +939,7 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
           if (!fromZoneId || !toZoneId || rowNumber == null) continue;
 
           // reallocateRowTransactional now handles validation internally and returns status
-          const result = await reallocateRowTransactional(client, fromZoneId, toZoneId, rowNumber);
+          const result = await reallocateRowTransactional(client, req.cellarId, fromZoneId, toZoneId, rowNumber);
 
           if (result.skipped) {
             console.warn(`[Apply] Skipped reallocate_row action: ${result.reason}`);
@@ -952,7 +963,7 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
           const needed = Math.max(1, proposedRows.length - currentRows.length);
 
           for (let n = 0; n < needed; n++) {
-            await allocateRowTransactional(client, zoneId, usedRows);
+            await allocateRowTransactional(client, req.cellarId, zoneId, usedRows);
           }
           zonesChanged++;
         } else if (action.type === 'merge_zones') {
@@ -960,14 +971,14 @@ router.post('/reconfiguration-plan/apply', async (req, res) => {
           const sources = Array.isArray(action.sourceZones) ? action.sourceZones : [];
           if (!targetZoneId || sources.length === 0) continue;
           for (const sourceZoneId of sources) {
-            await mergeZonesTransactional(client, sourceZoneId, targetZoneId);
+            await mergeZonesTransactional(client, req.cellarId, sourceZoneId, targetZoneId);
           }
           zonesChanged++;
         } else if (action.type === 'retire_zone') {
           const zoneId = action.zoneId;
           const mergeIntoZoneId = action.mergeIntoZoneId;
           if (!zoneId || !mergeIntoZoneId) continue;
-          await mergeZonesTransactional(client, zoneId, mergeIntoZoneId);
+          await mergeZonesTransactional(client, req.cellarId, zoneId, mergeIntoZoneId);
           zonesChanged++;
         }
       }
@@ -1042,8 +1053,8 @@ router.post('/reconfiguration/:id/undo', async (req, res) => {
 
     await db.transaction(async (client) => {
       const row = await client.query(
-        'SELECT id, plan_json, undone_at FROM zone_reconfigurations WHERE id = $1',
-        [reconfigurationId]
+        'SELECT id, plan_json, undone_at FROM zone_reconfigurations WHERE cellar_id = $1 AND id = $2',
+        [req.cellarId, reconfigurationId]
       );
 
       const rec = row.rows[0];
@@ -1057,19 +1068,20 @@ router.post('/reconfiguration/:id/undo', async (req, res) => {
       const beforeWines = Array.isArray(before.wines) ? before.wines : [];
 
       if (affectedZones.length > 0) {
-        await client.query('DELETE FROM zone_allocations WHERE zone_id = ANY($1::text[])', [affectedZones]);
+        await client.query('DELETE FROM zone_allocations WHERE cellar_id = $1 AND zone_id = ANY($2::text[])', [req.cellarId, affectedZones]);
       }
 
       for (const alloc of beforeAlloc) {
         await client.query(
-          `INSERT INTO zone_allocations (zone_id, assigned_rows, wine_count, first_wine_date, updated_at)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (zone_id) DO UPDATE SET
+          `INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, wine_count, first_wine_date, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (cellar_id, zone_id) DO UPDATE SET
              assigned_rows = EXCLUDED.assigned_rows,
              wine_count = EXCLUDED.wine_count,
              first_wine_date = EXCLUDED.first_wine_date,
              updated_at = EXCLUDED.updated_at`,
           [
+            alloc.cellar_id || req.cellarId,
             alloc.zone_id,
             alloc.assigned_rows,
             alloc.wine_count ?? 0,
@@ -1080,7 +1092,7 @@ router.post('/reconfiguration/:id/undo', async (req, res) => {
       }
 
       for (const wine of beforeWines) {
-        await client.query('UPDATE wines SET zone_id = $1 WHERE id = $2', [wine.zone_id, wine.id]);
+        await client.query('UPDATE wines SET zone_id = $1 WHERE cellar_id = $2 AND id = $3', [wine.zone_id, req.cellarId, wine.id]);
       }
 
       await client.query('UPDATE zone_reconfigurations SET undone_at = NOW() WHERE id = $1', [reconfigurationId]);
@@ -1191,13 +1203,16 @@ router.post('/assign-zone', async (req, res) => {
     }
 
     // Get current zone for count update
-    const wine = await db.prepare('SELECT zone_id FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT zone_id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
     const oldZoneId = wine?.zone_id;
 
     // Update wine
     await db.prepare(
-      'UPDATE wines SET zone_id = ?, zone_confidence = ? WHERE id = ?'
-    ).run(zoneId, confidence || 'manual', wineId);
+      'UPDATE wines SET zone_id = $1, zone_confidence = $2 WHERE cellar_id = $3 AND id = $4'
+    ).run(zoneId, confidence || 'manual', req.cellarId, wineId);
 
     // Update zone counts
     if (oldZoneId && oldZoneId !== zoneId) {
@@ -1237,7 +1252,8 @@ router.post('/update-wine-attributes', async (req, res) => {
 
     for (const [key, value] of Object.entries(attributes || {})) {
       if (allowedFields.includes(key)) {
-        updates.push(`${key} = ?`);
+        const placeholderIndex = updates.length + 1;
+        updates.push(`${key} = $${placeholderIndex}`);
         // Stringify arrays for JSON storage
         values.push(Array.isArray(value) ? JSON.stringify(value) : value);
       }
@@ -1247,13 +1263,15 @@ router.post('/update-wine-attributes', async (req, res) => {
       return res.status(400).json({ error: 'No valid attributes to update' });
     }
 
-    values.push(wineId);
+    values.push(req.cellarId, wineId);
+    const cellarParamIndex = updates.length + 1;
+    const wineParamIndex = updates.length + 2;
     await db.prepare(
-      `UPDATE wines SET ${updates.join(', ')} WHERE id = ?`
+      `UPDATE wines SET ${updates.join(', ')} WHERE cellar_id = $${cellarParamIndex} AND id = $${wineParamIndex}`
     ).run(...values);
 
     // Re-evaluate zone placement
-    const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
     const newZoneMatch = findBestZone(wine);
 
     res.json({

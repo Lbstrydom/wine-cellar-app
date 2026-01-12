@@ -43,8 +43,8 @@ router.post('/add', async (req, res) => {
 
     const { wine_id, start_location, quantity } = parseResult.data;
 
-    // Verify wine exists
-    const wine = await db.prepare('SELECT id FROM wines WHERE id = ?').get(wine_id);
+    // Verify wine exists and belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
@@ -82,7 +82,7 @@ router.post('/add', async (req, res) => {
     }
 
     // Check which slots are empty
-    const placeholders = slots.map(() => '?').join(',');
+    const placeholders = slots.map((_, i) => `$${i + 1}`).join(',');
     const existingSlots = await db.prepare(`
       SELECT location_code, wine_id FROM slots WHERE location_code IN (${placeholders})
     `).all(...slots);
@@ -103,7 +103,7 @@ router.post('/add', async (req, res) => {
 
     // Add bottles one by one (PostgreSQL doesn't have the same transaction API)
     for (const loc of slotsToFill) {
-      await db.prepare('UPDATE slots SET wine_id = ? WHERE location_code = ?').run(wine_id, loc);
+      await db.prepare('UPDATE slots SET wine_id = $1 WHERE location_code = $2').run(wine_id, loc);
     }
 
     res.json({

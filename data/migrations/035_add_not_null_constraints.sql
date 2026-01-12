@@ -36,9 +36,9 @@ ALTER TABLE slots ADD CONSTRAINT uq_slots_cellar_location UNIQUE (cellar_id, loc
 ALTER TABLE slots DROP CONSTRAINT IF EXISTS slots_zone_row_num_col_num_key;
 ALTER TABLE slots ADD CONSTRAINT uq_slots_cellar_zone_row_col UNIQUE (cellar_id, zone, row_num, col_num);
 
--- palate_profile: dimension unique per cellar
-ALTER TABLE palate_profile DROP CONSTRAINT IF EXISTS palate_profile_dimension_key;
-ALTER TABLE palate_profile ADD CONSTRAINT uq_palate_profile_cellar_dimension UNIQUE (cellar_id, dimension);
+-- palate_profile: preference_key unique per cellar
+ALTER TABLE palate_profile DROP CONSTRAINT IF EXISTS palate_profile_preference_key_key;
+ALTER TABLE palate_profile ADD CONSTRAINT uq_palate_profile_cellar_preference_key UNIQUE (cellar_id, preference_key);
 
 -- cellar_zones: zone id unique per cellar (was global)
 -- Note: zone_id is TEXT PRIMARY KEY, we need a new approach

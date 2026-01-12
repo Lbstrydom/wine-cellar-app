@@ -448,12 +448,13 @@ export async function getPersonalizedScore(wine) {
 /**
  * Get wine recommendations based on palate profile.
  * @param {number} limit - Max recommendations
+ * @param {number} cellarId - Cellar ID to filter by
  * @returns {Promise<Array>} Recommended wines
  */
-export async function getPersonalizedRecommendations(limit = 10) {
+export async function getPersonalizedRecommendations(limit = 10, cellarId) {
   await ensureTables();
 
-  // Get wines in cellar
+  // Get wines in cellar (scoped to cellar_id)
   const wines = await db.prepare(`
     SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
            w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
@@ -461,11 +462,12 @@ export async function getPersonalizedRecommendations(limit = 10) {
            COUNT(s.id) as bottle_count
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
+    WHERE w.cellar_id = $1
     GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
              w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
              w.drink_from, w.drink_peak, w.drink_until, w.created_at
     HAVING COUNT(s.id) > 0
-  `).all();
+  `).all(cellarId);
 
   // Score each wine
   const scoredWines = [];

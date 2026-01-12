@@ -55,7 +55,7 @@ router.post('/suggest', async (req, res) => {
   }
 
   try {
-    const result = await scorePairing(db, signals, prefer_reduce_now, limit);
+    const result = await scorePairing(db, signals, prefer_reduce_now, limit, req.cellarId);
     res.json(result);
   } catch (error) {
     console.error('Pairing suggestion error:', error);
@@ -82,7 +82,7 @@ router.post('/natural', strictRateLimiter(), async (req, res) => {
   }
 
   try {
-    const result = await getSommelierRecommendation(db, dish, source, colour);
+    const result = await getSommelierRecommendation(db, dish, source, colour, req.cellarId);
 
     // Store chat context for follow-up conversations
     const chatId = randomUUID();
@@ -213,7 +213,7 @@ router.post('/shortlist', async (req, res) => {
   }
 
   try {
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
 
     const result = generateShortlist(wines, dish, {
       colour,
@@ -242,7 +242,7 @@ router.post('/hybrid', strictRateLimiter(), async (req, res) => {
   }
 
   try {
-    const wines = await getAllWinesWithSlots();
+    const wines = await getAllWinesWithSlots(req.cellarId);
 
     const result = await getHybridPairing(wines, dish, {
       colour,
@@ -303,9 +303,10 @@ router.get('/house-style', (_req, res) => {
 
 /**
  * Get all wines with slot assignments.
+ * @param {number} cellarId - The cellar ID to filter by
  * @returns {Promise<Array>} Wines with location data
  */
-async function getAllWinesWithSlots() {
+async function getAllWinesWithSlots(cellarId) {
   return await db.prepare(`
     SELECT
       w.id,
@@ -328,10 +329,11 @@ async function getAllWinesWithSlots() {
     LEFT JOIN slots s ON s.wine_id = w.id
     LEFT JOIN reduce_now rn ON w.id = rn.wine_id
     LEFT JOIN drinking_windows dw ON dw.wine_id = w.id
+    WHERE w.cellar_id = $1
     GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.grapes, w.region, w.winemaking
     HAVING COUNT(s.id) > 0
     ORDER BY w.colour, w.style
-  `).all();
+  `).all(cellarId);
 }
 
 export default router;

@@ -18,9 +18,16 @@ const router = Router();
 router.get('/wines/:wine_id/drinking-windows', async (req, res) => {
   try {
     const { wine_id } = req.params;
+
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
     const windows = await db.prepare(`
       SELECT * FROM drinking_windows
-      WHERE wine_id = ?
+      WHERE wine_id = $1
       ORDER BY
         CASE source
           WHEN 'manual' THEN 0
@@ -30,22 +37,19 @@ router.get('/wines/:wine_id/drinking-windows', async (req, res) => {
     `).all(wine_id);
 
     // If no windows exist, try to get a default estimate
-    if (windows.length === 0) {
-      const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
-      if (wine && wine.vintage) {
-        const defaultWindow = await getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
-        if (defaultWindow) {
-          windows.push({
-            wine_id: parseInt(wine_id),
-            source: defaultWindow.source,
-            drink_from_year: defaultWindow.drink_from,
-            drink_by_year: defaultWindow.drink_by,
-            peak_year: defaultWindow.peak,
-            confidence: defaultWindow.confidence,
-            raw_text: defaultWindow.notes,
-            is_default: true
-          });
-        }
+    if (windows.length === 0 && wine.vintage) {
+      const defaultWindow = await getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
+      if (defaultWindow) {
+        windows.push({
+          wine_id: parseInt(wine_id),
+          source: defaultWindow.source,
+          drink_from_year: defaultWindow.drink_from,
+          drink_by_year: defaultWindow.drink_by,
+          peak_year: defaultWindow.peak,
+          confidence: defaultWindow.confidence,
+          raw_text: defaultWindow.notes,
+          is_default: true
+        });
       }
     }
 
@@ -69,9 +73,15 @@ router.post('/wines/:wine_id/drinking-windows', async (req, res) => {
       return res.status(400).json({ error: 'source is required' });
     }
 
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
     await db.prepare(`
       INSERT INTO drinking_windows (wine_id, source, drink_from_year, drink_by_year, peak_year, confidence, raw_text, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
       ON CONFLICT(wine_id, source) DO UPDATE SET
         drink_from_year = excluded.drink_from_year,
         drink_by_year = excluded.drink_by_year,
@@ -96,7 +106,14 @@ router.post('/wines/:wine_id/drinking-windows', async (req, res) => {
 router.delete('/wines/:wine_id/drinking-windows/:source', async (req, res) => {
   try {
     const { wine_id, source } = req.params;
-    const result = await db.prepare('DELETE FROM drinking_windows WHERE wine_id = ? AND source = ?').run(wine_id, source);
+
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const result = await db.prepare('DELETE FROM drinking_windows WHERE wine_id = $1 AND source = $2').run(wine_id, source);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Window not found' });
@@ -126,17 +143,18 @@ router.get('/drinking-windows/urgent', async (req, res) => {
         COUNT(s.id) as bottle_count,
         ${stringAgg('s.location_code', ',', true)} as locations,
         dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,
-        (dw.drink_by_year - ?) as years_remaining
+        (dw.drink_by_year - $1) as years_remaining
       FROM wines w
       JOIN drinking_windows dw ON w.id = dw.wine_id
       LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE dw.drink_by_year IS NOT NULL
-        AND dw.drink_by_year <= ?
+      WHERE w.cellar_id = $2
+        AND dw.drink_by_year IS NOT NULL
+        AND dw.drink_by_year <= $3
       GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour,
                dw.id, dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source
       HAVING COUNT(s.id) > 0
       ORDER BY dw.drink_by_year ASC
-    `).all(currentYear, urgencyYear);
+    `).all(currentYear, req.cellarId, urgencyYear);
 
     res.json(urgent);
   } catch (error) {
@@ -153,8 +171,14 @@ router.get('/wines/:wine_id/drinking-window/best', async (req, res) => {
   try {
     const { wine_id } = req.params;
 
-    // Get source priority from settings
-    const prioritySetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'reduce_window_source_priority'").get();
+    // Validate wine belongs to this cellar
+    const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    // Get source priority from settings (scoped to cellar)
+    const prioritySetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'reduce_window_source_priority');
     let sourcePriority = ['manual', 'halliday', 'wine_spectator', 'decanter', 'vivino'];
 
     if (prioritySetting?.value) {
@@ -166,12 +190,11 @@ router.get('/wines/:wine_id/drinking-window/best', async (req, res) => {
     }
 
     // Get all windows for this wine
-    const windows = await db.prepare('SELECT * FROM drinking_windows WHERE wine_id = ?').all(wine_id);
+    const windows = await db.prepare('SELECT * FROM drinking_windows WHERE wine_id = $1').all(wine_id);
 
     if (windows.length === 0) {
       // No explicit windows - try to get default based on wine characteristics
-      const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wine_id);
-      if (wine && wine.vintage) {
+      if (wine.vintage) {
         const defaultWindow = await getDefaultDrinkingWindow(wine, parseInt(wine.vintage));
         if (defaultWindow) {
           return res.json({

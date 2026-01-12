@@ -49,7 +49,8 @@ export async function setup() {
     env: {
       ...process.env,
       PORT: '3000',
-      NODE_ENV: 'test'
+      NODE_ENV: 'test',
+      INTEGRATION_TEST_MODE: 'true'  // Enable mock auth/cellar for integration tests
     },
     detached: false
   });

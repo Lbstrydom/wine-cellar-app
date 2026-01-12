@@ -11,12 +11,12 @@ import logger from '../utils/logger.js';
 const router = Router();
 
 /**
- * Get all settings.
+ * Get all settings for this cellar.
  * @route GET /api/settings
  */
-router.get('/', async (_req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const settings = await db.prepare('SELECT key, value FROM user_settings').all();
+    const settings = await db.prepare('SELECT key, value FROM user_settings WHERE cellar_id = $1').all(req.cellarId);
     const result = {};
     for (const s of settings) {
       result[s.key] = s.value;
@@ -29,7 +29,7 @@ router.get('/', async (_req, res) => {
 });
 
 /**
- * Update a setting.
+ * Update a setting for this cellar.
  * @route PUT /api/settings/:key
  */
 router.put('/:key', async (req, res) => {
@@ -38,10 +38,10 @@ router.put('/:key', async (req, res) => {
     const { value } = req.body;
 
     await db.prepare(`
-      INSERT INTO user_settings (key, value, updated_at)
-      VALUES (?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(key) DO UPDATE SET value = ?, updated_at = CURRENT_TIMESTAMP
-    `).run(key, value, value);
+      INSERT INTO user_settings (cellar_id, key, value, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+      ON CONFLICT(cellar_id, key) DO UPDATE SET value = $3, updated_at = CURRENT_TIMESTAMP
+    `).run(req.cellarId, key, value);
 
     res.json({ message: 'Setting updated' });
   } catch (error) {
@@ -55,24 +55,25 @@ router.put('/:key', async (req, res) => {
 // ============================================
 
 /**
- * Get configured credential sources (no sensitive data).
+ * Get configured credential sources for this cellar (no sensitive data).
  * @route GET /api/settings/credentials
  */
-router.get('/credentials', async (_req, res) => {
+router.get('/credentials', async (req, res) => {
   try {
     const credentials = await db.prepare(`
       SELECT source_id, auth_status, last_used_at, created_at, updated_at,
              CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
       FROM source_credentials
-    `).all();
+      WHERE cellar_id = $1
+    `).all(req.cellarId);
 
     // Decrypt usernames for display (masked)
     const result = [];
     for (const cred of credentials) {
       let maskedUsername = null;
       if (cred.has_username) {
-        const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE source_id = ?')
-          .get(cred.source_id);
+        const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE cellar_id = $1 AND source_id = $2')
+          .get(req.cellarId, cred.source_id);
         const username = decrypt(row?.username_encrypted);
         if (username) {
           // Mask email: show first 2 chars + ... + domain
@@ -127,14 +128,14 @@ router.put('/credentials/:source', async (req, res) => {
     const passwordEncrypted = encrypt(password);
 
     await db.prepare(`
-      INSERT INTO source_credentials (source_id, username_encrypted, password_encrypted, auth_status, updated_at)
-      VALUES (?, ?, ?, 'none', CURRENT_TIMESTAMP)
-      ON CONFLICT(source_id) DO UPDATE SET
-        username_encrypted = ?,
-        password_encrypted = ?,
+      INSERT INTO source_credentials (cellar_id, source_id, username_encrypted, password_encrypted, auth_status, updated_at)
+      VALUES ($1, $2, $3, $4, 'none', CURRENT_TIMESTAMP)
+      ON CONFLICT(cellar_id, source_id) DO UPDATE SET
+        username_encrypted = $3,
+        password_encrypted = $4,
         auth_status = 'none',
         updated_at = CURRENT_TIMESTAMP
-    `).run(source, usernameEncrypted, passwordEncrypted, usernameEncrypted, passwordEncrypted);
+    `).run(req.cellarId, source, usernameEncrypted, passwordEncrypted);
 
     logger.info('Settings', `Credentials saved for ${source}`);
     res.json({ message: 'Credentials saved', source_id: source });
@@ -152,7 +153,7 @@ router.delete('/credentials/:source', async (req, res) => {
   try {
     const { source } = req.params;
 
-    const result = await db.prepare('DELETE FROM source_credentials WHERE source_id = ?').run(source);
+    const result = await db.prepare('DELETE FROM source_credentials WHERE cellar_id = $1 AND source_id = $2').run(req.cellarId, source);
 
     if (result.changes === 0) {
       return res.status(404).json({ error: 'Credentials not found' });
@@ -174,7 +175,7 @@ router.post('/credentials/:source/test', async (req, res) => {
   const { source } = req.params;
 
   try {
-    const cred = await db.prepare('SELECT * FROM source_credentials WHERE source_id = ?').get(source);
+    const cred = await db.prepare('SELECT * FROM source_credentials WHERE cellar_id = $1 AND source_id = $2').get(req.cellarId, source);
 
     if (!cred) {
       return res.status(404).json({ error: 'No credentials configured for this source' });
@@ -199,9 +200,9 @@ router.post('/credentials/:source/test', async (req, res) => {
     // Update auth status
     await db.prepare(`
       UPDATE source_credentials
-      SET auth_status = ?, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE source_id = ?
-    `).run(testResult.success ? 'valid' : 'failed', source);
+      SET auth_status = $1, last_used_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE cellar_id = $2 AND source_id = $3
+    `).run(testResult.success ? 'valid' : 'failed', req.cellarId, source);
 
     if (testResult.success) {
       logger.info('Settings', `Credentials test passed for ${source}`);
@@ -214,9 +215,9 @@ router.post('/credentials/:source/test', async (req, res) => {
   } catch (error) {
     logger.error('Settings', `Credentials test error for ${source}: ${error.message}`);
     await db.prepare(`
-      UPDATE source_credentials SET auth_status = 'failed', updated_at = CURRENT_TIMESTAMP
-      WHERE source_id = ?
-    `).run(source);
+      UPDATE source_credentials SET auth_status = $1, updated_at = CURRENT_TIMESTAMP
+      WHERE cellar_id = $2 AND source_id = $3
+    `).run('failed', req.cellarId, source);
     res.status(500).json({ error: error.message });
   }
 });
