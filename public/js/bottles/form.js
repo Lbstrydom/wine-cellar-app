@@ -188,8 +188,8 @@ async function saveWineWithConfirmation(formData, confirmedWine, fallbackQuantit
       style: formData.style || confirmedWine.grapeVariety,
       // Use confirmed rating
       vivino_rating: confirmedWine.rating || formData.vivino_rating,
-      // Add Vivino reference
-      vivino_id: confirmedWine.vivinoId,
+      // Add Vivino reference (ensure vivinoId is string - API may return number)
+      vivino_id: confirmedWine.vivinoId ? String(confirmedWine.vivinoId) : null,
       vivino_url: confirmedWine.vivinoUrl,
       vivino_confirmed: true
     };
