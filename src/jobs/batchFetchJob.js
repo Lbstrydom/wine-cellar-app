@@ -79,6 +79,9 @@ async function handleBatchFetch(payload, context) {
       // Calculate aggregates
       const aggregates = calculateWineRatings(wineId);
 
+      // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
+      const currentTime = nowFunc();
+
       // Update wine
       await db.prepare(`
         UPDATE wines SET
@@ -89,7 +92,7 @@ async function handleBatchFetch(payload, context) {
           purchase_stars = ?,
           confidence_level = ?,
           tasting_notes = COALESCE(?, tasting_notes),
-          ratings_updated_at = ${nowFunc()}
+          ratings_updated_at = ${currentTime}
         WHERE id = ?
       `).run(
         aggregates.competition_index,

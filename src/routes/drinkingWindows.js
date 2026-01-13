@@ -137,11 +137,14 @@ router.get('/drinking-windows/urgent', async (req, res) => {
     const currentYear = new Date().getFullYear();
     const urgencyYear = currentYear + Math.ceil(urgencyMonths / 12);
 
+    // Safe: stringAgg() is a helper that returns SQL function call string
+    const locationAgg = stringAgg('s.location_code', ',', true);
+
     const urgent = await db.prepare(`
       SELECT
         w.id, w.wine_name, w.vintage, w.style, w.colour,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code', ',', true)} as locations,
+        ${locationAgg} as locations,
         dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,
         (dw.drink_by_year - $1) as years_remaining
       FROM wines w

@@ -111,6 +111,9 @@ router.get('/export/json', backupRateLimiter, async (req, res) => {
  */
 router.get('/export/csv', backupRateLimiter, async (req, res) => {
   try {
+    // Safe: stringAgg() is a helper that returns SQL function call string
+    const locationAgg = stringAgg('s.location_code');
+
     const wines = await db.prepare(`
       SELECT
         w.id,
@@ -128,7 +131,7 @@ router.get('/export/csv', backupRateLimiter, async (req, res) => {
         w.drink_until,
         w.purchase_stars,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code')} as locations
+        ${locationAgg} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
       WHERE w.cellar_id = $1

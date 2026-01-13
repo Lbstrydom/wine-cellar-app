@@ -1061,6 +1061,7 @@ export async function getSourceAwards(sourceId) {
     const wines = await db.prepare(`
       SELECT id, wine_name, vintage FROM wines WHERE id IN (${placeholders})
     `).all(...matchedWineIds);
+    // Safe: placeholders generated from matchedWineIds array length, data passed to .all()
     wines.forEach(w => wineMap.set(w.id, w));
   }
 

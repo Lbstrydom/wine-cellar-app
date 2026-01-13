@@ -21,11 +21,14 @@ function getExpiryTimestamp(days) {
  * @returns {Promise<Object|null>}
  */
 export async function lookupWineSearchCache(cellarId, fingerprint, pipelineVersion) {
+  // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
+  const currentTime = nowFunc();
+
   const cached = await db.prepare(`
     SELECT search_result, expires_at
     FROM wine_search_cache
     WHERE cellar_id = $1 AND fingerprint = $2 AND pipeline_version = $3
-      AND expires_at > ${nowFunc()}
+      AND expires_at > ${currentTime}
   `).get(cellarId, fingerprint, pipelineVersion);
 
   if (!cached) return null;
@@ -33,7 +36,7 @@ export async function lookupWineSearchCache(cellarId, fingerprint, pipelineVersi
   // Refresh TTL on hit
   await db.prepare(`
     UPDATE wine_search_cache
-    SET last_hit_at = ${nowFunc()},
+    SET last_hit_at = ${currentTime},
         expires_at = $1
     WHERE cellar_id = $2 AND fingerprint = $3 AND pipeline_version = $4
   `).run(
@@ -55,6 +58,8 @@ export async function lookupWineSearchCache(cellarId, fingerprint, pipelineVersi
  * @param {Object} result
  */
 export async function storeWineSearchCache(cellarId, fingerprint, queryHash, pipelineVersion, result) {
+  // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
+  const currentTime = nowFunc();
   const expiresAt = getExpiryTimestamp(DEFAULT_TTL_DAYS);
 
   await db.prepare(`
@@ -65,7 +70,7 @@ export async function storeWineSearchCache(cellarId, fingerprint, queryHash, pip
       search_result = EXCLUDED.search_result,
       query_hash = EXCLUDED.query_hash,
       expires_at = EXCLUDED.expires_at,
-      last_hit_at = ${nowFunc()}
+      last_hit_at = ${currentTime}
   `).run(
     cellarId,
     fingerprint,

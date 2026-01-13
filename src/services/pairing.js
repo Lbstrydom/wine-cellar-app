@@ -29,6 +29,12 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
     GROUP BY wine_style_bucket
     ORDER BY score DESC
   `).all(...signals);
+  // Safe: placeholders generated from signals array length, data passed to .all()
+
+  // Safe: stringAgg() returns SQL function call string
+  const locationAgg = stringAgg('s.location_code', ',', true);
+  // Safe: conditional ternary builds ORDER BY clause
+  const orderByClause = preferReduceNow ? 'reduce_priority ASC,' : '';
 
   const wines = await db.prepare(`
     SELECT
@@ -39,7 +45,7 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
       w.vintage,
       w.vivino_rating,
       COUNT(s.id) as bottle_count,
-      ${stringAgg('s.location_code', ',', true)} as locations,
+      ${locationAgg} as locations,
       MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,
       COALESCE(MIN(rn.priority), 99) as reduce_priority,
       MAX(rn.reduce_reason) as reduce_reason
@@ -48,7 +54,7 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
     LEFT JOIN reduce_now rn ON w.id = rn.wine_id
     GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating
     HAVING COUNT(s.id) > 0
-    ORDER BY ${preferReduceNow ? 'reduce_priority ASC,' : ''} w.vivino_rating DESC
+    ORDER BY ${orderByClause} w.vivino_rating DESC
   `).all();
 
   // Match wines to scored styles

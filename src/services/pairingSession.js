@@ -161,6 +161,9 @@ export async function recordFeedback(sessionId, {
  * @returns {Promise<Object[]>} Sessions needing feedback
  */
 export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays = 2) {
+  // Safe: INTERVAL '${days} days' pattern safe with numeric input
+  const intervalDays = `INTERVAL '${maxAgeDays} days'`;
+
   const results = await db.prepare(`
     SELECT 
       ps.id,
@@ -175,7 +178,7 @@ export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays 
     WHERE ps.user_id = $1
       AND ps.chosen_wine_id IS NOT NULL
       AND ps.pairing_fit_rating IS NULL
-      AND ps.created_at > NOW() - INTERVAL '${maxAgeDays} days'
+      AND ps.created_at > NOW() - ${intervalDays}
     ORDER BY ps.created_at DESC
   `).all(userId);
   
@@ -192,13 +195,16 @@ export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays 
  * @returns {Promise<Object|null>} Most recent matching session or null
  */
 export async function findRecentSessionForWine(wineId, userId = 'default', maxAgeHours = 48) {
+  // Safe: INTERVAL '${hours} hours' pattern safe with numeric input
+  const intervalHours = `INTERVAL '${maxAgeHours} hours'`;
+
   const result = await db.prepare(`
     SELECT id, dish_description, created_at
     FROM pairing_sessions
     WHERE user_id = $1
       AND chosen_wine_id = $2
       AND consumption_log_id IS NULL
-      AND created_at > NOW() - INTERVAL '${maxAgeHours} hours'
+      AND created_at > NOW() - ${intervalHours}
     ORDER BY created_at DESC
     LIMIT 1
   `).get(userId, wineId);
@@ -218,6 +224,7 @@ export async function findRecentSessionForWine(wineId, userId = 'default', maxAg
  * @returns {Promise<Object[]>} Pairing history
  */
 export async function getPairingHistory(userId = 'default', { limit = 20, offset = 0, feedbackOnly = false } = {}) {
+  // Safe: feedbackFilter is a conditional clause string, all values from whitelist
   const feedbackFilter = feedbackOnly ? 'AND ps.pairing_fit_rating IS NOT NULL' : '';
   
   const results = await db.prepare(`

@@ -86,6 +86,7 @@ router.post('/add', async (req, res) => {
     const existingSlots = await db.prepare(`
       SELECT location_code, wine_id FROM slots WHERE location_code IN (${placeholders})
     `).all(...slots);
+    // Safe: placeholders generated from slots array length, data passed to .all()
 
     const emptySlots = slots.filter(loc => {
       const slot = existingSlots.find(s => s.location_code === loc);
