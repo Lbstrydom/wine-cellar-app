@@ -517,7 +517,8 @@ async function initAuth() {
         return;
       }
 
-      if (event === 'SIGNED_IN') {
+      // Handle both INITIAL_SESSION (OAuth callbacks) and SIGNED_IN (social login)
+      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
         setAccessToken(session?.access_token || null);
         const ok = await loadUserContext();
         if (ok) {
