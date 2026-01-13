@@ -964,12 +964,24 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
-### OAuth Authentication & API Auth Headers Fix - 13 January 2026
+### OAuth Authentication & Legacy Cellar Migration - 13 January 2026
 
 **OAuth Flow Fix**:
 - Fixed OAuth authentication not completing after Google login
 - Root cause: Railway environment variable `SUPABASE_ANON_KEY` was incorrectly set to a Google OAuth Client Secret (`GOCSPX-...`) instead of the actual Supabase anon key
 - Resolution: Corrected the environment variable in Railway dashboard
+
+**INITIAL_SESSION Event Handling**:
+- Fixed OAuth callbacks not triggering user context loading
+- Root cause: Supabase OAuth triggers `INITIAL_SESSION` event, not `SIGNED_IN` as documented
+- Resolution: Modified auth state handler to process both `INITIAL_SESSION` and `SIGNED_IN` events
+- Location: `public/js/app.js` lines 520-530
+
+**Legacy Cellar Data Migration**:
+- Fixed existing wines not appearing for OAuth users
+- Root cause: Pre-OAuth wines (101 bottles) existed in legacy cellar (`00000000-0000-0000-0000-000000000001`), but OAuth signup created a new empty cellar for the user
+- Resolution: Added user membership to legacy cellar and set it as active cellar via database update
+- User now has access to both cellars via cellar switcher
 
 **Backup Endpoint Authentication Fix**:
 - Fixed 401 error on `/api/backup/info` endpoint
