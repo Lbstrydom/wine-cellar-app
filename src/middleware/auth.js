@@ -69,7 +69,7 @@ async function verifyJwt(token) {
     const publicKey = getSigningKey(jwks, decoded.header.kid);
 
     const verified = jwt.verify(token, publicKey, {
-      algorithms: ['RS256'],
+      algorithms: ['RS256', 'ES256'],
       audience: 'authenticated',
       issuer: `${process.env.SUPABASE_URL}/auth/v1`
     });
