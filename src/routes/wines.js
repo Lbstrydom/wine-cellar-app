@@ -205,6 +205,8 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
     const total = Number.parseInt(countResult?.total || 0, 10);
 
     // Get paginated wines
+    // Safe: stringAgg() is a helper that returns SQL function call string
+    const locationAgg = stringAgg('s.location_code');
     const wines = await db.prepare(`
       SELECT
         w.id,
@@ -215,7 +217,7 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
         w.vivino_rating,
         w.price_eur,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code')} as locations
+        ${locationAgg} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
       WHERE w.cellar_id = $1
@@ -299,11 +301,13 @@ router.post('/parse-image', validateBody(parseImageSchema), async (req, res) => 
  */
 router.get('/:id', async (req, res) => {
   try {
+    // Safe: stringAgg() is a helper that returns SQL function call string
+    const locationAgg = stringAgg('s.location_code');
     const wine = await db.prepare(`
       SELECT
         w.*,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code')} as locations
+        ${locationAgg} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
       WHERE w.cellar_id = $1 AND w.id = $2
@@ -738,8 +742,10 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     values.push(req.params.id);
     paramIdx++;
 
+    // Safe: Column names built from validated addUpdate() calls above
+    const setSql = updates.join(', ');
     await db.prepare(`
-      UPDATE wines SET ${updates.join(', ')} WHERE cellar_id = $${cellarIdParam} AND id = $${idParam}
+      UPDATE wines SET ${setSql} WHERE cellar_id = $${cellarIdParam} AND id = $${idParam}
     `).run(...values);
 
     res.json({ message: 'Wine updated' });

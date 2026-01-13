@@ -371,6 +371,7 @@ router.post('/cleanup', async (req, res) => {
     }
 
     const wineIdPlaceholders = cellarWineIds.map((_, i) => `$${i + 2}`).join(',');
+    // Safe: wineIdPlaceholders are generated indices ($2, $3, ...), data in .all() params
     const duplicates = await db.prepare(`
       SELECT id FROM wine_ratings
       WHERE wine_id IN (${wineIdPlaceholders}) AND id NOT IN (
@@ -384,6 +385,7 @@ router.post('/cleanup', async (req, res) => {
       // Use parameterized query to prevent SQL injection
       const ids = duplicates.map(d => d.id);
       const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
+      // Safe: placeholders are generated indices ($1, $2, ...), data in .run() params
       await db.prepare(`DELETE FROM wine_ratings WHERE id IN (${placeholders})`).run(...ids);
       logger.info('Cleanup', `Removed ${duplicates.length} duplicate ratings`);
     }
@@ -500,6 +502,7 @@ router.post('/batch-fetch', async (req, res) => {
   // Validate wineIds belong to this cellar
   const numericIds = wineIds.map(id => parseInt(id, 10)).filter(Number.isFinite);
   const placeholders = numericIds.map((_, i) => `$${i + 2}`).join(',');
+  // Safe: placeholders are generated indices ($2, $3, ...), data in .all() params
   const allowed = await db.prepare(
     `SELECT id FROM wines WHERE cellar_id = $1 AND id IN (${placeholders})`
   ).all(req.cellarId, ...numericIds);

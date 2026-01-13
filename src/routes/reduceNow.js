@@ -16,6 +16,8 @@ const router = Router();
  */
 router.get('/', async (req, res) => {
   try {
+    // Safe: stringAgg() is a helper that returns SQL function call string
+    const locationAgg = stringAgg('s.location_code');
     const list = await db.prepare(`
       SELECT
         rn.id,
@@ -28,7 +30,7 @@ router.get('/', async (req, res) => {
         w.vintage,
         w.vivino_rating,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code')} as locations
+        ${locationAgg} as locations
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1
       LEFT JOIN slots s ON s.wine_id = w.id
@@ -130,6 +132,9 @@ router.post('/evaluate', async (req, res) => {
 
     // Optimized: Single query to fetch ALL wines with bottles that aren't already in reduce_now
     // This replaces 5 separate queries with 1 comprehensive query
+    // Safe: stringAgg() and nullsLast() are helpers that return SQL function call strings
+    const locationAgg = stringAgg('s.location_code', ',', true);
+    const orderByClause = nullsLast('dw.drink_by_year', 'ASC');
     const allWines = await db.prepare(`
       SELECT
         w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
@@ -137,7 +142,7 @@ router.post('/evaluate', async (req, res) => {
         (? - w.vintage) as wine_age,
         dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
         COUNT(s.id) as bottle_count,
-        ${stringAgg('s.location_code', ',', true)} as locations
+        ${locationAgg} as locations
       FROM wines w
       JOIN slots s ON s.wine_id = w.id
       LEFT JOIN drinking_windows dw ON w.id = dw.wine_id
@@ -146,7 +151,7 @@ router.post('/evaluate', async (req, res) => {
         AND rn.id IS NULL
       GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.purchase_stars, w.vivino_rating, w.country, w.grape, dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source
       HAVING COUNT(s.id) > 0
-      ORDER BY ${nullsLast('dw.drink_by_year', 'ASC')}, w.vintage ASC
+      ORDER BY ${orderByClause}, w.vintage ASC
     `).all(currentYear, req.cellarId);
 
     const candidates = [];
