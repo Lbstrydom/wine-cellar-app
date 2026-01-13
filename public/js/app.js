@@ -94,7 +94,8 @@ async function getSupabaseClient() {
         persistSession: true,        // Keep session in localStorage (default: true)
         autoRefreshToken: true,      // Auto-refresh access token before expiry (default: true)
         detectSessionInUrl: true,    // Detect OAuth callback in URL (default: true)
-        storageKey: 'wine-cellar-auth'  // Custom storage key for this app
+        storageKey: 'wine-cellar-auth',  // Custom storage key for this app
+        flowType: 'implicit'         // Match Supabase's OAuth response (hash-based tokens)
       }
     });
   })();
@@ -435,10 +436,27 @@ async function initAuth() {
   try {
     const supabase = await getSupabaseClient();
 
-    // Check if this is an OAuth callback (tokens in URL hash)
-    const isOAuthCallback = window.location.hash && window.location.hash.includes('access_token');
-    if (isOAuthCallback) {
-      console.log('[Auth] OAuth callback detected, letting Supabase process tokens...');
+    // Diagnostic: Log OAuth callback type for debugging
+    const hasHashToken = window.location.hash && window.location.hash.includes('access_token');
+    const hasCodeParam = window.location.search && window.location.search.includes('code=');
+
+    if (hasHashToken) {
+      console.log('[Auth] OAuth callback detected: IMPLICIT flow (hash tokens)');
+      // Extract and log token issuer for debugging
+      try {
+        const hashParams = new URLSearchParams(window.location.hash.substring(1));
+        const token = hashParams.get('access_token');
+        if (token) {
+          const payload = JSON.parse(atob(token.split('.')[1]));
+          console.log('[Auth] Token issuer:', payload.iss);
+          console.log('[Auth] Token audience:', payload.aud);
+          console.log('[Auth] Token expires:', new Date(payload.exp * 1000).toISOString());
+        }
+      } catch (e) {
+        console.log('[Auth] Could not decode token for diagnostics');
+      }
+    } else if (hasCodeParam) {
+      console.log('[Auth] OAuth callback detected: PKCE flow (code param)');
     }
 
     // Note: Do NOT manually clean the URL hash here!
@@ -446,6 +464,7 @@ async function initAuth() {
     // Cleaning it before Supabase processes it breaks the OAuth flow.
 
     const { data, error } = await supabase.auth.getSession();
+    console.log('[Auth] getSession result:', { hasSession: !!data?.session, error: error?.message });
 
     if (error) throw error;
 
