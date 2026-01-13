@@ -180,10 +180,11 @@ export async function getProvenanceForSource(wineId, sourceId, fieldName) {
  */
 export async function hasFreshData(wineId, sourceId, fieldName) {
   try {
+    const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
     const result = await db.prepare(`
       SELECT 1 FROM data_provenance
       WHERE wine_id = ? AND source_id = ? AND field_name = ?
-      AND expires_at > ${nowFunc()}
+      AND expires_at > ${currentTime}
       LIMIT 1
     `).get(wineId, sourceId, fieldName);
     return !!result;
@@ -217,9 +218,10 @@ export async function hasContentChanged(wineId, sourceId, fieldName, newContent)
  */
 export async function getExpiredRecords() {
   try {
+    const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
     return await db.prepare(`
       SELECT * FROM data_provenance
-      WHERE expires_at <= ${nowFunc()}
+      WHERE expires_at <= ${currentTime}
       ORDER BY expires_at ASC
     `).all();
   } catch (error) {
@@ -234,9 +236,10 @@ export async function getExpiredRecords() {
  */
 export async function purgeExpiredRecords() {
   try {
+    const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
     const result = await db.prepare(`
       DELETE FROM data_provenance
-      WHERE expires_at <= ${nowFunc()}
+      WHERE expires_at <= ${currentTime}
     `).run();
 
     if (result.changes > 0) {
@@ -286,9 +289,10 @@ export async function getProvenanceStats() {
     `).all();
 
     // Fresh vs expired
+    const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
     const freshResult = await db.prepare(`
       SELECT COUNT(*) as count FROM data_provenance
-      WHERE expires_at > ${nowFunc()}
+      WHERE expires_at > ${currentTime}
     `).get();
     stats.fresh = freshResult.count;
 

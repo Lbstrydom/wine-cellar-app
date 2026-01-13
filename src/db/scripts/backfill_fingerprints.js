@@ -83,6 +83,7 @@ async function nullifyDuplicates(collisions) {
       UPDATE wines SET fingerprint = NULL
       WHERE id IN (${placeholders})
     `).run(...toNullify);
+    // Safe: placeholders derived from toNullify array length; values passed to .run()
 
     console.log(`[Backfill] Kept ${keepId}, nullified ${toNullify.join(', ')}`);
   }

@@ -57,6 +57,7 @@ Guidelines:
  */
 async function getUrgentWines() {
   const currentYear = new Date().getFullYear();
+  const locationAgg = stringAgg('s.location_code', ',', true); // Safe: helper returns SQL function string
 
   return await db.prepare(`
     SELECT
@@ -74,7 +75,7 @@ async function getUrgentWines() {
       w.personal_rating,
       w.tasting_notes,
       COUNT(s.id) as bottle_count,
-      ${stringAgg('s.location_code', ',', true)} as locations,
+      ${locationAgg} as locations,
       MIN(rn.priority) as reduce_priority,
       MAX(rn.reduce_reason) as reduce_reason,
       CASE
