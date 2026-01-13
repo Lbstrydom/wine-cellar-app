@@ -3,73 +3,116 @@
  * Tests the full wine add orchestrator pipeline
  */
 
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
 import db from '../../src/db/index.js';
 import { evaluateWineAdd } from '../../src/services/wineAddOrchestrator.js';
 
 const TEST_CELLAR_ID = '00000000-0000-0000-0000-000000000001';
+const DIFFERENT_CELLAR = '00000000-0000-0000-0000-000000000002';
 
 describe('Phase 6: Wine Add Orchestrator Integration', () => {
   let testWineId;
+  let testFingerprint;
 
-  afterAll(async () => {
+  beforeAll(async () => {
+    // Ensure test cellars exist (must reference a valid profile)
+    // First create a test profile if it doesn't exist
+    await db.prepare(`
+      INSERT INTO profiles (id, email, display_name)
+      VALUES ($1, 'test@example.com', 'Test User')
+      ON CONFLICT (id) DO NOTHING
+    `).run(TEST_CELLAR_ID);
+    
+    // Then create cellars
+    await db.prepare(`
+      INSERT INTO cellars (id, name, created_by)
+      VALUES ($1, 'Test Cellar 1', $2)
+      ON CONFLICT (id) DO NOTHING
+    `).run(TEST_CELLAR_ID, TEST_CELLAR_ID);
+    
+    await db.prepare(`
+      INSERT INTO cellars (id, name, created_by)
+      VALUES ($1, 'Test Cellar 2', $2)
+      ON CONFLICT (id) DO NOTHING
+    `).run(DIFFERENT_CELLAR, TEST_CELLAR_ID);
+  });
+
+  afterEach(async () => {
     // Cleanup: delete test wine if created
     if (testWineId) {
       await db.prepare('DELETE FROM wine_source_ratings WHERE wine_id = $1').run(testWineId);
       await db.prepare('DELETE FROM wine_external_ids WHERE wine_id = $1').run(testWineId);
-      await db.prepare('DELETE FROM wine_search_cache WHERE wine_id = $1').run(testWineId);
       await db.prepare('DELETE FROM wines WHERE id = $1').run(testWineId);
+      testWineId = null;
+    }
+    // Cleanup cache by fingerprint + cellar_id
+    if (testFingerprint && TEST_CELLAR_ID) {
+      await db.prepare('DELETE FROM wine_search_cache WHERE cellar_id = $1 AND fingerprint = $2')
+        .run(TEST_CELLAR_ID, testFingerprint);
     }
   });
 
   it('generates fingerprint for new wine', async () => {
     const input = {
-      wine_name: 'Test Cabernet Integration',
+      wine_name: 'Test Estate Cabernet',
+      producer: 'Test Estate',
       vintage: 2020,
       country: 'South Africa',
-      producer: 'Test Estate',
+      region: 'Stellenbosch',
       style: 'Cabernet Sauvignon'
     };
 
     const result = await evaluateWineAdd({ cellarId: TEST_CELLAR_ID, input, forceRefresh: true });
     
-    expect(result).toBeDefined();
-    expect(result.wine).toBeDefined();
-    expect(result.wine.fingerprint).toBeTruthy();
-    expect(result.wine.fingerprint_version).toBe(1);
+    // Validate return structure
+    expect(result.fingerprint).toBeTruthy();
+    expect(result.fingerprint_version).toBe(1);
+    expect(result.duplicates).toBeDefined();
+    expect(Array.isArray(result.duplicates)).toBe(true);
+    expect(result.duplicates.length).toBe(0); // No duplicates for new wine
     
-    testWineId = result.wine.id;
+    // Store fingerprint for next test
+    testFingerprint = result.fingerprint;
   });
 
   it('detects duplicates by fingerprint', async () => {
-    // Try to add same wine again
+    // First, create a wine in the database with known fingerprint
+    const insertResult = await db.prepare(`
+      INSERT INTO wines (cellar_id, wine_name, producer, vintage, country, region, style, colour, fingerprint, fingerprint_version)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+      RETURNING id
+    `).get(TEST_CELLAR_ID, 'Test Estate Cabernet', 'Test Estate', 2020, 'South Africa', 'Stellenbosch', 'Cabernet Sauvignon', 'Red', testFingerprint, 1);
+
+    testWineId = insertResult.id;
+
+    // Now evaluate the same wine - should find duplicate
     const input = {
-      wine_name: 'Test Cabernet Integration',
+      wine_name: 'Test Estate Cabernet',
+      producer: 'Test Estate',
       vintage: 2020,
       country: 'South Africa',
-      producer: 'Test Estate',
+      region: 'Stellenbosch',
       style: 'Cabernet Sauvignon'
     };
 
     const result = await evaluateWineAdd({ cellarId: TEST_CELLAR_ID, input, forceRefresh: true });
-    
-    expect(result.duplicate).toBe(true);
-    expect(result.existingWine).toBeDefined();
-    expect(result.existingWine.id).toBe(testWineId);
+
+    // Should detect duplicate
+    expect(result.duplicates.length).toBeGreaterThan(0);
+    expect(result.duplicates[0].id).toBe(testWineId);
+    // Note: duplicates array doesn't include fingerprint field
+    expect(result.duplicates[0].wine_name).toBeTruthy();
   });
 
   it('stores ratings with provenance when found', async () => {
-    if (!testWineId) {
-      // Create wine first if previous test skipped
-      const input = {
-        wine_name: 'Test Cabernet with Ratings',
-        vintage: 2019,
-        country: 'France',
-        style: 'Cabernet Sauvignon'
-      };
-      const result = await evaluateWineAdd({ cellarId: TEST_CELLAR_ID, input, forceRefresh: true });
-      testWineId = result.wine.id;
-    }
+    // Create wine first
+    const insertResult = await db.prepare(`
+      INSERT INTO wines (cellar_id, wine_name, vintage, country, style, colour, fingerprint, fingerprint_version)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+      RETURNING id
+    `).get(TEST_CELLAR_ID, 'Test Cabernet with Ratings', 2019, 'France', 'Cabernet Sauvignon', 'Red', 'test-ratings-fp', 1);
+    
+    testWineId = insertResult.id;
 
     // Manually insert a rating to test retrieval
     await db.prepare(`
@@ -88,7 +131,14 @@ describe('Phase 6: Wine Add Orchestrator Integration', () => {
   });
 
   it('stores external IDs with candidate status', async () => {
-    if (!testWineId) return;
+    // Create wine first
+    const insertResult = await db.prepare(`
+      INSERT INTO wines (cellar_id, wine_name, vintage, style, colour, fingerprint, fingerprint_version)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING id
+    `).get(TEST_CELLAR_ID, 'Test External ID Wine', 2021, 'Cabernet Sauvignon', 'Red', 'test-ext-id-fp', 1);
+    
+    testWineId = insertResult.id;
 
     // Manually insert external ID to test
     await db.prepare(`
@@ -107,7 +157,7 @@ describe('Phase 6: Wine Add Orchestrator Integration', () => {
   });
 
   it('respects cellar isolation for fingerprints', async () => {
-    const DIFFERENT_CELLAR = '00000000-0000-0000-0000-000000000002';
+    // Use different cellar ID (ensured to exist in beforeAll)
 
     // Same wine details but different cellar
     const input = {
@@ -121,13 +171,12 @@ describe('Phase 6: Wine Add Orchestrator Integration', () => {
     // Should NOT detect as duplicate because different cellar
     const result = await evaluateWineAdd({ cellarId: DIFFERENT_CELLAR, input, forceRefresh: true });
     
-    expect(result.duplicate).toBeFalsy();
-    expect(result.wine).toBeDefined();
+    expect(result.duplicates).toBeDefined();
+    expect(Array.isArray(result.duplicates)).toBe(true);
+    expect(result.duplicates.length).toBe(0); // No duplicates in different cellar
+    expect(result.fingerprint).toBeTruthy();
     
-    // Cleanup
-    if (result.wine?.id) {
-      await db.prepare('DELETE FROM wines WHERE id = $1').run(result.wine.id);
-    }
+    // No cleanup needed - we're not creating wines, just evaluating
   });
 });
 

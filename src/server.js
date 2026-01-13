@@ -20,6 +20,7 @@ import { cspMiddleware, cspDevMiddleware } from './middleware/csp.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler, notFoundHandler } from './utils/errorResponse.js';
 import { metricsMiddleware, metricsHandler } from './middleware/metrics.js';
+import { logServiceStatus } from './config/serviceAvailability.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -81,6 +82,9 @@ jobQueue.registerHandler('batch_fetch', handleBatchFetch);
 
 // Start job queue processor
 jobQueue.start();
+
+// Log Phase 6 feature availability
+logServiceStatus();
 
 // Schedule periodic cache cleanup (every 6 hours)
 const CACHE_CLEANUP_INTERVAL = 6 * 60 * 60 * 1000;

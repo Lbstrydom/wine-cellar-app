@@ -22,12 +22,14 @@ const backupRateLimiter = createRateLimiter({
 /**
  * Safely get count from a table that might not exist.
  * @param {string} sql - SQL count query
+ * @param {...any} params - Query parameters
  * @returns {Promise<number>} Count or 0
  */
-async function safeCount(sql) {
+async function safeCount(sql, ...params) {
   try {
-    const result = await db.prepare(sql).get();
-    return result?.count || 0;
+    const result = await db.prepare(sql).get(...params);
+    // COUNT(*) may return string in some drivers - ensure number
+    return Number(result?.count) || 0;
   } catch (err) {
     // Table might not exist in some environments - log but don't fail
     logger.debug('Backup', `safeCount skipped (table may not exist): ${err.message}`);
@@ -38,10 +40,11 @@ async function safeCount(sql) {
 /**
  * Safely run a delete statement on a table that might not exist.
  * @param {string} sql - SQL delete statement
+ * @param {...any} params - Query parameters
  */
-async function safeDelete(sql) {
+async function safeDelete(sql, ...params) {
   try {
-    await db.prepare(sql).run();
+    await db.prepare(sql).run(...params);
   } catch (err) {
     // Table might not exist - log but don't fail import
     logger.debug('Backup', `safeDelete skipped (table may not exist): ${err.message}`);
@@ -55,10 +58,10 @@ async function safeDelete(sql) {
 router.get('/info', async (req, res) => {
   try {
     const info = {
-      wines: await safeCount(`SELECT COUNT(*) as count FROM wines WHERE cellar_id = '${req.cellarId}'`),
-      slots: await safeCount(`SELECT COUNT(*) as count FROM slots WHERE cellar_id = '${req.cellarId}' AND wine_id IS NOT NULL`),
-      history: await safeCount(`SELECT COUNT(*) as count FROM consumption_log WHERE cellar_id = '${req.cellarId}'`),
-      ratings: await safeCount(`SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
+      wines: await safeCount('SELECT COUNT(*) as count FROM wines WHERE cellar_id = $1', req.cellarId),
+      slots: await safeCount('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id IS NOT NULL', req.cellarId),
+      history: await safeCount('SELECT COUNT(*) as count FROM consumption_log WHERE cellar_id = $1', req.cellarId),
+      ratings: await safeCount('SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = $1)', req.cellarId),
       lastBackup: null
     };
     res.json(info);
@@ -80,14 +83,14 @@ router.get('/export/json', backupRateLimiter, async (req, res) => {
       appVersion: '1.0.0',
       exportedAt: new Date().toISOString(),
       data: {
-        wines: await db.prepare(`SELECT * FROM wines WHERE cellar_id = $1`).all(req.cellarId),
-        slots: await db.prepare(`SELECT * FROM slots WHERE cellar_id = $1`).all(req.cellarId),
-        wine_ratings: await safeQuery(`SELECT * FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
-        consumption_log: await safeQuery(`SELECT * FROM consumption_log WHERE cellar_id = '${req.cellarId}'`),
-        drinking_windows: await safeQuery(`SELECT * FROM drinking_windows WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = '${req.cellarId}')`),
-        user_settings: await safeQuery(`SELECT * FROM user_settings WHERE cellar_id = '${req.cellarId}'`),
-        data_provenance: await safeQuery(`SELECT * FROM data_provenance WHERE cellar_id = '${req.cellarId}'`),
-        reduce_now: await safeQuery(`SELECT * FROM reduce_now WHERE cellar_id = '${req.cellarId}'`)
+        wines: await db.prepare('SELECT * FROM wines WHERE cellar_id = $1').all(req.cellarId),
+        slots: await db.prepare('SELECT * FROM slots WHERE cellar_id = $1').all(req.cellarId),
+        wine_ratings: await safeQuery('SELECT * FROM wine_ratings WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = $1)', req.cellarId),
+        consumption_log: await safeQuery('SELECT * FROM consumption_log WHERE cellar_id = $1', req.cellarId),
+        drinking_windows: await safeQuery('SELECT * FROM drinking_windows WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = $1)', req.cellarId),
+        user_settings: await safeQuery('SELECT * FROM user_settings WHERE cellar_id = $1', req.cellarId),
+        data_provenance: await safeQuery('SELECT * FROM data_provenance WHERE cellar_id = $1', req.cellarId),
+        reduce_now: await safeQuery('SELECT * FROM reduce_now WHERE cellar_id = $1', req.cellarId)
       }
     };
 
@@ -354,11 +357,12 @@ router.post('/import', async (req, res) => {
 /**
  * Safely query a table that might not exist.
  * @param {string} sql - SQL query
+ * @param {...any} params - Query parameters
  * @returns {Promise<Array>} Results or empty array
  */
-async function safeQuery(sql) {
+async function safeQuery(sql, ...params) {
   try {
-    return await db.prepare(sql).all();
+    return await db.prepare(sql).all(...params);
   } catch (err) {
     // Table might not exist in some environments - log but don't fail
     logger.debug('Backup', `safeQuery skipped (table may not exist): ${err.message}`);
