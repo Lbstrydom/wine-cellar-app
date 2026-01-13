@@ -39,6 +39,17 @@ app.use(metricsMiddleware());
 // Apply rate limiting to API routes
 app.use('/api', generalRateLimiter());
 
+// Serve Supabase UMD bundle locally to satisfy CSP 'self'
+app.use('/vendor', express.static(path.join(
+  __dirname,
+  '..',
+  'node_modules',
+  '@supabase',
+  'supabase-js',
+  'dist',
+  'umd'
+)));
+
 app.use(express.static(path.join(__dirname, '..', 'public')));
 
 // Health check routes (no rate limiting for load balancer probes)

@@ -164,96 +164,289 @@ const getWineWithLocations = await db.prepare(`
 
 ### PostgreSQL Async Patterns (CRITICAL)
 
-**IMPORTANT**: Unlike SQLite (which is synchronous), PostgreSQL uses Promises. ALL database calls MUST be awaited.
+The database abstraction layer (`src/db/postgres.js`) returns Promises. **All route handlers and services must use async/await.**
 
 ```javascript
-// CORRECT: Await all database calls
+// ✅ CORRECT: async route handler with await
 router.get('/wines', async (req, res) => {
-  try {
-    const wines = await db.prepare('SELECT * FROM wines').all();  // AWAIT!
-    res.json({ data: wines });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
+  const wines = await db.prepare('SELECT * FROM wines').all();
+  res.json({ data: wines });
 });
 
-// WRONG: Missing await - returns Promise object, not data
+// ❌ WRONG: Missing async/await - returns Promise, not data
 router.get('/wines', (req, res) => {
-  const wines = db.prepare('SELECT * FROM wines').all();  // BUG: No await!
-  res.json({ data: wines });  // Sends { data: Promise } - broken!
+  const wines = db.prepare('SELECT * FROM wines').all(); // Returns Promise!
+  res.json({ data: wines }); // Sends Promise object, not results
+});
+
+// ✅ CORRECT: Service function with async
+export async function getWineById(id) {
+  return await db.prepare('SELECT * FROM wines WHERE id = ?').get(id);
+}
+
+// ❌ WRONG: Sync-style function call
+export function getWineById(id) {
+  return db.prepare('SELECT * FROM wines WHERE id = ?').get(id); // Returns Promise!
+}
+```
+
+**Common Symptoms of Missing Async:**
+- API returns `{}` or `[object Promise]`
+- Railway logs show no errors but data is empty
+- Works locally with SQLite but fails with PostgreSQL
+
+**Checklist When Adding New Routes/Services:**
+1. Is the route handler `async`?
+2. Are all `db.prepare().get/all/run()` calls `await`ed?
+3. Are service functions that call DB marked `async`?
+4. Are service function calls `await`ed in route handlers?
+
+---
+
+## Data Integrity Patterns
+
+### Move/Batch Operations Must Validate First
+
+When implementing operations that modify multiple records (moves, swaps, batch updates):
+
+```javascript
+// ✅ CORRECT: Validate before execution
+const validation = await validateMovePlan(moves);
+if (!validation.valid) {
+  return res.status(409).json({ error: 'Validation failed', conflicts: validation.errors });
+}
+
+// Execute only after validation passes
+await db.prepare('BEGIN TRANSACTION').run();
+try {
+  for (const move of moves) {
+    await executeMove(move);
+  }
+  await db.prepare('COMMIT').run();
+} catch (err) {
+  await db.prepare('ROLLBACK').run();
+  throw err;
+}
+```
+
+### Track Allocated Resources in Batch Operations
+
+When generating suggestions that allocate resources (slots, IDs, etc.), track what's been allocated within the batch:
+
+```javascript
+// ✅ CORRECT: Track allocated targets to prevent collisions
+const allocatedTargets = new Set();
+
+for (const item of items) {
+  const target = findAvailableTarget(occupiedSet);
+  if (target && !allocatedTargets.has(target)) {
+    suggestions.push({ from: item.current, to: target });
+    allocatedTargets.add(target); // Mark as allocated
+  }
+}
+
+// ❌ WRONG: Each iteration doesn't know about previous allocations
+for (const item of items) {
+  const target = findAvailableTarget(occupiedSet); // May return same target twice!
+  suggestions.push({ from: item.current, to: target });
+}
+```
+
+### Invariant Checks for Critical Operations
+
+For operations that must not lose data:
+
+```javascript
+// Count before
+const beforeCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+
+// ... perform operations ...
+
+// Count after
+const afterCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
+
+if (afterCount.count !== beforeCount.count) {
+  await db.prepare('ROLLBACK').run();
+  throw new Error(`Data integrity violation: count changed from ${beforeCount.count} to ${afterCount.count}`);
+}
+```
+
+---
+
+## Multi-User / Cellar-Scoped Patterns (CRITICAL)
+
+The app uses **cellar-based tenancy** with Supabase Auth. All user data is scoped to a `cellar_id`. NEVER trust client-provided scope without server-side validation.
+
+### Authentication Flow
+
+```
+Frontend (Supabase JS) → Supabase Auth (OAuth/Email) → JWT Token
+                                                           ↓
+Express API ← Authorization: Bearer <token> ← Frontend
+     ↓
+requireAuth middleware → verifies JWT via JWKS
+     ↓
+requireCellarContext middleware → validates X-Cellar-ID header
+     ↓
+Route handler receives: req.user, req.cellarId, req.cellarRole
+```
+
+### Middleware Chain
+
+All data routes MUST use this middleware chain:
+
+```javascript
+// src/routes/index.js
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
+import { requireCellarContext } from '../middleware/cellarContext.js';
+
+// Protected routes (require auth + cellar)
+router.use('/api/wines', requireAuth, requireCellarContext, winesRouter);
+router.use('/api/slots', requireAuth, requireCellarContext, slotsRouter);
+
+// Public routes (no auth needed)
+router.use('/api/health', healthRouter);
+```
+
+### Route Query Patterns (CRITICAL)
+
+**All queries MUST include `cellar_id` filter using `req.cellarId`:**
+
+```javascript
+// ✅ CORRECT: Use req.cellarId from middleware
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`
+    SELECT * FROM wines WHERE cellar_id = $1
+  `).all(req.cellarId);
+  res.json({ data: wines });
+});
+
+// ❌ WRONG: No cellar scope - returns ALL users' data!
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`SELECT * FROM wines`).all();
+  res.json({ data: wines });
+});
+
+// ❌ WRONG: Trusting client-provided cellar_id
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`
+    SELECT * FROM wines WHERE cellar_id = $1
+  `).all(req.body.cellar_id);  // NEVER trust request body for scope!
 });
 ```
 
-**Checklist for every database operation**:
-1. Function must be `async`
-2. Every `db.prepare().get()`, `.all()`, `.run()` must have `await`
-3. Error handling with try/catch around awaited calls
-
-### Data Integrity Patterns
-
-When generating suggestions or plans that allocate resources (slots, moves, etc.), always track allocated resources to prevent collisions:
+### INSERT/UPDATE/DELETE Patterns
 
 ```javascript
-// CORRECT: Track allocated targets during batch operations
-const allocatedTargets = new Set();
-const occupiedSlots = new Set(currentOccupancy.map(s => s.location_code));
+// INSERT: Set cellar_id server-side, NEVER from request body
+router.post('/', async (req, res) => {
+  const { wine_name, vintage } = req.body;  // NO cellar_id from body!
+  await db.prepare(`
+    INSERT INTO wines (cellar_id, wine_name, vintage)
+    VALUES ($1, $2, $3)
+  `).run(req.cellarId, wine_name, vintage);  // Use req.cellarId
+});
 
-for (const wine of winesToMove) {
-  const availableSlot = findEmptySlot(targetZone);
+// UPDATE: WHERE clause MUST include cellar_id
+router.put('/:id', async (req, res) => {
+  const result = await db.prepare(`
+    UPDATE wines SET wine_name = $1
+    WHERE id = $2 AND cellar_id = $3
+  `).run(wine_name, req.params.id, req.cellarId);
 
-  // Check BOTH current occupancy AND already-allocated slots
-  if (availableSlot && !occupiedSlots.has(availableSlot) && !allocatedTargets.has(availableSlot)) {
-    suggestions.push({ from: wine.currentSlot, to: availableSlot });
-    allocatedTargets.add(availableSlot);  // Mark as allocated
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Wine not found' });
   }
-}
+});
 
-// WRONG: Only checking current occupancy - can suggest same slot twice
-for (const wine of winesToMove) {
-  const availableSlot = findEmptySlot(targetZone);
-  if (availableSlot && !occupiedSlots.has(availableSlot)) {
-    suggestions.push({ from: wine.currentSlot, to: availableSlot });  // BUG: May duplicate!
+// DELETE: WHERE clause MUST include cellar_id
+router.delete('/:id', async (req, res) => {
+  const result = await db.prepare(`
+    DELETE FROM wines WHERE id = $1 AND cellar_id = $2
+  `).run(req.params.id, req.cellarId);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Wine not found' });
   }
-}
+});
 ```
 
-**Validation before execution**:
+### Related Table Joins
+
+When joining tables, ensure cellar isolation is maintained:
+
 ```javascript
-// Always validate batch operations before executing
-async function executeMoves(moves) {
-  const validation = await validateMovePlan(moves);
-  if (!validation.valid) {
-    return { error: 'Validation failed', details: validation.errors };
-  }
+// ✅ CORRECT: Filter wines by cellar, slots inherit from wines FK
+const layout = await db.prepare(`
+  SELECT s.*, w.wine_name
+  FROM slots s
+  LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+  WHERE s.cellar_id = $1
+`).all(req.cellarId);
 
-  // Count before
-  const beforeCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
-
-  // Execute moves...
-
-  // Count after - must match
-  const afterCount = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL').get();
-  if (beforeCount.count !== afterCount.count) {
-    throw new Error('Bottle count mismatch - data corruption detected');
-  }
-}
+// ❌ WRONG: Missing cellar filter allows cross-tenant data leaks
+const layout = await db.prepare(`
+  SELECT s.*, w.wine_name
+  FROM slots s
+  LEFT JOIN wines w ON w.id = s.wine_id
+`).all();  // Returns ALL cellars!
 ```
 
-### CSP Compliance
+### X-Cellar-ID Header Validation
 
-This app uses Content Security Policy. Never use inline event handlers:
+The `requireCellarContext` middleware validates the `X-Cellar-ID` header:
+
+1. If header provided → verify user is a member of that cellar
+2. If no header → use user's `active_cellar_id` from profile
+3. Sets `req.cellarId` and `req.cellarRole` for use in routes
+
+**Never bypass this validation!**
+
+### Role-Based Access
+
+```javascript
+import { requireCellarEdit, requireCellarOwner } from '../middleware/cellarContext.js';
+
+// Viewer can read, editor can write, owner can delete
+router.get('/', requireAuth, requireCellarContext, getWines);  // Any role
+router.post('/', requireAuth, requireCellarContext, requireCellarEdit, createWine);  // Editor+
+router.delete('/:id', requireAuth, requireCellarContext, requireCellarOwner, deleteWine);  // Owner only
+```
+
+---
+
+## Content Security Policy (CSP) Compliance
+
+### No Inline Event Handlers
+
+CSP blocks inline JavaScript. Never use `onclick`, `onchange`, etc. in HTML:
 
 ```html
-<!-- WRONG: Inline handlers blocked by CSP -->
+<!-- ❌ WRONG: Blocked by CSP -->
 <button onclick="handleClick()">Click</button>
 
-<!-- CORRECT: Add listeners in JS -->
+<!-- ✅ CORRECT: Wire up in JavaScript -->
 <button id="my-button">Click</button>
 ```
 
 ```javascript
 // In your JS file
 document.getElementById('my-button').addEventListener('click', handleClick);
+```
+
+### Dynamic Element Event Binding
+
+For dynamically created elements, wire events after creation:
+
+```javascript
+// ✅ CORRECT: Add listeners after creating HTML
+container.innerHTML = items.map(item => `
+  <button class="item-btn" data-id="${item.id}">Action</button>
+`).join('');
+
+container.querySelectorAll('.item-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => handleItemClick(e.target.dataset.id));
+});
 ```
 
 ---
@@ -503,7 +696,7 @@ describe('Wine Routes', () => {
     it('returns all wines with bottle counts', async () => {
       // ...
     });
-    
+
     it('filters by colour when specified', async () => {
       // ...
     });
@@ -543,6 +736,8 @@ refactor/modular-structure
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
 | `DATABASE_URL` | PostgreSQL connection string (if set, uses PostgreSQL instead of SQLite) | For cloud deployment |
+| `SUPABASE_URL` | Supabase project URL (e.g., `https://xxx.supabase.co`) | For multi-user auth |
+| `SUPABASE_ANON_KEY` | Supabase anonymous/public key (frontend) | For multi-user auth |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
 | `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
 | `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
@@ -551,9 +746,11 @@ refactor/modular-structure
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
 | `OPENAI_API_KEY` | OpenAI API key for GPT reviewer | For AI reviewer |
 | `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT zone reconfig reviewer (`true`/`false`) | No (default: false) |
+| `OPENAI_REVIEW_CELLAR_ANALYSIS` | Enable GPT cellar analysis reviewer (`true`/`false`) | No (default: false) |
+| `OPENAI_REVIEW_ZONE_CAPACITY` | Enable GPT zone capacity reviewer (`true`/`false`) | No (default: false) |
 | `OPENAI_REVIEW_MODEL` | Override default reviewer model | No (default: gpt-5.2) |
 | `OPENAI_REVIEW_MAX_OUTPUT_TOKENS` | Max tokens for reviewer output | No (default: 1500) |
-| `OPENAI_REVIEW_REASONING_EFFORT` | Reasoning effort level (`low`/`medium`/`high`) | No (default: low) |
+| `OPENAI_REVIEW_REASONING_EFFORT` | Reasoning effort (`low`/`medium`/`high`) | No (default: medium) |
 | `OPENAI_REVIEW_TIMEOUT_MS` | Reviewer timeout in milliseconds | No (default: 20000) |
 
 ---
@@ -571,39 +768,101 @@ This project uses MCP servers to extend Claude Code's capabilities. MCP servers 
 | **memory** | Persistent knowledge graph across sessions | `create_entities`, `create_relations`, `search_nodes`, `read_graph` |
 | **brightdata** | Web scraping, SERP, browser automation | `search_engine`, `scrape_as_markdown`, `web_data_*` APIs |
 
+### Configuration (`.mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "pdf-reader": {
+      "command": "npx",
+      "args": ["-y", "@sylphx/pdf-reader-mcp"]
+    },
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "c:/GIT/wine-cellar-app"]
+    },
+    "memory": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-memory"]
+    },
+    "brightdata": {
+      "command": "npx",
+      "args": ["-y", "@brightdata/mcp"],
+      "env": {
+        "API_TOKEN": "<your-brightdata-api-key>",
+        "PRO_MODE": "true"
+      }
+    }
+  }
+}
+```
+
 ### When to Use Each MCP Server
 
-#### PDF Reader
-Use for wine award extraction from PDF competition booklets. The skill `/award-extractor` uses this internally.
+#### PDF Reader (`mcp__pdf-reader__read_pdf`)
+Use for wine award extraction from PDF booklets:
+```javascript
+// Extract awards from a competition PDF
+mcp__pdf-reader__read_pdf({
+  sources: [{ path: "awards/michelangelo-2024.pdf" }],
+  include_full_text: true
+})
+```
 
-#### Filesystem
-Use when you need advanced file operations beyond built-in tools:
-- `directory_tree` - Get recursive JSON structure
-- `search_files` - Pattern-based file finding
-- `edit_file` - Pattern matching with dry-run preview
+#### Filesystem (`mcp__filesystem__*`)
+Use for file operations when you need more control than built-in tools:
+- `directory_tree` - Get recursive JSON structure of directories
+- `search_files` - Find files matching patterns
+- `edit_file` - Pattern-based edits with dry-run preview
 
-#### Memory
-Use to persist context across Claude Code sessions:
-- Store user wine preferences
-- Remember past decisions and patterns
-- Build knowledge graph of wine relationships
+#### Memory (`mcp__memory__*`)
+Use for persistent context across sessions:
+```javascript
+// Remember user preferences
+mcp__memory__create_entities({
+  entities: [{
+    name: "user_preferences",
+    entityType: "config",
+    observations: ["Prefers South African wines", "Serves reds at 16-18°C"]
+  }]
+})
 
-#### Bright Data
-Use for web scraping when `WebFetch` fails due to anti-bot protection:
-- `search_engine` - AI-optimized web search (replaces Google SERP)
-- `scrape_as_markdown` - Clean markdown from any site
-- `web_data_*` - Structured product data APIs
+// Create relationships
+mcp__memory__create_relations({
+  relations: [{
+    from: "Kanonkop_Pinotage",
+    to: "user_preferences",
+    relationType: "FAVORITE_OF"
+  }]
+})
 
-### MCP vs Built-in Tools Decision Matrix
+// Query the knowledge graph
+mcp__memory__search_nodes({ query: "wine preferences" })
+```
+
+#### Bright Data (`mcp__brightdata__*`)
+Use for web scraping when built-in fetch isn't sufficient:
+- `search_engine` - AI-optimized web search
+- `scrape_as_markdown` - Convert any webpage to clean markdown
+- `web_data_*` - Structured data from Amazon, LinkedIn, etc.
+
+### MCP vs Built-in Tools
 
 | Task | Use MCP | Use Built-in |
 |------|---------|--------------|
 | Read project files | ❌ | ✅ `Read` tool |
 | Edit specific lines | ❌ | ✅ `Edit` tool |
-| Search code | ❌ | ✅ `Grep`/`Glob` |
+| Search code | ❌ | ✅ `Grep`/`Glob` tools |
 | Extract PDF text | ✅ `pdf-reader` | ❌ |
 | Persistent memory | ✅ `memory` | ❌ |
-| Scrape protected sites | ✅ `brightdata` | ❌ |
+| Scrape blocked sites | ✅ `brightdata` | ❌ `WebFetch` may fail |
+| Directory tree JSON | ✅ `filesystem` | ❌ |
+
+### Adding New MCP Servers
+
+1. Add server config to `.mcp.json`
+2. Add server name to `.claude/settings.local.json` → `enabledMcpjsonServers`
+3. Restart Claude Code
 
 ---
 
@@ -668,8 +927,6 @@ Set these in Railway dashboard → Variables:
 | `BRIGHTDATA_API_KEY` | BrightData API key |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |
-| `OPENAI_API_KEY` | OpenAI API key (GPT reviewer) |
-| `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT reviewer |
 
 ### Custom Domain Setup
 
@@ -702,9 +959,9 @@ This forces browsers to reload fresh assets instead of using cached versions
 
 ## OpenAI API Integration
 
-### Structured Outputs with responses.parse() (PREFERRED)
+### Structured Outputs with responses.parse()
 
-Use `responses.parse()` with `zodTextFormat()` for type-safe structured outputs:
+**PREFERRED**: Use `responses.parse()` with `zodTextFormat()` for type-safe structured outputs:
 
 ```javascript
 import { zodTextFormat } from 'openai/helpers/zod';
@@ -712,7 +969,7 @@ import { z } from 'zod';
 
 const ResultSchema = z.object({
   verdict: z.enum(['approve', 'reject']),
-  reasoning: z.string().max(500),  // Add bounds to prevent runaway
+  reasoning: z.string().max(500),
   items: z.array(z.object({ id: z.number() })).max(20)
 });
 
@@ -749,19 +1006,6 @@ For reviewer/validator tasks, balance speed and quality:
 5. **Timeout**: Default 20s for gpt-5.2 with reasoning, configurable via env var
 6. **Schema bounds**: Add `.max()` to arrays and strings to prevent runaway outputs
 
-### Handle Incomplete Responses
-
-Treat incomplete responses as failures rather than retrying with more tokens:
-
-```javascript
-const response = await openai.responses.parse({ ... });
-
-if (response.status === 'incomplete') {
-  const reason = response.incomplete_details?.reason || 'unknown';
-  throw new Error(`Response incomplete: ${reason}`);
-}
-```
-
 ### Endpoint/Model Mismatch (Common Pitfall)
 
 **CRITICAL**: OpenAI model IDs are endpoint-specific. Using the wrong model ID for an endpoint causes "model not found" errors:
@@ -775,9 +1019,9 @@ if (response.status === 'incomplete') {
 | GPT-4o | Either | `gpt-4o` |
 
 ```javascript
-// ✅ CORRECT: gpt-5-mini via Responses API with parse()
+// ✅ CORRECT: gpt-5.2 via Responses API with parse()
 const response = await openai.responses.parse({
-  model: 'gpt-5-mini',
+  model: 'gpt-5.2',
   input: [...],
   text: { format: zodTextFormat(Schema, 'name') }
 });
@@ -808,6 +1052,19 @@ await openai.responses.parse({
   reasoning_effort: 'medium',  // Ignored!
   // ...
 });
+```
+
+### Handle Incomplete Responses
+
+Treat incomplete responses as failures rather than retrying with more tokens:
+
+```javascript
+const response = await openai.responses.parse({ ... });
+
+if (response.status === 'incomplete') {
+  const reason = response.incomplete_details?.reason || 'unknown';
+  throw new Error(`Response incomplete: ${reason}`);
+}
 ```
 
 ### Model Fallback Pattern
@@ -888,12 +1145,15 @@ items.sort((a, b) => {
 - Create files over 300 lines (split them)
 - Use inline styles in HTML (use CSS classes)
 - Hardcode magic numbers (use named constants)
-- Forget `await` on database calls (PostgreSQL is async, unlike SQLite)
-- Use inline event handlers in HTML (`onclick`, `onchange`, etc.) - CSP blocks them
-- Allocate the same resource twice in batch operations (track allocated items in a Set)
-- Execute batch operations without validation (always validate before execute)
-- Assume synchronous behaviour - check if functions return Promises
-- Use `||` for default values when 0 is valid (use `??` instead - see JavaScript Gotchas section)
+- Use inline event handlers (`onclick`, `onchange`) in HTML - CSP blocks them
+- Forget `async/await` when calling `db.prepare()` methods
+- Assume batch operations won't have collisions - always validate
+- Use wine name for identity in move/swap logic - use wine ID
+- Execute multi-step operations without transaction wrapping
+- Use `||` for default values when 0 is valid (use `??` instead - see below)
+- Trust client-provided `cellar_id` from request body - always use `req.cellarId` from middleware
+- Write queries without `WHERE cellar_id = $1` filter - causes cross-tenant data leaks
+- Bypass `requireCellarContext` middleware for data routes
 
 ---
 
@@ -906,9 +1166,12 @@ items.sort((a, b) => {
 - Preserve existing functionality when refactoring
 - Add JSDoc to all exported functions
 - Keep functions under 50 lines where practical
-- Always use `async/await` for route handlers with database calls
-- Track allocated resources with a Set when generating batch suggestions
-- Validate batch operations before execution (check for collisions, mismatches)
-- Add invariant checks (before/after counts) for operations that modify data
-- Use `addEventListener` in JS files instead of inline HTML event handlers
-- Test both locally (SQLite) and against Supabase (PostgreSQL) before deploying
+- Mark all route handlers as `async` when using PostgreSQL
+- Validate move/batch plans before execution
+- Track allocated resources in batch suggestion generation
+- Use invariant checks (before/after counts) for data-critical operations
+- Test with PostgreSQL before deploying (not just SQLite locally)
+- Bump cache version after frontend changes
+- Always use `req.cellarId` in all database queries for user-data tables
+- Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
+- Apply `requireAuth` + `requireCellarContext` middleware to all data routes

@@ -3,14 +3,28 @@
  * @module app
  */
 
-import { fetchLayout, fetchStats, fetchReduceNow, fetchWines, fetchConsumptionHistory } from './api.js';
+import {
+  fetchLayout,
+  fetchStats,
+  fetchReduceNow,
+  fetchWines,
+  fetchConsumptionHistory,
+  getProfile,
+  getCellars,
+  setActiveCellar,
+  setAccessToken,
+  setActiveCellarId,
+  setInviteCode,
+  clearAuthState,
+  setAuthErrorHandler
+} from './api.js';
 import { renderFridge, renderCellar, initZoomControls } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
 import { initSettings, loadSettings, loadTextSize } from './settings.js';
 import { initCellarAnalysis, loadAnalysis } from './cellarAnalysis.js';
-import { escapeHtml } from './utils.js';
+import { escapeHtml, showToast } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
 import { initGlobalSearch } from './globalSearch.js';
 import { initAccessibility } from './accessibility.js';
@@ -44,6 +58,430 @@ export const state = {
  * Threshold for using virtual list (items count).
  */
 const VIRTUAL_LIST_THRESHOLD = 50;
+const AUTH_SCREEN_ID = 'auth-screen';
+const AUTH_FORM_ID = 'auth-form';
+const AUTH_MODE_SIGNIN = 'signin';
+const AUTH_MODE_SIGNUP = 'signup';
+
+let supabaseClientPromise = null;
+let appStarted = false;
+
+/**
+ * Get or create Supabase client.
+ * @returns {Promise<Object>}
+ */
+async function getSupabaseClient() {
+  if (supabaseClientPromise) return supabaseClientPromise;
+
+  supabaseClientPromise = (async () => {
+    if (!window.supabase) {
+      throw new Error('Supabase client not loaded');
+    }
+
+    const res = await fetch('/api/public-config');
+    const data = await res.json().catch(() => ({}));
+
+    if (!res.ok) {
+      const message = data.error || 'Supabase not configured';
+      throw new Error(message);
+    }
+
+    // Configure Supabase client with session persistence for "Remember Me" functionality
+    // Session persists across browser sessions; refresh tokens auto-renew access tokens
+    // Session length (refresh token expiry) is configured in Supabase Dashboard → Auth → Settings
+    return window.supabase.createClient(data.supabase_url, data.supabase_anon_key, {
+      auth: {
+        persistSession: true,        // Keep session in localStorage (default: true)
+        autoRefreshToken: true,      // Auto-refresh access token before expiry (default: true)
+        detectSessionInUrl: true,    // Detect OAuth callback in URL (default: true)
+        storageKey: 'wine-cellar-auth'  // Custom storage key for this app
+      }
+    });
+  })();
+
+  return supabaseClientPromise;
+}
+
+/**
+ * Show or hide the auth screen overlay.
+ * @param {boolean} show
+ */
+function toggleAuthScreen(show) {
+  const authScreen = document.getElementById(AUTH_SCREEN_ID);
+  if (!authScreen) return;
+  authScreen.setAttribute('aria-hidden', show ? 'false' : 'true');
+  authScreen.classList.toggle('auth-screen--active', show);
+
+  if (show) {
+    const menu = document.getElementById('user-menu');
+    if (menu) menu.classList.add('user-menu--hidden');
+    const switcher = document.getElementById('cellar-switcher');
+    if (switcher) switcher.innerHTML = '';
+  }
+}
+
+/**
+ * Update auth screen error message.
+ * @param {string} message
+ */
+function setAuthError(message) {
+  const errorEl = document.getElementById('auth-error');
+  if (!errorEl) return;
+  errorEl.textContent = message || '';
+  errorEl.style.display = message ? 'block' : 'none';
+}
+
+/**
+ * Update auth screen status message.
+ * @param {string} message
+ */
+function setAuthStatus(message) {
+  const statusEl = document.getElementById('auth-status');
+  if (!statusEl) return;
+  statusEl.textContent = message || '';
+  statusEl.style.display = message ? 'block' : 'none';
+}
+
+/**
+ * Toggle auth mode (sign in / sign up).
+ * @param {string} mode
+ */
+function setAuthMode(mode) {
+  const authForm = document.getElementById(AUTH_FORM_ID);
+  if (!authForm) return;
+  authForm.dataset.mode = mode;
+
+  const tabs = document.querySelectorAll('[data-auth-tab]');
+  tabs.forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.authTab === mode);
+  });
+
+  const signupFields = authForm.querySelectorAll('[data-auth-signup]');
+  signupFields.forEach(field => {
+    field.style.display = mode === AUTH_MODE_SIGNUP ? 'block' : 'none';
+  });
+
+  setAuthError('');
+  setAuthStatus('');
+}
+
+/**
+ * Update user menu display.
+ * @param {Object} profile
+ */
+function updateUserMenu(profile) {
+  const menu = document.getElementById('user-menu');
+  const nameEl = document.getElementById('user-name');
+  const emailEl = document.getElementById('user-email');
+
+  if (!menu || !nameEl) return;
+
+  const displayName = profile?.display_name || profile?.email || 'Signed In';
+  nameEl.textContent = displayName;
+
+  if (emailEl) {
+    emailEl.textContent = profile?.email || '';
+  }
+
+  menu.classList.remove('user-menu--hidden');
+}
+
+/**
+ * Render cellar switcher options.
+ * @param {Array} cellars
+ * @param {string} activeCellarId
+ */
+function renderCellarSwitcher(cellars, activeCellarId) {
+  const container = document.getElementById('cellar-switcher');
+  if (!container) return;
+
+  if (!Array.isArray(cellars) || cellars.length <= 1) {
+    container.innerHTML = '';
+    return;
+  }
+
+  const options = cellars.map(cellar => {
+    const selected = cellar.id === activeCellarId ? 'selected' : '';
+    return `<option value="${escapeHtml(cellar.id)}" ${selected}>${escapeHtml(cellar.name)}</option>`;
+  }).join('');
+
+  container.innerHTML = `
+    <label class="cellar-switcher-label" for="cellar-select">Cellar</label>
+    <select id="cellar-select" class="cellar-switcher-select">
+      ${options}
+    </select>
+  `;
+
+  const select = container.querySelector('#cellar-select');
+  select.addEventListener('change', async (event) => {
+    const nextCellarId = event.target.value;
+    if (!nextCellarId) return;
+
+    try {
+      await setActiveCellar(nextCellarId);
+      setActiveCellarId(nextCellarId);
+      window.location.reload();
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+  });
+}
+
+/**
+ * Load user context after sign-in.
+ * @returns {Promise<boolean>}
+ */
+async function loadUserContext() {
+  try {
+    const profileResult = await getProfile();
+    const profile = profileResult.data || profileResult;
+
+    if (profile?.active_cellar_id) {
+      setActiveCellarId(profile.active_cellar_id);
+    }
+
+    updateUserMenu(profile);
+    setInviteCode(null);
+
+    const cellarsResult = await getCellars();
+    const cellars = cellarsResult.data || [];
+    renderCellarSwitcher(cellars, profile?.active_cellar_id || null);
+    return true;
+  } catch (err) {
+    setAuthError(err.message);
+    return false;
+  }
+}
+
+/**
+ * Start the main app after authentication.
+ */
+async function startAuthenticatedApp() {
+  if (appStarted) return;
+  appStarted = true;
+
+  // Setup navigation
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => switchView(tab.dataset.view));
+  });
+
+  // Initialize mobile menu
+  initMobileMenu();
+
+  // Initialize wine list filters
+  initWineListFilters();
+
+  // Initialise modules
+  initModals();
+  initSommelier();
+  initSettings();
+  initCellarAnalysis();
+  initGlobalSearch();
+  initAccessibility();
+  initRecommendations();
+  await initBottles();
+
+  // Load initial data
+  await loadLayout();
+  await loadStats();
+
+  // Initialize zoom controls after grid is rendered
+  initZoomControls();
+}
+
+/**
+ * Initialize auth UI and Supabase session handling.
+ */
+async function initAuth() {
+  const authForm = document.getElementById(AUTH_FORM_ID);
+  const signOutBtn = document.getElementById('sign-out-btn');
+  const googleBtn = document.getElementById('auth-google');
+  const appleBtn = document.getElementById('auth-apple');
+
+  setAuthErrorHandler(() => {
+    setAuthError('Session expired. Please sign in again.');
+    clearAuthState();
+    toggleAuthScreen(true);
+    getSupabaseClient()
+      .then(client => client.auth.signOut())
+      .catch(() => {});
+  });
+
+  if (!authForm) return;
+
+  authForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    setAuthError('');
+    setAuthStatus('');
+
+    const mode = authForm.dataset.mode || AUTH_MODE_SIGNIN;
+    const email = authForm.querySelector('#auth-email')?.value?.trim() || '';
+    const password = authForm.querySelector('#auth-password')?.value || '';
+    const displayName = authForm.querySelector('#auth-name')?.value?.trim() || '';
+    const inviteCode = authForm.querySelector('#auth-invite')?.value?.trim() || '';
+
+    if (!email || !password) {
+      setAuthError('Email and password are required.');
+      return;
+    }
+
+    try {
+      const supabase = await getSupabaseClient();
+
+      if (mode === AUTH_MODE_SIGNUP) {
+        if (!inviteCode) {
+          setAuthError('Invite code is required for signup.');
+          return;
+        }
+        setInviteCode(inviteCode);
+
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: displayName || email.split('@')[0]
+            }
+          }
+        });
+
+        if (error) throw error;
+
+        setAuthStatus('Check your email to confirm your account, then sign in.');
+        setAuthMode(AUTH_MODE_SIGNIN);
+        return;
+      }
+
+      setInviteCode(null);
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch (err) {
+      setAuthError(err.message || 'Authentication failed.');
+    }
+  });
+
+  document.querySelectorAll('[data-auth-tab]').forEach(tab => {
+    tab.addEventListener('click', () => setAuthMode(tab.dataset.authTab));
+  });
+
+  if (googleBtn) {
+    googleBtn.addEventListener('click', async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        const mode = authForm.dataset.mode || AUTH_MODE_SIGNIN;
+        const inviteCode = authForm.querySelector('#auth-invite')?.value?.trim() || '';
+
+        if (mode === AUTH_MODE_SIGNUP && !inviteCode) {
+          setAuthError('Invite code is required for signup.');
+          return;
+        }
+
+        if (inviteCode) {
+          setInviteCode(inviteCode);
+        } else {
+          setInviteCode(null);
+        }
+
+        await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: { redirectTo: window.location.origin }
+        });
+      } catch (err) {
+        setAuthError(err.message || 'Google sign-in failed.');
+      }
+    });
+  }
+
+  if (appleBtn) {
+    appleBtn.addEventListener('click', async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        const mode = authForm.dataset.mode || AUTH_MODE_SIGNIN;
+        const inviteCode = authForm.querySelector('#auth-invite')?.value?.trim() || '';
+
+        if (mode === AUTH_MODE_SIGNUP && !inviteCode) {
+          setAuthError('Invite code is required for signup.');
+          return;
+        }
+
+        if (inviteCode) {
+          setInviteCode(inviteCode);
+        } else {
+          setInviteCode(null);
+        }
+
+        await supabase.auth.signInWithOAuth({
+          provider: 'apple',
+          options: { redirectTo: window.location.origin }
+        });
+      } catch (err) {
+        setAuthError(err.message || 'Apple sign-in failed.');
+      }
+    });
+  }
+
+  if (signOutBtn) {
+    signOutBtn.addEventListener('click', async () => {
+      try {
+        const supabase = await getSupabaseClient();
+        await supabase.auth.signOut();
+      } finally {
+        clearAuthState();
+        window.location.reload();
+      }
+    });
+  }
+
+  try {
+    const supabase = await getSupabaseClient();
+    const { data, error } = await supabase.auth.getSession();
+
+    if (error) throw error;
+
+    if (data?.session?.access_token) {
+      setAccessToken(data.session.access_token);
+      const ok = await loadUserContext();
+      if (ok) {
+        toggleAuthScreen(false);
+        await startAuthenticatedApp();
+      } else {
+        toggleAuthScreen(true);
+      }
+    } else {
+      toggleAuthScreen(true);
+    }
+
+    supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('[Auth] State change:', event);
+
+      if (event === 'TOKEN_REFRESHED') {
+        // Silent token refresh - just update stored token, no UI changes needed
+        setAccessToken(session?.access_token || null);
+        console.log('[Auth] Token refreshed silently');
+        return;
+      }
+
+      if (event === 'SIGNED_IN') {
+        setAccessToken(session?.access_token || null);
+        const ok = await loadUserContext();
+        if (ok) {
+          toggleAuthScreen(false);
+          await startAuthenticatedApp();
+        } else {
+          toggleAuthScreen(true);
+        }
+      }
+
+      if (event === 'SIGNED_OUT') {
+        clearAuthState();
+        toggleAuthScreen(true);
+      }
+    });
+  } catch (err) {
+    toggleAuthScreen(true);
+    setAuthError(err.message || 'Unable to initialize authentication.');
+  }
+}
 
 /**
  * Load cellar layout.
@@ -435,33 +873,11 @@ async function init() {
   // Load text size preference early to prevent flash of wrong size
   loadTextSize();
 
-  // Setup navigation
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => switchView(tab.dataset.view));
-  });
+  // Default auth mode
+  setAuthMode(AUTH_MODE_SIGNIN);
 
-  // Initialize mobile menu
-  initMobileMenu();
-
-  // Initialize wine list filters
-  initWineListFilters();
-
-  // Initialise modules
-  initModals();
-  initSommelier();
-  initSettings();
-  initCellarAnalysis();
-  initGlobalSearch();
-  initAccessibility();
-  initRecommendations();
-  await initBottles();
-
-  // Load initial data
-  await loadLayout();
-  await loadStats();
-
-  // Initialize zoom controls after grid is rendered
-  initZoomControls();
+  // Initialize auth first (loads app after sign-in)
+  await initAuth();
 }
 
 /**

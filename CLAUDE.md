@@ -273,6 +273,148 @@ if (afterCount.count !== beforeCount.count) {
 
 ---
 
+## Multi-User / Cellar-Scoped Patterns (CRITICAL)
+
+The app uses **cellar-based tenancy** with Supabase Auth. All user data is scoped to a `cellar_id`. NEVER trust client-provided scope without server-side validation.
+
+### Authentication Flow
+
+```
+Frontend (Supabase JS) → Supabase Auth (OAuth/Email) → JWT Token
+                                                           ↓
+Express API ← Authorization: Bearer <token> ← Frontend
+     ↓
+requireAuth middleware → verifies JWT via JWKS
+     ↓
+requireCellarContext middleware → validates X-Cellar-ID header
+     ↓
+Route handler receives: req.user, req.cellarId, req.cellarRole
+```
+
+### Middleware Chain
+
+All data routes MUST use this middleware chain:
+
+```javascript
+// src/routes/index.js
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
+import { requireCellarContext } from '../middleware/cellarContext.js';
+
+// Protected routes (require auth + cellar)
+router.use('/api/wines', requireAuth, requireCellarContext, winesRouter);
+router.use('/api/slots', requireAuth, requireCellarContext, slotsRouter);
+
+// Public routes (no auth needed)
+router.use('/api/health', healthRouter);
+```
+
+### Route Query Patterns (CRITICAL)
+
+**All queries MUST include `cellar_id` filter using `req.cellarId`:**
+
+```javascript
+// ✅ CORRECT: Use req.cellarId from middleware
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`
+    SELECT * FROM wines WHERE cellar_id = $1
+  `).all(req.cellarId);
+  res.json({ data: wines });
+});
+
+// ❌ WRONG: No cellar scope - returns ALL users' data!
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`SELECT * FROM wines`).all();
+  res.json({ data: wines });
+});
+
+// ❌ WRONG: Trusting client-provided cellar_id
+router.get('/', async (req, res) => {
+  const wines = await db.prepare(`
+    SELECT * FROM wines WHERE cellar_id = $1
+  `).all(req.body.cellar_id);  // NEVER trust request body for scope!
+});
+```
+
+### INSERT/UPDATE/DELETE Patterns
+
+```javascript
+// INSERT: Set cellar_id server-side, NEVER from request body
+router.post('/', async (req, res) => {
+  const { wine_name, vintage } = req.body;  // NO cellar_id from body!
+  await db.prepare(`
+    INSERT INTO wines (cellar_id, wine_name, vintage)
+    VALUES ($1, $2, $3)
+  `).run(req.cellarId, wine_name, vintage);  // Use req.cellarId
+});
+
+// UPDATE: WHERE clause MUST include cellar_id
+router.put('/:id', async (req, res) => {
+  const result = await db.prepare(`
+    UPDATE wines SET wine_name = $1
+    WHERE id = $2 AND cellar_id = $3
+  `).run(wine_name, req.params.id, req.cellarId);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+});
+
+// DELETE: WHERE clause MUST include cellar_id
+router.delete('/:id', async (req, res) => {
+  const result = await db.prepare(`
+    DELETE FROM wines WHERE id = $1 AND cellar_id = $2
+  `).run(req.params.id, req.cellarId);
+
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+});
+```
+
+### Related Table Joins
+
+When joining tables, ensure cellar isolation is maintained:
+
+```javascript
+// ✅ CORRECT: Filter wines by cellar, slots inherit from wines FK
+const layout = await db.prepare(`
+  SELECT s.*, w.wine_name
+  FROM slots s
+  LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+  WHERE s.cellar_id = $1
+`).all(req.cellarId);
+
+// ❌ WRONG: Missing cellar filter allows cross-tenant data leaks
+const layout = await db.prepare(`
+  SELECT s.*, w.wine_name
+  FROM slots s
+  LEFT JOIN wines w ON w.id = s.wine_id
+`).all();  // Returns ALL cellars!
+```
+
+### X-Cellar-ID Header Validation
+
+The `requireCellarContext` middleware validates the `X-Cellar-ID` header:
+
+1. If header provided → verify user is a member of that cellar
+2. If no header → use user's `active_cellar_id` from profile
+3. Sets `req.cellarId` and `req.cellarRole` for use in routes
+
+**Never bypass this validation!**
+
+### Role-Based Access
+
+```javascript
+import { requireCellarEdit, requireCellarOwner } from '../middleware/cellarContext.js';
+
+// Viewer can read, editor can write, owner can delete
+router.get('/', requireAuth, requireCellarContext, getWines);  // Any role
+router.post('/', requireAuth, requireCellarContext, requireCellarEdit, createWine);  // Editor+
+router.delete('/:id', requireAuth, requireCellarContext, requireCellarOwner, deleteWine);  // Owner only
+```
+
+---
+
 ## Content Security Policy (CSP) Compliance
 
 ### No Inline Event Handlers
@@ -594,6 +736,8 @@ refactor/modular-structure
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
 | `DATABASE_URL` | PostgreSQL connection string (if set, uses PostgreSQL instead of SQLite) | For cloud deployment |
+| `SUPABASE_URL` | Supabase project URL (e.g., `https://xxx.supabase.co`) | For multi-user auth |
+| `SUPABASE_ANON_KEY` | Supabase anonymous/public key (frontend) | For multi-user auth |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
 | `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
 | `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
@@ -1007,6 +1151,9 @@ items.sort((a, b) => {
 - Use wine name for identity in move/swap logic - use wine ID
 - Execute multi-step operations without transaction wrapping
 - Use `||` for default values when 0 is valid (use `??` instead - see below)
+- Trust client-provided `cellar_id` from request body - always use `req.cellarId` from middleware
+- Write queries without `WHERE cellar_id = $1` filter - causes cross-tenant data leaks
+- Bypass `requireCellarContext` middleware for data routes
 
 ---
 
@@ -1025,3 +1172,6 @@ items.sort((a, b) => {
 - Use invariant checks (before/after counts) for data-critical operations
 - Test with PostgreSQL before deploying (not just SQLite locally)
 - Bump cache version after frontend changes
+- Always use `req.cellarId` in all database queries for user-data tables
+- Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
+- Apply `requireAuth` + `requireCellarContext` middleware to all data routes

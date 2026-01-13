@@ -4,6 +4,132 @@
  */
 
 const API_BASE = '';
+const AUTH_TOKEN_KEY = 'access_token';
+const ACTIVE_CELLAR_KEY = 'active_cellar_id';
+const INVITE_CODE_KEY = 'invite_code';
+
+let authErrorHandler = null;
+
+/**
+ * Register a handler for auth failures (401).
+ * @param {Function|null} handler - Callback to run on 401 responses
+ */
+export function setAuthErrorHandler(handler) {
+  authErrorHandler = handler;
+}
+
+/**
+ * Get stored access token.
+ * @returns {string|null}
+ */
+export function getAccessToken() {
+  return localStorage.getItem(AUTH_TOKEN_KEY);
+}
+
+/**
+ * Store access token.
+ * @param {string|null} token
+ */
+export function setAccessToken(token) {
+  if (token) {
+    localStorage.setItem(AUTH_TOKEN_KEY, token);
+  } else {
+    localStorage.removeItem(AUTH_TOKEN_KEY);
+  }
+}
+
+/**
+ * Get active cellar ID.
+ * @returns {string|null}
+ */
+export function getActiveCellarId() {
+  return localStorage.getItem(ACTIVE_CELLAR_KEY);
+}
+
+/**
+ * Store active cellar ID.
+ * @param {string|null} cellarId
+ */
+export function setActiveCellarId(cellarId) {
+  if (cellarId) {
+    localStorage.setItem(ACTIVE_CELLAR_KEY, cellarId);
+  } else {
+    localStorage.removeItem(ACTIVE_CELLAR_KEY);
+  }
+}
+
+/**
+ * Get invite code (for first-time signup).
+ * @returns {string|null}
+ */
+export function getInviteCode() {
+  return localStorage.getItem(INVITE_CODE_KEY);
+}
+
+/**
+ * Store invite code.
+ * @param {string|null} code
+ */
+export function setInviteCode(code) {
+  if (code) {
+    localStorage.setItem(INVITE_CODE_KEY, code);
+  } else {
+    localStorage.removeItem(INVITE_CODE_KEY);
+  }
+}
+
+/**
+ * Clear all auth-related local storage.
+ */
+export function clearAuthState() {
+  localStorage.removeItem(AUTH_TOKEN_KEY);
+  localStorage.removeItem(ACTIVE_CELLAR_KEY);
+  localStorage.removeItem(INVITE_CODE_KEY);
+}
+
+const baseFetch = window.fetch.bind(window);
+
+/**
+ * Fetch wrapper that attaches auth + cellar headers.
+ * @param {string} url
+ * @param {RequestInit} options
+ * @returns {Promise<Response>}
+ */
+async function apiFetch(url, options = {}) {
+  const headers = new Headers(options.headers || {});
+  const token = getAccessToken();
+  const cellarId = getActiveCellarId();
+  const inviteCode = getInviteCode();
+
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
+  if (cellarId) {
+    headers.set('X-Cellar-ID', cellarId);
+  }
+
+  if (inviteCode) {
+    headers.set('X-Invite-Code', inviteCode);
+  }
+
+  const hasBody = Object.prototype.hasOwnProperty.call(options, 'body');
+  const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+  if (hasBody && options.body && !isFormData && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
+  const response = await baseFetch(url, { ...options, headers });
+
+  if (response.status === 401 && typeof authErrorHandler === 'function') {
+    authErrorHandler();
+  }
+
+  return response;
+}
+
+// Shadow global fetch in this module with auth-aware wrapper
+const fetch = apiFetch;
 
 /**
  * Handle API response with error checking.
@@ -55,6 +181,37 @@ async function handleResponse(res, defaultError = 'Request failed') {
     console.error('Failed to parse response:', text.slice(0, 100));
     throw new Error('Invalid server response');
   }
+}
+
+/**
+ * Get current user profile.
+ * @returns {Promise<Object>}
+ */
+export async function getProfile() {
+  const res = await fetch(`${API_BASE}/api/profile`);
+  return handleResponse(res, 'Failed to fetch profile');
+}
+
+/**
+ * Get all cellars for the current user.
+ * @returns {Promise<Object>}
+ */
+export async function getCellars() {
+  const res = await fetch(`${API_BASE}/api/cellars`);
+  return handleResponse(res, 'Failed to fetch cellars');
+}
+
+/**
+ * Set the active cellar for the current user.
+ * @param {string} cellarId
+ * @returns {Promise<Object>}
+ */
+export async function setActiveCellar(cellarId) {
+  const res = await fetch(`${API_BASE}/api/cellars/active`, {
+    method: 'POST',
+    body: JSON.stringify({ cellar_id: cellarId })
+  });
+  return handleResponse(res, 'Failed to set active cellar');
 }
 
 /**

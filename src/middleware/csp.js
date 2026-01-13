@@ -11,6 +11,9 @@
  */
 export function cspMiddleware() {
   return (req, res, next) => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : null;
+
     // Define CSP policy
     const cspDirectives = [
       "default-src 'self'",
@@ -18,7 +21,7 @@ export function cspMiddleware() {
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com", // unsafe-inline needed for inline styles and Google Fonts
       "font-src 'self' https://fonts.gstatic.com", // Google Fonts
       "img-src 'self' data: blob:", // data: for base64 images, blob: for object URLs
-      "connect-src 'self'", // API calls to same origin
+      `connect-src 'self'${supabaseOrigin ? ` ${supabaseOrigin}` : ''}`, // API calls to same origin + Supabase Auth
       "frame-ancestors 'none'", // Prevent clickjacking
       "base-uri 'self'",
       "form-action 'self'",
@@ -50,13 +53,16 @@ export function cspMiddleware() {
  */
 export function cspDevMiddleware() {
   return (req, res, next) => {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseOrigin = supabaseUrl ? new URL(supabaseUrl).origin : null;
+
     const cspDirectives = [
       "default-src 'self'",
       "script-src 'self' 'unsafe-inline' 'unsafe-eval'", // unsafe-eval for dev tools
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com",
       "img-src 'self' data: blob: http: https:",
-      "connect-src 'self' ws: wss:", // WebSocket for hot reload
+      `connect-src 'self' ws: wss:${supabaseOrigin ? ` ${supabaseOrigin}` : ''}`, // WebSocket for hot reload + Supabase Auth
       "frame-ancestors 'none'",
       "base-uri 'self'",
       "form-action 'self'"

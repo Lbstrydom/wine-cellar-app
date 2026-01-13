@@ -27,7 +27,7 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css">
+  <link rel="stylesheet" href="/css/styles.css?v=20260113a">
 </head>
 <body>
   <header>
@@ -49,6 +49,16 @@
       <div class="stat">
         <div class="stat-value" id="stat-empty">-</div>
         <div class="stat-label">Empty Slots</div>
+      </div>
+    </div>
+    <div class="user-controls" id="user-controls">
+      <div class="cellar-switcher" id="cellar-switcher"></div>
+      <div class="user-menu user-menu--hidden" id="user-menu">
+        <div class="user-details">
+          <span class="user-name" id="user-name"></span>
+          <span class="user-email" id="user-email"></span>
+        </div>
+        <button class="btn btn-small btn-secondary" id="sign-out-btn">Sign out</button>
       </div>
     </div>
   </header>
@@ -748,7 +758,7 @@
   </div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/pairing.js"></script>
+  <script type="module" src="/js/pairing.js?v=20260113a"></script>
   </main>
 
   <!-- Wine Detail Modal -->
@@ -1063,10 +1073,64 @@
     </div>
   </div>
 
+  <!-- Auth Screen -->
+  <div class="auth-screen" id="auth-screen" aria-hidden="true">
+    <div class="auth-card">
+      <h2>Welcome to Wine Cellar</h2>
+      <p class="auth-subtitle">Sign in to access your cellar.</p>
+
+      <div class="auth-tabs">
+        <button class="auth-tab active" type="button" data-auth-tab="signin">Sign In</button>
+        <button class="auth-tab" type="button" data-auth-tab="signup">Create Account</button>
+      </div>
+
+      <div class="auth-oauth">
+        <button class="btn btn-secondary auth-oauth-btn" type="button" id="auth-google">
+          Continue with Google
+        </button>
+        <button class="btn btn-secondary auth-oauth-btn" type="button" id="auth-apple">
+          Continue with Apple
+        </button>
+      </div>
+
+      <div class="auth-divider">
+        <span>or</span>
+      </div>
+
+      <form class="auth-form" id="auth-form" data-mode="signin">
+        <div class="auth-field" data-auth-signup style="display: none;">
+          <label for="auth-name">Display name</label>
+          <input type="text" id="auth-name" autocomplete="name" />
+        </div>
+
+        <div class="auth-field">
+          <label for="auth-email">Email</label>
+          <input type="email" id="auth-email" autocomplete="email" required />
+        </div>
+
+        <div class="auth-field">
+          <label for="auth-password">Password</label>
+          <input type="password" id="auth-password" autocomplete="current-password" required />
+        </div>
+
+        <div class="auth-field" data-auth-signup style="display: none;">
+          <label for="auth-invite">Invite code</label>
+          <input type="text" id="auth-invite" autocomplete="off" />
+        </div>
+
+        <div class="auth-error" id="auth-error" style="display: none;"></div>
+        <div class="auth-status" id="auth-status" style="display: none;"></div>
+
+        <button class="btn btn-primary auth-submit" type="submit" id="auth-submit-btn">Continue</button>
+      </form>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div class="toast" id="toast"></div>
 
   <!-- Scripts -->
-  <script type="module" src="/js/app.js"></script>
+  <script src="/vendor/supabase.js?v=20260113a"></script>
+  <script type="module" src="/js/app.js?v=20260113a"></script>
 </body>
 </html>

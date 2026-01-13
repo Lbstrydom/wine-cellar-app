@@ -33,6 +33,20 @@ import searchMetricsRoutes from './searchMetrics.js';
 
 const router = Router();
 
+// Public config for frontend (Supabase URL/anon key only)
+router.get('/public-config', (req, res) => {
+  const { SUPABASE_URL, SUPABASE_ANON_KEY } = process.env;
+
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    return res.status(503).json({ error: 'Supabase not configured' });
+  }
+
+  return res.json({
+    supabase_url: SUPABASE_URL,
+    supabase_anon_key: SUPABASE_ANON_KEY
+  });
+});
+
 // AUTHENTICATED ROUTES (all require Bearer token via requireAuth)
 router.use('/profile', requireAuth, profileRoutes);  // User profile management
 router.use('/cellars', requireAuth, cellarsRoutes);  // Cellar management (user-scoped, not cellar-scoped)
