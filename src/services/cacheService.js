@@ -58,7 +58,7 @@ export async function getCachedSerpResults(queryParams) {
     const cached = await db.prepare(`
       SELECT results, result_count
       FROM search_cache
-      WHERE cache_key = ? AND expires_at > ${nowFunc()}
+      WHERE cache_key = ? AND expires_at > CURRENT_TIMESTAMP
     `).get(cacheKey);
 
     if (cached) {
@@ -124,7 +124,7 @@ export async function getCachedPage(url) {
     const cached = await db.prepare(`
       SELECT content, fetch_status, status_code, error_message
       FROM page_cache
-      WHERE url_hash = ? AND expires_at > ${nowFunc()}
+      WHERE url_hash = ? AND expires_at > CURRENT_TIMESTAMP
     `).get(urlHash);
 
     if (cached) {
@@ -203,7 +203,7 @@ export async function getCachedExtraction(wineId, contentHash, extractionType) {
       SELECT extracted_ratings, extracted_windows, tasting_notes
       FROM extraction_cache
       WHERE wine_id = ? AND content_hash = ? AND extraction_type = ?
-        AND expires_at > ${nowFunc()}
+        AND expires_at > CURRENT_TIMESTAMP
     `).get(wineId, contentHash, extractionType);
 
     if (cached) {
@@ -270,12 +270,15 @@ export async function cacheExtraction(wineId, contentHash, extractionType, ratin
  * @returns {Object} Count of purged entries by table
  */
 export async function purgeExpiredCache() {
-  const tables = ['search_cache', 'page_cache', 'extraction_cache'];
+  // Whitelist of allowed tables - prevents table name injection
+  const ALLOWED_TABLES = new Set(['search_cache', 'page_cache', 'extraction_cache']);
+  const tables = Array.from(ALLOWED_TABLES);
   const results = {};
 
   for (const table of tables) {
     try {
-      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < ${nowFunc()}`).run();
+      // Safe: table name from whitelist, CURRENT_TIMESTAMP is SQL constant
+      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < CURRENT_TIMESTAMP`).run();
       results[table] = result.changes || 0;
     } catch (err) {
       results[table] = `error: ${err.message}`;
@@ -295,17 +298,17 @@ export async function getCacheStats() {
 
   try {
     stats.serp = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as valid
       FROM search_cache
     `).get();
 
     stats.page = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as valid
       FROM page_cache
     `).get();
 
     stats.extraction = await db.prepare(`
-      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > ${nowFunc()} THEN 1 ELSE 0 END) as valid
+      SELECT COUNT(*) as total, SUM(CASE WHEN expires_at > CURRENT_TIMESTAMP THEN 1 ELSE 0 END) as valid
       FROM extraction_cache
     `).get();
   } catch (err) {
@@ -379,7 +382,7 @@ export async function getCachedAnalysis(analysisType) {
     const cached = await db.prepare(`
       SELECT analysis_data, wine_count, slot_hash, created_at
       FROM cellar_analysis_cache
-      WHERE analysis_type = ? AND (expires_at IS NULL OR expires_at > ${nowFunc()})
+      WHERE analysis_type = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
     `).get(analysisType);
 
     if (cached) {

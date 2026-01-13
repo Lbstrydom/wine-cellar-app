@@ -141,8 +141,10 @@ export async function updateZoneMetadata(zoneId, updates, isAISuggestion = false
   values.push(zoneId);
 
   if (fields.length > 2) { // At least one actual update + timestamps
+    // Safe: Column names built from validated updates object keys
+    const setSql = fields.join(', ');
     await db.prepare(
-      `UPDATE zone_metadata SET ${fields.join(', ')} WHERE zone_id = ?`
+      `UPDATE zone_metadata SET ${setSql} WHERE zone_id = ?`
     ).run(...values);
   }
 

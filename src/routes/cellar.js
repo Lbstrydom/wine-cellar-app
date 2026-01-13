@@ -1266,8 +1266,10 @@ router.post('/update-wine-attributes', async (req, res) => {
     values.push(req.cellarId, wineId);
     const cellarParamIndex = updates.length + 1;
     const wineParamIndex = updates.length + 2;
+    // Safe: Column names validated against allowedFields whitelist above
+    const updateSql = updates.join(', ');
     await db.prepare(
-      `UPDATE wines SET ${updates.join(', ')} WHERE cellar_id = $${cellarParamIndex} AND id = $${wineParamIndex}`
+      `UPDATE wines SET ${updateSql} WHERE cellar_id = $${cellarParamIndex} AND id = $${wineParamIndex}`
     ).run(...values);
 
     // Re-evaluate zone placement
