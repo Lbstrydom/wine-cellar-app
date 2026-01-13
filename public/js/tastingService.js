@@ -5,6 +5,8 @@
  * @module tastingService
  */
 
+import { getTastingNotes, getServingTemperature, getBestDrinkingWindow, reportTastingNotes } from './api.js';
+
 /**
  * Render the Tasting & Service card for a wine.
  * @param {Object} wine - Wine object with id, colour, style, etc.
@@ -45,10 +47,8 @@ export async function renderTastingServiceCard(wine, container) {
  */
 async function fetchTastingNotes(wineId) {
   try {
-    const response = await fetch(`/api/wines/${wineId}/tasting-notes?include_sources=true`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data.notes;
+    const data = await getTastingNotes(wineId, true);
+    return data.notes || data;
   } catch (error) {
     console.warn('[TastingService] Could not fetch tasting notes:', error);
     return null;
@@ -62,9 +62,7 @@ async function fetchTastingNotes(wineId) {
  */
 async function fetchServingTemperature(wineId) {
   try {
-    const response = await fetch(`/api/wines/${wineId}/serving-temperature`);
-    if (!response.ok) return null;
-    const data = await response.json();
+    const data = await getServingTemperature(wineId);
     return data.recommendation || data.temperature;
   } catch (error) {
     console.warn('[TastingService] Could not fetch serving temp:', error);
@@ -79,10 +77,7 @@ async function fetchServingTemperature(wineId) {
  */
 async function fetchDrinkingWindow(wineId) {
   try {
-    const response = await fetch(`/api/wines/${wineId}/drinking-windows/best`);
-    if (!response.ok) return null;
-    const data = await response.json();
-    return data;
+    return await getBestDrinkingWindow(wineId);
   } catch (error) {
     console.warn('[TastingService] Could not fetch drinking window:', error);
     return null;
@@ -641,13 +636,8 @@ function showReportModal(wineId) {
   const details = prompt('Please describe the issue:');
   if (details === null) return;
   
-  fetch(`/api/wines/${wineId}/tasting-notes/report`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ issue_type: type, details })
-  })
-    .then(res => res.json())
-    .then(data => {
+  reportTastingNotes(wineId, { issue_type: type, details })
+    .then((data) => {
       if (data.success) {
         alert('Thank you for your report. We will review it shortly.');
       } else {

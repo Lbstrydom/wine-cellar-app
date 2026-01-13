@@ -261,6 +261,16 @@ export async function fetchWine(id) {
 }
 
 /**
+ * Get personal rating for a wine.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getPersonalRating(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/personal-rating`);
+  return handleResponse(res, 'Failed to fetch personal rating');
+}
+
+/**
  * Search wines by name.
  * @param {string} query - Search query
  * @returns {Promise<Array>}
@@ -392,6 +402,37 @@ export async function getPairingSuggestions(signals) {
     body: JSON.stringify({ signals, prefer_reduce_now: true, limit: 5 })
   });
   return handleResponse(res, 'Failed to get pairing suggestions');
+}
+
+/**
+ * Record chosen wine for a pairing session.
+ * @param {string} sessionId - Pairing session ID
+ * @param {number} wineId - Wine ID
+ * @param {number} rank - Recommendation rank
+ * @returns {Promise<Object>}
+ */
+export async function choosePairingWine(sessionId, wineId, rank) {
+  const res = await fetch(`${API_BASE}/api/pairing/sessions/${sessionId}/choose`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wineId, rank })
+  });
+  return handleResponse(res, 'Failed to record wine choice');
+}
+
+/**
+ * Submit feedback for a pairing session.
+ * @param {string} sessionId - Pairing session ID
+ * @param {Object} data - Feedback payload
+ * @returns {Promise<Object>}
+ */
+export async function submitPairingFeedback(sessionId, data) {
+  const res = await fetch(`${API_BASE}/api/pairing/sessions/${sessionId}/feedback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return handleResponse(res, 'Failed to submit pairing feedback');
 }
 
 /**
@@ -536,6 +577,30 @@ export async function fetchWineRatingsFromApi(wineId) {
     method: 'POST'
   });
   return handleResponse(res, 'Failed to fetch ratings');
+}
+
+/**
+ * Queue async ratings fetch job.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<{jobId: number}>}
+ */
+export async function fetchRatingsAsync(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings/fetch-async`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ forceRefresh: true })
+  });
+  return handleResponse(res, 'Failed to queue ratings fetch');
+}
+
+/**
+ * Get status for a ratings job.
+ * @param {number} jobId - Job ID
+ * @returns {Promise<Object>}
+ */
+export async function getRatingsJobStatus(jobId) {
+  const res = await fetch(`${API_BASE}/api/ratings/jobs/${jobId}/status`);
+  return handleResponse(res, 'Failed to get ratings job status');
 }
 
 /**
@@ -1062,6 +1127,22 @@ export async function getAwardsCompetitions() {
 }
 
 /**
+ * Create a custom awards competition.
+ * @param {Object} data - Competition data
+ * @param {string} data.id - Competition ID
+ * @param {string} data.name - Competition name
+ * @returns {Promise<Object>}
+ */
+export async function createAwardsCompetition(data) {
+  const res = await fetch(`${API_BASE}/api/awards/competitions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return handleResponse(res, 'Failed to add competition');
+}
+
+/**
  * Get all award sources.
  * @returns {Promise<Object>}
  */
@@ -1215,6 +1296,15 @@ export async function getVivinoWineDetails(vivinoId) {
   return handleResponse(res, 'Failed to fetch Vivino wine details');
 }
 
+/**
+ * Get wine search service status.
+ * @returns {Promise<{available: boolean, message?: string}>}
+ */
+export async function getWineSearchStatus() {
+  const res = await fetch(`${API_BASE}/api/wine-search/status`);
+  return handleResponse(res, 'Failed to fetch wine search status');
+}
+
 // ============================================
 // Serving Temperature API
 // ============================================
@@ -1228,6 +1318,37 @@ export async function getVivinoWineDetails(vivinoId) {
 export async function getServingTemperature(wineId, unit = 'celsius') {
   const res = await fetch(`${API_BASE}/api/wines/${wineId}/serving-temperature?unit=${unit}`);
   return handleResponse(res, 'Failed to fetch serving temperature');
+}
+
+// ============================================
+// Tasting Notes API
+// ============================================
+
+/**
+ * Get structured tasting notes for a wine.
+ * @param {number} wineId - Wine ID
+ * @param {boolean} [includeSources=false] - Include source attribution
+ * @returns {Promise<Object>}
+ */
+export async function getTastingNotes(wineId, includeSources = false) {
+  const query = includeSources ? '?include_sources=true' : '';
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/tasting-notes${query}`);
+  return handleResponse(res, 'Failed to fetch tasting notes');
+}
+
+/**
+ * Report an issue with tasting notes.
+ * @param {number} wineId - Wine ID
+ * @param {Object} data - Report payload
+ * @returns {Promise<Object>}
+ */
+export async function reportTastingNotes(wineId, data) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/tasting-notes/report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  return handleResponse(res, 'Failed to report tasting notes');
 }
 
 // ============================================
@@ -1452,4 +1573,93 @@ export async function executeFillFridge(maxMoves = 5) {
 export async function generateShoppingList() {
   const res = await fetch(`${API_BASE}/api/health/shopping-list`);
   return handleResponse(res, 'Failed to generate shopping list');
+}
+
+/**
+ * Get backup metadata (counts for UI display).
+ * @returns {Promise<Object>} Backup info with wine/slot/history counts
+ */
+export async function getBackupInfo() {
+  const res = await fetch(`${API_BASE}/api/backup/info`);
+  return handleResponse(res, 'Failed to get backup info');
+}
+
+/**
+ * Export cellar data as JSON and trigger download.
+ * @returns {Promise<void>}
+ */
+export async function exportBackupJSON() {
+  const res = await fetch(`${API_BASE}/api/backup/export/json`);
+  if (!res.ok) {
+    throw new Error('Failed to export backup');
+  }
+  const blob = await res.blob();
+  const filename = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+    || `cellar-backup-${new Date().toISOString().split('T')[0]}.json`;
+  downloadBlob(blob, filename);
+}
+
+/**
+ * Export wine list as CSV and trigger download.
+ * @returns {Promise<void>}
+ */
+export async function exportBackupCSV() {
+  const res = await fetch(`${API_BASE}/api/backup/export/csv`);
+  if (!res.ok) {
+    throw new Error('Failed to export CSV');
+  }
+  const blob = await res.blob();
+  const filename = res.headers.get('Content-Disposition')?.match(/filename="([^"]+)"/)?.[1]
+    || `wine-list-${new Date().toISOString().split('T')[0]}.csv`;
+  downloadBlob(blob, filename);
+}
+
+/**
+ * Import cellar data from backup.
+ * @param {Object} backup - Backup payload
+ * @param {Object} options - Import options
+ * @returns {Promise<Object>}
+ */
+export async function importBackup(backup, options = {}) {
+  const res = await fetch(`${API_BASE}/api/backup/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ backup, options })
+  });
+  return handleResponse(res, 'Failed to import backup');
+}
+
+/**
+ * Log a client error to the server (optional auth).
+ * @param {Object} payload - Error payload
+ * @param {string} payload.context
+ * @param {string} payload.message
+ * @param {string} [payload.stack]
+ * @param {string} [payload.userAgent]
+ * @param {string} [payload.url]
+ * @returns {Promise<Object>}
+ */
+export async function logClientError(payload) {
+  const res = await fetch(`${API_BASE}/api/errors/log`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to log error');
+}
+
+/**
+ * Helper to trigger file download from blob.
+ * @param {Blob} blob - File blob
+ * @param {string} filename - Download filename
+ */
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }

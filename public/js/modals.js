@@ -3,7 +3,7 @@
  * @module modals
  */
 
-import { drinkBottle, getWineRatings, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature, openBottle, sealBottle } from './api.js';
+import { drinkBottle, getWineRatings, getPersonalRating, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature, openBottle, sealBottle } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
@@ -137,8 +137,7 @@ async function loadPersonalRating(wineId) {
   if (!wineId) return;
 
   try {
-    const res = await fetch(`/api/wines/${wineId}/personal-rating`);
-    const data = await res.json();
+    const data = await getPersonalRating(wineId);
     document.getElementById('modal-personal-rating').value = data.personal_rating || '';
     document.getElementById('modal-personal-notes').value = data.personal_notes || '';
   } catch (_err) {

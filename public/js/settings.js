@@ -13,12 +13,17 @@ import {
   evaluateReduceRules,
   batchAddReduceNow,
   getAwardsCompetitions,
+  createAwardsCompetition,
   getAwardsSources,
   importAwardsFromWebpage,
   importAwardsFromPDF,
   importAwardsFromText,
   deleteAwardsSource,
-  rematchAwardsSource
+  rematchAwardsSource,
+  getBackupInfo,
+  exportBackupJSON,
+  exportBackupCSV,
+  importBackup
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 
@@ -769,16 +774,7 @@ async function handleImportAwards() {
     competitionId = customName.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     // Add the custom competition via API
     try {
-      const res = await fetch('/api/awards/competitions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: customName, id: competitionId })
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        showToast('Failed to add competition: ' + (err.error || 'Unknown error'));
-        return;
-      }
+      await createAwardsCompetition({ name: customName, id: competitionId });
       // Reload competitions dropdown
       await loadCompetitionsDropdown();
     } catch (err) {
@@ -1001,10 +997,7 @@ function initBackupSection() {
  */
 async function loadBackupInfo() {
   try {
-    const response = await fetch('/api/backup/info');
-    if (!response.ok) return;
-
-    const info = await response.json();
+    const info = await getBackupInfo();
 
     const winesCount = document.getElementById('backup-wines-count');
     const bottlesCount = document.getElementById('backup-bottles-count');
@@ -1022,17 +1015,29 @@ async function loadBackupInfo() {
 /**
  * Handle JSON export.
  */
-function handleExportJSON() {
-  window.location.href = '/api/backup/export/json';
-  showToast('Downloading backup...');
+async function handleExportJSON() {
+  try {
+    showToast('Preparing backup...');
+    await exportBackupJSON();
+    showToast('Backup downloaded');
+  } catch (err) {
+    console.error('JSON export failed:', err);
+    showToast('Export failed: ' + err.message);
+  }
 }
 
 /**
  * Handle CSV export.
  */
-function handleExportCSV() {
-  window.location.href = '/api/backup/export/csv';
-  showToast('Downloading CSV...');
+async function handleExportCSV() {
+  try {
+    showToast('Preparing CSV...');
+    await exportBackupCSV();
+    showToast('CSV downloaded');
+  } catch (err) {
+    console.error('CSV export failed:', err);
+    showToast('Export failed: ' + err.message);
+  }
 }
 
 /**
@@ -1102,17 +1107,7 @@ async function handleImportBackup() {
     }
 
     // Send to API
-    const response = await fetch('/api/backup/import', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ backup, options: { mergeMode } })
-    });
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.error || 'Import failed');
-    }
+    const result = await importBackup(backup, { mergeMode });
 
     showToast(`Imported ${result.stats.winesImported} wines`);
 

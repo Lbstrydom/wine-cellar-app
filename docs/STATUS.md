@@ -964,6 +964,46 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
+### OAuth Authentication & API Auth Headers Fix - 13 January 2026
+
+**OAuth Flow Fix**:
+- Fixed OAuth authentication not completing after Google login
+- Root cause: Railway environment variable `SUPABASE_ANON_KEY` was incorrectly set to a Google OAuth Client Secret (`GOCSPX-...`) instead of the actual Supabase anon key
+- Resolution: Corrected the environment variable in Railway dashboard
+
+**Backup Endpoint Authentication Fix**:
+- Fixed 401 error on `/api/backup/info` endpoint
+- Root cause: `settings.js` was using raw `fetch()` instead of the authenticated API wrapper
+- Resolution: Added authenticated functions to `api.js`:
+  - `getBackupInfo()` - Get backup metadata
+  - `exportBackupJSON()` - Export JSON backup with blob download
+  - `exportBackupCSV()` - Export CSV with blob download
+- Updated `settings.js` to use these authenticated functions
+
+**Regression Test for API Auth Headers**:
+- Created `tests/unit/utils/apiAuthHeaders.test.js` to prevent future raw fetch() regressions
+- Scans frontend JS files for patterns like `fetch('/api/...`
+- Maintains `LEGACY_FILES` allowlist for pre-existing violations (2 files tracked)
+- Fails if NEW files use raw `fetch()` to API endpoints instead of `api.js` functions
+- All API calls should use exported functions from `api.js` which automatically include Authorization and X-Cellar-ID headers
+
+**API Auth Migration (13 January 2026)**:
+- Migrated all remaining frontend data endpoints to `api.js` wrappers (ratings, tasting service, settings, pairing, sommelier, bottles form)
+- Added new API wrappers for ratings jobs, tasting notes, pairing feedback, backup import, and wine search status
+- Reduced legacy raw fetch files to: `app.js` (public-config) and `browserTests.js` (test-only)
+- Added optional-auth error logging endpoint `POST /api/errors/log` and wired `errorBoundary.js` to use `api.js`
+
+**Files Modified**:
+- `public/js/api.js` - Added backup export functions with blob downloads
+- `public/js/settings.js` - Updated to use authenticated API functions
+- `public/sw.js` - Bumped cache version from v64 to v65
+- `tests/unit/utils/apiAuthHeaders.test.js` - NEW regression test
+- `public/js/ratings.js`, `public/js/tastingService.js`, `public/js/modals.js`, `public/js/pairing.js`, `public/js/sommelier.js`, `public/js/bottles/form.js` - Migrated to api.js wrappers
+- `public/js/errorBoundary.js` - Uses optional-auth error logging wrapper
+- `src/routes/index.js` - Added optional-auth client error logging endpoint
+
+---
+
 ### Wine Detail Panel Spec v2 - Tasting & Service Card - 10 January 2026
 Implemented the consolidated Wine Detail Panel per the v2 specification, combining tasting notes, serving temperature, and drinking window into a unified "Tasting & Service" card with structured data and evidence indicators.
 
@@ -1726,9 +1766,9 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 4 (PDF Reader, Filesystem, Memory, Bright Data) |
 | **Claude Code Skills** | 4 (Award Extractor, Wine Importer, Cellar Health, DB Migrator) |
-| **Service Worker Version** | v52 |
+| **Service Worker Version** | v65 |
 
 ---
 
-*Last updated: 10 January 2026*
+*Last updated: 13 January 2026*
 *Version: 4.4 (MCP Integration - PDF Reader, Filesystem, Memory, Bright Data + 4 Skills)*

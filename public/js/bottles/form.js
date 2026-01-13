@@ -3,7 +3,7 @@
  * @module bottles/form
  */
 
-import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement } from '../api.js';
+import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement, getWineSearchStatus } from '../api.js';
 import { showToast } from '../utils.js';
 import { refreshData } from '../app.js';
 import { bottleState } from './state.js';
@@ -153,12 +153,8 @@ async function handleBottleFormSubmit(e) {
 async function shouldShowConfirmation() {
   try {
     // Check if BRIGHTDATA_API_KEY is configured by checking feature availability
-    const response = await fetch('/api/wine-search/status');
-    if (response.ok) {
-      const status = await response.json();
-      return status.available === true;
-    }
-    return false;
+    const status = await getWineSearchStatus();
+    return status.available === true;
   } catch {
     return false;
   }

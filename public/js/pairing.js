@@ -2,6 +2,8 @@
  * @fileoverview Pairing UI logic: recommendation cards, choose button, feedback integration.
  */
 
+import { choosePairingWine } from './api.js';
+
 let currentSessionId = null;
 
 /**
@@ -66,11 +68,7 @@ async function handleChooseWine(wineId, rank, buttonElement) {
       }
     });
     buttonElement.classList.add('chosen');
-    await fetch(`/api/pairing/sessions/${currentSessionId}/choose`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ wineId, rank })
-    });
+    await choosePairingWine(currentSessionId, wineId, rank);
     // Show feedback modal after choosing
     openPairingFeedbackModal(currentSessionId, wineId);
   } catch (error) {

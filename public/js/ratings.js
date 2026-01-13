@@ -3,7 +3,16 @@
  * @module ratings
  */
 
-import { fetchWineRatingsFromApi, getWineRatings, addManualRating, deleteRating, fetchLayout } from './api.js';
+import {
+  fetchWineRatingsFromApi,
+  fetchRatingsAsync,
+  getRatingsJobStatus,
+  getWineRatings,
+  addManualRating,
+  deleteRating,
+  fetchWine,
+  fetchLayout
+} from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { state } from './app.js';
 
@@ -364,19 +373,16 @@ async function handleFetchRatings(wineId, useAsync = true) {
   try {
     if (useAsync) {
       // Queue async job
-      const queueResponse = await fetch(`/api/wines/${wineId}/ratings/fetch-async`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ forceRefresh: true })
-      });
+      let jobId;
 
-      if (!queueResponse.ok) {
+      try {
+        const queueResponse = await fetchRatingsAsync(wineId);
+        jobId = queueResponse.jobId;
+      } catch (_err) {
         // Fall back to sync if async endpoint fails
         console.warn('Async endpoint failed, falling back to sync');
         return handleFetchRatings(wineId, false);
       }
-
-      const { jobId } = await queueResponse.json();
 
       // Poll for progress
       const result = await pollJobProgress(jobId, (progress, message) => {
@@ -403,7 +409,7 @@ async function handleFetchRatings(wineId, useAsync = true) {
     // The wine details contain tasting_notes which is stored in the wines table
     const [ratingsData, wineData] = await Promise.all([
       getWineRatings(wineId),
-      fetch(`/api/wines/${wineId}`).then(res => res.json())
+      fetchWine(wineId)
     ]);
 
     // 1. Update ratings panel
@@ -418,7 +424,7 @@ async function handleFetchRatings(wineId, useAsync = true) {
     const tastingNotesText = document.getElementById('modal-tasting-notes');
 
     if (tastingNotesField && tastingNotesText) {
-      if (wineData.tasting_notes) {
+      if (wineData?.tasting_notes) {
         tastingNotesField.style.display = 'block';
         tastingNotesText.textContent = wineData.tasting_notes;
         console.log('[TastingNotes] Updated modal with fresh tasting notes');
@@ -430,7 +436,7 @@ async function handleFetchRatings(wineId, useAsync = true) {
 
     // 3. Update local slot state for consistency (if modal has currentSlot reference)
     if (window.currentSlot) {
-      window.currentSlot.tasting_notes = wineData.tasting_notes;
+      window.currentSlot.tasting_notes = wineData?.tasting_notes || null;
     }
 
     // Also refresh layout state for grid consistency
@@ -460,13 +466,7 @@ async function pollJobProgress(jobId, onProgress) {
   const maxPolls = 120; // 2 minutes max
 
   for (let i = 0; i < maxPolls; i++) {
-    const response = await fetch(`/api/ratings/jobs/${jobId}/status`);
-
-    if (!response.ok) {
-      throw new Error('Failed to get job status');
-    }
-
-    const status = await response.json();
+    const status = await getRatingsJobStatus(jobId);
 
     onProgress(status.progress || 0, status.progress_message);
 

@@ -3,6 +3,8 @@
  * @module errorBoundary
  */
 
+import { logClientError } from './api.js';
+
 /**
  * Initialize global error handling.
  */
@@ -153,24 +155,18 @@ function escapeHtml(text) {
  * @param {string} stack - Error stack trace
  */
 function logErrorToServer(_context, _message, _stack) {
-  // Optional: Send error to server endpoint for monitoring
-  // Uncomment and implement server endpoint if needed
-  /*
-  fetch('/api/errors/log', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      context,
-      message,
-      stack,
-      url: window.location.href,
-      userAgent: navigator.userAgent,
-      timestamp: new Date().toISOString()
-    })
-  }).catch(err => {
+  const payload = {
+    context: _context,
+    message: _message,
+    stack: _stack,
+    url: window.location.href,
+    userAgent: navigator.userAgent,
+    timestamp: new Date().toISOString()
+  };
+
+  logClientError(payload).catch(err => {
     console.warn('Failed to log error to server:', err);
   });
-  */
 }
 
 /**

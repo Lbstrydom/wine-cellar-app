@@ -628,6 +628,40 @@ el.className = 'slot';
 parent.appendChild(el);
 ```
 
+### Frontend API Calls (CRITICAL)
+
+**All API calls to `/api/*` endpoints MUST use `api.js` functions, not raw `fetch()`.**
+
+The `api.js` module shadows the global `fetch` with `apiFetch` which automatically adds:
+- `Authorization: Bearer <token>` header (Supabase JWT)
+- `X-Cellar-ID: <cellar_id>` header (multi-tenant isolation)
+
+```javascript
+// ✅ CORRECT: Use api.js exported functions
+import { getWines, createWine, getBackupInfo } from './api.js';
+
+const wines = await getWines();
+const backup = await getBackupInfo();
+
+// ✅ CORRECT: Use the fetch from api.js (automatically authenticated)
+import { fetch } from './api.js';  // This is actually apiFetch
+
+const response = await fetch('/api/wines');  // Includes auth headers
+
+// ❌ WRONG: Raw fetch() bypasses authentication
+const response = await window.fetch('/api/wines');  // No auth headers!
+const response = await fetch('/api/backup/info');  // 401 error!
+```
+
+**Why This Matters**:
+- Raw `fetch()` calls return 401 Unauthorized errors
+- Data may leak to wrong cellar without X-Cellar-ID header
+- Authentication errors are silent and hard to debug
+
+**Regression Test**: `tests/unit/utils/apiAuthHeaders.test.js` scans all frontend JS files for raw `fetch('/api/...)` patterns and fails if found in new files.
+
+**Legacy Files**: Raw fetch() remains only in `public/js/app.js` (public-config/auth bootstrap) and `public/js/browserTests.js` (test-only). Keep the allowlist minimal; new API calls must go through `public/js/api.js` (including optional-auth error logging).
+
 ---
 
 ## Testing
@@ -1154,6 +1188,7 @@ items.sort((a, b) => {
 - Trust client-provided `cellar_id` from request body - always use `req.cellarId` from middleware
 - Write queries without `WHERE cellar_id = $1` filter - causes cross-tenant data leaks
 - Bypass `requireCellarContext` middleware for data routes
+- Use raw `fetch()` for `/api/*` calls in frontend - use `api.js` functions instead (they add auth headers)
 
 ---
 
@@ -1175,3 +1210,4 @@ items.sort((a, b) => {
 - Always use `req.cellarId` in all database queries for user-data tables
 - Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
 - Apply `requireAuth` + `requireCellarContext` middleware to all data routes
+- Use `api.js` exported functions for all frontend API calls (automatic auth headers)

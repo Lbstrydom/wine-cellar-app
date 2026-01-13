@@ -6,7 +6,7 @@
  */
 
 import { Router } from 'express';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import { requireCellarContext } from '../middleware/cellarContext.js';
 import wineRoutes from './wines.js';
 import slotRoutes from './slots.js';
@@ -45,6 +45,25 @@ router.get('/public-config', (req, res) => {
     supabase_url: SUPABASE_URL,
     supabase_anon_key: SUPABASE_ANON_KEY
   });
+});
+
+// Client error logging (optional auth)
+router.post('/errors/log', optionalAuth, (req, res) => {
+  const { context, message, stack, userAgent, url } = req.body || {};
+  const userId = req.user?.id || null;
+  const safeContext = typeof context === 'string' ? context.slice(0, 120) : 'ClientError';
+  const safeMessage = typeof message === 'string' ? message.slice(0, 2000) : 'Unknown error';
+
+  console.error('[ClientError]', {
+    context: safeContext,
+    message: safeMessage,
+    stack: typeof stack === 'string' ? stack.slice(0, 5000) : null,
+    userAgent: typeof userAgent === 'string' ? userAgent.slice(0, 300) : null,
+    url: typeof url === 'string' ? url.slice(0, 500) : null,
+    userId
+  });
+
+  res.json({ success: true });
 });
 
 // AUTHENTICATED ROUTES (all require Bearer token via requireAuth)

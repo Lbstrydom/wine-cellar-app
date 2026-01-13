@@ -3,7 +3,7 @@
  * @module sommelier
  */
 
-import { askSommelier, getPairingSuggestions, sommelierChat } from './api.js';
+import { askSommelier, getPairingSuggestions, sommelierChat, submitPairingFeedback } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { showWineModalFromList } from './modals.js';
 import { renderRecommendation, displayRecommendations } from './pairing.js';
@@ -110,11 +110,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       try {
-        await fetch(`/api/pairing/sessions/${sessionId}/feedback`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rating: Number(rating), notes })
-        });
+        await submitPairingFeedback(sessionId, { rating: Number(rating), notes });
         modal.style.display = 'none';
         showToast('Thank you for your feedback!');
         form.reset();
