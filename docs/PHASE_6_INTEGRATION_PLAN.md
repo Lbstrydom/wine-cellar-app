@@ -542,15 +542,15 @@ HAVING COUNT(*) > 1;
 
 Phase 6 is complete when:
 
-- [ ] **Fingerprint unique per cellar enforced in DB** - Unique index exists and no violations
-- [ ] **Existing data backfilled** - All wines have fingerprint, collisions resolved
-- [ ] **External IDs stored with candidate/confirmed status** - Table exists, workflow confirmed
-- [ ] **Add-wine flow has early stop and max cost budget** - Budget config enforced, stop_reason logged
-- [ ] **Offline benchmark passes in CI** - `npm run test:benchmark` green with fixtures
-- [ ] **Cross-tenant access tests added** - Multi-user isolation tests pass
-- [ ] **Feature flags operational** - Can disable any feature via env var
-- [ ] **Retry backoff working** - Failed ratings respect exponential backoff
-- [ ] **Metrics dashboard queryable** - `search_metrics` table populated with all fields
+- [x] **Fingerprint unique per cellar enforced in DB** - Unique index exists and no violations
+- [x] **Existing data backfilled** - All wines have fingerprint, collisions resolved (90 wines, 11 duplicates merged)
+- [x] **External IDs stored with candidate/confirmed status** - Table exists, workflow confirmed
+- [x] **Add-wine flow has early stop and max cost budget** - Budget config enforced, stop_reason logged
+- [x] **Offline benchmark passes in CI** - `npm run test:benchmark` green with fixtures (9 tests passing)
+- [x] **Cross-tenant access tests added** - Multi-user isolation tests pass (12 tests passing)
+- [x] **Feature flags operational** - Can disable any feature via env var
+- [x] **Retry backoff working** - Failed ratings respect exponential backoff
+- [x] **Metrics dashboard queryable** - `search_metrics` table populated with all fields
 
 ---
 
