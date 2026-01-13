@@ -86,6 +86,13 @@ async function getSupabaseClient() {
       throw new Error(message);
     }
 
+    // Log config for debugging (project ref from URL)
+    const projectRef = data.supabase_url?.match(/https:\/\/([^.]+)/)?.[1] || 'unknown';
+    console.log('[Auth] Supabase config:', {
+      projectRef,
+      anonKeyPrefix: data.supabase_anon_key?.substring(0, 20) + '...'
+    });
+
     // Configure Supabase client with session persistence for "Remember Me" functionality
     // Session persists across browser sessions; refresh tokens auto-renew access tokens
     // Session length (refresh token expiry) is configured in Supabase Dashboard → Auth → Settings
@@ -96,6 +103,11 @@ async function getSupabaseClient() {
         detectSessionInUrl: true,    // Detect OAuth callback in URL (default: true)
         storageKey: 'wine-cellar-auth',  // Custom storage key for this app
         flowType: 'implicit'         // Match Supabase's OAuth response (hash-based tokens)
+      },
+      global: {
+        // Explicitly set apikey header to ensure it's always sent
+        // Required for /auth/v1/user endpoint to work
+        headers: { apikey: data.supabase_anon_key }
       }
     });
   })();
