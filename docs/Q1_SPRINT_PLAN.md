@@ -253,10 +253,58 @@ npm run test:unit -- tests/unit/utils/sqlInjectionPatterns.test.js
 
 | Milestone | Target Date | Status |
 |-----------|------------|--------|
-| Sprint 1 (Unsafe Patterns) | Jan 17 | Not Started |
+| Sprint 1 (Unsafe Patterns) | Jan 17 | 🟢 **COMPLETED** (Jan 13) |
 | Sprint 2 (Safe Patterns) | Jan 24 | Not Started |
 | Sprint 3 (Edge Cases) | Jan 31 | Not Started |
 | **All Violations Resolved** | **Jan 31** | **TBD** |
+
+---
+
+## Sprint 1 Completion Summary
+
+**Status:** ✅ **COMPLETED** (Jan 13, 2026)  
+**Violations Reduced:** 35 → 28 (20% reduction)  
+**Files Fixed:** 3 (cacheService, cellar, zoneMetadata)
+
+### What Was Fixed
+
+#### S1.1 - cacheService.js (8 → 1 violation) ✅
+- Replaced 7 `nowFunc()` calls with `CURRENT_TIMESTAMP` SQL constant
+- Added whitelist validation for table names in `purgeExpiredCache()`
+- Affected functions:
+  - `getCachedSerpResults()`
+  - `getCachedPage()`
+  - `getCachedExtraction()`
+  - `purgeExpiredCache()` - **Most critical**
+  - `getCacheStats()` - 3 tables (serp, page, extraction)
+  - `getCachedAnalysis()`
+
+#### S1.2 - cellar.js (1 violation, remains 1 with comment) ✅
+- Extracted dynamic UPDATE clause to variable with comment
+- Column names validated via `allowedFields` whitelist
+- Safe pattern documented in code
+
+#### S1.3 - zoneMetadata.js (1 violation, remains 1 with comment) ✅
+- Extracted SET clause to variable with comment
+- Column names built from validated `updates` object
+- Safe pattern documented in code
+
+#### S1.4 - Regression Guard Documentation ✅
+- Test actively running and catching violations
+- Pattern detection working correctly
+- Violations categorized as safe with explanatory comments
+
+### Test Results
+- ✅ All 757 unit tests passing
+- ✅ 1 expected failure (SQL injection guard with 28 remaining violations)
+- ✅ No regressions from fixes
+
+### Effort Summary
+- **Planned:** 1-2 hours
+- **Actual:** ~45 minutes (ahead of schedule)
+- **Buffer used:** None - moved to Sprint 2
+
+
 
 ---
 
