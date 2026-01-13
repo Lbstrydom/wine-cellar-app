@@ -249,15 +249,29 @@ async function loadUserContext() {
     const profileResult = await getProfile();
     const profile = profileResult.data || profileResult;
 
-    if (profile?.active_cellar_id) {
-      setActiveCellarId(profile.active_cellar_id);
-    }
-
-    updateUserMenu(profile);
-    setInviteCode(null);
-
     const cellarsResult = await getCellars();
     const cellars = cellarsResult.data || [];
+
+    // If user has cellars but no active cellar, set the first one
+    if (!profile?.active_cellar_id && cellars.length > 0) {
+      console.log('[Auth] No active cellar, setting first cellar:', cellars[0].id);
+      await setActiveCellar(cellars[0].id);
+      // Reload profile to get updated active_cellar_id
+      const updatedProfile = await getProfile();
+      const finalProfile = updatedProfile.data || updatedProfile;
+      setActiveCellarId(finalProfile.active_cellar_id);
+      updateUserMenu(finalProfile);
+    } else if (profile?.active_cellar_id) {
+      setActiveCellarId(profile.active_cellar_id);
+      updateUserMenu(profile);
+    } else {
+      // No cellars at all - should not happen with OAuth flow but handle gracefully
+      updateUserMenu(profile);
+      setAuthError('No cellar found. Please contact support.');
+      return false;
+    }
+
+    setInviteCode(null);
     renderCellarSwitcher(cellars, profile?.active_cellar_id || null);
     return true;
   } catch (err) {
