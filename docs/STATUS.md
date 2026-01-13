@@ -964,6 +964,41 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
+### Storage Areas Feature - Planning Complete - 13 January 2026
+
+**Feature Overview**:
+Replace hardcoded fridge/cellar layout with user-definable **Storage Areas** (up to 5 per cellar). Each area has custom layout (variable rows/columns), storage type, and temperature zone that affects wine recommendations and drinking window calculations.
+
+**Problem Solved**:
+- Current layout assumes all users have 9-slot wine fridge + 169-slot cellar
+- No accommodation for different setups (apartment dweller with small fridge, collector with multiple locations)
+- No distinction between wine fridge (10-14°C) and kitchen fridge (4-8°C chilling only)
+
+**Database Migration Created** (`data/migrations/038_storage_areas.sql`):
+- `storage_areas` table: name, storage_type, temp_zone, display_order, icon, notes
+- `storage_area_rows` table: variable column counts per row (1-20 cols, 1-100 rows)
+- `slots.storage_area_id` foreign key with migration from legacy `zone` column
+- `slots.chilled_since` timestamp for kitchen fridge time warnings
+- `manage_chilled_since()` trigger: auto-sets/clears timestamp on area changes
+- `v_slots_with_zone` view: backward compatibility with `legacy_zone` and `chilling_days`
+- Migration fails with EXCEPTION (not WARNING) if slots remain unmapped
+
+**Key Design Decisions** (reviewed by independent developer):
+- `is_for_chilling` derived from `storage_type = 'kitchen_fridge'` (no column)
+- Kitchen fridge excluded from aging calculations (chilling state only)
+- Sparkling wine: cellar OR wine fridge both ideal (corrected from original)
+- Templates use canonical format: `rows: [{ row_num: 1, col_count: 6 }, ...]`
+- `?lite=true` API parameter for layout-only responses (performance)
+
+**Documentation**:
+- `docs/STORAGE_AREAS_PLAN.md` - Full implementation plan with code examples
+- `docs/STORAGE_AREAS_REVIEW.md` - Developer review document with Q&A
+- `.claude/plans/zany-twirling-platypus.md` - Claude Code plan file
+
+**Status**: Planning complete, migration created, ready for implementation (API routes, frontend)
+
+---
+
 ### OAuth Authentication & Legacy Cellar Migration - 13 January 2026
 
 **OAuth Flow Fix**:
@@ -1004,6 +1039,27 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 - Added new API wrappers for ratings jobs, tasting notes, pairing feedback, backup import, and wine search status
 - Reduced legacy raw fetch files to: `app.js` (public-config) and `browserTests.js` (test-only)
 - Added optional-auth error logging endpoint `POST /api/errors/log` and wired `errorBoundary.js` to use `api.js`
+
+**Phase 6: Wine Search Integration (15 January 2026)**:
+- Added Phase 6 database migration `037_phase6_integration.sql` with fingerprint fields, external IDs, provenance ratings, wine search cache, and search metrics
+- Added fingerprint backfill script `src/db/scripts/backfill_fingerprints.js` for collision reporting and optional nullification
+- Implemented Phase 6 services: feature flags, wine search cache, orchestrator pipeline, and structured confidence helper
+- Extended wine routes with duplicate checks, external ID management, Vivino URL setting, and ratings refresh backoff
+- Added add-wine disambiguation modal and updated bottle form flow to prefer duplicates/matches before creating
+
+**Phase 6 Files Modified**:
+- `data/migrations/037_phase6_integration.sql` - New Phase 6 schema migration
+- `src/db/scripts/backfill_fingerprints.js` - Fingerprint backfill + collision report
+- `src/services/wineAddOrchestrator.js` - Unified add-wine pipeline
+- `src/services/searchCache.js` - Wine search cache service
+- `src/config/featureFlags.js` - Phase 6 feature toggles
+- `src/routes/wines.js`, `src/routes/index.js`, `src/routes/search.js`, `src/routes/searchMetrics.js` - New endpoints + metrics persistence
+- `src/services/wineFingerprint.js`, `src/services/structuredParsers.js` - Versioned fingerprinting + confidence helper
+- `public/js/bottles/disambiguationModal.js`, `public/js/bottles/form.js` - Disambiguation flow and UI integration
+- `public/js/api.js` - Duplicate check + external ID endpoints
+- `public/css/styles.css` - Disambiguation modal styling
+- `data/schema.postgres.sql` - Updated schema reference
+- `tests/unit/services/wineFingerprint.test.js` - Updated for new normalization
 
 **Files Modified**:
 - `public/js/api.js` - Added backup export functions with blob downloads
@@ -1769,7 +1825,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **API Endpoints** | 50+ |
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
-| **Database Migrations** | 26 |
+| **Database Migrations** | 38 |
 | **Unit Tests** | 333 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |

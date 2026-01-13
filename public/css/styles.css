@@ -5721,7 +5721,19 @@ textarea:focus-visible {
   z-index: 10001;
 }
 
+#wine-disambiguation-modal {
+  z-index: 10001;
+}
+
 #wine-confirmation-modal .modal {
+  max-width: 650px;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+#wine-disambiguation-modal .modal {
   max-width: 650px;
   max-height: 85vh;
   overflow: hidden;
@@ -5860,6 +5872,47 @@ textarea:focus-visible {
   margin-bottom: 0.75rem;
   cursor: pointer;
   transition: all 0.15s ease;
+}
+
+.duplicate-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.9rem 1rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.duplicate-card:hover {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 176, 141, 87), 0.08);
+}
+
+.duplicate-details h5 {
+  margin: 0 0 0.35rem 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+#disambiguation-skip-btn {
+  padding: 0.6rem 1.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+#disambiguation-skip-btn:hover {
+  border-color: var(--text-muted);
+  color: var(--text);
 }
 
 .match-card:hover {
@@ -6053,7 +6106,8 @@ textarea:focus-visible {
 
 /* Mobile adjustments for confirmation modal */
 @media (max-width: 600px) {
-  #wine-confirmation-modal .modal {
+  #wine-confirmation-modal .modal,
+  #wine-disambiguation-modal .modal {
     max-height: 90vh;
     margin: 1rem;
     border-radius: 12px;

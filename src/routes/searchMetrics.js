@@ -98,19 +98,19 @@ router.post('/search/record', async (req, res) => {
     // Optionally persist to database if schema exists
     try {
       await db.prepare(`
-        INSERT INTO search_metrics_history (
-          timestamp, total_duration, total_cost_cents,
-          serp_calls, unlocker_calls, claude_extractions,
-          cache_hits, cache_misses, metrics_json
-        ) VALUES (CURRENT_TIMESTAMP, $1, $2, $3, $4, $5, $6, $7, $8)
+        INSERT INTO search_metrics (
+          cellar_id, fingerprint, pipeline_version, latency_ms, total_cost_cents,
+          extraction_method, match_confidence, stop_reason, details
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
       `).run(
-        summary.totalDuration,
+        req.cellarId,
+        req.body.fingerprint || null,
+        req.body.pipeline_version || 1,
+        summary.totalDuration || null,
         summary.costCents || 0,
-        apiCalls.serpCalls || 0,
-        apiCalls.unlockerCalls || 0,
-        apiCalls.claudeExtractions || 0,
-        cache.hits || 0,
-        cache.misses || 0,
+        req.body.extraction_method || null,
+        req.body.match_confidence || null,
+        req.body.stop_reason || null,
         JSON.stringify(req.body)
       );
     } catch (dbErr) {

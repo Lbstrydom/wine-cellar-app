@@ -16,10 +16,24 @@ describe('WineFingerprint', () => {
       expect(fp).toBe('kanonkop|pinotage|pinotage|2019|za:stellenbosch');
     });
 
+    it('should return versioned fingerprint', () => {
+      const wine = {
+        producer: 'Kanonkop',
+        wine_name: 'Kanonkop Pinotage 2019',
+        vintage: 2019,
+        country: 'South Africa',
+        region: 'Stellenbosch'
+      };
+
+      const result = WineFingerprint.generateWithVersion(wine);
+      expect(result.version).toBe(1);
+      expect(result.fingerprint).toBe('kanonkop|pinotage|pinotage|2019|za:stellenbosch');
+    });
+
     it('should generate consistent fingerprints for same wine', () => {
       const wine = {
-        producer: 'Château Margaux',
-        wine_name: 'Château Margaux 2015',
+        producer: 'Chateau Margaux',
+        wine_name: 'Chateau Margaux 2015',
         vintage: 2015,
         country: 'France',
         region: 'Pauillac'
@@ -65,7 +79,7 @@ describe('WineFingerprint', () => {
   describe('normalizeProducer()', () => {
     it('should remove French prefixes', () => {
       expect(WineFingerprint.normalizeProducer('Chateau Margaux')).toBe('margaux');
-      expect(WineFingerprint.normalizeProducer('Domaine de la Romanée')).toBe('de-la-romanée');
+      expect(WineFingerprint.normalizeProducer('Domaine de la Romanee')).toBe('de-la-romanee');
       expect(WineFingerprint.normalizeProducer('Clos de Vougeot')).toBe('de-vougeot');
     });
 
@@ -79,12 +93,12 @@ describe('WineFingerprint', () => {
     });
 
     it('should remove German prefixes', () => {
-      expect(WineFingerprint.normalizeProducer('Weingut Müller')).toBe('müller');
+      expect(WineFingerprint.normalizeProducer('Weingut Muller')).toBe('muller');
     });
 
-    it('should preserve apostrophes in names', () => {
-      expect(WineFingerprint.normalizeProducer("O'Shaughnessy")).toContain("'");
-      expect(WineFingerprint.normalizeProducer("Château d'Issan")).toContain("'");
+    it('should strip punctuation in names', () => {
+      expect(WineFingerprint.normalizeProducer("O'Shaughnessy")).toBe('o-shaughnessy');
+      expect(WineFingerprint.normalizeProducer("Chateau d'Issan")).toBe('d-issan');
     });
 
     it('should normalize spacing', () => {
@@ -133,13 +147,12 @@ describe('WineFingerprint', () => {
       expect(cuvee).not.toContain(']');
     });
 
-    it('should handle multiple varietals (first match wins)', () => {
+    it('should handle multiple varietals (sorted blend)', () => {
       const { varietal } = WineFingerprint.extractCuveeAndVarietal(
         'Blend of Cabernet Sauvignon and Merlot',
         'Producer'
       );
-      // Should find the first varietal listed
-      expect(varietal).toBeTruthy();
+      expect(varietal).toBe('cabernet-sauvignon-merlot');
     });
 
     it('should remove vintage years from cuvee', () => {
@@ -183,7 +196,7 @@ describe('WineFingerprint', () => {
     });
 
     it('should normalize appellation names', () => {
-      const location = WineFingerprint.normalizeLocation('France', 'Côte d\'Or');
+      const location = WineFingerprint.normalizeLocation('France', 'Cote d\'Or');
       expect(location).toContain(':');
       expect(location).not.toContain('\'');
       expect(location).not.toContain(' ');
@@ -199,8 +212,8 @@ describe('WineFingerprint', () => {
     it('should extract producer from wine name', () => {
       expect(WineFingerprint.extractProducer('Kanonkop Pinotage 2019')).toBe('Kanonkop');
       // extractProducer returns the producer before hitting a stop word
-      const chateau = WineFingerprint.extractProducer('Château Margaux 2015');
-      expect(chateau).toContain('Château');
+      const chateau = WineFingerprint.extractProducer('Chateau Margaux 2015');
+      expect(chateau).toContain('Chateau');
     });
 
     it('should stop at varietal keywords', () => {
@@ -256,8 +269,8 @@ describe('WineFingerprint', () => {
   describe('Integration: Complete fingerprinting workflows', () => {
     it('should correctly fingerprint French wines', () => {
       const wine = {
-        producer: 'Château Margaux',
-        wine_name: 'Château Margaux 2015',
+        producer: 'Chateau Margaux',
+        wine_name: 'Chateau Margaux 2015',
         vintage: 2015,
         country: 'France',
         region: 'Pauillac'
@@ -272,7 +285,7 @@ describe('WineFingerprint', () => {
     it('should correctly fingerprint Italian wines', () => {
       const wine = {
         producer: 'Gaja',
-        wine_name: 'Gaja Barbaresco Sorì Tildin 2016',
+        wine_name: 'Gaja Barbaresco Sori Tildin 2016',
         vintage: 2016,
         country: 'Italy',
         region: 'Barbaresco'

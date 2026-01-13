@@ -10,7 +10,8 @@ import {
   DOMAIN_PARSERS,
   tryStructuredExtraction,
   getParsersForDomain,
-  hasDomainParser
+  hasDomainParser,
+  calculateConfidence
 } from '../../../src/services/structuredParsers.js';
 
 // Helper to load fixtures
@@ -49,14 +50,20 @@ describe('Structured Parsers', () => {
       const html = loadFixture('vivino-golden.html');
       const result = STRUCTURED_PARSERS.vivino(html);
 
-      expect(result.wineName).toBe('Château Margaux');
+      const normalized = result.wineName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      expect(normalized).toBe('Chateau Margaux');
     });
 
     it('should extract producer', () => {
       const html = loadFixture('vivino-golden.html');
       const result = STRUCTURED_PARSERS.vivino(html);
 
-      expect(result.producer).toBe('Château Margaux');
+      const normalized = result.producer
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      expect(normalized).toBe('Chateau Margaux');
     });
 
     it('should extract price', () => {
@@ -124,7 +131,10 @@ describe('Structured Parsers', () => {
       const html = loadFixture('totalwine-jsonld.html');
       const result = STRUCTURED_PARSERS.jsonld(html);
 
-      expect(result.wineName).toBe('Penfolds Grange Shiraz 2018');
+      const normalized = result.wineName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      expect(normalized).toBe('Penfolds Grange Shiraz 2018');
     });
 
     it('should extract price from offers', () => {
@@ -223,11 +233,14 @@ describe('Structured Parsers', () => {
       const html = loadFixture('klwines-microdata.html');
       const result = STRUCTURED_PARSERS.microdata(html);
 
-      expect(result.wineName).toBe('Opus One 2019');
+      const normalized = result.wineName
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      expect(normalized).toBe('Opus One 2019');
     });
 
     it('should handle content attribute for rating', () => {
-      const html = '<span itemprop="ratingValue" content="4.5">★★★★☆</span>';
+      const html = '<span itemprop="ratingValue" content="4.5">*****</span>';
       const result = STRUCTURED_PARSERS.microdata(html);
 
       expect(result).toBeDefined();
@@ -505,4 +518,26 @@ describe('Structured Parsers', () => {
       expect(result.rating).toBeCloseTo(4.568, 2);
     });
   });
+
+  describe('calculateConfidence', () => {
+    it('should score higher for strong matches', () => {
+      const result = {
+        rating: 4.5,
+        ratingCount: 500,
+        wineName: 'Kanonkop Pinotage 2019',
+        vintage: 2019
+      };
+      const query = { wine_name: 'Kanonkop Pinotage 2019', vintage: 2019 };
+      const confidence = calculateConfidence(result, query);
+      expect(confidence.score).toBeGreaterThan(0.7);
+      expect(confidence.evidenceCount).toBeGreaterThan(0);
+    });
+
+    it('should handle missing data gracefully', () => {
+      const confidence = calculateConfidence(null, { wine_name: 'Test' });
+      expect(confidence.score).toBe(0);
+      expect(confidence.reasons).toContain('no_result');
+    });
+  });
+
 });

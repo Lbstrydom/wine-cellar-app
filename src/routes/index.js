@@ -30,6 +30,7 @@ import cellarHealthRoutes from './cellarHealth.js';
 import adminRoutes from './admin.js';
 import tastingNotesRoutes from './tastingNotes.js';
 import searchMetricsRoutes from './searchMetrics.js';
+import searchRoutes from './search.js';
 
 const router = Router();
 
@@ -87,6 +88,7 @@ router.use('/cellar', requireAuth, requireCellarContext, cellarRoutes);    // /c
 router.use('/awards', requireAuth, requireCellarContext, awardsRoutes);    // /awards/sources, /awards/import/*, /awards/wine/:id, etc.
 router.use('/backup', requireAuth, requireCellarContext, backupRoutes);    // /backup/export/json, /backup/export/csv, /backup/import
 router.use('/wine-search', requireAuth, requireCellarContext, wineSearchRoutes);  // /wine-search (POST), /wine-search/vivino/:id (GET)
+router.use('/search', requireAuth, requireCellarContext, searchRoutes);  // /search/metrics
 router.use('/acquisition', requireAuth, requireCellarContext, acquisitionRoutes);  // /acquisition/workflow, /acquisition/save, etc.
 router.use('/palate', requireAuth, requireCellarContext, palateProfileRoutes);    // /palate/feedback, /palate/profile, /palate/recommendations
 router.use('/health', requireAuth, requireCellarContext, cellarHealthRoutes);    // /health, /health/fill-fridge, /health/at-risk, /health/shopping-list

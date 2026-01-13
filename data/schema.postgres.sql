@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS wines (
     zone_id TEXT,
     zone_confidence TEXT,
     tasting_profile_json TEXT,
+    fingerprint TEXT,
+    fingerprint_version SMALLINT DEFAULT 1,
+    ratings_status TEXT DEFAULT 'not_attempted'
+      CHECK (ratings_status IN ('not_attempted', 'attempted_failed', 'partial', 'complete')),
+    ratings_last_attempt_at TIMESTAMPTZ,
+    ratings_attempt_count SMALLINT DEFAULT 0,
+    ratings_next_retry_at TIMESTAMPTZ,
     -- Full-text search vector (PostgreSQL native)
     search_vector tsvector,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -128,6 +135,38 @@ CREATE TABLE IF NOT EXISTS wine_ratings (
     UNIQUE(wine_id, vintage, source, competition_year, award_name)
 );
 
+-- External ID candidates
+CREATE TABLE IF NOT EXISTS wine_external_ids (
+    id BIGSERIAL PRIMARY KEY,
+    wine_id BIGINT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    external_id TEXT NOT NULL,
+    external_url TEXT,
+    match_confidence REAL,
+    status TEXT NOT NULL DEFAULT 'candidate'
+      CHECK (status IN ('candidate', 'confirmed', 'rejected')),
+    selected_by_user BOOLEAN DEFAULT FALSE,
+    evidence JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Ratings with provenance (Phase 6)
+CREATE TABLE IF NOT EXISTS wine_source_ratings (
+    id BIGSERIAL PRIMARY KEY,
+    wine_id BIGINT NOT NULL REFERENCES wines(id) ON DELETE CASCADE,
+    source TEXT NOT NULL,
+    rating_value REAL NOT NULL,
+    rating_scale TEXT NOT NULL,
+    review_count INTEGER,
+    previous_rating_value REAL,
+    captured_at TIMESTAMPTZ DEFAULT NOW(),
+    source_url TEXT,
+    extraction_method TEXT NOT NULL
+      CHECK (extraction_method IN ('structured', 'regex', 'unlocker', 'claude', 'manual')),
+    UNIQUE(wine_id, source)
+);
+
 -- Drinking windows table
 CREATE TABLE IF NOT EXISTS drinking_windows (
     id SERIAL PRIMARY KEY,
@@ -160,6 +199,20 @@ CREATE TABLE IF NOT EXISTS search_cache (
     result_count INTEGER NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP NOT NULL
+);
+
+-- Wine add pipeline cache
+CREATE TABLE IF NOT EXISTS wine_search_cache (
+    id BIGSERIAL PRIMARY KEY,
+    cellar_id BIGINT NOT NULL REFERENCES cellars(id) ON DELETE CASCADE,
+    fingerprint TEXT NOT NULL,
+    query_hash TEXT NOT NULL,
+    pipeline_version SMALLINT NOT NULL DEFAULT 1,
+    search_result JSONB NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    expires_at TIMESTAMPTZ NOT NULL,
+    last_hit_at TIMESTAMPTZ,
+    UNIQUE(cellar_id, fingerprint, pipeline_version)
 );
 
 -- Page Content Cache
@@ -196,6 +249,21 @@ CREATE TABLE IF NOT EXISTS cache_config (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
     description TEXT
+);
+
+-- Search metrics
+CREATE TABLE IF NOT EXISTS search_metrics (
+    id BIGSERIAL PRIMARY KEY,
+    cellar_id BIGINT NOT NULL REFERENCES cellars(id) ON DELETE CASCADE,
+    fingerprint TEXT,
+    pipeline_version SMALLINT NOT NULL DEFAULT 1,
+    latency_ms INTEGER,
+    total_cost_cents INTEGER DEFAULT 0,
+    extraction_method TEXT,
+    match_confidence REAL,
+    stop_reason TEXT,
+    details JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 -- ============================================================
@@ -388,6 +456,8 @@ CREATE INDEX IF NOT EXISTS idx_reduce_now_priority ON reduce_now(priority);
 CREATE INDEX IF NOT EXISTS idx_wines_style ON wines(style);
 CREATE INDEX IF NOT EXISTS idx_wines_colour ON wines(colour);
 CREATE INDEX IF NOT EXISTS idx_wines_name ON wines(wine_name);
+CREATE INDEX IF NOT EXISTS idx_wines_cellar_fingerprint ON wines(cellar_id, fingerprint);
+CREATE INDEX IF NOT EXISTS idx_wines_cellar_ratings_status ON wines(cellar_id, ratings_status);
 CREATE INDEX IF NOT EXISTS idx_ratings_wine ON wine_ratings(wine_id);
 CREATE INDEX IF NOT EXISTS idx_ratings_wine_vintage ON wine_ratings(wine_id, vintage);
 CREATE INDEX IF NOT EXISTS idx_ratings_lens ON wine_ratings(source_lens);
@@ -396,6 +466,8 @@ CREATE INDEX IF NOT EXISTS idx_drinking_windows_drink_by ON drinking_windows(dri
 CREATE INDEX IF NOT EXISTS idx_drinking_windows_source ON drinking_windows(source);
 CREATE INDEX IF NOT EXISTS idx_search_cache_key ON search_cache(cache_key);
 CREATE INDEX IF NOT EXISTS idx_search_cache_expires ON search_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_wine_search_cache_expires ON wine_search_cache(expires_at);
+CREATE INDEX IF NOT EXISTS idx_wine_search_cache_cellar ON wine_search_cache(cellar_id);
 CREATE INDEX IF NOT EXISTS idx_page_cache_hash ON page_cache(url_hash);
 CREATE INDEX IF NOT EXISTS idx_page_cache_expires ON page_cache(expires_at);
 CREATE INDEX IF NOT EXISTS idx_extraction_cache_wine ON extraction_cache(wine_id);
@@ -404,6 +476,14 @@ CREATE INDEX IF NOT EXISTS idx_job_queue_status ON job_queue(status, scheduled_f
 CREATE INDEX IF NOT EXISTS idx_job_queue_type ON job_queue(job_type);
 CREATE INDEX IF NOT EXISTS idx_job_history_type ON job_history(job_type);
 CREATE INDEX IF NOT EXISTS idx_job_history_completed ON job_history(completed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wine_external_ids_confirmed
+  ON wine_external_ids(wine_id, source) WHERE status = 'confirmed';
+CREATE INDEX IF NOT EXISTS idx_wine_external_ids_lookup ON wine_external_ids(external_id, source);
+CREATE INDEX IF NOT EXISTS idx_wine_external_ids_wine ON wine_external_ids(wine_id);
+CREATE INDEX IF NOT EXISTS idx_wine_source_ratings_wine_id ON wine_source_ratings(wine_id);
+CREATE INDEX IF NOT EXISTS idx_wine_source_ratings_source ON wine_source_ratings(source);
+CREATE INDEX IF NOT EXISTS idx_search_metrics_cellar ON search_metrics(cellar_id);
+CREATE INDEX IF NOT EXISTS idx_search_metrics_created_at ON search_metrics(created_at);
 CREATE INDEX IF NOT EXISTS idx_provenance_wine ON data_provenance(wine_id);
 CREATE INDEX IF NOT EXISTS idx_provenance_source ON data_provenance(source_id);
 CREATE INDEX IF NOT EXISTS idx_provenance_expires ON data_provenance(expires_at);

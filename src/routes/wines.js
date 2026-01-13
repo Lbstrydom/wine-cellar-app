@@ -15,11 +15,44 @@ import {
   tastingProfileSchema,
   tastingExtractionSchema,
   parseTextSchema,
-  parseImageSchema
+  parseImageSchema,
+  duplicateCheckSchema
 } from '../schemas/wine.js';
 import { paginationSchema } from '../schemas/common.js';
+import { WineFingerprint } from '../services/wineFingerprint.js';
+import { evaluateWineAdd } from '../services/wineAddOrchestrator.js';
+import { searchVivinoWines } from '../services/vivinoSearch.js';
 
 const router = Router();
+
+const RETRY_CONFIG = {
+  maxAttempts: 5,
+  baseDelayMinutes: 60,
+  maxDelayMinutes: 10080,
+  backoffMultiplier: 2
+};
+
+function calculateNextRetry(attemptCount) {
+  const delayMinutes = Math.min(
+    RETRY_CONFIG.baseDelayMinutes * Math.pow(RETRY_CONFIG.backoffMultiplier, attemptCount - 1),
+    RETRY_CONFIG.maxDelayMinutes
+  );
+  return new Date(Date.now() + delayMinutes * 60 * 1000);
+}
+
+function extractVivinoId(url) {
+  if (!url) return null;
+  const match = String(url).match(/\/w\/(\d+)/);
+  return match ? match[1] : null;
+}
+
+function resolveExtractionMethod(match) {
+  if (!match) return 'manual';
+  const method = match.extraction_method || match.extractionMethod;
+  const allowed = new Set(['structured', 'regex', 'unlocker', 'claude', 'manual']);
+  if (allowed.has(method)) return method;
+  return 'structured';
+}
 
 /**
  * Get distinct wine styles for autocomplete.
@@ -60,6 +93,31 @@ router.get('/search', async (req, res) => {
     res.json(wines);
   } catch (error) {
     console.error('Search error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Check for duplicate wines and fetch external candidates.
+ * @route POST /api/wines/check-duplicate
+ */
+router.post('/check-duplicate', validateBody(duplicateCheckSchema), async (req, res) => {
+  try {
+    const input = req.body;
+    const forceRefresh = req.body.force_refresh === true;
+
+    const result = await evaluateWineAdd({
+      cellarId: req.cellarId,
+      input,
+      forceRefresh
+    });
+
+    res.json({
+      data: result,
+      search_available: !!process.env.BRIGHTDATA_API_KEY
+    });
+  } catch (error) {
+    console.error('Duplicate check error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -270,26 +328,331 @@ router.post('/', validateBody(createWineSchema), async (req, res) => {
   try {
     const {
       style, colour, wine_name, vintage, vivino_rating, price_eur, country,
-      vivino_id, vivino_url, vivino_confirmed
+      producer, region, vivino_id, vivino_url, vivino_confirmed, external_match
     } = req.body;
+
+    const fingerprintData = WineFingerprint.generateWithVersion({
+      wine_name,
+      producer,
+      vintage,
+      country,
+      region,
+      style,
+      colour
+    });
+
+    const fingerprint = fingerprintData?.fingerprint || null;
+    const fingerprintVersion = fingerprintData?.version || WineFingerprint.FINGERPRINT_VERSION;
+
+    const matchRating = external_match?.rating ?? vivino_rating ?? null;
+    const hasAttempt = !!external_match;
+    const ratingsAttemptCount = hasAttempt ? 1 : 0;
+    const ratingsLastAttemptAt = hasAttempt ? new Date().toISOString() : null;
+    const ratingsStatus = hasAttempt
+      ? (matchRating ? 'complete' : 'attempted_failed')
+      : 'not_attempted';
+    const ratingsNextRetryAt = hasAttempt && !matchRating
+      ? calculateNextRetry(ratingsAttemptCount).toISOString()
+      : null;
+
+    const resolvedVivinoId = external_match?.source === 'vivino'
+      ? external_match.external_id || vivino_id
+      : vivino_id;
+    const resolvedVivinoUrl = external_match?.source === 'vivino'
+      ? external_match.external_url || vivino_url
+      : vivino_url;
+    const vivinoConfirmed = vivino_confirmed || external_match?.source === 'vivino';
 
     const result = await db.prepare(`
       INSERT INTO wines (
         cellar_id, style, colour, wine_name, vintage, vivino_rating, price_eur, country,
-        vivino_id, vivino_url, vivino_confirmed, vivino_confirmed_at
+        producer, region,
+        vivino_id, vivino_url, vivino_confirmed, vivino_confirmed_at,
+        fingerprint, fingerprint_version,
+        ratings_status, ratings_last_attempt_at, ratings_attempt_count, ratings_next_retry_at
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING id
     `).get(
-      req.cellarId, style, colour, wine_name, vintage || null, vivino_rating || null, price_eur || null, country || null,
-      vivino_id || null, vivino_url || null,
-      vivino_confirmed ? 1 : 0,
-      vivino_confirmed ? new Date().toISOString() : null
+      req.cellarId, style, colour, wine_name, vintage || null, matchRating || null, price_eur || null, country || null,
+      producer || null, region || null,
+      resolvedVivinoId || null, resolvedVivinoUrl || null,
+      vivinoConfirmed ? 1 : 0,
+      vivinoConfirmed ? new Date().toISOString() : null,
+      fingerprint, fingerprintVersion,
+      ratingsStatus, ratingsLastAttemptAt, ratingsAttemptCount, ratingsNextRetryAt
     );
+
+    if (external_match?.external_id) {
+      await db.prepare(`
+        INSERT INTO wine_external_ids
+          (wine_id, source, external_id, external_url, match_confidence, status, selected_by_user, evidence)
+        VALUES ($1, $2, $3, $4, $5, 'confirmed', $6, $7)
+      `).run(
+        result?.id,
+        external_match.source,
+        external_match.external_id,
+        external_match.external_url || null,
+        external_match.match_confidence || null,
+        1,
+        external_match.evidence ? JSON.stringify(external_match.evidence) : null
+      );
+
+      if (matchRating) {
+        await db.prepare(`
+          INSERT INTO wine_source_ratings
+            (wine_id, source, rating_value, rating_scale, review_count, source_url, extraction_method)
+          VALUES ($1, $2, $3, $4, $5, $6, $7)
+          ON CONFLICT (wine_id, source) DO UPDATE SET
+            previous_rating_value = wine_source_ratings.rating_value,
+            rating_value = EXCLUDED.rating_value,
+            rating_scale = EXCLUDED.rating_scale,
+            review_count = EXCLUDED.review_count,
+            source_url = EXCLUDED.source_url,
+            extraction_method = EXCLUDED.extraction_method,
+            captured_at = CURRENT_TIMESTAMP
+        `).run(
+          result?.id,
+          external_match.source,
+          matchRating,
+          external_match.rating_scale || '5',
+          external_match.review_count || null,
+          external_match.external_url || null,
+          resolveExtractionMethod(external_match)
+        );
+      }
+    }
 
     res.status(201).json({ id: result?.id || result?.lastInsertRowid, message: 'Wine added' });
   } catch (error) {
     console.error('Create wine error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get external ID candidates for a wine.
+ * @route GET /api/wines/:id/external-ids
+ */
+router.get('/:id/external-ids', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const externalIds = await db.prepare(`
+      SELECT id, source, external_id, external_url, match_confidence, status, selected_by_user, evidence, created_at, updated_at
+      FROM wine_external_ids
+      WHERE wine_id = $1
+      ORDER BY created_at DESC
+    `).all(id);
+
+    res.json({ data: externalIds });
+  } catch (error) {
+    console.error('External IDs error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get ratings with provenance for a wine.
+ * @route GET /api/wines/:id/ratings
+ */
+router.get('/:id/ratings', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const ratings = await db.prepare(`
+      SELECT id, source, rating_value, rating_scale, review_count, previous_rating_value,
+             captured_at, source_url, extraction_method
+      FROM wine_source_ratings
+      WHERE wine_id = $1
+      ORDER BY source
+    `).all(id);
+
+    res.json({ data: ratings });
+  } catch (error) {
+    console.error('Ratings error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Confirm an external ID candidate for a wine.
+ * @route POST /api/wines/:id/confirm-external-id
+ */
+router.post('/:id/confirm-external-id', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { source, external_id, selected_by_user = true } = req.body || {};
+
+    if (!source || !external_id) {
+      return res.status(400).json({ error: 'source and external_id required' });
+    }
+
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    await db.prepare(`
+      UPDATE wine_external_ids
+      SET status = 'rejected', updated_at = CURRENT_TIMESTAMP
+      WHERE wine_id = $1 AND source = $2 AND external_id != $3
+    `).run(id, source, external_id);
+
+    const updated = await db.prepare(`
+      UPDATE wine_external_ids
+      SET status = 'confirmed',
+          selected_by_user = $1,
+          updated_at = CURRENT_TIMESTAMP
+      WHERE wine_id = $2 AND source = $3 AND external_id = $4
+      RETURNING external_url
+    `).get(selected_by_user ? 1 : 0, id, source, external_id);
+
+    if (source === 'vivino') {
+      await db.prepare(`
+        UPDATE wines
+        SET vivino_id = $1, vivino_url = $2, vivino_confirmed = 1, vivino_confirmed_at = CURRENT_TIMESTAMP
+        WHERE cellar_id = $3 AND id = $4
+      `).run(external_id, updated?.external_url || null, req.cellarId, id);
+    }
+
+    res.json({ message: 'External ID confirmed' });
+  } catch (error) {
+    console.error('Confirm external ID error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Manually set a Vivino URL for a wine.
+ * @route POST /api/wines/:id/set-vivino-url
+ */
+router.post('/:id/set-vivino-url', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { vivino_url } = req.body || {};
+
+    if (!vivino_url) {
+      return res.status(400).json({ error: 'vivino_url required' });
+    }
+
+    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const vivinoId = extractVivinoId(vivino_url);
+
+    await db.prepare(`
+      UPDATE wines
+      SET vivino_url = $1, vivino_id = $2, vivino_confirmed = 1, vivino_confirmed_at = CURRENT_TIMESTAMP
+      WHERE cellar_id = $3 AND id = $4
+    `).run(vivino_url, vivinoId, req.cellarId, id);
+
+    res.json({ message: 'Vivino URL saved', vivino_id: vivinoId });
+  } catch (error) {
+    console.error('Set Vivino URL error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Refresh ratings with backoff.
+ * @route POST /api/wines/:id/refresh-ratings
+ */
+router.post('/:id/refresh-ratings', validateParams(wineIdSchema), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const wine = await db.prepare(`
+      SELECT id, wine_name, producer, vintage, country, region, ratings_attempt_count, ratings_next_retry_at
+      FROM wines
+      WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, id);
+
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    if (wine.ratings_next_retry_at && new Date(wine.ratings_next_retry_at) > new Date()) {
+      return res.status(409).json({
+        error: 'Retry backoff active',
+        next_retry_at: wine.ratings_next_retry_at
+      });
+    }
+
+    const attemptCount = (wine.ratings_attempt_count || 0) + 1;
+    if (attemptCount > RETRY_CONFIG.maxAttempts) {
+      return res.status(409).json({ error: 'Max retry attempts reached' });
+    }
+
+    const searchResults = await searchVivinoWines({
+      query: wine.wine_name,
+      producer: wine.producer,
+      vintage: wine.vintage,
+      country: wine.country
+    });
+
+    const topMatch = searchResults.matches?.[0] || null;
+    let ratingsStatus = 'attempted_failed';
+    let nextRetryAt = calculateNextRetry(attemptCount).toISOString();
+
+    if (topMatch?.rating) {
+      await db.prepare(`
+        INSERT INTO wine_source_ratings
+          (wine_id, source, rating_value, rating_scale, review_count, source_url, extraction_method)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (wine_id, source) DO UPDATE SET
+          previous_rating_value = wine_source_ratings.rating_value,
+          rating_value = EXCLUDED.rating_value,
+          rating_scale = EXCLUDED.rating_scale,
+          review_count = EXCLUDED.review_count,
+          source_url = EXCLUDED.source_url,
+          extraction_method = EXCLUDED.extraction_method,
+          captured_at = CURRENT_TIMESTAMP
+      `).run(
+        id,
+        'vivino',
+        topMatch.rating,
+        '5',
+        topMatch.ratingCount || null,
+        topMatch.vivinoUrl || null,
+        'structured'
+      );
+
+      ratingsStatus = 'complete';
+      nextRetryAt = null;
+    }
+
+    await db.prepare(`
+      UPDATE wines
+      SET ratings_status = $1,
+          ratings_last_attempt_at = CURRENT_TIMESTAMP,
+          ratings_attempt_count = $2,
+          ratings_next_retry_at = $3
+      WHERE cellar_id = $4 AND id = $5
+    `).run(
+      ratingsStatus,
+      attemptCount,
+      nextRetryAt,
+      req.cellarId,
+      id
+    );
+
+    res.json({
+      message: ratingsStatus === 'complete' ? 'Ratings refreshed' : 'Ratings refresh failed',
+      ratings_status: ratingsStatus,
+      next_retry_at: nextRetryAt
+    });
+  } catch (error) {
+    console.error('Refresh ratings error:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -302,60 +665,78 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
   try {
     const {
       style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+      producer, region,
       drink_from, drink_peak, drink_until,
       vivino_id, vivino_url, vivino_confirmed
     } = req.body;
 
-    // Build dynamic update based on what's provided
-    const updates = [
-      'style = $1',
-      'colour = $2',
-      'wine_name = $3',
-      'vintage = $4',
-      'vivino_rating = $5',
-      'price_eur = $6',
-      'country = $7',
-      'drink_from = $8',
-      'drink_peak = $9',
-      'drink_until = $10'
-    ];
-    const values = [];
-    let paramIdx = 10;
+    const existing = await db.prepare(`
+      SELECT wine_name, producer, vintage, country, region, style, colour
+      FROM wines
+      WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, req.params.id);
 
-    // Always update these basic fields
-    values.push(
-      style, colour, wine_name, vintage || null,
-      vivino_rating || null, price_eur || null, country || null,
-      drink_from || null, drink_peak || null, drink_until || null
-    );
+    if (!existing) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const updates = [];
+    const values = [];
+    let paramIdx = 1;
+    const addUpdate = (field, value) => {
+      updates.push(`${field} = $${paramIdx}`);
+      values.push(value);
+      paramIdx++;
+    };
+
+    addUpdate('style', style);
+    addUpdate('colour', colour);
+    addUpdate('wine_name', wine_name);
+    addUpdate('vintage', vintage || null);
+    addUpdate('vivino_rating', vivino_rating || null);
+    addUpdate('price_eur', price_eur || null);
+    addUpdate('country', country || null);
+    addUpdate('producer', producer || null);
+    addUpdate('region', region || null);
+    addUpdate('drink_from', drink_from || null);
+    addUpdate('drink_peak', drink_peak || null);
+    addUpdate('drink_until', drink_until || null);
+
+    const fingerprintData = WineFingerprint.generateWithVersion({
+      wine_name: wine_name ?? existing.wine_name,
+      producer: producer ?? existing.producer,
+      vintage: vintage ?? existing.vintage,
+      country: country ?? existing.country,
+      region: region ?? existing.region,
+      style: style ?? existing.style,
+      colour: colour ?? existing.colour
+    });
+
+    if (fingerprintData?.fingerprint) {
+      addUpdate('fingerprint', fingerprintData.fingerprint);
+      addUpdate('fingerprint_version', fingerprintData.version);
+    }
 
     // Only update Vivino fields if explicitly provided
     if (vivino_id !== undefined) {
-      paramIdx++;
-      updates.push(`vivino_id = $${paramIdx}`);
-      values.push(vivino_id || null);
+      addUpdate('vivino_id', vivino_id || null);
     }
     if (vivino_url !== undefined) {
-      paramIdx++;
-      updates.push(`vivino_url = $${paramIdx}`);
-      values.push(vivino_url || null);
+      addUpdate('vivino_url', vivino_url || null);
     }
     if (vivino_confirmed !== undefined) {
-      paramIdx++;
-      updates.push(`vivino_confirmed = $${paramIdx}`);
-      values.push(vivino_confirmed ? 1 : 0);
-      paramIdx++;
-      updates.push(`vivino_confirmed_at = $${paramIdx}`);
-      values.push(vivino_confirmed ? new Date().toISOString() : null);
+      addUpdate('vivino_confirmed', vivino_confirmed ? 1 : 0);
+      addUpdate('vivino_confirmed_at', vivino_confirmed ? new Date().toISOString() : null);
     }
 
     updates.push('updated_at = CURRENT_TIMESTAMP');
-    paramIdx++;
-    values.push(req.cellarId);
+
     const cellarIdParam = paramIdx;
+    values.push(req.cellarId);
     paramIdx++;
-    values.push(req.params.id);
     const idParam = paramIdx;
+    values.push(req.params.id);
+    paramIdx++;
 
     await db.prepare(`
       UPDATE wines SET ${updates.join(', ')} WHERE cellar_id = $${cellarIdParam} AND id = $${idParam}

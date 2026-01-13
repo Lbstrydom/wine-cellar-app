@@ -11,6 +11,11 @@
  */
 export class WineFingerprint {
   /**
+   * Current fingerprint algorithm version.
+   */
+  static FINGERPRINT_VERSION = 1;
+
+  /**
    * Major wine varietals (don't drop from cuvée)
    */
   static VARIETALS = [
@@ -59,34 +64,70 @@ export class WineFingerprint {
    * // → "kanonkop|pinotage|pinotage|2019|za:stellenbosch"
    */
   static generate(wine) {
+    const result = this.generateWithVersion(wine);
+    return result?.fingerprint || null;
+  }
+
+  /**
+   * Generate canonical wine identity key with version.
+   * @param {Object} wine - Wine object with producer, wine_name, vintage, country, region
+   * @returns {{fingerprint: string, version: number}|null}
+   */
+  static generateWithVersion(wine) {
     if (!wine) return null;
 
     const rawProducer = wine.producer || this.extractProducer(wine.wine_name);
     const producer = this.normalizeProducer(rawProducer);
     const { cuvee, varietal } = this.extractCuveeAndVarietal(wine.wine_name, rawProducer);
-    const vintage = wine.vintage || 'NV';
+    const vintage = this.normalizeVintage(wine.vintage);
     const location = this.normalizeLocation(wine.country, wine.region);
 
     const fingerprint = `${producer}|${cuvee}|${varietal}|${vintage}|${location}`.toLowerCase();
-    return fingerprint;
+    return { fingerprint, version: this.FINGERPRINT_VERSION };
+  }
+
+  /**
+   * Normalize text to lowercase ASCII and remove punctuation (except hyphens).
+   * @param {string} value - Raw text
+   * @returns {string}
+   */
+  static normalizeText(value) {
+    if (!value) return '';
+    return value
+      .toString()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9-\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  /**
+   * Normalize vintage to a string; NV/null -> "nv".
+   * @param {string|number|null} vintage
+   * @returns {string}
+   */
+  static normalizeVintage(vintage) {
+    if (!vintage) return 'nv';
+    const asString = String(vintage).trim().toLowerCase();
+    if (!asString || asString === 'nv' || asString === 'n/v') return 'nv';
+    return asString.replace(/[^0-9]/g, '') || 'nv';
   }
 
   /**
    * Normalize producer name
    * Removes common prefixes (Chateau, Domaine, Bodega, etc.)
-   * Preserves apostrophes, normalizes spacing
+   * Normalizes spacing and strips punctuation
    * @param {string} name - Producer name
    * @returns {string} Normalized producer name
    */
   static normalizeProducer(name) {
     if (!name) return 'unknown';
 
-    return name
-      .toLowerCase()
+    return this.normalizeText(name)
       // Remove common prefixes (case-insensitive)
       .replace(/^(chateau|domaine|bodega|cantina|weingut|tenuta|mas|cave|clos|quinta|estate|castle|winery)\s+/i, '')
-      // Normalize apostrophes (keep them, don't remove)
-      .replace(/[''`]/g, "'")
       // Replace whitespace with hyphens
       .replace(/\s+/g, '-')
       // Trim
@@ -114,14 +155,15 @@ export class WineFingerprint {
       }
     }
 
-    // Extract varietal (keep it, don't remove from cuvée)
-    let varietal = '';
+    // Extract varietals (keep them, sort blends)
+    const remainingLower = remaining.toLowerCase();
+    const varietals = [];
     for (const v of this.VARIETALS) {
-      if (remaining.toLowerCase().includes(v)) {
-        varietal = v.replace(/\s+/g, '-');
-        break;
+      if (remainingLower.includes(v)) {
+        varietals.push(v);
       }
     }
+    const varietal = this.normalizeVarietals(varietals);
 
     // Normalize tier markers as clean tokens (v1.1 fix: no brackets)
     let cuvee = remaining
@@ -134,16 +176,29 @@ export class WineFingerprint {
     }
 
     // Clean up spacing and hyphens
-    cuvee = cuvee
+    cuvee = this.normalizeText(cuvee)
       .replace(/\s+/g, '-')
       .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .toLowerCase();
+      .replace(/^-|-$/g, '');
 
     return {
       cuvee: cuvee || 'default',
-      varietal: varietal
+      varietal
     };
+  }
+
+  /**
+   * Normalize varietals and sort blends alphabetically.
+   * @param {string[]} varietals - Raw varietal names
+   * @returns {string}
+   */
+  static normalizeVarietals(varietals) {
+    if (!varietals || varietals.length === 0) return '';
+    const normalized = varietals
+      .map(v => this.normalizeText(v).replace(/\s+/g, '-'))
+      .filter(Boolean);
+    const unique = [...new Set(normalized)];
+    return unique.sort().join('-');
   }
 
   /**
@@ -154,12 +209,13 @@ export class WineFingerprint {
    * @returns {string} Normalized location code
    */
   static normalizeLocation(country, region) {
-    const countryCode = this.COUNTRY_CODES[country?.toLowerCase()] || 'xx';
+    const countryKey = this.normalizeText(country);
+    const countryCode = this.COUNTRY_CODES[countryKey] || 'xx';
 
     // If region provided and different from country, use it
-    if (region && region.toLowerCase() !== country?.toLowerCase()) {
-      const appellation = region
-        .toLowerCase()
+    const regionKey = this.normalizeText(region);
+    if (regionKey && regionKey !== countryKey) {
+      const appellation = regionKey
         .replace(/\s+/g, '-')
         .replace(/[^a-z0-9-]/g, '');
       return `${countryCode}:${appellation}`;
@@ -230,8 +286,9 @@ export const WINE_ALIASES = {
     'penfolds|grange-hermitage|shiraz|2019|au',
     'penfolds|bin-95|shiraz|2019|au'
   ],
-  // Château Margaux
-  'chateau-margaux|default|cabernet-sauvignon|2015|fr:pauillac': [
+  // Chateau Margaux
+  'margaux|default|cabernet-sauvignon|2015|fr:pauillac': [
+    'chateau-margaux|default|cabernet-sauvignon|2015|fr:pauillac',
     'margaux|chateau-margaux|cabernet-sauvignon|2015|fr:pauillac'
   ]
 };

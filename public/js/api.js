@@ -486,6 +486,20 @@ export async function createWine(wineData) {
 }
 
 /**
+ * Check for duplicate wines and external matches.
+ * @param {Object} wineData - Wine details
+ * @returns {Promise<Object>}
+ */
+export async function checkWineDuplicate(wineData) {
+  const res = await fetch(`${API_BASE}/api/wines/check-duplicate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(wineData)
+  });
+  return handleResponse(res, 'Failed to check duplicates');
+}
+
+/**
  * Update existing wine.
  * @param {number} id - Wine ID
  * @param {Object} wineData - Wine details
@@ -498,6 +512,59 @@ export async function updateWine(id, wineData) {
     body: JSON.stringify(wineData)
   });
   return handleResponse(res, 'Failed to update wine');
+}
+
+/**
+ * Get external IDs for a wine.
+ * @param {number} id - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getWineExternalIds(id) {
+  const res = await fetch(`${API_BASE}/api/wines/${id}/external-ids`);
+  return handleResponse(res, 'Failed to fetch external IDs');
+}
+
+/**
+ * Confirm an external ID candidate.
+ * @param {number} id - Wine ID
+ * @param {Object} payload - Confirmation payload
+ * @returns {Promise<Object>}
+ */
+export async function confirmWineExternalId(id, payload) {
+  const res = await fetch(`${API_BASE}/api/wines/${id}/confirm-external-id`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  return handleResponse(res, 'Failed to confirm external ID');
+}
+
+/**
+ * Set Vivino URL for a wine.
+ * @param {number} id - Wine ID
+ * @param {string} vivinoUrl - Vivino URL
+ * @returns {Promise<Object>}
+ */
+export async function setWineVivinoUrl(id, vivinoUrl) {
+  const res = await fetch(`${API_BASE}/api/wines/${id}/set-vivino-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ vivino_url: vivinoUrl })
+  });
+  return handleResponse(res, 'Failed to set Vivino URL');
+}
+
+/**
+ * Refresh ratings for a wine with backoff.
+ * @param {number} id - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function refreshWineRatings(id) {
+  const res = await fetch(`${API_BASE}/api/wines/${id}/refresh-ratings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(res, 'Failed to refresh ratings');
 }
 
 /**
@@ -1303,6 +1370,15 @@ export async function getVivinoWineDetails(vivinoId) {
 export async function getWineSearchStatus() {
   const res = await fetch(`${API_BASE}/api/wine-search/status`);
   return handleResponse(res, 'Failed to fetch wine search status');
+}
+
+/**
+ * Get wine search metrics summary.
+ * @returns {Promise<Object>}
+ */
+export async function getSearchMetrics() {
+  const res = await fetch(`${API_BASE}/api/search/metrics`);
+  return handleResponse(res, 'Failed to fetch search metrics');
 }
 
 // ============================================

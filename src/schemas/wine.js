@@ -24,6 +24,8 @@ export const createWineSchema = z.object({
   wine_name: z.string().min(1, 'Wine name is required').max(300, 'Wine name too long'),
   style: z.string().max(200).optional().nullable(),
   colour: z.enum(WINE_COLOURS, { errorMap: () => ({ message: `Colour must be one of: ${WINE_COLOURS.join(', ')}` }) }).optional().nullable(),
+  producer: z.string().max(200).optional().nullable(),
+  region: z.string().max(200).optional().nullable(),
   vintage: z.union([
     z.number().int().min(1900).max(2100),
     z.string().regex(/^\d{4}$/).transform(Number),
@@ -42,7 +44,18 @@ export const createWineSchema = z.object({
   country: z.string().max(100).optional().nullable(),
   vivino_id: z.string().max(100).optional().nullable(),
   vivino_url: z.string().url().max(500).optional().nullable().or(z.literal('')),
-  vivino_confirmed: z.union([z.boolean(), z.number().transform(Boolean)]).optional()
+  vivino_confirmed: z.union([z.boolean(), z.number().transform(Boolean)]).optional(),
+  external_match: z.object({
+    source: z.string().max(50),
+    external_id: z.string().max(200),
+    external_url: z.string().url().max(500).optional().nullable(),
+    match_confidence: z.number().min(0).max(1).optional().nullable(),
+    rating: z.number().min(0).max(10).optional().nullable(),
+    rating_scale: z.string().max(50).optional().nullable(),
+    review_count: z.number().int().min(0).optional().nullable(),
+    extraction_method: z.string().max(20).optional().nullable(),
+    evidence: z.record(z.any()).optional().nullable()
+  }).optional().nullable()
 });
 
 /**
@@ -112,6 +125,24 @@ export const searchQuerySchema = z.object({
 export const globalSearchSchema = z.object({
   q: z.string().min(2).max(200).optional(),
   limit: z.string().regex(/^\d+$/).transform(Number).pipe(z.number().min(1).max(50)).default('5')
+});
+
+/**
+ * Duplicate check schema for wine add pipeline.
+ */
+export const duplicateCheckSchema = z.object({
+  wine_name: z.string().min(1, 'Wine name is required').max(300, 'Wine name too long'),
+  producer: z.string().max(200).optional().nullable(),
+  vintage: z.union([
+    z.number().int().min(1900).max(2100),
+    z.string().regex(/^\d{4}$/).transform(Number),
+    z.null()
+  ]).optional().nullable(),
+  country: z.string().max(100).optional().nullable(),
+  region: z.string().max(200).optional().nullable(),
+  colour: z.enum(WINE_COLOURS).optional().nullable(),
+  style: z.string().max(200).optional().nullable(),
+  force_refresh: z.boolean().optional()
 });
 
 /**

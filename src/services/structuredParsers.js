@@ -348,3 +348,45 @@ export function hasDomainParser(domain) {
   const normalizedDomain = domain.replace(/^www\./, '');
   return normalizedDomain in DOMAIN_PARSERS;
 }
+
+/**
+ * Calculate confidence score for a structured extraction result.
+ * @param {Object} result - Parsed result
+ * @param {Object} query - Original query fields
+ * @returns {{score: number, evidenceCount: number, reasons: string[]}}
+ */
+export function calculateConfidence(result, query) {
+  let score = 0;
+  let evidenceCount = 0;
+  const reasons = [];
+
+  if (!result) return { score: 0, evidenceCount: 0, reasons: ['no_result'] };
+
+  if (result.rating) {
+    score += 0.4;
+    evidenceCount++;
+    reasons.push('rating_found');
+  }
+
+  if (result.ratingCount && result.ratingCount > 100) {
+    score += 0.1;
+    reasons.push('rating_depth');
+  }
+
+  if (result.wineName && query?.wine_name) {
+    const nameMatch = result.wineName.toLowerCase().includes(String(query.wine_name).toLowerCase());
+    if (nameMatch) {
+      score += 0.3;
+      evidenceCount++;
+      reasons.push('name_match');
+    }
+  }
+
+  if (result.vintage && query?.vintage && Number(result.vintage) === Number(query.vintage)) {
+    score += 0.2;
+    evidenceCount++;
+    reasons.push('vintage_match');
+  }
+
+  return { score: Math.min(score, 1), evidenceCount, reasons };
+}
