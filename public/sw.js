@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v60';
+const CACHE_VERSION = 'v61';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -11,12 +11,17 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 /**
  * Static assets to pre-cache during install.
  * These are essential for the app shell.
+ *
+ * NOTE: JS modules should NOT have version query strings because other
+ * modules import them without versions (e.g., import { state } from './app.js')
+ * Using versions would cause the browser to load the same file twice.
+ * Cache invalidation is handled by bumping CACHE_VERSION instead.
  */
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260113c',
-  '/js/app.js?v=20260113c',
+  '/css/styles.css?v=20260113d',
+  '/js/app.js',
   '/js/api.js',
   '/js/utils.js',
   '/js/grid.js',
@@ -40,8 +45,8 @@ const STATIC_ASSETS = [
   '/js/recommendations.js',
   '/js/errorBoundary.js',
   '/js/eventManager.js',
-  '/js/pairing.js?v=20260112a',
-  '/vendor/supabase.js?v=20260112a',
+  '/js/pairing.js',
+  '/vendor/supabase.js',
   '/manifest.json'
 ];
 
