@@ -1040,26 +1040,35 @@ Replace hardcoded fridge/cellar layout with user-definable **Storage Areas** (up
 - Reduced legacy raw fetch files to: `app.js` (public-config) and `browserTests.js` (test-only)
 - Added optional-auth error logging endpoint `POST /api/errors/log` and wired `errorBoundary.js` to use `api.js`
 
-**Phase 6: Wine Search Integration (15 January 2026)**:
-- Added Phase 6 database migration `037_phase6_integration.sql` with fingerprint fields, external IDs, provenance ratings, wine search cache, and search metrics
-- Added fingerprint backfill script `src/db/scripts/backfill_fingerprints.js` for collision reporting and optional nullification
-- Implemented Phase 6 services: feature flags, wine search cache, orchestrator pipeline, and structured confidence helper
-- Extended wine routes with duplicate checks, external ID management, Vivino URL setting, and ratings refresh backoff
-- Added add-wine disambiguation modal and updated bottle form flow to prefer duplicates/matches before creating
+**Phase 6: Wine Search Integration (13 January 2026) ✅ COMPLETE**:
+- Deployed migration `037_phase6_integration.sql` to Supabase with fingerprint fields, external IDs, ratings with provenance, wine search cache, and search metrics tables
+- Successfully backfilled all 101 wines with fingerprints using v1 algorithm (producer|cuvee|varietal|vintage|country:region)
+- Detected and resolved 4 fingerprint collisions: deleted 8 test wines, merged 3 legitimate duplicate pairs (11 wines → 90 unique wines)
+- Added unique index on (cellar_id, fingerprint) - enforces no future duplicates per cellar
+- Implemented comprehensive feature flag system for gradual rollout of Phase 6 features
+- Extended wine routes with new endpoints: `/check-duplicate`, `/ratings`, `/external-ids`, `/confirm-external-id`, `/set-vivino-url`, `/refresh-ratings`
+- Created wine add orchestrator with 6-stage pipeline: fingerprint → cache check → dedup check → external search → persist → metrics
+- Implemented search cache service with 14-day TTL and refresh-on-hit strategy
+- Added golden benchmark tests with offline fixtures (9 tests passing)
+- Added multi-user cellar isolation tests (12 tests passing)
+- Total test coverage: 757 unit tests + 9 benchmark + 12 isolation = 778 tests passing
+- Deployed to Railway - auto-deployed at cellar.creathyst.com
 
-**Phase 6 Files Modified**:
-- `data/migrations/037_phase6_integration.sql` - New Phase 6 schema migration
-- `src/db/scripts/backfill_fingerprints.js` - Fingerprint backfill + collision report
-- `src/services/wineAddOrchestrator.js` - Unified add-wine pipeline
-- `src/services/searchCache.js` - Wine search cache service
-- `src/config/featureFlags.js` - Phase 6 feature toggles
-- `src/routes/wines.js`, `src/routes/index.js`, `src/routes/search.js`, `src/routes/searchMetrics.js` - New endpoints + metrics persistence
-- `src/services/wineFingerprint.js`, `src/services/structuredParsers.js` - Versioned fingerprinting + confidence helper
-- `public/js/bottles/disambiguationModal.js`, `public/js/bottles/form.js` - Disambiguation flow and UI integration
-- `public/js/api.js` - Duplicate check + external ID endpoints
-- `public/css/styles.css` - Disambiguation modal styling
-- `data/schema.postgres.sql` - Updated schema reference
-- `tests/unit/services/wineFingerprint.test.js` - Updated for new normalization
+**Phase 6 Files Created/Modified**:
+- `data/migrations/037_phase6_integration.sql` - Phase 6 schema (4 new tables, 10+ indexes)
+- `data/migrations/038_storage_areas.sql` - Storage areas migration (prepared for Phase 7)
+- `src/db/scripts/backfill_fingerprints.js` - Backfill + collision detection + deduplication
+- `src/services/wineAddOrchestrator.js` - 6-stage wine add pipeline (292 LOC)
+- `src/services/searchCache.js` - Cache lookup/store with TTL management (96 LOC)
+- `src/services/wineFingerprint.js` - Versioned fingerprint algorithm v1 (150+ LOC)
+- `src/config/featureFlags.js` - Feature toggles for Phase 6 rollout (50 LOC)
+- `src/routes/wines.js` - 7 new endpoints for Phase 6 workflow (1000+ LOC)
+- `src/routes/search.js`, `src/routes/searchMetrics.js` - New search and metrics routes
+- `public/js/bottles/disambiguationModal.js` - Multi-match selection UI (200+ LOC)
+- `public/js/bottles/form.js` - Updated with duplicate detection flow
+- `tests/benchmark/goldenWines.test.js` - Offline benchmark tests (9 tests)
+- `tests/unit/multiUserIsolation.test.js` - Multi-user isolation tests (12 tests)
+- `tests/integration/phase6Integration.test.js` - Phase 6 infrastructure tests (8 tests)
 
 **Files Modified**:
 - `public/js/api.js` - Added backup export functions with blob downloads
