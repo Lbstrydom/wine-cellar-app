@@ -435,14 +435,15 @@ async function initAuth() {
   try {
     const supabase = await getSupabaseClient();
 
-    // Clean URL hash after OAuth callback to prevent caching issues
-    // Supabase puts tokens in the hash, which can get cached by service workers
-    if (window.location.hash && window.location.hash.includes('access_token')) {
-      // Use replaceState to clean URL without triggering navigation
-      const cleanUrl = window.location.pathname + window.location.search;
-      window.history.replaceState(null, '', cleanUrl);
-      console.log('[Auth] Cleaned OAuth tokens from URL');
+    // Check if this is an OAuth callback (tokens in URL hash)
+    const isOAuthCallback = window.location.hash && window.location.hash.includes('access_token');
+    if (isOAuthCallback) {
+      console.log('[Auth] OAuth callback detected, letting Supabase process tokens...');
     }
+
+    // Note: Do NOT manually clean the URL hash here!
+    // Supabase's detectSessionInUrl:true handles this automatically.
+    // Cleaning it before Supabase processes it breaks the OAuth flow.
 
     const { data, error } = await supabase.auth.getSession();
 
