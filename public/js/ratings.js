@@ -119,12 +119,15 @@ export function renderRatingsPanel(ratingsData) {
 
   const { purchase_score, purchase_stars, confidence_level, lens_details, ratings } = ratingsData;
 
+  // Display score value or dash if not available
+  const scoreDisplay = purchase_score != null ? String(purchase_score) : '-';
+
   let html = `
     <div class="ratings-panel">
       <div class="ratings-summary">
         <div class="purchase-score">
           ${renderStars(purchase_stars, 'large')}
-          <span class="score-value">${escapeHtml(String(purchase_score))}</span>
+          <span class="score-value">${escapeHtml(scoreDisplay)}</span>
           ${renderConfidenceBadge(confidence_level)}
         </div>
         <div class="lens-indices">

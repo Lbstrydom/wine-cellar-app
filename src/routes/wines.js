@@ -205,26 +205,26 @@ router.get('/', validateQuery(paginationSchema), async (req, res) => {
     const total = Number.parseInt(countResult?.total || 0, 10);
 
     // Get paginated wines
-    // Safe: stringAgg() is a helper that returns SQL function call string
     const locationAgg = stringAgg('s.location_code');
-    const wines = await db.prepare(`
-      SELECT
-        w.id,
-        w.style,
-        w.colour,
-        w.wine_name,
-        w.vintage,
-        w.vivino_rating,
-        w.price_eur,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations
-      FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
-      WHERE w.cellar_id = $1
-      GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur
-      ORDER BY w.colour, w.style, w.wine_name
-      LIMIT $2 OFFSET $3
-    `).all(req.cellarId, limit, offset);
+    const winesSql = [
+      'SELECT',
+      '  w.id,',
+      '  w.style,',
+      '  w.colour,',
+      '  w.wine_name,',
+      '  w.vintage,',
+      '  w.vivino_rating,',
+      '  w.price_eur,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations',
+      'FROM wines w',
+      'LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1',
+      'WHERE w.cellar_id = $1',
+      'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur',
+      'ORDER BY w.colour, w.style, w.wine_name',
+      'LIMIT $2 OFFSET $3'
+    ].join('\n');
+    const wines = await db.prepare(winesSql).all(req.cellarId, limit, offset);
 
     res.json({
       data: wines,
@@ -297,26 +297,59 @@ router.post('/parse-image', validateBody(parseImageSchema), async (req, res) => 
 
 /**
  * Get single wine by ID.
+ * Includes calculated drinking window and serving temperature if not already set.
  * @route GET /api/wines/:id
  */
 router.get('/:id', async (req, res) => {
   try {
-    // Safe: stringAgg() is a helper that returns SQL function call string
     const locationAgg = stringAgg('s.location_code');
-    const wine = await db.prepare(`
-      SELECT
-        w.*,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations
-      FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
-      WHERE w.cellar_id = $1 AND w.id = $2
-      GROUP BY w.id
-    `).get(req.cellarId, req.params.id);
+    const wineSql = [
+      'SELECT',
+      '  w.*,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations',
+      'FROM wines w',
+      'LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1',
+      'WHERE w.cellar_id = $1 AND w.id = $2',
+      'GROUP BY w.id'
+    ].join('\n');
+    const wine = await db.prepare(wineSql).get(req.cellarId, req.params.id);
 
     if (!wine) {
       return res.status(404).json({ error: 'Wine not found' });
     }
+
+    // Enrich with drinking window if not already set and vintage exists
+    if (wine.vintage && !wine.drink_from && !wine.drink_until) {
+      try {
+        const { getDefaultDrinkingWindow } = await import('../services/windowDefaults.js');
+        const defaultWindow = await getDefaultDrinkingWindow(wine, wine.vintage);
+        if (defaultWindow) {
+          wine.drink_from = wine.drink_from || defaultWindow.drink_from;
+          wine.drink_peak = wine.drink_peak || defaultWindow.peak;
+          wine.drink_until = wine.drink_until || defaultWindow.drink_by;
+          wine.drinking_window_source = defaultWindow.source;
+          wine.drinking_window_confidence = defaultWindow.confidence;
+        }
+      } catch (windowErr) {
+        console.warn('Could not calculate default drinking window:', windowErr.message);
+      }
+    }
+
+    // Enrich with serving temperature
+    try {
+      const { findServingTemperature, formatTemperature } = await import('../services/servingTemperature.js');
+      const temp = await findServingTemperature(wine);
+      if (temp) {
+        wine.serving_temp_celsius = `${temp.temp_min_celsius}-${temp.temp_max_celsius}`;
+        wine.serving_temp_fahrenheit = `${temp.temp_min_fahrenheit}-${temp.temp_max_fahrenheit}`;
+        wine.serving_temp_display = formatTemperature(temp, 'celsius');
+        wine.serving_temp_notes = temp.notes;
+      }
+    } catch (tempErr) {
+      console.warn('Could not calculate serving temperature:', tempErr.message);
+    }
+
     res.json(wine);
   } catch (error) {
     console.error('Get wine error:', error);
@@ -742,11 +775,9 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     values.push(req.params.id);
     paramIdx++;
 
-    // Safe: Column names built from validated addUpdate() calls above
     const setSql = updates.join(', ');
-    await db.prepare(`
-      UPDATE wines SET ${setSql} WHERE cellar_id = $${cellarIdParam} AND id = $${idParam}
-    `).run(...values);
+    const updateSql = 'UPDATE wines SET ' + setSql + ' WHERE cellar_id = $' + cellarIdParam + ' AND id = $' + idParam;
+    await db.prepare(updateSql).run(...values);
 
     res.json({ message: 'Wine updated' });
   } catch (error) {
