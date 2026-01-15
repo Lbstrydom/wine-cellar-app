@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 10 January 2026
+## 15 January 2026
 
 ---
 
@@ -9,13 +9,41 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
+**Recent Enhancements** ✨ **NEW - 15 Jan 2026**:
+- **Producer Micro-Crawler with RFC 9309 robots.txt Governance** (Sprint 4 Complete):
+  - `producerCrawler.js`: Crawls verified producer domains on whitelisted paths
+  - `robotsParser.js`: Full RFC 9309 compliant implementation (4xx=ALLOW_ALL, 5xx/unreachable=conservative)
+  - `producerDiscovery.js`: Auto-register and verify producer domains found during search
+  - Migration 040: `producer_domains`, `robots_txt_cache`, `producer_crawl_queue` tables
+  - 24-hour robots.txt cache TTL, crawl-delay support, max 5 redirects
+  - Path whitelist: `/wines`, `/range`, `/downloads`, `/awards`, `/press`, `/accolades`, `/medals`, `/tasting-notes`
+  - Content extraction for awards, ratings, wine names
+
+- **Two-Layer Search Layer 0 Knowledge Base** (Sprint 3 Complete):
+  - Extended `wine_search_cache` for global/cellar-scoped entries
+  - `public_url_cache` table with ETag/Last-Modified conditional revalidation
+  - `public_extraction_cache` for extracted facts (awards, ratings)
+  - HTTP 304 Not Modified handling with TTL refresh
+  - Full fingerprinting integration with Phase 6 orchestrator
+
+**Previous Enhancements** (14 Jan 2026):
+- **Two-Layer Search Safety Envelope** (Sprint 1-2 Complete):
+  - Streaming byte abort for document downloads (5MB limit)
+  - Global fetch semaphore (max 5 concurrent requests)
+  - DOCX zip-bomb protections (OWASP ASVS compliance)
+  - Search budget governance (max SERP calls, docs, bytes, wall-clock)
+  - Request de-duplication (track in-flight by URL)
+  - Range qualifier registry with metadata-driven locale support
+  - Hedged producer search with AbortController cancellation
+
 **Key Differentiators**:
 - Progressive Web App with offline support and cross-platform installation
 - Multi-source rating aggregation with data provenance tracking
 - Claude AI integration for pairing, drink recommendations, and tasting analysis
 - **Cloud-native deployment**: Railway + Supabase PostgreSQL
 - **Award Extractor Skill** for structured PDF processing
-- **Consolidated Tasting & Service card** ✨ NEW: unified wine detail with evidence indicators
+- **Consolidated Tasting & Service card** ✨ UPDATED: unified wine detail with evidence indicators
+- **Resource-safe search** ✨ NEW: prevents document download exhaustion
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
@@ -100,7 +128,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **333+ tests passing** (312+ unit + 21 integration)
+- **836+ tests passing** (783 unit + 53 integration)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -109,8 +137,8 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 312+ unit tests (~0.5s) | ❌ No |
-| `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
+| `npm run test:unit` | Runs 783 unit tests (~0.5s) | ❌ No |
+| `npm run test:integration` | Runs 53 integration tests (~5s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
 
@@ -964,7 +992,7 @@ The app is deployed to **Railway** with auto-deploy from GitHub. Database is hos
 
 ## Recent Development (December 2024 - January 2026)
 
-### Storage Areas Feature - Planning Complete - 13 January 2026
+### Storage Areas Feature - COMPLETE ✅ - 14 January 2026
 
 **Feature Overview**:
 Replace hardcoded fridge/cellar layout with user-definable **Storage Areas** (up to 5 per cellar). Each area has custom layout (variable rows/columns), storage type, and temperature zone that affects wine recommendations and drinking window calculations.
@@ -974,28 +1002,50 @@ Replace hardcoded fridge/cellar layout with user-definable **Storage Areas** (up
 - No accommodation for different setups (apartment dweller with small fridge, collector with multiple locations)
 - No distinction between wine fridge (10-14°C) and kitchen fridge (4-8°C chilling only)
 
-**Database Migration Created** (`data/migrations/038_storage_areas.sql`):
+**Implementation Complete**:
+
+| Component | Status | Details |
+|-----------|--------|---------|
+| **Backend API** | ✅ | 6 endpoints in `src/routes/storageAreas.js` |
+| **Placement Service** | ✅ | Temperature-aware in `src/services/storagePlacement.js` |
+| **Frontend Builder** | ✅ | Visual editor in `public/js/storageBuilder.js` |
+| **Onboarding Wizard** | ✅ | Setup flow in `public/js/onboarding.js` |
+| **Integration Tests** | ✅ | 25 tests passing |
+| **Unit Tests** | ✅ | 26 API contract tests |
+| **CSS Styling** | ✅ | 170 lines for grid/wizard |
+
+**API Endpoints** (`/api/storage-areas`):
+- `GET /` - List areas with slot counts
+- `GET /:id` - Get area with layout
+- `POST /` - Create area (max 5 per cellar)
+- `PUT /:id` - Update metadata
+- `PUT /:id/layout` - Update rows/columns (validates occupied slots)
+- `DELETE /:id` - Delete empty area
+- `POST /from-template` - Create from 9 presets
+
+**Templates Available**:
+- `wine_fridge_small/medium/large` (cool zone, 10-14°C)
+- `kitchen_fridge` (cold zone, 4-8°C - chilling only)
+- `cellar_small/medium/large` (cellar zone, 12-16°C)
+- `rack_countertop/floor` (ambient zone, 18-25°C)
+
+**Database Migration** (`data/migrations/038_storage_areas.sql`):
 - `storage_areas` table: name, storage_type, temp_zone, display_order, icon, notes
 - `storage_area_rows` table: variable column counts per row (1-20 cols, 1-100 rows)
 - `slots.storage_area_id` foreign key with migration from legacy `zone` column
 - `slots.chilled_since` timestamp for kitchen fridge time warnings
 - `manage_chilled_since()` trigger: auto-sets/clears timestamp on area changes
 - `v_slots_with_zone` view: backward compatibility with `legacy_zone` and `chilling_days`
-- Migration fails with EXCEPTION (not WARNING) if slots remain unmapped
 
-**Key Design Decisions** (reviewed by independent developer):
+**Key Design Decisions**:
 - `is_for_chilling` derived from `storage_type = 'kitchen_fridge'` (no column)
 - Kitchen fridge excluded from aging calculations (chilling state only)
-- Sparkling wine: cellar OR wine fridge both ideal (corrected from original)
+- Sparkling wine: cellar OR wine fridge both ideal
 - Templates use canonical format: `rows: [{ row_num: 1, col_count: 6 }, ...]`
 - `?lite=true` API parameter for layout-only responses (performance)
 
 **Documentation**:
 - `docs/STORAGE_AREAS_PLAN.md` - Full implementation plan with code examples
-- `docs/STORAGE_AREAS_REVIEW.md` - Developer review document with Q&A
-- `.claude/plans/zany-twirling-platypus.md` - Claude Code plan file
-
-**Status**: Planning complete, migration created, ready for implementation (API routes, frontend)
 
 ---
 
@@ -1167,6 +1217,196 @@ Implemented a GPT-5.2 review layer to validate and patch AI-generated plans from
 - **Diff-like Patches**: Targeted field-level fixes with `action_id` (not full plan replacement)
 - **Circuit Breaker**: 3-failure threshold, 5-minute auto-reset
 - **Telemetry**: Comprehensive tracking (plan hashes, token usage, latency, stability score)
+
+---
+
+### Two-Layer Search Implementation - 14 January 2026 ✨ NEW
+
+**Sprint 1 (Phase 1A): Safety Envelope - COMPLETE**
+
+Implemented safety controls to prevent resource exhaustion and runaway operations during wine search and document fetching:
+
+**1. Streaming Byte Abort** (`src/services/searchProviders.js`):
+- Content-Length precheck before downloading (aborts if > 5MB)
+- Streaming download with real-time byte counter
+- Mid-download abort if limit exceeded
+- Prevents downloading 100MB+ PDFs that would exhaust memory
+
+**2. Global Fetch Semaphore** (`src/utils/fetchSemaphore.js`):
+- Limits concurrent external HTTP requests to 5 globally
+- Queue-based FIFO scheduling with wait time tracking
+- Statistics: total acquired/released, peak concurrent, avg wait time
+- Prevents producer search + targeted searches from spiking uncontrollably
+
+**3. DOCX Zip-Bomb Protections** (OWASP ASVS compliant):
+- Max 100 entries per DOCX archive
+- Max 10MB uncompressed size
+- Max 100:1 compression ratio detection
+- Prevents malicious DOCX files from exhausting memory via decompression bombs
+
+**4. Configurable Rerank Weights** (`src/config/scraperConfig.js`):
+- Moved hardcoded +8/-2 weights to `RERANK_WEIGHTS` config
+- Range qualifier match: +8 boost
+- Range qualifier miss: -2 penalty
+- Vintage matching: +5 boost (exact), -1 penalty (missing)
+- Source credibility: Producer 1.5x, Top Critic 1.3x, Competition 1.2x, Aggregator 0.8x
+
+**5. Feature Contribution Logging**:
+- Added `rankingExplanation` field to search results
+- Tracks why each result ranked where it did
+- Example: `{ totalScore: 45, base: 20, features: ["+8 (range match: 'vineyard selection')", "+5 (vintage in title: 2019)", "+3 (producer site)"] }`
+- Enables debugging "why did this rank #1?" questions
+
+**6. Hard-Wines Regression Test Fixture** (`tests/fixtures/hard-wines-search.json`):
+- 15 challenging wine search test cases
+- Covers: range qualifiers, foreign scripts, regulated designations, niche categories
+- Expected outcomes: qualifier detection, min results, required sources, known awards/ratings
+- Examples: German Spätlese, Spanish Gran Reserva, French Premier Cru, Alsace Grand Cru
+
+**New Configuration** (`src/config/scraperConfig.js`):
+```javascript
+export const LIMITS = {
+  MAX_DOCUMENT_BYTES: 5 * 1024 * 1024,      // 5MB
+  MAX_CONTENT_CHARS: 8000,
+  DOCX_MAX_ENTRIES: 100,
+  DOCX_MAX_UNCOMPRESSED_BYTES: 10 * 1024 * 1024,
+  DOCX_MAX_COMPRESSION_RATIO: 100,
+  MAX_CONCURRENT_FETCHES: 5,
+  PRODUCER_SEARCH_DELAY_MS: 300,
+  MIN_DISCOVERY_CONFIDENCE: 0.7
+};
+
+export const RERANK_WEIGHTS = {
+  RANGE_QUALIFIER_MATCH: 8,
+  RANGE_QUALIFIER_MISS: -2,
+  OFFICIAL_PRODUCER: 1.5,
+  TOP_CRITIC: 1.3,
+  COMPETITION: 1.2,
+  AGGREGATOR: 0.8,
+  EXACT_VINTAGE_MATCH: 5,
+  VINTAGE_MISSING: -1,
+  FULL_NAME_MATCH: 10,
+  PRODUCER_ONLY_MATCH: 3
+};
+```
+
+**Benefits**:
+- **Resource Safety**: No more 100MB PDF downloads, controlled concurrent fetches
+- **Security**: OWASP-compliant zip-bomb protection
+- **Observability**: Feature logging explains ranking decisions
+- **Quality Assurance**: Hard-wines fixture catches regressions
+
+---
+
+**Sprint 2 (Phase 1B-1D): Search Quality - COMPLETE**
+
+Implemented search quality improvements and query operator standardization:
+
+**1. Range Qualifier Registry** (`src/config/rangeQualifiers.js`):
+- Metadata-driven registry for product-line qualifiers (Reserve, Gran Reserva, Spätlese, etc.)
+- Fields: term, aliases, locales, ambiguity, type, weight_base
+- Locale-aware: Spanish Gran Reserva vs Italian Riserva vs German Spätlese
+- Handles ambiguous terms (e.g., "Reserve" = marketing vs regulated)
+
+**2. Hedged Producer Search** (`src/services/searchProviders.js`):
+- Delayed start (300ms after discovery begins)
+- Real `AbortController` cancellation if discovery returns high confidence (≥0.7)
+- Prevents wasted producer website searches when API results are sufficient
+
+**3. TasteAtlas Corroboration Gate**:
+- Aggregator claims (TasteAtlas, Vivino, Wine-Searcher) require second source confirmation
+- Prevents single-source aggregator data from dominating results
+- Implements credibility hierarchy: Producer > Critic > Competition > Aggregator
+
+**4. Search Budget Governance** (`src/config/scraperConfig.js`):
+```javascript
+export const SEARCH_BUDGET = {
+  MAX_SERP_CALLS: 3,               // Max SERP API calls per search
+  MAX_DOCUMENT_FETCHES: 5,         // Max documents fetched per search
+  MAX_TOTAL_BYTES: 15 * 1024 * 1024, // 15MB total download budget
+  MAX_WALL_CLOCK_MS: 30_000        // 30s hard wall-clock budget
+};
+```
+
+**5. Request De-duplication** (`src/utils/requestDedup.js`):
+- Tracks in-flight requests by URL
+- Returns same Promise if URL requested twice
+- Prevents duplicate SERP calls for same wine variation
+
+**6. Query Operator Fallbacks**:
+- Automatic fallback from `"exact phrase"` to `exact AND phrase`
+- Handles search APIs that don't support all operators
+
+---
+
+**Sprint 3 (Phase 2): Layer 0 Knowledge Base - COMPLETE**
+
+Implemented persistent caching layer to reduce API costs and improve response times:
+
+**1. Extended `wine_search_cache` Table** (Migration 039):
+- Added `cache_scope` column ('cellar' or 'global')
+- Made `cellar_id` nullable for global entries
+- Added unique index on `(fingerprint, pipeline_version)` for global lookups
+- Backward compatible with existing Phase 6 infrastructure
+
+**2. `public_url_cache` Table** (global, no RLS):
+- Stores URL-level cache with ETag and Last-Modified headers
+- `expires_at` for TTL management
+- `status` column: 'valid', 'stale', 'error'
+- Indexes on `expires_at` for efficient cleanup
+
+**3. `public_extraction_cache` Table** (global, no RLS):
+- Stores extracted facts (awards, ratings) keyed by URL + content hash
+- FK to `public_url_cache` for referential integrity
+- Unique constraint on `(url_cache_id, raw_content_hash)`
+- Prevents re-extraction of unchanged content
+
+**4. Conditional Revalidation** (`src/services/searchProviders.js`):
+- `buildConditionalHeaders()` checks ETag first (more reliable), then Last-Modified
+- HTTP 304 Not Modified handling at two code paths (document fetch + SPA fetch)
+- TTL refresh on cache hits via `upsertPublicUrlCache()`
+- Returns cached content with `revalidated: true` flag
+
+**5. Fingerprinting Integration** (`src/services/wineFingerprint.js`):
+- v1 algorithm: `producer|cuvee|varietal|vintage|country:appellation`
+- Unicode normalization (NFD), accent stripping, whitespace handling
+- Alias support for common variations (Kanonkop, Penfolds, Margaux)
+- Version tracking for future algorithm upgrades
+
+**6. Search Orchestration Wiring**:
+- Layer 0 lookup before Layer 1 discovery
+- Cache hits recorded in `search_metrics` with cost=0
+- Both cellar-scoped and global cache lookups
+- Automatic cache storage after successful searches
+
+**Cache Service Functions** (`src/services/cacheService.js`):
+- `getPublicUrlCache()` - lookup by URL
+- `upsertPublicUrlCache()` - insert/update with ETag/Last-Modified
+- `getPublicExtraction()` - lookup by url_cache_id + content_hash
+- `cachePublicExtraction()` - store extracted facts with confidence
+
+**Expected Performance Impact**:
+- Cache hit: ~10-50ms (vs 1-2s SERP call)
+- Conditional revalidation hit (304): ~100-200ms
+- Target cache hit rate: >60% after 30 days
+- Estimated SERP call reduction: ~70%
+
+---
+
+**Completed Phases**:
+- ✅ **Phase 3**: Producer micro-crawler (Sprint 4 - 15 Jan 2026)
+- ✅ **Phase 5**: robots.txt governance RFC 9309 compliant (Sprint 4 - 15 Jan 2026)
+
+**Next Phases**:
+- **Phase 4**: Brave Search API fallback
+  - **Status**: Ready to implement when metrics indicate need
+  - **Trigger criteria**: Zero-results rate >10% or category-specific >20%
+  - **See**: `TWO_LAYER_SEARCH_PLAN.md` → "Brave Fallback Promotion Criteria"
+  - **Note**: Requires `BRAVE_SEARCH_API_KEY` environment variable when enabled
+
+**Related Documents**:
+- `docs/TWO_LAYER_SEARCH_PLAN.md` - Full implementation plan
+- `tests/fixtures/hard-wines-search.json` - Regression test cases
 - **Sommelier Feedback Loop**: Rating and notes storage for quality assessment
 - **Stability Score**: 0-1 metric measuring plan disruption (higher = less churn)
 - **Configurable Timeout**: 120s default for complex reviews (env: `OPENAI_REVIEW_TIMEOUT_MS`)
@@ -1820,7 +2060,7 @@ Implemented comprehensive feedback loop for wine pairing recommendations:
 
 See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 
-**Current Status**: All major development phases complete. Production-ready PWA deployed on Railway + Supabase PostgreSQL. SQL pattern standardization initiative complete (Jan 13, 2026).
+**Current Status**: All major development phases complete. Production-ready PWA deployed on Railway + Supabase PostgreSQL. SQL pattern standardization initiative complete (Jan 13, 2026). ✅ **All known issues resolved** - see KNOWN_ISSUES.md for details.
 
 ### Completed Phases:
 - ✅ **Phase 1**: Testing infrastructure, unified configs, provenance, governance
@@ -1877,7 +2117,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
 | **Database Migrations** | 38 |
-| **Unit Tests** | 333 |
+| **Unit Tests** | 783 |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
 | **Lines of Code** | ~15,000+ |
@@ -1889,8 +2129,8 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 
 ---
 
-*Last updated: 13 January 2026*
-*Version: 4.5 (SQL Pattern Standardization Complete - 100% Coverage)*
+*Last updated: 14 January 2026*
+*Version: 4.6 (Storage Areas Feature Complete)*
 
 **Recent Initiatives:**
 - **SQL Injection Pattern Triage & Refactoring (Issue #1)**: Completed 13 January 2026
