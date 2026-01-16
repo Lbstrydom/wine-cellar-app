@@ -465,8 +465,8 @@ async function handleFetchRatings(wineId, useAsync = true) {
  * @returns {Promise<Object>} Job result
  */
 async function pollJobProgress(jobId, onProgress) {
-  const pollInterval = 1000; // 1 second
-  const maxPolls = 120; // 2 minutes max
+  const pollInterval = 2000; // 2 seconds (reduced from 1s to avoid rate limiting)
+  const maxPolls = 90; // 3 minutes max
 
   for (let i = 0; i < maxPolls; i++) {
     const status = await getRatingsJobStatus(jobId);

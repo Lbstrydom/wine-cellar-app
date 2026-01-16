@@ -77,7 +77,8 @@ async function handleRatingFetch(payload, context) {
 
   // Get all ratings for this wine and calculate aggregates
   const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
-  const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE key = 'rating_preference'").get();
+  // Get user preference scoped to cellar (use wine.cellar_id since jobs don't have req context)
+  const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = ? AND key = 'rating_preference'").get(wine.cellar_id);
   const preference = parseInt(prefSetting?.value || '40');
   const aggregates = calculateWineRatings(allRatings, wine, preference);
 
@@ -85,18 +86,19 @@ async function handleRatingFetch(payload, context) {
   const currentTime = nowFunc();
 
   // Update wine with aggregates and tasting notes
-  await db.prepare(`
-    UPDATE wines SET
-      competition_index = ?,
-      critics_index = ?,
-      community_index = ?,
-      purchase_score = ?,
-      purchase_stars = ?,
-      confidence_level = ?,
-      tasting_notes = COALESCE(?, tasting_notes),
-      ratings_updated_at = ${currentTime}
-    WHERE id = ?
-  `).run(
+  const sql = [
+    'UPDATE wines SET',
+    'competition_index = ?,',
+    'critics_index = ?,',
+    'community_index = ?,',
+    'purchase_score = ?,',
+    'purchase_stars = ?,',
+    'confidence_level = ?,',
+    'tasting_notes = COALESCE(?, tasting_notes),',
+    'ratings_updated_at = ' + currentTime,
+    'WHERE id = ?'
+  ].join(' ');
+  await db.prepare(sql).run(
     aggregates.competition_index,
     aggregates.critics_index,
     aggregates.community_index,

@@ -18,25 +18,26 @@ router.get('/', async (req, res) => {
   try {
     // Safe: stringAgg() is a helper that returns SQL function call string
     const locationAgg = stringAgg('s.location_code');
-    const list = await db.prepare(`
-      SELECT
-        rn.id,
-        rn.priority,
-        rn.reduce_reason,
-        w.id as wine_id,
-        w.style,
-        w.colour,
-        w.wine_name,
-        w.vintage,
-        w.vivino_rating,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations
-      FROM reduce_now rn
-      JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1
-      LEFT JOIN slots s ON s.wine_id = w.id
-      GROUP BY rn.id, rn.priority, rn.reduce_reason, w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating
-      ORDER BY rn.priority, w.wine_name
-    `).all(req.cellarId);
+    const sqlList = [
+      'SELECT',
+      '  rn.id,',
+      '  rn.priority,',
+      '  rn.reduce_reason,',
+      '  w.id as wine_id,',
+      '  w.style,',
+      '  w.colour,',
+      '  w.wine_name,',
+      '  w.vintage,',
+      '  w.vivino_rating,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations',
+      'FROM reduce_now rn',
+      'JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1',
+      'LEFT JOIN slots s ON s.wine_id = w.id',
+      'GROUP BY rn.id, rn.priority, rn.reduce_reason, w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating',
+      'ORDER BY rn.priority, w.wine_name'
+    ].join('\n');
+    const list = await db.prepare(sqlList).all(req.cellarId);
     res.json(list);
   } catch (error) {
     console.error('Get reduce-now error:', error);
@@ -116,7 +117,7 @@ router.post('/evaluate', async (req, res) => {
     const ratingMinimum = parseFloat(settings.reduce_rating_minimum || '3.0');
 
     // Get storage settings for window adjustment
-    const storageSettings = await getStorageSettings();
+    const storageSettings = await getStorageSettings(req.cellarId);
     const storageEnabled = storageSettings.storage_adjustment_enabled === 'true';
 
     if (!rulesEnabled) {
@@ -135,24 +136,25 @@ router.post('/evaluate', async (req, res) => {
     // Safe: stringAgg() and nullsLast() are helpers that return SQL function call strings
     const locationAgg = stringAgg('s.location_code', ',', true);
     const orderByClause = nullsLast('dw.drink_by_year', 'ASC');
-    const allWines = await db.prepare(`
-      SELECT
-        w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,
-        w.purchase_stars, w.vivino_rating, w.country, w.grape,
-        (? - w.vintage) as wine_age,
-        dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations
-      FROM wines w
-      JOIN slots s ON s.wine_id = w.id
-      LEFT JOIN drinking_windows dw ON w.id = dw.wine_id
-      LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-      WHERE w.cellar_id = ?
-        AND rn.id IS NULL
-      GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.purchase_stars, w.vivino_rating, w.country, w.grape, dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source
-      HAVING COUNT(s.id) > 0
-      ORDER BY ${orderByClause}, w.vintage ASC
-    `).all(currentYear, req.cellarId);
+    const allSql = [
+      'SELECT',
+      '  w.id as wine_id, w.wine_name, w.vintage, w.style, w.colour,',
+      '  w.purchase_stars, w.vivino_rating, w.country, w.grape,',
+      '  (? - w.vintage) as wine_age,',
+      '  dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source as window_source,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations',
+      'FROM wines w',
+      'JOIN slots s ON s.wine_id = w.id',
+      'LEFT JOIN drinking_windows dw ON w.id = dw.wine_id',
+      'LEFT JOIN reduce_now rn ON rn.wine_id = w.id',
+      'WHERE w.cellar_id = ?',
+      '  AND rn.id IS NULL',
+      'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.purchase_stars, w.vivino_rating, w.country, w.grape, dw.drink_by_year, dw.drink_from_year, dw.peak_year, dw.source',
+      'HAVING COUNT(s.id) > 0',
+      'ORDER BY ' + orderByClause + ', w.vintage ASC'
+    ].join('\n');
+    const allWines = await db.prepare(allSql).all(currentYear, req.cellarId);
 
     const candidates = [];
     const seenWineIds = new Set();

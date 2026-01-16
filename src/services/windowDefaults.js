@@ -374,14 +374,15 @@ export function adjustForStorage(window, vintage, storageSettings) {
 
 /**
  * Get storage settings from database.
+ * @param {string} cellarId - Cellar ID to scope settings to
  * @returns {Promise<object>} Storage settings object
  */
-export async function getStorageSettings() {
+export async function getStorageSettings(cellarId) {
   try {
     const rows = await db.prepare(`
       SELECT key, value FROM user_settings
-      WHERE key IN ('storage_mode', 'storage_temp_bucket', 'storage_heat_risk', 'storage_adjustment_enabled')
-    `).all();
+      WHERE cellar_id = $1 AND key IN ('storage_mode', 'storage_temp_bucket', 'storage_heat_risk', 'storage_adjustment_enabled')
+    `).all(cellarId);
 
     const settings = {};
     for (const row of rows) {

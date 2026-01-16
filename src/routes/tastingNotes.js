@@ -20,7 +20,7 @@ const router = Router();
  * Get structured tasting notes for a wine.
  * @route GET /api/wines/:id/tasting-notes
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id/tasting-notes', async (req, res) => {
   try {
     const { id } = req.params;
     const includeSources = req.query.include_sources === 'true';
@@ -61,7 +61,7 @@ router.get('/:id', async (req, res) => {
  * Get tasting note sources for a wine.
  * @route GET /api/wines/:id/tasting-notes/sources
  */
-router.get('/:id/sources', async (req, res) => {
+router.get('/:id/tasting-notes/sources', async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -92,7 +92,7 @@ router.get('/:id/sources', async (req, res) => {
  * Regenerate tasting notes for a wine.
  * @route POST /api/wines/:id/tasting-notes/regenerate
  */
-router.post('/:id/regenerate', async (req, res) => {
+router.post('/:id/tasting-notes/regenerate', async (req, res) => {
   try {
     const { id } = req.params;
     const { reason } = req.body;
@@ -151,7 +151,7 @@ router.post('/:id/regenerate', async (req, res) => {
  * Report an issue with tasting notes.
  * @route POST /api/wines/:id/tasting-notes/report
  */
-router.post('/:id/report', async (req, res) => {
+router.post('/:id/tasting-notes/report', async (req, res) => {
   try {
     const { id } = req.params;
     const { issue_type, details } = req.body;
