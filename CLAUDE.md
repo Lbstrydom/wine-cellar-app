@@ -778,6 +778,7 @@ refactor/modular-structure
 | `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
+| `GEMINI_API_KEY` | Google Gemini API key for hybrid search | For Gemini grounded search |
 | `OPENAI_API_KEY` | OpenAI API key for GPT reviewer | For AI reviewer |
 | `OPENAI_REVIEW_ZONE_RECONFIG` | Enable GPT zone reconfig reviewer (`true`/`false`) | No (default: false) |
 | `OPENAI_REVIEW_CELLAR_ANALYSIS` | Enable GPT cellar analysis reviewer (`true`/`false`) | No (default: false) |

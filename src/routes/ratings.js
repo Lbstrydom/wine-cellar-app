@@ -372,21 +372,22 @@ router.post('/cleanup', async (req, res) => {
 
     const wineIdPlaceholders = cellarWineIds.map((_, i) => `$${i + 2}`).join(',');
     // Safe: wineIdPlaceholders are generated indices ($2, $3, ...), data in .all() params
-    const duplicates = await db.prepare(`
-      SELECT id FROM wine_ratings
-      WHERE wine_id IN (${wineIdPlaceholders}) AND id NOT IN (
-        SELECT MIN(id) FROM wine_ratings
-        WHERE wine_id IN (${wineIdPlaceholders})
-        GROUP BY wine_id, source
-      )
-    `).all(req.cellarId, ...cellarWineIds.map(w => w.id));
+    const duplicatesSql = [
+      'SELECT id FROM wine_ratings',
+      'WHERE wine_id IN (' + wineIdPlaceholders + ') AND id NOT IN (',
+      '  SELECT MIN(id) FROM wine_ratings',
+      '  WHERE wine_id IN (' + wineIdPlaceholders + ')',
+      '  GROUP BY wine_id, source',
+      ')'
+    ].join('\n');
+    const duplicates = await db.prepare(duplicatesSql).all(req.cellarId, ...cellarWineIds.map(w => w.id));
 
     if (duplicates.length > 0) {
       // Use parameterized query to prevent SQL injection
       const ids = duplicates.map(d => d.id);
       const placeholders = ids.map((_, i) => `$${i + 1}`).join(',');
       // Safe: placeholders are generated indices ($1, $2, ...), data in .run() params
-      await db.prepare(`DELETE FROM wine_ratings WHERE id IN (${placeholders})`).run(...ids);
+      await db.prepare('DELETE FROM wine_ratings WHERE id IN (' + placeholders + ')').run(...ids);
       logger.info('Cleanup', `Removed ${duplicates.length} duplicate ratings`);
     }
 
@@ -502,10 +503,7 @@ router.post('/batch-fetch', async (req, res) => {
   // Validate wineIds belong to this cellar
   const numericIds = wineIds.map(id => parseInt(id, 10)).filter(Number.isFinite);
   const placeholders = numericIds.map((_, i) => `$${i + 2}`).join(',');
-  // Safe: placeholders are generated indices ($2, $3, ...), data in .all() params
-  const allowed = await db.prepare(
-    `SELECT id FROM wines WHERE cellar_id = $1 AND id IN (${placeholders})`
-  ).all(req.cellarId, ...numericIds);
+  const validateSql = 'SELECT id FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';\n  const allowed = await db.prepare(validateSql).all(req.cellarId, ...numericIds);
   if (allowed.length !== numericIds.length) {
     return res.status(403).json({ error: 'One or more wines are not in this cellar' });
   }
@@ -627,6 +625,74 @@ router.post('/cache/purge', async (req, res) => {
     });
   } catch (error) {
     logger.error('Cache', `Failed to purge cache: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// =============================================================================
+// EXPERIMENTAL: GEMINI HYBRID SEARCH
+// =============================================================================
+
+/**
+ * Test hybrid search using Gemini + Claude.
+ * @route POST /api/wines/:wineId/ratings/hybrid-search
+ */
+router.post('/:wineId/ratings/hybrid-search', async (req, res) => {
+  try {
+    const { wineId } = req.params;
+
+    // Get wine details
+    const wine = await db.prepare(`
+      SELECT id, wine_name, vintage, colour, grapes, producer, region, country
+      FROM wines WHERE cellar_id = $1 AND id = $2
+    `).get(req.cellarId, wineId);
+
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    // Import hybrid search
+    const { hybridWineSearch, isGeminiSearchAvailable } = await import('../services/geminiSearch.js');
+
+    if (!isGeminiSearchAvailable()) {
+      return res.status(503).json({
+        error: 'Gemini search not configured',
+        message: 'Set GEMINI_API_KEY environment variable to enable hybrid search'
+      });
+    }
+
+    logger.info('HybridSearch', `Starting hybrid search for wine ${wineId}: ${wine.wine_name}`);
+
+    const results = await hybridWineSearch(wine);
+
+    if (!results) {
+      return res.json({
+        success: false,
+        message: 'No results found',
+        wine_name: wine.wine_name,
+        vintage: wine.vintage
+      });
+    }
+
+    // Return results for review before saving
+    res.json({
+      success: true,
+      wine_id: wine.id,
+      wine_name: wine.wine_name,
+      vintage: wine.vintage,
+      results: {
+        ratings: results.ratings || [],
+        tasting_notes: results.tasting_notes || null,
+        drinking_window: results.drinking_window || null,
+        food_pairings: results.food_pairings || [],
+        style_summary: results.style_summary || null
+      },
+      metadata: results._metadata,
+      sources: results._sources,
+      raw_content_preview: (results._raw_content || '').substring(0, 500) + '...'
+    });
+  } catch (error) {
+    logger.error('HybridSearch', `Failed: ${error.message}`);
     res.status(500).json({ error: error.message });
   }
 });
