@@ -84,7 +84,9 @@ export async function searchWineWithGemini(wine) {
   const countryHint = country ? ` This is a ${country} wine.` : '';
 
   logger.info('GeminiSearch', `Searching for: ${searchQuery} (prioritizing: ${criticList.substring(0, 50)}...)`);
+  logger.info('GeminiSearch', `Using model: ${GEMINI_MODEL}, API key configured: ${!!GEMINI_API_KEY}`);
 
+  const startTime = Date.now();
   try {
     const response = await fetch(
       `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
@@ -126,23 +128,37 @@ For each rating/review found, include:
       }
     );
 
+    const fetchDuration = Date.now() - startTime;
+    logger.info('GeminiSearch', `Gemini API responded in ${fetchDuration}ms with status ${response.status}`);
+
     if (!response.ok) {
       const error = await response.text();
-      logger.error('GeminiSearch', `API error: ${response.status} - ${error}`);
+      logger.error('GeminiSearch', `API error: ${response.status} - ${error.substring(0, 500)}`);
       return null;
     }
 
     const data = await response.json();
+    logger.info('GeminiSearch', `Response has ${data.candidates?.length || 0} candidates`);
 
     // Extract the response text and grounding metadata
     const candidate = data.candidates?.[0];
     if (!candidate) {
-      logger.warn('GeminiSearch', 'No candidates in response');
+      logger.warn('GeminiSearch', `No candidates in response. Full response keys: ${Object.keys(data).join(', ')}`);
+      if (data.error) {
+        logger.error('GeminiSearch', `API returned error: ${JSON.stringify(data.error).substring(0, 500)}`);
+      }
       return null;
     }
 
+    // Log candidate details
+    const finishReason = candidate.finishReason || 'unknown';
+    logger.info('GeminiSearch', `Candidate finish reason: ${finishReason}`);
+
     const content = candidate.content?.parts?.[0]?.text || '';
     const groundingMetadata = candidate.groundingMetadata || {};
+
+    // Log content length for debugging
+    logger.info('GeminiSearch', `Content length: ${content.length} chars, first 200: ${content.substring(0, 200).replaceAll(/\n/g, ' ')}`);
 
     // Extract sources from grounding chunks
     const sources = (groundingMetadata.groundingChunks || []).map(chunk => ({
@@ -155,6 +171,12 @@ For each rating/review found, include:
     const searchQueries = groundingMetadata.webSearchQueries || [];
 
     logger.info('GeminiSearch', `Found ${sources.length} sources via ${searchQueries.length} queries`);
+    if (sources.length > 0) {
+      logger.info('GeminiSearch', `First source: ${sources[0].title} - ${sources[0].url}`);
+    }
+    if (searchQueries.length > 0) {
+      logger.info('GeminiSearch', `Search queries used: ${searchQueries.join('; ')}`);
+    }
 
     return {
       content,
@@ -204,8 +226,12 @@ function buildWineSearchQuery(wineName, vintage, producer) {
  */
 export async function extractWineDataWithClaude(geminiResults, wine) {
   if (!geminiResults?.content) {
+    logger.warn('GeminiSearch', 'extractWineDataWithClaude called with no content');
     return null;
   }
+
+  logger.info('GeminiSearch', `Starting Claude extraction for ${wine.wine_name || wine.name}, content length: ${geminiResults.content.length}`);
+  const startTime = Date.now();
 
   const anthropic = new Anthropic();
 
@@ -288,7 +314,8 @@ Important:
         extracted_at: new Date().toISOString()
       };
 
-      logger.info('GeminiSearch', `Extracted ${extracted.ratings?.length || 0} ratings, ${extracted.tasting_notes?.nose?.length || 0} aromas`);
+      const extractDuration = Date.now() - startTime;
+      logger.info('GeminiSearch', `Claude extraction completed in ${extractDuration}ms: ${extracted.ratings?.length || 0} ratings, ${extracted.tasting_notes?.nose?.length || 0} aromas`);
 
       return extracted;
     }

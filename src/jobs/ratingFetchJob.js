@@ -12,8 +12,9 @@ import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 
-// Fail-fast timeout for Gemini search to prevent "double wait" scenarios
-const GEMINI_TIMEOUT_MS = 8000; // 8 seconds
+// Timeout for Gemini hybrid search (Gemini API + Claude extraction = 2 API calls)
+// Increased from 8s to 20s to allow both calls to complete
+const GEMINI_TIMEOUT_MS = 20000; // 20 seconds
 
 /**
  * Try Gemini hybrid search first, fall back to legacy if unavailable or fails.

@@ -105,7 +105,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     // 1. Try Gemini Hybrid Search First (Fast, more sources) with STRICT TIMEOUT
     // Prevents "double wait" scenario where Gemini hangs then legacy runs (55s+ total)
-    const GEMINI_TIMEOUT_MS = 8000; // 8 second fail-fast
+    const GEMINI_TIMEOUT_MS = 20000; // 20 seconds for Gemini + Claude (2 API calls)
 
     if (isGeminiSearchAvailable()) {
       try {
