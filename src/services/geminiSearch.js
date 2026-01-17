@@ -13,6 +13,7 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // Supported Gemini models for grounded search
+// Use gemini-2.5-flash for fastest stable response times (2026)
 const GEMINI_MODEL = 'gemini-2.5-flash';
 
 /**
@@ -267,7 +268,7 @@ Important:
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-20250514',
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     });

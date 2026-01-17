@@ -158,7 +158,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     // Get existing ratings count for comparison
     const existingRatings = await db.prepare(
-      'SELECT * FROM wine_ratings WHERE wine_id = $1 AND (is_user_override != 1 OR is_user_override IS NULL)'
+      'SELECT * FROM wine_ratings WHERE wine_id = $1 AND (is_user_override IS NOT TRUE)'
     ).all(wineId);
 
     const rawRatings = result.ratings || [];
@@ -204,7 +204,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     // Delete existing auto-fetched ratings (keep user overrides)
     await db.prepare(`
       DELETE FROM wine_ratings
-      WHERE wine_id = $1 AND (is_user_override != 1 OR is_user_override IS NULL)
+      WHERE wine_id = $1 AND (is_user_override IS NOT TRUE)
     `).run(wineId);
 
     logger.info('Ratings', `Cleared ${existingRatings.length} existing auto-ratings for wine ${wineId}`);
@@ -240,7 +240,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
             award_name, competition_year, rating_count,
             source_url, evidence_excerpt, matched_wine_label,
             vintage_match, match_confidence, fetched_at, is_user_override
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, 0)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, FALSE)
         `).run(
           wineId,
           wine.vintage,

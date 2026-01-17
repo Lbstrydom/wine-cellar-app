@@ -170,7 +170,7 @@ export async function saveRatings(wineId, vintage, ratings) {
           award_name, competition_year, rating_count,
           source_url, evidence_excerpt, matched_wine_label,
           vintage_match, match_confidence, fetched_at, is_user_override
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, 0)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
       `).run(
         wineId,
         vintage,

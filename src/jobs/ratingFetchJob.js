@@ -107,7 +107,7 @@ async function handleRatingFetch(payload, context) {
   // Check if we got any ratings
   const rawRatings = result.ratings || [];
   const existingCountRow = await db.prepare(
-    'SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0'
+    'SELECT COUNT(*) as count FROM wine_ratings WHERE wine_id = ? AND is_user_override = FALSE'
   ).get(wineId);
   const existingCount = existingCountRow?.count || 0;
 
@@ -124,7 +124,7 @@ async function handleRatingFetch(payload, context) {
   // Save ratings to database
   if (ratings.length > 0) {
     // Clear existing auto-ratings
-    await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
+    await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = FALSE').run(wineId);
 
     // Insert new ratings
     for (const rating of ratings) {

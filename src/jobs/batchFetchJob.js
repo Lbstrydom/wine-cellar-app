@@ -69,7 +69,7 @@ async function handleBatchFetch(payload, context) {
 
       // Save ratings
       if (ratings.length > 0) {
-        await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = 0').run(wineId);
+        await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = FALSE').run(wineId);
         for (const rating of ratings) {
           await saveRatings(wineId, wine.vintage, [rating]);
         }
