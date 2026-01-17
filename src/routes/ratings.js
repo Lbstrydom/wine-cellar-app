@@ -503,7 +503,8 @@ router.post('/batch-fetch', async (req, res) => {
   // Validate wineIds belong to this cellar
   const numericIds = wineIds.map(id => parseInt(id, 10)).filter(Number.isFinite);
   const placeholders = numericIds.map((_, i) => `$${i + 2}`).join(',');
-  const validateSql = 'SELECT id FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';\n  const allowed = await db.prepare(validateSql).all(req.cellarId, ...numericIds);
+  const validateSql = 'SELECT id FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';
+  const allowed = await db.prepare(validateSql).all(req.cellarId, ...numericIds);
   if (allowed.length !== numericIds.length) {
     return res.status(403).json({ error: 'One or more wines are not in this cellar' });
   }
