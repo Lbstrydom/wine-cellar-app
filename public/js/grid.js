@@ -3,7 +3,7 @@
  * @module grid
  */
 
-import { shortenWineName } from './utils.js';
+import { shortenWineName, isAreasLayout } from './utils.js';
 import { state } from './app.js';
 import { setupDragAndDrop, cleanupDragAndDrop } from './dragdrop.js';
 import { handleSlotClick } from './bottles.js';
@@ -39,6 +39,7 @@ if (savedZoom) {
 /**
  * Render the fridge grid.
  * Populates the fridge-grid element with slot elements based on current layout.
+ * Handles both legacy format ({ fridge }) and new format ({ areas }).
  */
 export function renderFridge() {
   const grid = document.getElementById('fridge-grid');
@@ -46,11 +47,16 @@ export function renderFridge() {
 
   grid.innerHTML = '';
 
-  state.layout.fridge.rows.forEach((row) => {
+  // Get fridge rows from layout (handles both formats)
+  const fridgeRows = getFridgeRows(state.layout);
+  if (!fridgeRows) return;
+
+  fridgeRows.forEach((row) => {
     const rowEl = document.createElement('div');
     rowEl.className = 'fridge-row';
 
-    row.slots.forEach(slot => {
+    const slots = row.slots || [];
+    slots.forEach(slot => {
       rowEl.appendChild(createSlotElement(slot));
     });
 
@@ -61,8 +67,29 @@ export function renderFridge() {
 }
 
 /**
+ * Get fridge rows from layout, handling both formats.
+ * @param {Object} layout - Layout object
+ * @returns {Array|null} Array of row objects with slots
+ */
+function getFridgeRows(layout) {
+  if (!layout) return null;
+
+  // New format: find wine_fridge area
+  if (isAreasLayout(layout)) {
+    const fridgeArea = layout.areas.find(a =>
+      a.storage_type === 'wine_fridge' || a.name === 'Wine Fridge'
+    );
+    return fridgeArea?.rows || null;
+  }
+
+  // Legacy format
+  return layout.fridge?.rows || null;
+}
+
+/**
  * Render the cellar grid.
  * Populates the cellar-grid element with slot elements and zone labels.
+ * Handles both legacy format ({ cellar }) and new format ({ areas }).
  * @returns {Promise<void>}
  */
 export async function renderCellar() {
@@ -82,6 +109,10 @@ export async function renderCellar() {
   grid.innerHTML = '';
   if (zoneLabelsEl) zoneLabelsEl.innerHTML = '';
 
+  // Get cellar rows from layout (handles both formats)
+  const cellarRows = getCellarRows(state.layout);
+  if (!cellarRows || cellarRows.length === 0) return;
+
   // Calculate row heights for zone labels alignment
   const rowHeight = 55; // slot height (52px) + gap (3px)
 
@@ -89,8 +120,10 @@ export async function renderCellar() {
   const zoneSpans = [];
   let currentSpan = null;
 
-  state.layout.cellar.rows.forEach((row, index) => {
-    const rowId = `R${row.row}`;
+  cellarRows.forEach((row, index) => {
+    // Handle both formats: row.row (legacy) or row.row_num (new)
+    const rowNum = row.row ?? row.row_num;
+    const rowId = `R${rowNum}`;
     const zoneInfo = zoneMapCache[rowId];
     const zoneId = zoneInfo?.zoneId || 'not-configured';
 
@@ -115,11 +148,13 @@ export async function renderCellar() {
   }
 
   // Render grid rows
-  state.layout.cellar.rows.forEach((row) => {
+  cellarRows.forEach((row) => {
     const rowEl = document.createElement('div');
     rowEl.className = 'cellar-row';
 
-    const rowId = `R${row.row}`;
+    // Handle both formats: row.row (legacy) or row.row_num (new)
+    const rowNum = row.row ?? row.row_num;
+    const rowId = `R${rowNum}`;
 
     // Add row label inside the row
     const label = document.createElement('div');
@@ -127,7 +162,8 @@ export async function renderCellar() {
     label.textContent = rowId;
     rowEl.appendChild(label);
 
-    row.slots.forEach(slot => {
+    const slots = row.slots || [];
+    slots.forEach(slot => {
       rowEl.appendChild(createSlotElement(slot));
     });
 
@@ -158,6 +194,26 @@ export async function renderCellar() {
   }
 
   setupInteractions();
+}
+
+/**
+ * Get cellar rows from layout, handling both formats.
+ * @param {Object} layout - Layout object
+ * @returns {Array|null} Array of row objects with slots
+ */
+function getCellarRows(layout) {
+  if (!layout) return null;
+
+  // New format: find cellar area
+  if (isAreasLayout(layout)) {
+    const cellarArea = layout.areas.find(a =>
+      a.storage_type === 'cellar' || a.name === 'Main Cellar'
+    );
+    return cellarArea?.rows || null;
+  }
+
+  // Legacy format
+  return layout.cellar?.rows || null;
 }
 
 /**

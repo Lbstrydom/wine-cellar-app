@@ -13,7 +13,7 @@ import {
   fetchWine,
   fetchLayout
 } from './api.js';
-import { showToast, escapeHtml } from './utils.js';
+import { showToast, escapeHtml, getAllSlotsFromLayout } from './utils.js';
 import { state } from './app.js';
 
 // Main rating sources for the dropdown
@@ -762,10 +762,7 @@ function _updateTastingNotesDisplay(wineId) {
   if (!state.layout) return;
 
   // Find the wine's slot in the layout
-  const allSlots = [
-    ...state.layout.fridge.rows.flatMap(r => r.slots),
-    ...state.layout.cellar.rows.flatMap(r => r.slots)
-  ];
+  const allSlots = getAllSlotsFromLayout(state.layout);
 
   // Try both number and string comparison for type safety
   let slot = allSlots.find(s => s.wine_id === wineId);

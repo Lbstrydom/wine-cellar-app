@@ -72,6 +72,42 @@ export function escapeHtml(str) {
 }
 
 /**
+ * Get all slots from a layout object.
+ * Handles both legacy format ({ fridge, cellar }) and new format ({ areas }).
+ * @param {Object} layout - Layout object from /api/stats/layout
+ * @returns {Object[]} Array of all slot objects
+ */
+export function getAllSlotsFromLayout(layout) {
+  if (!layout) return [];
+
+  // New format: { areas: [{ rows: [{ slots }] }] }
+  if (layout.areas) {
+    return layout.areas.flatMap(area =>
+      (area.rows || []).flatMap(row => row.slots || [])
+    );
+  }
+
+  // Legacy format: { fridge: { rows }, cellar: { rows } }
+  const slots = [];
+  if (layout.fridge?.rows) {
+    slots.push(...layout.fridge.rows.flatMap(r => r.slots || []));
+  }
+  if (layout.cellar?.rows) {
+    slots.push(...layout.cellar.rows.flatMap(r => r.slots || []));
+  }
+  return slots;
+}
+
+/**
+ * Check if layout uses the new areas format.
+ * @param {Object} layout - Layout object
+ * @returns {boolean} True if using new areas format
+ */
+export function isAreasLayout(layout) {
+  return layout && Array.isArray(layout.areas);
+}
+
+/**
  * Show a confirmation dialog.
  * @param {Object} options - Dialog options
  * @param {string} options.title - Dialog title

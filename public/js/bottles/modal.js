@@ -4,7 +4,7 @@
  */
 
 import { fetchWine } from '../api.js';
-import { showToast, WINE_COUNTRIES } from '../utils.js';
+import { showToast, WINE_COUNTRIES, getAllSlotsFromLayout } from '../utils.js';
 import { state } from '../app.js';
 import { bottleState, resetBottleState } from './state.js';
 import { clearUploadedImage } from './imageParsing.js';
@@ -16,10 +16,7 @@ import { clearUploadedImage } from './imageParsing.js';
  */
 export function findSlotData(location) {
   if (!state.layout) return null;
-  const allSlots = [
-    ...state.layout.fridge.rows.flatMap(r => r.slots),
-    ...state.layout.cellar.rows.flatMap(r => r.slots)
-  ];
+  const allSlots = getAllSlotsFromLayout(state.layout);
   return allSlots.find(s => s.location_code === location);
 }
 
