@@ -2,6 +2,9 @@
 
 ## Expert Review Document
 
+**Version**: 2.0
+**Last Updated**: January 2026
+
 This document explains how the Wine Cellar App discovers and retrieves wine ratings, tasting notes, and awards from external sources. It covers the complete pipeline from wine entry to aggregated scores.
 
 ---
@@ -9,17 +12,19 @@ This document explains how the Wine Cellar App discovers and retrieves wine rati
 ## Executive Summary
 
 The app uses a **multi-tier search strategy** combining:
-- **Google Custom Search API** for initial discovery
-- **Bright Data SERP API** as primary search provider (with Google fallback)
+- **Bright Data SERP API** as primary search provider
+- **Google Gemini API with Search Grounding** for hybrid AI-powered search (NEW)
 - **Bright Data Web Unlocker** for scraping JavaScript-rendered and bot-protected sites
 - **Claude AI** for parsing unstructured content into structured data
+- **Google Custom Search API** as fallback
 
 Key architectural decisions:
-- 70+ sources organized into 6 credibility-weighted categories
+- 50+ sources organized into 6 credibility-weighted categories
 - Country/grape-aware source prioritization
-- Multi-level caching (SERP results, page content, aggregated ratings)
+- Multi-level caching (SERP results, page content, extraction cache)
 - Circuit breaker and rate limiting for external service protection
 - Structured provenance tracking for audit trails
+- **Hybrid search pipeline** combining Gemini's real-time web search with Claude's extraction accuracy
 
 ---
 
@@ -146,6 +151,141 @@ Each search result is scored for relevance before scraping:
 | Known review URL pattern | +3 |
 
 Results with score < 5 are discarded.
+
+---
+
+## 2.5. Hybrid Search Pipeline (NEW - January 2026)
+
+The hybrid search pipeline uses **Google Gemini with Search Grounding** for discovery, followed by **Claude** for structured extraction. This approach often finds 10-15 rating sources vs 3-5 from traditional SERP searches.
+
+### Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                    HYBRID SEARCH PIPELINE                            │
+│                   (src/services/geminiSearch.js)                     │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 1: Gemini Search with Google Grounding                         │
+│                                                                      │
+│  Model: gemini-2.5-flash                                            │
+│  Tool: google_search (enabled)                                       │
+│                                                                      │
+│  Prompt: "Find comprehensive wine reviews, ratings, and tasting      │
+│           notes for: {producer} {wine_name} {vintage}                │
+│                                                                      │
+│           Please search for:                                         │
+│           1. Professional critic scores (Wine Spectator, Decanter)  │
+│           2. Competition medals (DWWA, IWC, IWSC)                   │
+│           3. Community ratings (Vivino, CellarTracker)              │
+│           4. Drinking window recommendations                         │
+│           5. Detailed tasting notes"                                 │
+│                                                                      │
+│  Returns:                                                            │
+│  - content: Gemini's compiled response text                          │
+│  - groundingChunks: Array of source URLs and titles                 │
+│  - webSearchQueries: Actual queries Gemini executed                 │
+└─────────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  STEP 2: Claude Extraction                                           │
+│                                                                      │
+│  Model: claude-sonnet-4-20250514                                    │
+│                                                                      │
+│  Input: Gemini response + source URLs + wine context                │
+│                                                                      │
+│  Extracts structured JSON:                                           │
+│  {                                                                   │
+│    "ratings": [                                                      │
+│      {                                                               │
+│        "source": "Wine Spectator",                                  │
+│        "source_lens": "critics",                                    │
+│        "raw_score": "94 points",                                    │
+│        "raw_score_numeric": 94,                                     │
+│        "vintage_match": "exact",                                    │
+│        "confidence": "high",                                        │
+│        "source_url": "https://..."                                  │
+│      }                                                               │
+│    ],                                                                │
+│    "tasting_notes": {                                                │
+│      "nose": ["blackberry", "cedar"],                               │
+│      "palate": ["plum", "tobacco"],                                 │
+│      "structure": { "body": "full", "tannins": "firm" }             │
+│    },                                                                │
+│    "drinking_window": {                                              │
+│      "drink_from": 2024,                                            │
+│      "drink_by": 2035,                                              │
+│      "peak": 2028                                                   │
+│    },                                                                │
+│    "food_pairings": ["grilled lamb", "aged cheddar"]                │
+│  }                                                                   │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### API Endpoint
+
+```javascript
+// POST /api/wines/:wineId/ratings/hybrid-search
+// Experimental endpoint for testing hybrid pipeline
+
+const response = await fetch(`/api/wines/83/ratings/hybrid-search`, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' }
+});
+
+// Response includes ratings, tasting notes, drinking window,
+// plus _metadata with source count and Gemini model used
+```
+
+### Configuration
+
+```bash
+# Environment variable
+GEMINI_API_KEY=AIzaSy...  # Google AI Studio API key
+```
+
+### Key Functions
+
+```javascript
+// src/services/geminiSearch.js
+
+// Step 1: Search via Gemini with grounding
+export async function searchWineWithGemini(wine) {
+  // Uses Google Search grounding tool
+  // Returns: { content, sources, searchQueries, groundingSupports }
+}
+
+// Step 2: Extract with Claude
+export async function extractWineDataWithClaude(geminiResults, wine) {
+  // Parses Gemini response into structured ratings/notes
+  // Returns: { ratings[], tasting_notes, drinking_window, food_pairings }
+}
+
+// Combined pipeline
+export async function hybridWineSearch(wine) {
+  const searchResults = await searchWineWithGemini(wine);
+  const extracted = await extractWineDataWithClaude(searchResults, wine);
+  return extracted;
+}
+```
+
+### Advantages Over Traditional SERP Search
+
+| Aspect | Traditional (SERP) | Hybrid (Gemini + Claude) |
+|--------|-------------------|--------------------------|
+| Sources found | 3-5 typical | 10-15 typical |
+| Search queries | Fixed templates | AI-optimized queries |
+| Real-time web | Limited to cached SERP | Live Google Search |
+| Extraction | HTML parsing | AI understanding |
+| Cost per search | ~$0.05-0.10 | ~$0.02-0.05 |
+
+### When to Use Each Pipeline
+
+- **Traditional SERP**: Batch processing, known sources, lower latency
+- **Hybrid Gemini**: User-triggered refresh, obscure wines, maximum coverage
 
 ---
 
@@ -828,4 +968,5 @@ When ratings are incomplete, the UI shows:
 ---
 
 *Document created: 9 January 2026*
+*Last updated: 17 January 2026 (Added Gemini hybrid search pipeline)*
 *For review by: Wine search strategy expert*
