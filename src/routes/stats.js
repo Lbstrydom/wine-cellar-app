@@ -145,6 +145,91 @@ router.get('/layout', async (req, res) => {
       ORDER BY display_order, created_at
     `).all(req.cellarId);
 
+    // Check if this is the default "Wine Fridge" + "Main Cellar" setup
+    // If so, return legacy format for backward compatibility with frontend
+    const isLegacyLayout = areas.length === 2 &&
+      areas.some(a => a.name === 'Wine Fridge' && a.storage_type === 'wine_fridge') &&
+      areas.some(a => a.name === 'Main Cellar' && a.storage_type === 'cellar');
+
+    if (isLegacyLayout) {
+      // Return legacy format: { fridge: {...}, cellar: {...} }
+      const slots = await db.prepare(`
+        SELECT
+          s.id as slot_id,
+          sa.storage_type,
+          s.location_code,
+          s.row_num,
+          s.col_num,
+          s.is_open,
+          s.opened_at,
+          w.id as wine_id,
+          w.style,
+          w.colour,
+          w.wine_name,
+          w.vintage,
+          w.vivino_rating,
+          w.price_eur,
+          w.drink_from,
+          w.drink_peak,
+          w.drink_until,
+          w.tasting_notes,
+          rn.priority as reduce_priority,
+          rn.reduce_reason
+        FROM slots s
+        JOIN storage_areas sa ON s.storage_area_id = sa.id
+        LEFT JOIN wines w ON s.wine_id = w.id AND w.cellar_id = $1
+        LEFT JOIN reduce_now rn ON rn.wine_id = w.id AND rn.cellar_id = $1
+        WHERE s.cellar_id = $1
+        ORDER BY sa.storage_type DESC, s.row_num, s.col_num
+      `).all(req.cellarId);
+
+      const layout = {
+        fridge: { rows: [{ slots: [] }, { slots: [] }] },
+        cellar: { rows: [] }
+      };
+
+      for (let r = 1; r <= 19; r++) {
+        const maxCol = r === 1 ? 7 : 9;
+        layout.cellar.rows.push({ row: r, maxCols: maxCol, slots: [] });
+      }
+
+      slots.forEach(slot => {
+        const slotData = {
+          slot_id: slot.slot_id,
+          location_code: slot.location_code,
+          wine_id: slot.wine_id,
+          wine_name: slot.wine_name,
+          vintage: slot.vintage,
+          colour: slot.colour,
+          style: slot.style,
+          rating: slot.vivino_rating,
+          price: slot.price_eur,
+          drink_from: slot.drink_from,
+          drink_peak: slot.drink_peak,
+          drink_until: slot.drink_until,
+          tasting_notes: slot.tasting_notes,
+          reduce_priority: slot.reduce_priority,
+          reduce_reason: slot.reduce_reason,
+          is_open: slot.is_open,
+          opened_at: slot.opened_at
+        };
+
+        if (slot.storage_type === 'wine_fridge') {
+          const fridgeRow = slot.row_num - 1;
+          if (layout.fridge.rows[fridgeRow]) {
+            layout.fridge.rows[fridgeRow].slots.push(slotData);
+          }
+        } else {
+          if (layout.cellar.rows[slot.row_num - 1]) {
+            layout.cellar.rows[slot.row_num - 1].slots.push(slotData);
+          }
+        }
+      });
+
+      return res.json(layout);
+    }
+
+    // Non-legacy: Dynamic storage areas path (new format)
     // Fetch all rows for these areas
     const areaIds = areas.map(a => a.id);
     let rows = [];
