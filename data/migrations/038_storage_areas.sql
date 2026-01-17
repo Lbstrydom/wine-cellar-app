@@ -125,14 +125,13 @@ CREATE TRIGGER trigger_manage_chilled_since
 -- matching the current hardcoded layout
 
 -- Create Wine Fridge areas
-INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order, is_for_chilling, icon)
+INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order, icon)
 SELECT
     c.id,
     'Wine Fridge',
     'wine_fridge',
     'cool',
     0,
-    FALSE,
     '🍷'
 FROM cellars c
 WHERE NOT EXISTS (
@@ -141,14 +140,13 @@ WHERE NOT EXISTS (
 );
 
 -- Create Main Cellar areas
-INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order, is_for_chilling, icon)
+INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order, icon)
 SELECT
     c.id,
     'Main Cellar',
     'cellar',
     'cellar',
     1,
-    FALSE,
     '🏠'
 FROM cellars c
 WHERE NOT EXISTS (

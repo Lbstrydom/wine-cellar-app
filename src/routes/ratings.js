@@ -8,6 +8,7 @@ import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
 import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
 import { fetchWineRatings } from '../services/claude.js';
+import { hybridWineSearch, isGeminiSearchAvailable } from '../services/geminiSearch.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import jobQueue from '../services/jobQueue.js';
 import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
@@ -87,6 +88,7 @@ router.get('/:wineId/ratings', async (req, res) => {
 /**
  * Fetch ratings from web using multi-provider search.
  * Uses transactional replacement - only deletes if we have valid replacements.
+ * UPDATED: Now uses Gemini Hybrid Search if available (faster, more sources).
  * @route POST /api/wines/:wineId/ratings/fetch
  */
 router.post('/:wineId/ratings/fetch', async (req, res) => {
@@ -98,7 +100,61 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
   }
 
   try {
-    const result = await fetchWineRatings(wine);
+    let result;
+    let usedMethod = 'legacy';
+
+    // 1. Try Gemini Hybrid Search First (Fast, more sources) with STRICT TIMEOUT
+    // Prevents "double wait" scenario where Gemini hangs then legacy runs (55s+ total)
+    const GEMINI_TIMEOUT_MS = 8000; // 8 second fail-fast
+
+    if (isGeminiSearchAvailable()) {
+      try {
+        logger.info('Ratings', `Attempting Gemini Hybrid Search for wine ${wineId} (${GEMINI_TIMEOUT_MS}ms timeout)`);
+
+        // Race Gemini against a strict timeout to fail fast
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Gemini search timed out')), GEMINI_TIMEOUT_MS)
+        );
+
+        const hybridResult = await Promise.race([
+          hybridWineSearch(wine),
+          timeoutPromise
+        ]);
+
+        if (hybridResult?.ratings?.length > 0) {
+          // Transform hybrid result to match legacy format
+          result = {
+            ratings: hybridResult.ratings.map(r => ({
+              source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
+              source_lens: r.source_lens || 'critics',
+              score_type: r.score_type || 'points',
+              raw_score: r.raw_score,
+              raw_score_numeric: r.raw_score_numeric,
+              vintage_match: r.vintage_match || 'inferred',
+              match_confidence: r.confidence || 'medium',
+              source_url: r.source_url,
+              tasting_notes: r.tasting_notes
+            })),
+            tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
+            search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
+          };
+          usedMethod = 'gemini_hybrid';
+          logger.info('Ratings', `Gemini found ${result.ratings.length} ratings`);
+        } else {
+          logger.info('Ratings', 'Gemini search returned no ratings, falling back to legacy');
+        }
+      } catch (err) {
+        // If timed out or failed, log and move instantly to legacy
+        logger.warn('Ratings', `Gemini search skipped: ${err.message}, falling back to legacy`);
+      }
+    }
+
+    // 2. Fallback to Legacy Search (Slow but established)
+    if (!result) {
+      logger.info('Ratings', `Using Legacy Search for wine ${wineId}`);
+      result = await fetchWineRatings(wine);
+      usedMethod = 'legacy';
+    }
 
     // Get existing ratings count for comparison
     const existingRatings = await db.prepare(
@@ -118,11 +174,12 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     // ONLY delete if we have valid replacements
     // This prevents losing data when search/extraction fails
     if (newRatings.length === 0) {
-      logger.info('Ratings', `No new ratings found, keeping ${existingRatings.length} existing`);
+      logger.info('Ratings', `No new ratings found via ${usedMethod}, keeping ${existingRatings.length} existing`);
       return res.json({
         message: 'No new ratings found, existing ratings preserved',
         search_notes: result.search_notes,
-        ratings_kept: existingRatings.length
+        ratings_kept: existingRatings.length,
+        method: usedMethod
       });
     }
 
@@ -131,7 +188,11 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     const uniqueRatings = [];
 
     for (const rating of newRatings) {
-      const key = `${rating.source}-${rating.competition_year || 'any'}`;
+      // Create a unique key for deduplication
+      const sourceKey = rating.source ? rating.source.toLowerCase() : 'unknown';
+      const yearKey = rating.competition_year || rating.vintage_match || 'any';
+      const key = `${sourceKey}-${yearKey}`;
+
       if (!seenSources.has(key)) {
         seenSources.add(key);
         uniqueRatings.push(rating);
@@ -151,11 +212,9 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     // Insert new ratings
     let insertedCount = 0;
     for (const rating of uniqueRatings) {
-      const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
-      if (!sourceConfig) {
-        logger.warn('Ratings', `Unknown source: ${rating.source}, skipping`);
-        continue;
-      }
+      // Normalize source ID
+      const sourceId = rating.source ? rating.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown';
+      const sourceConfig = RATING_SOURCES[sourceId] || SOURCE_REGISTRY[sourceId] || { lens: rating.source_lens || 'critics' };
 
       // Skip ratings without valid scores (e.g., paywalled content)
       if (!rating.raw_score || rating.raw_score === 'null' || rating.raw_score === '') {
@@ -164,7 +223,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       }
 
       try {
-        const normalized = normalizeScore(rating.source, rating.score_type, rating.raw_score);
+        const normalized = normalizeScore(sourceId, rating.score_type, rating.raw_score);
 
         // Validate normalized values are actual numbers
         if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
@@ -185,9 +244,9 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
         `).run(
           wineId,
           wine.vintage,
-          rating.source,
-          rating.lens || sourceConfig.lens,
-          rating.score_type,
+          sourceId,
+          rating.lens || rating.source_lens || sourceConfig.lens,
+          rating.score_type || 'points',
           rating.raw_score,
           numericScore,
           normalized.min,
@@ -208,7 +267,7 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
       }
     }
 
-    logger.info('Ratings', `Inserted ${insertedCount} ratings for wine ${wineId}`);
+    logger.info('Ratings', `Inserted ${insertedCount} ratings via ${usedMethod}`);
 
     // Update aggregates
     const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = $1').all(wineId);
@@ -238,9 +297,10 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
     );
 
     res.json({
-      message: `Found ${insertedCount} ratings (replaced ${existingRatings.length} existing)`,
+      message: `Found ${insertedCount} ratings (replaced ${existingRatings.length} existing) via ${usedMethod}`,
       search_notes: result.search_notes,
       tasting_notes: tastingNotes,
+      method: usedMethod,
       ...aggregates
     });
 

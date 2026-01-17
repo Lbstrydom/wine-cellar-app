@@ -1,14 +1,77 @@
 /**
  * @fileoverview Job handler for fetching wine ratings.
+ * UPDATED: Now uses Gemini Hybrid Search if available (faster, more sources).
  * @module jobs/ratingFetchJob
  */
 
 import { fetchWineRatings, saveExtractedWindows } from '../services/claude.js';
+import { hybridWineSearch, isGeminiSearchAvailable } from '../services/geminiSearch.js';
 import { calculateWineRatings, saveRatings } from '../services/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
+
+// Fail-fast timeout for Gemini search to prevent "double wait" scenarios
+const GEMINI_TIMEOUT_MS = 8000; // 8 seconds
+
+/**
+ * Try Gemini hybrid search first, fall back to legacy if unavailable or fails.
+ * Uses strict timeout to prevent latency compounding (Gemini hang + Legacy = 55s+).
+ * @param {Object} wine - Wine object
+ * @param {Function} updateProgress - Progress callback
+ * @returns {Promise<{result: Object, usedMethod: string}>}
+ */
+async function tryGeminiThenLegacy(wine, updateProgress) {
+  // 1. Try Gemini Hybrid Search First (Fast, more sources) with STRICT TIMEOUT
+  if (isGeminiSearchAvailable()) {
+    try {
+      await updateProgress(15, 'Trying Gemini Hybrid Search');
+      logger.info('RatingFetchJob', `Attempting Gemini Hybrid Search (${GEMINI_TIMEOUT_MS}ms timeout)`);
+
+      // Race Gemini against a strict timeout to fail fast
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini search timed out')), GEMINI_TIMEOUT_MS)
+      );
+
+      const hybridResult = await Promise.race([
+        hybridWineSearch(wine),
+        timeoutPromise
+      ]);
+
+      if (hybridResult?.ratings?.length > 0) {
+        // Transform hybrid result to match legacy format
+        const result = {
+          ratings: hybridResult.ratings.map(r => ({
+            source: r.source ? r.source.toLowerCase().replaceAll(/[^a-z0-9]/g, '_') : 'unknown',
+            source_lens: r.source_lens || 'critics',
+            score_type: r.score_type || 'points',
+            raw_score: r.raw_score,
+            raw_score_numeric: r.raw_score_numeric,
+            vintage_match: r.vintage_match || 'inferred',
+            match_confidence: r.confidence || 'medium',
+            source_url: r.source_url,
+            tasting_notes: r.tasting_notes
+          })),
+          tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
+          search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
+        };
+        logger.info('RatingFetchJob', `Gemini found ${result.ratings.length} ratings`);
+        return { result, usedMethod: 'gemini_hybrid' };
+      }
+      logger.info('RatingFetchJob', 'Gemini search returned no ratings, falling back to legacy');
+    } catch (err) {
+      // If timed out or failed, log and move instantly to legacy
+      logger.warn('RatingFetchJob', `Gemini search skipped: ${err.message}, falling back to legacy`);
+    }
+  }
+
+  // 2. Fallback to Legacy Search (Slow but established)
+  await updateProgress(25, 'Using Legacy Search');
+  logger.info('RatingFetchJob', 'Using Legacy Search');
+  const result = await fetchWineRatings(wine);
+  return { result, usedMethod: 'legacy' };
+}
 
 /**
  * Job handler for fetching wine ratings.
@@ -35,7 +98,9 @@ async function handleRatingFetch(payload, context) {
   // Fetch ratings with progress updates
   await updateProgress(10, 'Searching for ratings');
 
-  const result = await fetchWineRatings(wine);
+  // Try search methods - Gemini first, then legacy fallback
+  const searchResult = await tryGeminiThenLegacy(wine, updateProgress);
+  const { result, usedMethod } = searchResult;
 
   await updateProgress(70, 'Processing results');
 
@@ -79,7 +144,7 @@ async function handleRatingFetch(payload, context) {
   const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
   // Get user preference scoped to cellar (use wine.cellar_id since jobs don't have req context)
   const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = ? AND key = 'rating_preference'").get(wine.cellar_id);
-  const preference = parseInt(prefSetting?.value || '40');
+  const preference = Number.parseInt(prefSetting?.value || '40', 10);
   const aggregates = calculateWineRatings(allRatings, wine, preference);
 
   // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
@@ -111,7 +176,7 @@ async function handleRatingFetch(payload, context) {
 
   await updateProgress(100, 'Complete');
 
-  logger.info('RatingFetchJob', `Completed: ${ratings.length} ratings, score: ${aggregates.purchase_score}`);
+  logger.info('RatingFetchJob', `Completed via ${usedMethod}: ${ratings.length} ratings, score: ${aggregates.purchase_score}`);
 
   return {
     wineId,
@@ -126,7 +191,8 @@ async function handleRatingFetch(payload, context) {
     purchaseStars: aggregates.purchase_stars,
     confidenceLevel: aggregates.confidence_level,
     tastingNotes: result.tasting_notes ? 'captured' : null,
-    searchNotes: result.search_notes
+    searchNotes: result.search_notes,
+    method: usedMethod
   };
 }
 

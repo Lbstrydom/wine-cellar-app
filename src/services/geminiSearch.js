@@ -7,12 +7,45 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import logger from '../utils/logger.js';
+import { getSourcesForCountry } from '../config/unifiedSources.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // Supported Gemini models for grounded search
 const GEMINI_MODEL = 'gemini-2.5-flash';
+
+/**
+ * Get priority critics/sources for a wine's country of origin.
+ * Returns the top 5 most relevant sources for context-aware prompting.
+ * @param {string} country - Wine's country of origin
+ * @returns {string[]} Array of source names to prioritize
+ */
+function getPriorityCriticsForCountry(country) {
+  if (!country) return [];
+
+  const sources = getSourcesForCountry(country);
+  // Get top 5 highest-scoring sources with relevance > 0.3
+  return sources
+    .filter(s => s.relevance >= 0.3 && s.lens === 'critics')
+    .slice(0, 5)
+    .map(s => s.name);
+}
+
+/**
+ * Get priority competitions for a wine's country of origin.
+ * @param {string} country - Wine's country of origin
+ * @returns {string[]} Array of competition names
+ */
+function getPriorityCompetitionsForCountry(country) {
+  if (!country) return [];
+
+  const sources = getSourcesForCountry(country);
+  return sources
+    .filter(s => s.relevance >= 0.3 && s.lens === 'competition')
+    .slice(0, 5)
+    .map(s => s.name);
+}
 
 /**
  * Search for wine information using Gemini with Google Search grounding.
@@ -28,11 +61,28 @@ export async function searchWineWithGemini(wine) {
   const wineName = wine.wine_name || wine.name;
   const vintage = wine.vintage || '';
   const producer = wine.producer || '';
+  const country = wine.country || '';
 
   // Construct search query
   const searchQuery = buildWineSearchQuery(wineName, vintage, producer);
 
-  logger.info('GeminiSearch', `Searching for: ${searchQuery}`);
+  // Get country-specific priority sources for context-aware prompting
+  const priorityCritics = getPriorityCriticsForCountry(country);
+  const priorityCompetitions = getPriorityCompetitionsForCountry(country);
+
+  // Build context-aware critic list
+  const criticList = priorityCritics.length > 0
+    ? priorityCritics.join(', ')
+    : 'Wine Spectator, Wine Enthusiast, Decanter, James Suckling, Tim Atkin';
+
+  // Build context-aware competition list
+  const competitionList = priorityCompetitions.length > 0
+    ? priorityCompetitions.join(', ')
+    : 'IWC, IWSC, Decanter World Wine Awards';
+
+  const countryHint = country ? ` This is a ${country} wine.` : '';
+
+  logger.info('GeminiSearch', `Searching for: ${searchQuery} (prioritizing: ${criticList.substring(0, 50)}...)`);
 
   try {
     const response = await fetch(
@@ -43,20 +93,23 @@ export async function searchWineWithGemini(wine) {
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `Find comprehensive wine reviews, ratings, and tasting notes for: ${searchQuery}
+              text: `Find comprehensive wine reviews, ratings, and tasting notes for: ${searchQuery}${countryHint}
 
 Please search for and compile:
-1. Professional critic scores and reviews (Wine Spectator, Wine Enthusiast, Decanter, James Suckling, Natalie MacLean, Tim Atkin, etc.)
-2. Competition medals and awards (IWC, IWSC, Decanter World Wine Awards, etc.)
+1. Professional critic scores and reviews - PRIORITIZE: ${criticList}
+2. Competition medals and awards - PRIORITIZE: ${competitionList}
 3. Community ratings (Vivino, CellarTracker, Wine-Searcher)
 4. Detailed tasting notes describing aromas, flavors, structure
-5. Drinking window recommendations
+5. Drinking window recommendations for the ${vintage || 'current'} vintage specifically
 6. Food pairing suggestions
+
+IMPORTANT: When searching for ratings, ensure the vintage year matches ${vintage || 'the wine being searched'}. Do not report ratings for different vintages unless clearly noted.
 
 For each rating/review found, include:
 - Source name
 - Score/rating (in original format)
 - Reviewer name (if applicable)
+- The specific vintage the rating applies to
 - Key tasting descriptors
 - Any drinking window mentioned`
             }]
