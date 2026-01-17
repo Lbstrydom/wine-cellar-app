@@ -132,10 +132,22 @@ export function normalizeScore(source, scoreType, rawScore) {
  * @param {number} wineId - Wine ID
  * @param {string|number} vintage - Wine vintage
  * @param {Array} ratings - Array of rating objects
+ * @param {string} [cellarId] - Cellar ID (required for PostgreSQL, auto-looked up if not provided)
  * @returns {Promise<number>} Number of ratings saved
  */
-export async function saveRatings(wineId, vintage, ratings) {
+export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
   if (!ratings || ratings.length === 0) return 0;
+
+  // If cellarId not provided, look it up from the wine
+  if (!cellarId) {
+    const wine = await db.prepare('SELECT cellar_id FROM wines WHERE id = ?').get(wineId);
+    cellarId = wine?.cellar_id;
+  }
+
+  if (!cellarId) {
+    console.error(`[Ratings] Cannot save ratings: no cellar_id for wine ${wineId}`);
+    return 0;
+  }
 
   let insertedCount = 0;
 
@@ -165,13 +177,14 @@ export async function saveRatings(wineId, vintage, ratings) {
 
       await db.prepare(`
         INSERT INTO wine_ratings (
-          wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
+          cellar_id, wine_id, vintage, source, source_lens, score_type, raw_score, raw_score_numeric,
           normalized_min, normalized_max, normalized_mid,
           award_name, competition_year, rating_count,
           source_url, evidence_excerpt, matched_wine_label,
           vintage_match, match_confidence, fetched_at, is_user_override
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
       `).run(
+        cellarId,
         wineId,
         vintage,
         rating.source,

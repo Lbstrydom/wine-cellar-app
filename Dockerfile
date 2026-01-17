@@ -1,8 +1,18 @@
 # Wine Cellar App - Docker Image
 FROM node:20-alpine
 
-# Install dependencies for better-sqlite3 and dos2unix for line ending conversion
-RUN apk add --no-cache python3 make g++ dos2unix
+# Install dependencies for better-sqlite3, dos2unix, and Chromium for Puppeteer
+RUN apk add --no-cache python3 make g++ dos2unix \
+    chromium \
+    nss \
+    freetype \
+    harfbuzz \
+    ca-certificates \
+    ttf-freefont
+
+# Configure Puppeteer to use system Chromium instead of downloading
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
 
 # Set UTF-8 locale for proper character handling
 ENV LANG=C.UTF-8
