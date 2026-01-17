@@ -466,7 +466,7 @@ async function handleFetchRatings(wineId, useAsync = true) {
  */
 async function pollJobProgress(jobId, onProgress) {
   const pollInterval = 2000; // 2 seconds (reduced from 1s to avoid rate limiting)
-  const maxPolls = 90; // 3 minutes max
+  const maxPolls = 150; // 5 minutes max (rating search can be slow with multiple API calls)
 
   for (let i = 0; i < maxPolls; i++) {
     const status = await getRatingsJobStatus(jobId);

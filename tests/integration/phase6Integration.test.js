@@ -1,16 +1,29 @@
 /**
  * @fileoverview Phase 6 end-to-end integration test
  * Tests the full wine add orchestrator pipeline
+ *
+ * NOTE: These tests require DATABASE_URL to be set as they access the database directly.
+ * They will be skipped if DATABASE_URL is not configured.
  */
 
-import { describe, it, expect, beforeAll, afterEach, afterAll } from 'vitest';
-import db from '../../src/db/index.js';
-import { evaluateWineAdd } from '../../src/services/wineAddOrchestrator.js';
+import { describe, it, expect, beforeAll, afterEach } from 'vitest';
+
+// Skip all tests if DATABASE_URL is not set
+const hasDatabase = !!process.env.DATABASE_URL;
+
+// Conditionally import db and orchestrator only when DATABASE_URL is available
+let db;
+let evaluateWineAdd;
+
+if (hasDatabase) {
+  db = (await import('../../src/db/index.js')).default;
+  evaluateWineAdd = (await import('../../src/services/wineAddOrchestrator.js')).evaluateWineAdd;
+}
 
 const TEST_CELLAR_ID = '00000000-0000-0000-0000-000000000001';
 const DIFFERENT_CELLAR = '00000000-0000-0000-0000-000000000002';
 
-describe('Phase 6: Wine Add Orchestrator Integration', () => {
+describe.skipIf(!hasDatabase)('Phase 6: Wine Add Orchestrator Integration', () => {
   let testWineId;
   let testFingerprint;
 
@@ -49,6 +62,8 @@ describe('Phase 6: Wine Add Orchestrator Integration', () => {
     if (testFingerprint && TEST_CELLAR_ID) {
       await db.prepare('DELETE FROM wine_search_cache WHERE cellar_id = $1 AND fingerprint = $2')
         .run(TEST_CELLAR_ID, testFingerprint);
+      await db.prepare(`DELETE FROM wine_search_cache WHERE cellar_id IS NULL AND fingerprint = $1 AND cache_scope = 'global'`)
+        .run(testFingerprint);
     }
   });
 
@@ -180,7 +195,7 @@ describe('Phase 6: Wine Add Orchestrator Integration', () => {
   });
 });
 
-describe('Phase 6: Cache Integration', () => {
+describe.skipIf(!hasDatabase)('Phase 6: Cache Integration', () => {
   it('lookup returns null for cache miss', async () => {
     const { lookupWineSearchCache } = await import('../../src/services/searchCache.js');
     const result = await lookupWineSearchCache(
@@ -211,7 +226,7 @@ describe('Phase 6: Cache Integration', () => {
   });
 });
 
-describe('Phase 6: Metrics', () => {
+describe.skipIf(!hasDatabase)('Phase 6: Metrics', () => {
   it('search_metrics table exists and has correct schema', async () => {
     const columns = await db.prepare(`
       SELECT column_name, data_type 

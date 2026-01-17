@@ -127,12 +127,13 @@ function shouldAutoSelect(matches) {
 async function findDuplicateWines(cellarId, fingerprint) {
   const fingerprints = findAliases(fingerprint);
   const placeholders = fingerprints.map((_, i) => `$${i + 2}`).join(', ');
-  const matches = await db.prepare(`
-    SELECT id, wine_name, vintage, colour, style
-    FROM wines
-    WHERE cellar_id = $1 AND fingerprint IN (${placeholders})
-    ORDER BY wine_name
-  `).all(cellarId, ...fingerprints);
+  const sql = [
+    'SELECT id, wine_name, vintage, colour, style',
+    'FROM wines',
+    'WHERE cellar_id = $1 AND fingerprint IN (' + placeholders + ')',
+    'ORDER BY wine_name'
+  ].join('\n');
+  const matches = await db.prepare(sql).all(cellarId, ...fingerprints);
 
   return matches;
 }

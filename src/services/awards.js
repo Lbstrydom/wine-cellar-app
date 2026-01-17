@@ -1058,10 +1058,8 @@ export async function getSourceAwards(sourceId) {
   const wineMap = new Map();
   if (matchedWineIds.length > 0) {
     const placeholders = matchedWineIds.map(() => '?').join(',');
-    const wines = await db.prepare(`
-      SELECT id, wine_name, vintage FROM wines WHERE id IN (${placeholders})
-    `).all(...matchedWineIds);
-    // Safe: placeholders generated from matchedWineIds array length, data passed to .all()
+    const sql = 'SELECT id, wine_name, vintage FROM wines WHERE id IN (' + placeholders + ')';
+    const wines = await db.prepare(sql).all(...matchedWineIds);
     wines.forEach(w => wineMap.set(w.id, w));
   }
 

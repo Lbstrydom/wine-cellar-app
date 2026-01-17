@@ -117,23 +117,31 @@ export async function cacheSerpResults(queryParams, queryType, results) {
  * @param {string} url - Page URL
  * @returns {Object|null} Cached page or null
  */
-export async function getCachedPage(url) {
+export async function getCachedPage(url, options = {}) {
+  const { includeStale = false } = options;
   const urlHash = generateCacheKey({ url });
 
   try {
-    const cached = await db.prepare(`
-      SELECT content, fetch_status, status_code, error_message
-      FROM page_cache
-      WHERE url_hash = ? AND expires_at > CURRENT_TIMESTAMP
-    `).get(urlHash);
+    const staleClause = includeStale ? '' : 'AND expires_at > CURRENT_TIMESTAMP';
+    const sql = [
+      'SELECT content, fetch_status, status_code, error_message, expires_at',
+      'FROM page_cache',
+      'WHERE url_hash = ?',
+      staleClause
+    ].filter(Boolean).join('\n');
+    const cached = await db.prepare(sql).get(urlHash);
 
     if (cached) {
+      const expiresAt = cached.expires_at ? new Date(cached.expires_at) : null;
+      const isStale = expiresAt ? expiresAt <= new Date() : false;
       logger.info('Cache', `Page HIT: ${url.substring(0, 60)}...`);
       return {
         content: cached.content,
         status: cached.fetch_status,
         statusCode: cached.status_code,
         error: cached.error_message,
+        expiresAt: cached.expires_at || null,
+        isStale,
         fromCache: true
       };
     }
@@ -278,7 +286,7 @@ export async function purgeExpiredCache() {
   for (const table of tables) {
     try {
       // Safe: table name from whitelist, CURRENT_TIMESTAMP is SQL constant
-      const result = await db.prepare(`DELETE FROM ${table} WHERE expires_at < CURRENT_TIMESTAMP`).run();
+      const result = await db.prepare('DELETE FROM ' + table + ' WHERE expires_at < CURRENT_TIMESTAMP').run();
       results[table] = result.changes || 0;
     } catch (err) {
       results[table] = `error: ${err.message}`;
@@ -343,6 +351,180 @@ export async function updateCacheConfig(key, value) {
     `).run(value, key);
   } catch (err) {
     logger.warn('Cache', `Config update failed: ${err.message}`);
+  }
+}
+
+// =============================================================================
+// Public URL Cache (shared memory)
+// =============================================================================
+
+/**
+ * Get public URL cache entry.
+ * @param {string} url - URL to lookup
+ * @returns {Promise<Object|null>} Cache entry or null
+ */
+export async function getPublicUrlCache(url) {
+  try {
+    const cached = await db.prepare(`
+      SELECT id, url, etag, last_modified, content_type, byte_size,
+             fetched_at, expires_at, fetch_count, status
+      FROM public_url_cache
+      WHERE url = ?
+    `).get(url);
+
+    if (!cached) return null;
+
+    const expiresAt = cached.expires_at ? new Date(cached.expires_at) : null;
+    const isExpired = expiresAt ? expiresAt <= new Date() : false;
+
+    return {
+      id: cached.id,
+      url: cached.url,
+      etag: cached.etag,
+      lastModified: cached.last_modified,
+      contentType: cached.content_type,
+      byteSize: cached.byte_size,
+      fetchedAt: cached.fetched_at,
+      expiresAt: cached.expires_at,
+      fetchCount: cached.fetch_count,
+      status: cached.status,
+      isExpired
+    };
+  } catch (err) {
+    logger.warn('Cache', `Public URL lookup failed: ${err.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Upsert public URL cache entry.
+ * @param {Object} params - Cache entry data
+ * @param {string} params.url
+ * @param {string|null} params.etag
+ * @param {string|null} params.lastModified
+ * @param {string|null} params.contentType
+ * @param {number|null} params.byteSize
+ * @param {string} params.status
+ * @param {number|null} params.ttlHours
+ * @returns {Promise<number|null>} Cache entry ID
+ */
+export async function upsertPublicUrlCache({
+  url,
+  etag = null,
+  lastModified = null,
+  contentType = null,
+  byteSize = null,
+  status = 'valid',
+  ttlHours = null
+}) {
+  try {
+    const expiresAt = ttlHours ? getExpiryTimestamp(ttlHours) : null;
+    const result = await db.prepare(`
+      INSERT INTO public_url_cache (
+        url, etag, last_modified, content_type, byte_size,
+        fetched_at, expires_at, fetch_count, status
+      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?, 1, ?)
+      ON CONFLICT (url) DO UPDATE SET
+        etag = COALESCE(EXCLUDED.etag, public_url_cache.etag),
+        last_modified = COALESCE(EXCLUDED.last_modified, public_url_cache.last_modified),
+        content_type = COALESCE(EXCLUDED.content_type, public_url_cache.content_type),
+        byte_size = COALESCE(EXCLUDED.byte_size, public_url_cache.byte_size),
+        fetched_at = CURRENT_TIMESTAMP,
+        expires_at = EXCLUDED.expires_at,
+        fetch_count = public_url_cache.fetch_count + 1,
+        status = EXCLUDED.status
+      RETURNING id
+    `).get(url, etag, lastModified, contentType, byteSize, expiresAt, status);
+
+    return result?.id || null;
+  } catch (err) {
+    logger.warn('Cache', `Public URL upsert failed: ${err.message}`);
+  }
+
+  return null;
+}
+
+// =============================================================================
+// Public Extraction Cache (shared memory)
+// =============================================================================
+
+/**
+ * Get cached public extraction by URL cache ID and content hash.
+ * @param {number} urlCacheId - URL cache ID
+ * @param {string} contentHash - Content hash
+ * @returns {Promise<Object|null>} Cached extraction or null
+ */
+export async function getPublicExtraction(urlCacheId, contentHash) {
+  try {
+    const cached = await db.prepare(`
+      SELECT extraction_method, extracted_facts, confidence, evidence_snippet, extracted_at
+      FROM public_extraction_cache
+      WHERE url_cache_id = ? AND raw_content_hash = ?
+    `).get(urlCacheId, contentHash);
+
+    if (!cached) return null;
+
+    const facts = cached.extracted_facts
+      ? (typeof cached.extracted_facts === 'string'
+        ? JSON.parse(cached.extracted_facts)
+        : cached.extracted_facts)
+      : null;
+
+    return {
+      extractionMethod: cached.extraction_method,
+      facts,
+      confidence: cached.confidence,
+      evidenceSnippet: cached.evidence_snippet,
+      extractedAt: cached.extracted_at
+    };
+  } catch (err) {
+    logger.warn('Cache', `Public extraction lookup failed: ${err.message}`);
+  }
+
+  return null;
+}
+
+/**
+ * Cache public extraction results.
+ * @param {number} urlCacheId - URL cache ID
+ * @param {string} extractionMethod - Extraction method used
+ * @param {Object} extractedFacts - Extracted facts
+ * @param {number|null} confidence - Confidence score
+ * @param {string|null} evidenceSnippet - Evidence excerpt
+ * @param {string} rawContentHash - Hash of content
+ * @returns {Promise<void>}
+ */
+export async function cachePublicExtraction(
+  urlCacheId,
+  extractionMethod,
+  extractedFacts,
+  confidence,
+  evidenceSnippet,
+  rawContentHash
+) {
+  try {
+    await db.prepare(`
+      INSERT INTO public_extraction_cache (
+        url_cache_id, extraction_method, extracted_facts, confidence,
+        evidence_snippet, raw_content_hash
+      ) VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT (url_cache_id, raw_content_hash) DO UPDATE SET
+        extraction_method = EXCLUDED.extraction_method,
+        extracted_facts = EXCLUDED.extracted_facts,
+        confidence = EXCLUDED.confidence,
+        evidence_snippet = EXCLUDED.evidence_snippet,
+        extracted_at = CURRENT_TIMESTAMP
+    `).run(
+      urlCacheId,
+      extractionMethod,
+      extractedFacts ? JSON.stringify(extractedFacts) : null,
+      confidence,
+      evidenceSnippet,
+      rawContentHash
+    );
+  } catch (err) {
+    logger.warn('Cache', `Public extraction cache write failed: ${err.message}`);
   }
 }
 

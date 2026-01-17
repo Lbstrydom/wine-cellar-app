@@ -3,17 +3,119 @@
  * @module services/searchProviders
  */
 
+import crypto from 'crypto';
 import { getSourcesForCountry, SOURCES as SOURCE_REGISTRY, REGION_SOURCE_PRIORITY, LENS } from '../config/unifiedSources.js';
 import logger from '../utils/logger.js';
 import db from '../db/index.js';
 import { decrypt } from './encryption.js';
 import {
   getCachedSerpResults, cacheSerpResults,
-  getCachedPage, cachePage
+  getCachedPage, cachePage,
+  getPublicUrlCache, upsertPublicUrlCache,
+  getPublicExtraction, cachePublicExtraction,
+  getCacheTTL
 } from './cacheService.js';
 import { getDomainIssue } from './fetchClassifier.js';
 import { searchDecanterWithPuppeteer, scrapeDecanterPage } from './puppeteerScraper.js';
-import { TIMEOUTS } from '../config/scraperConfig.js';
+import { TIMEOUTS, LIMITS, RERANK_WEIGHTS, SEARCH_BUDGET } from '../config/scraperConfig.js';
+import { semaphoredFetch, globalFetchSemaphore } from '../utils/fetchSemaphore.js';
+import { createRequestDeduper } from '../utils/requestDedup.js';
+import { detectQualifiers, detectLocaleHints, getEffectiveWeight } from '../config/rangeQualifiers.js';
+
+const serpRequestDeduper = createRequestDeduper();
+
+function createSearchBudgetTracker() {
+  return {
+    id: `budget-${Date.now()}-${Math.random().toString(16).slice(2, 7)}`,
+    startTime: Date.now(),
+    serpCalls: 0,
+    documentFetches: 0,
+    totalBytes: 0,
+    limits: SEARCH_BUDGET
+  };
+}
+
+function hasWallClockBudget(budget) {
+  if (!budget) return true;
+  return (Date.now() - budget.startTime) <= budget.limits.MAX_WALL_CLOCK_MS;
+}
+
+function reserveSerpCall(budget) {
+  if (!budget) return true;
+  if (!hasWallClockBudget(budget)) return false;
+  if (budget.serpCalls >= budget.limits.MAX_SERP_CALLS) return false;
+  budget.serpCalls += 1;
+  return true;
+}
+
+function reserveDocumentFetch(budget) {
+  if (!budget) return true;
+  if (!hasWallClockBudget(budget)) return false;
+  if (budget.documentFetches >= budget.limits.MAX_DOCUMENT_FETCHES) return false;
+  budget.documentFetches += 1;
+  return true;
+}
+
+function canConsumeBytes(budget, bytes) {
+  if (!budget) return true;
+  return (budget.totalBytes + bytes) <= budget.limits.MAX_TOTAL_BYTES;
+}
+
+function recordBytes(budget, bytes) {
+  if (!budget) return;
+  budget.totalBytes = Math.min(budget.limits.MAX_TOTAL_BYTES, budget.totalBytes + bytes);
+}
+
+function buildConditionalHeaders(urlCache) {
+  if (!urlCache) return null;
+  if (urlCache.etag) return { 'If-None-Match': urlCache.etag };
+  if (urlCache.lastModified) return { 'If-Modified-Since': urlCache.lastModified };
+  return null;
+}
+
+function resolvePublicCacheStatus(statusCode, success) {
+  if (success) return 'valid';
+  if (statusCode === 404 || statusCode === 410) return 'gone';
+  return 'error';
+}
+
+function hashBuffer(buffer) {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+/**
+ * Calculate discovery confidence from results.
+ * Based on number of relevant results from authoritative sources.
+ * @param {Object[]} results - Targeted search results
+ * @returns {number} Confidence 0-1
+ */
+function calculateDiscoveryConfidence(results) {
+  if (results.length === 0) return 0;
+
+  // Weight by source type: producer sites are most confident
+  let score = 0;
+  let resultCount = Math.min(results.length, 5); // Cap at 5 for confidence calculation
+
+  for (let i = 0; i < resultCount; i++) {
+    const result = results[i];
+    const relevanceScore = result.relevanceScore || 0;
+
+    // Normalize relevance score to 0-1 (scores typically 0-100)
+    let sourceWeight = 1.0;
+    if (result.lens === 'producer') {
+      sourceWeight = 1.5;
+    } else if (result.lens === 'competition' || result.lens === 'critic' || result.lens === 'panel_guide') {
+      sourceWeight = 1.2;
+    } else if (result.lens === 'community') {
+      sourceWeight = 0.8;
+    }
+
+    score += (Math.min(relevanceScore, 100) / 100) * sourceWeight;
+  }
+
+  // Normalize: max score is 5 results * 1.5 weight = 7.5
+  return Math.min(1.0, score / 7.5);
+}
 
 // ============================================
 // Decanter Web Unlocker Functions
@@ -862,88 +964,135 @@ export function getSourcesForWine(country, grape = null) {
  * @param {string} queryType - Type of query for cache categorization
  * @returns {Promise<Object[]>} Search results
  */
-export async function searchGoogle(query, domains = [], queryType = 'serp_broad') {
-  // Build cache key parameters
-  const queryParams = { query, domains: domains.sort() };
+export async function searchGoogle(query, domains = [], queryType = 'serp_broad', budget = null) {
+  const domainList = [...domains].sort();
+  const dedupeKey = `${budget?.id || 'global'}|${queryType}|${query}|${domainList.join(',')}`;
 
-  // Check cache first
-  try {
-    const cached = getCachedSerpResults(queryParams);
-    if (cached) {
-      logger.info('Cache', `SERP HIT: ${query.substring(0, 50)}...`);
-      return cached.results;
-    }
-  } catch (err) {
-    logger.warn('Cache', `SERP lookup failed: ${err.message}`);
-  }
-
-  // Prefer Bright Data SERP API if configured
-  // Single API key with separate zone for SERP
-  const brightDataApiKey = process.env.BRIGHTDATA_API_KEY;
-  const serpZone = process.env.BRIGHTDATA_SERP_ZONE;
-
-  let results = [];
-
-  if (brightDataApiKey && serpZone) {
-    results = await searchBrightDataSerp(query, domains);
-  } else {
-    // Fallback to Google Custom Search API
-    const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-    const engineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-
-    if (!apiKey || !engineId) {
-      logger.warn('Search', 'No search API configured (need BRIGHTDATA_SERP_ZONE or GOOGLE_SEARCH_API_KEY)');
+  return serpRequestDeduper.run(dedupeKey, async () => {
+    if (budget && !hasWallClockBudget(budget)) {
+      logger.warn('Budget', 'Wall-clock budget exceeded before SERP call');
       return [];
     }
 
-    let fullQuery = query;
-    if (domains.length > 0 && domains.length <= 10) {
-      const siteRestriction = domains.map(d => `site:${d}`).join(' OR ');
-      fullQuery = `${query} (${siteRestriction})`;
+    const queryParams = { query, domains: domainList };
+
+    // Check cache first
+    try {
+      const cached = await getCachedSerpResults(queryParams);
+      if (cached) {
+        logger.info('Cache', `SERP HIT: ${query.substring(0, 50)}...`);
+        return cached.results;
+      }
+    } catch (err) {
+      logger.warn('Cache', `SERP lookup failed: ${err.message}`);
     }
 
-    const url = new URL('https://www.googleapis.com/customsearch/v1');
-    url.searchParams.set('key', apiKey);
-    url.searchParams.set('cx', engineId);
-    url.searchParams.set('q', fullQuery);
-    url.searchParams.set('num', '10');
+    if (budget && !reserveSerpCall(budget)) {
+      logger.warn('Budget', 'SERP call limit reached, skipping query');
+      return [];
+    }
 
-    logger.info('Google', `Searching: "${query}" across ${domains.length} domains`);
+    // Prefer Bright Data SERP API if configured
+    // Single API key with separate zone for SERP
+    const brightDataApiKey = process.env.BRIGHTDATA_API_KEY;
+    const serpZone = process.env.BRIGHTDATA_SERP_ZONE;
 
-    try {
-      const response = await fetch(url.toString());
-      const data = await response.json();
+    let results = [];
 
-      if (data.error) {
-        logger.error('Google', `API error: ${data.error.message}`);
+    if (brightDataApiKey && serpZone) {
+      results = await searchBrightDataSerp(query, domainList);
+    } else {
+      // Fallback to Google Custom Search API
+      const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
+      const engineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
+
+      if (!apiKey || !engineId) {
+        logger.warn('Search', 'No search API configured (need BRIGHTDATA_SERP_ZONE or GOOGLE_SEARCH_API_KEY)');
         return [];
       }
 
-      results = (data.items || []).map(item => ({
-        title: item.title,
-        url: item.link,
-        snippet: item.snippet,
-        source: extractDomain(item.link)
-      }));
+      let fullQuery = query;
+      if (domainList.length > 0 && domainList.length <= 10) {
+        const siteRestriction = domainList.map(d => `site:${d}`).join(' OR ');
+        fullQuery = `${query} (${siteRestriction})`;
+      }
 
-      logger.info('Google', `Found ${results.length} results`);
+      const url = new URL('https://www.googleapis.com/customsearch/v1');
+      url.searchParams.set('key', apiKey);
+      url.searchParams.set('cx', engineId);
+      url.searchParams.set('q', fullQuery);
+      url.searchParams.set('num', '10');
 
-    } catch (error) {
-      logger.error('Google', `Search failed: ${error.message}`);
-      return [];
+      logger.info('Google', `Searching: "${query}" across ${domainList.length} domains`);
+
+      try {
+        const response = await fetch(url.toString());
+        const data = await response.json();
+
+        if (data.error) {
+          logger.error('Google', `API error: ${data.error.message}`);
+          return [];
+        }
+
+        results = (data.items || []).map(item => ({
+          title: item.title,
+          url: item.link,
+          snippet: item.snippet,
+          source: extractDomain(item.link)
+        }));
+
+        logger.info('Google', `Found ${results.length} results`);
+
+      } catch (error) {
+        logger.error('Google', `Search failed: ${error.message}`);
+        return [];
+      }
     }
-  }
 
-  // Cache results
-  try {
-    if (results.length > 0) {
-      cacheSerpResults(queryParams, queryType, results);
+    // Cache results
+    try {
+      if (results.length > 0) {
+        await cacheSerpResults(queryParams, queryType, results);
+      }
+    } catch (err) {
+      logger.warn('Cache', `SERP cache write failed: ${err.message}`);
     }
-  } catch (err) {
-    logger.warn('Cache', `SERP cache write failed: ${err.message}`);
-  }
 
-  return results;
+    // Query operator fallback: If results are empty and query has operators, try without operators
+    if (results.length === 0 && (query.includes('filetype:') || query.includes('inurl:') || query.includes('"'))) {
+      logger.info('Search', `Zero results for operator-based query; trying fallback without operators`);
+
+      // Remove operators and retry
+      let simplifiedQuery = query
+        .replace(/filetype:\S+/g, '') // Remove filetype operators
+        .replace(/inurl:\S+/g, '') // Remove inurl operators
+        .replace(/"([^"]*)"/g, '$1') // Convert exact phrases to plain text
+        .replace(/\s+/g, ' ') // Normalize spaces
+        .trim();
+
+      if (simplifiedQuery !== query) {
+        logger.info('Search', `Fallback query: "${simplifiedQuery}"`);
+
+        try {
+          const fallbackResults = await searchGoogle(simplifiedQuery, domains, queryType, budget);
+          if (fallbackResults.length > 0) {
+            results = fallbackResults;
+            logger.info('Search', `Fallback successful: found ${results.length} results`);
+          }
+        } catch (err) {
+          logger.warn('Search', `Fallback query failed: ${err.message}`);
+        }
+      }
+    }
+
+    // Brave Search fallback (FUTURE): Track zero-result rate across all searches
+    // If zero-result rate > 10% on any queryType, conditionally enable Brave Search API
+    // as secondary fallback source for increased coverage.
+    // This requires BRAVE_SEARCH_API_KEY and optional Brave subscription.
+    // Implementation: Track zeroResults counter, check rate, call searchBrave() if enabled.
+
+    return results;
+  });
 }
 
 /**
@@ -1023,6 +1172,491 @@ async function searchBrightDataSerp(query, domains = []) {
 
 
 /**
+ * Fetch and extract content from document URLs (PDF, DOC, DOCX, XLS, XLSX).
+ * Uses Claude Vision for PDFs and basic text extraction for Office documents.
+ * These documents often contain award lists and are authoritative sources.
+ * @param {string} url - Document URL
+ * @param {number} maxLength - Maximum content length
+ * @returns {Promise<Object>} { content, success, status, isDocument, documentType, error }
+ */
+async function fetchDocumentContent(url, maxLength = 8000, budget = null) {
+  const extension = url.match(/\.(pdf|doc|docx|xls|xlsx)(\?|$)/i)?.[1]?.toLowerCase() || 'unknown';
+  logger.info('Document', `Fetching document: ${url} (type: ${extension})`);
+
+  let cachedPage = null;
+  let urlCache = null;
+
+  // Check cache first (include stale for conditional revalidation)
+  try {
+    [cachedPage, urlCache] = await Promise.all([
+      getCachedPage(url, { includeStale: true }),
+      getPublicUrlCache(url)
+    ]);
+
+    if (cachedPage && !cachedPage.isStale) {
+      logger.info('Cache', `Document HIT: ${url.substring(0, 60)}...`);
+      return {
+        content: cachedPage.content || '',
+        success: cachedPage.status === 'success',
+        status: cachedPage.statusCode,
+        isDocument: true,
+        documentType: extension,
+        fromCache: true
+      };
+    }
+  } catch (err) {
+    logger.warn('Cache', `Document cache lookup failed: ${err.message}`);
+  }
+
+  if (budget && !hasWallClockBudget(budget)) {
+    logger.warn('Budget', 'Wall-clock budget exceeded before document fetch');
+    return {
+      content: '',
+      success: false,
+      status: 429,
+      isDocument: true,
+      documentType: extension,
+      error: 'Document fetch skipped: wall-clock budget exceeded'
+    };
+  }
+
+  if (budget && !reserveDocumentFetch(budget)) {
+    logger.warn('Budget', 'Document fetch budget exhausted');
+    return {
+      content: '',
+      success: false,
+      status: 429,
+      isDocument: true,
+      documentType: extension,
+      error: 'Document fetch skipped: fetch budget exceeded'
+    };
+  }
+
+  if (budget && !canConsumeBytes(budget, 0)) {
+    return {
+      content: '',
+      success: false,
+      status: 429,
+      isDocument: true,
+      documentType: extension,
+      error: 'Document fetch skipped: byte budget exhausted'
+    };
+  }
+
+  const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.WEB_UNLOCKER_TIMEOUT);
+
+  try {
+    // HEAD-first check to fail fast on large documents
+    const { controller: headController, cleanup: headCleanup } = createTimeoutAbort(TIMEOUTS.STANDARD_FETCH_TIMEOUT);
+    let headContentLength = 0;
+    try {
+      const headResponse = await semaphoredFetch(url, {
+        method: 'HEAD',
+        signal: headController.signal,
+        headers: {
+          'Accept': '*/*',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
+      headCleanup();
+
+      if (headResponse.ok) {
+        headContentLength = parseInt(headResponse.headers.get('content-length') || '0', 10);
+        if (headContentLength > LIMITS.MAX_DOCUMENT_BYTES) {
+          logger.warn('Document', `HEAD Content-Length ${headContentLength} exceeds limit ${LIMITS.MAX_DOCUMENT_BYTES}, aborting`);
+          return {
+            content: '',
+            success: false,
+            status: 413,
+            isDocument: true,
+            documentType: extension,
+            error: `Document too large: ${Math.round(headContentLength / 1024 / 1024)}MB (limit: ${Math.round(LIMITS.MAX_DOCUMENT_BYTES / 1024 / 1024)}MB)`
+          };
+        }
+        if (budget && headContentLength > 0 && !canConsumeBytes(budget, headContentLength)) {
+          logger.warn('Budget', `Byte budget would be exceeded by HEAD length ${headContentLength}`);
+          return {
+            content: '',
+            success: false,
+            status: 429,
+            isDocument: true,
+            documentType: extension,
+            error: 'Document fetch skipped: byte budget would be exceeded'
+          };
+        }
+      } else {
+        logger.warn('Document', `HEAD request returned ${headResponse.status} for ${url}`);
+      }
+    } catch (headErr) {
+      headCleanup();
+      logger.warn('Document', `HEAD request failed: ${headErr.message}`);
+    }
+
+    const conditionalHeaders = cachedPage?.isStale ? buildConditionalHeaders(urlCache) : null;
+    const requestHeaders = {
+      'Accept': '*/*',
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      ...(conditionalHeaders || {})
+    };
+
+    // Fetch with semaphore protection to limit concurrent downloads
+    const response = await semaphoredFetch(url, {
+      signal: controller.signal,
+      headers: requestHeaders
+    });
+
+    cleanup();
+
+    if (response.status === 304 && cachedPage?.content) {
+      const ttlHours = await getCacheTTL('page');
+      await upsertPublicUrlCache({
+        url,
+        etag: urlCache?.etag || null,
+        lastModified: urlCache?.lastModified || null,
+        contentType: urlCache?.contentType || null,
+        byteSize: urlCache?.byteSize || null,
+        status: 'valid',
+        ttlHours
+      });
+
+      await cachePage(
+        url,
+        cachedPage.content || '',
+        cachedPage.status || 'success',
+        cachedPage.statusCode || 200
+      );
+
+      logger.info('Document', `Conditional revalidation hit (304) for ${url}`);
+      return {
+        content: cachedPage.content || '',
+        success: cachedPage.status === 'success',
+        status: cachedPage.statusCode || 200,
+        isDocument: true,
+        documentType: extension,
+        fromCache: true,
+        revalidated: true
+      };
+    }
+
+    if (!response.ok) {
+      logger.warn('Document', `HTTP ${response.status} for ${url}`);
+      const ttlHours = await getCacheTTL('blocked_page');
+      await upsertPublicUrlCache({
+        url,
+        status: resolvePublicCacheStatus(response.status, false),
+        ttlHours
+      });
+      return {
+        content: '',
+        success: false,
+        status: response.status,
+        isDocument: true,
+        documentType: extension,
+        error: `HTTP ${response.status}`
+      };
+    }
+
+    // Check Content-Length from GET if present and not already checked
+    const contentLengthHeader = parseInt(response.headers.get('content-length') || '0', 10);
+    const effectiveContentLength = contentLengthHeader || headContentLength;
+    if (effectiveContentLength > LIMITS.MAX_DOCUMENT_BYTES) {
+      logger.warn('Document', `Content-Length ${effectiveContentLength} exceeds limit ${LIMITS.MAX_DOCUMENT_BYTES}, aborting`);
+      return {
+        content: '',
+        success: false,
+        status: 413,
+        isDocument: true,
+        documentType: extension,
+        error: `Document too large: ${Math.round(effectiveContentLength / 1024 / 1024)}MB (limit: ${Math.round(LIMITS.MAX_DOCUMENT_BYTES / 1024 / 1024)}MB)`
+      };
+    }
+
+    if (budget && effectiveContentLength > 0 && !canConsumeBytes(budget, effectiveContentLength)) {
+      logger.warn('Budget', `Byte budget would be exceeded by declared length ${effectiveContentLength}`);
+      return {
+        content: '',
+        success: false,
+        status: 429,
+        isDocument: true,
+        documentType: extension,
+        error: 'Document fetch skipped: byte budget would be exceeded'
+      };
+    }
+
+    // Stream download with byte counter to abort mid-download if exceeded
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body not readable');
+    }
+
+    const chunks = [];
+    let bytesRead = 0;
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunkSize = value.length;
+        const projectedDownload = bytesRead + chunkSize;
+        const projectedTotal = budget ? budget.totalBytes + projectedDownload : 0;
+
+        if (budget && projectedTotal > budget.limits.MAX_TOTAL_BYTES) {
+          bytesRead += chunkSize;
+          recordBytes(budget, bytesRead);
+          logger.warn('Budget', `Byte budget exceeded during download at ${projectedTotal}`);
+          reader.cancel();
+          return {
+            content: '',
+            success: false,
+            status: 429,
+            isDocument: true,
+            documentType: extension,
+            error: 'Document fetch skipped: byte budget exceeded'
+          };
+        }
+
+        bytesRead = projectedDownload;
+        if (bytesRead > LIMITS.MAX_DOCUMENT_BYTES) {
+          logger.warn('Document', `Download exceeded ${LIMITS.MAX_DOCUMENT_BYTES} bytes, aborting`);
+          reader.cancel();
+          recordBytes(budget, bytesRead);
+          return {
+            content: '',
+            success: false,
+            status: 413,
+            isDocument: true,
+            documentType: extension,
+            error: `Download exceeded ${Math.round(LIMITS.MAX_DOCUMENT_BYTES / 1024 / 1024)}MB limit`
+          };
+        }
+
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+
+    // Concatenate chunks into buffer
+    const buffer = Buffer.concat(chunks.map(chunk => Buffer.from(chunk)));
+    const sizeKB = Math.round(buffer.byteLength / 1024);
+    recordBytes(budget, buffer.byteLength);
+    logger.info('Document', `Downloaded: ${sizeKB}KB`);
+
+    const ttlHours = await getCacheTTL('page');
+    const urlCacheId = await upsertPublicUrlCache({
+      url,
+      etag: response.headers.get('etag'),
+      lastModified: response.headers.get('last-modified'),
+      contentType: response.headers.get('content-type'),
+      byteSize: buffer.byteLength,
+      status: 'valid',
+      ttlHours
+    });
+
+    const contentHash = hashBuffer(buffer);
+
+    // Handle different document types
+    if (extension === 'pdf') {
+      if (urlCacheId) {
+        const cachedExtraction = await getPublicExtraction(urlCacheId, contentHash);
+        if (cachedExtraction?.facts?.awards) {
+          const cachedText = cachedExtraction.facts.text || '';
+          const content = cachedText.substring(0, LIMITS.MAX_CONTENT_CHARS);
+          await cachePage(url, content, 'success', 200);
+          return {
+            content,
+            success: true,
+            status: 200,
+            isDocument: true,
+            documentType: 'pdf',
+            extractedAwards: cachedExtraction.facts.awards || [],
+            fromCache: true,
+            extractionCacheHit: true
+          };
+        }
+      }
+
+      // Try to use existing PDF extraction service
+      try {
+        const { extractAwardsFromPdfBuffer } = await import('./awards.js');
+        const extractedData = await extractAwardsFromPdfBuffer(buffer);
+        if (extractedData && extractedData.text) {
+          const content = extractedData.text.substring(0, LIMITS.MAX_CONTENT_CHARS);
+          // Cache successful extraction
+          await cachePage(url, content, 'success', 200);
+
+          if (urlCacheId) {
+            await cachePublicExtraction(
+              urlCacheId,
+              'pdf_extract',
+              { awards: extractedData.awards || [], text: content },
+              null,
+              content.substring(0, 200) || null,
+              contentHash
+            );
+          }
+
+          return {
+            content,
+            success: true,
+            status: 200,
+            isDocument: true,
+            documentType: 'pdf',
+            extractedAwards: extractedData.awards || []
+          };
+        }
+      } catch (pdfErr) {
+        logger.warn('Document', `PDF extraction failed: ${pdfErr.message}`);
+      }
+
+      // Fallback: return that we found a PDF but couldn't extract
+      return {
+        content: `[PDF Document: ${sizeKB}KB - requires PDF extraction]`,
+        success: true,
+        status: 200,
+        isDocument: true,
+        documentType: 'pdf',
+        needsExtraction: true
+      };
+    }
+
+    if (extension === 'docx') {
+      // DOCX files need special parsing with zip-bomb protections
+      try {
+        const JSZip = (await import('jszip')).default;
+        const zip = await JSZip.loadAsync(buffer);
+
+        // ZIP-BOMB PROTECTION 1: Check entry count
+        const entries = Object.keys(zip.files);
+        if (entries.length > LIMITS.DOCX_MAX_ENTRIES) {
+          logger.warn('Document', `DOCX has ${entries.length} entries, exceeds limit ${LIMITS.DOCX_MAX_ENTRIES}`);
+          return {
+            content: '',
+            success: false,
+            status: 400,
+            isDocument: true,
+            documentType: 'docx',
+            error: `DOCX zip-bomb protection: too many entries (${entries.length} > ${LIMITS.DOCX_MAX_ENTRIES})`
+          };
+        }
+
+        // ZIP-BOMB PROTECTION 2: Check uncompressed size
+        let totalUncompressedSize = 0;
+        for (const entry of entries) {
+          const file = zip.files[entry];
+          if (!file.dir) {
+            // JSZip doesn't expose uncompressed size directly, estimate from compressed
+            // In a real zip-bomb, compression ratio would be extreme
+            const compressedSize = file._data?.compressedSize || 0;
+            totalUncompressedSize += compressedSize * 10; // Conservative estimate
+          }
+        }
+
+        if (totalUncompressedSize > LIMITS.DOCX_MAX_UNCOMPRESSED_BYTES) {
+          logger.warn('Document', `DOCX uncompressed size estimate ${totalUncompressedSize} exceeds limit`);
+          return {
+            content: '',
+            success: false,
+            status: 400,
+            isDocument: true,
+            documentType: 'docx',
+            error: `DOCX zip-bomb protection: estimated uncompressed size too large`
+          };
+        }
+
+        // Extract document.xml
+        const documentXml = await zip.file('word/document.xml')?.async('string');
+        if (documentXml) {
+          // ZIP-BOMB PROTECTION 3: Check compression ratio
+          const compressedSize = buffer.byteLength;
+          const uncompressedSize = documentXml.length;
+          const compressionRatio = uncompressedSize / compressedSize;
+
+          if (compressionRatio > LIMITS.DOCX_MAX_COMPRESSION_RATIO) {
+            logger.warn('Document', `DOCX compression ratio ${compressionRatio.toFixed(1)} exceeds limit ${LIMITS.DOCX_MAX_COMPRESSION_RATIO}`);
+            return {
+              content: '',
+              success: false,
+              status: 400,
+              isDocument: true,
+              documentType: 'docx',
+              error: `DOCX zip-bomb protection: compression ratio too high (${compressionRatio.toFixed(1)}:1)`
+            };
+          }
+
+          // Extract text from XML (strip tags)
+          const textContent = documentXml
+            .replace(/<w:p[^>]*>/gi, '\n')  // Paragraphs
+            .replace(/<[^>]+>/g, ' ')        // Remove all other tags
+            .replace(/\s+/g, ' ')            // Normalize whitespace
+            .trim()
+            .substring(0, LIMITS.MAX_CONTENT_CHARS);
+
+          if (textContent.length > 50) {
+            await cachePage(url, textContent, 'success', 200);
+            return {
+              content: textContent,
+              success: true,
+              status: 200,
+              isDocument: true,
+              documentType: 'docx'
+            };
+          }
+        }
+      } catch (docxErr) {
+        logger.warn('Document', `DOCX extraction failed: ${docxErr.message}`);
+      }
+
+      // Fallback
+      return {
+        content: `[Word Document: ${sizeKB}KB]`,
+        success: true,
+        status: 200,
+        isDocument: true,
+        documentType: 'docx',
+        needsExtraction: true
+      };
+    }
+
+    if (extension === 'doc') {
+      // DOC (older format) - just note we found it
+      return {
+        content: `[Word Document: ${sizeKB}KB - legacy format]`,
+        success: true,
+        status: 200,
+        isDocument: true,
+        documentType: 'doc',
+        needsExtraction: true
+      };
+    }
+
+    // XLS/XLSX - just note we found it
+    return {
+      content: `[Excel Document: ${sizeKB}KB - type: ${extension}]`,
+      success: true,
+      status: 200,
+      isDocument: true,
+      documentType: extension,
+      needsExtraction: true
+    };
+
+  } catch (error) {
+    cleanup();
+    const errorMsg = error.name === 'AbortError' ? 'Timeout' : error.message;
+    logger.error('Document', `Fetch failed: ${errorMsg}`);
+    return {
+      content: '',
+      success: false,
+      isDocument: true,
+      documentType: extension,
+      error: errorMsg
+    };
+  }
+}
+
+
+/**
  * Fetch page content for parsing.
  * Uses Bright Data Web Unlocker API for domains known to block standard scrapers.
  * Implements page-level caching to avoid redundant fetches.
@@ -1030,20 +1664,34 @@ async function searchBrightDataSerp(query, domains = []) {
  * @param {number} maxLength - Maximum content length
  * @returns {Promise<Object>} { content, success, status, blocked, error, fromCache }
  */
-export async function fetchPageContent(url, maxLength = 8000) {
+export async function fetchPageContent(url, maxLength = 8000, budget = null) {
   const domain = extractDomain(url);
 
-  // Check cache first
+  // Check if this is a document URL (PDF, DOC, DOCX, XLS, XLSX)
+  // Documents require special handling - we can't just fetch them as HTML
+  const isDocument = /\.(pdf|doc|docx|xls|xlsx)(\?|$)/i.test(url);
+  if (isDocument) {
+    return await fetchDocumentContent(url, maxLength, budget);
+  }
+
+  let cachedPage = null;
+  let urlCache = null;
+
+  // Check cache first (include stale for conditional revalidation)
   try {
-    const cached = getCachedPage(url);
-    if (cached) {
+    [cachedPage, urlCache] = await Promise.all([
+      getCachedPage(url, { includeStale: true }),
+      getPublicUrlCache(url)
+    ]);
+
+    if (cachedPage && !cachedPage.isStale) {
       logger.info('Cache', `Page HIT: ${url.substring(0, 60)}...`);
       return {
-        content: cached.content || '',
-        success: cached.status === 'success',
-        status: cached.statusCode,
-        blocked: cached.status === 'blocked' || cached.status === 'auth_required',
-        error: cached.error,
+        content: cachedPage.content || '',
+        success: cachedPage.status === 'success',
+        status: cachedPage.statusCode,
+        blocked: cachedPage.status === 'blocked' || cachedPage.status === 'auth_required',
+        error: cachedPage.error,
         fromCache: true
       };
     }
@@ -1073,6 +1721,9 @@ export async function fetchPageContent(url, maxLength = 8000) {
       ? TIMEOUTS.VIVINO_FETCH_TIMEOUT
       : (useUnblocker ? TIMEOUTS.WEB_UNLOCKER_TIMEOUT : TIMEOUTS.STANDARD_FETCH_TIMEOUT);
     const { controller, cleanup } = createTimeoutAbort(timeoutMs);
+    const conditionalHeaders = cachedPage?.isStale && !useUnblocker
+      ? buildConditionalHeaders(urlCache)
+      : null;
 
     if (useUnblocker) {
       // Use Bright Data REST API with JavaScript rendering for SPAs
@@ -1110,7 +1761,8 @@ export async function fetchPageContent(url, maxLength = 8000) {
         headers: {
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'en-US,en;q=0.5',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          ...(conditionalHeaders || {})
         }
       });
     }
@@ -1118,8 +1770,45 @@ export async function fetchPageContent(url, maxLength = 8000) {
 
     const status = response.status;
 
+    if (status === 304 && cachedPage?.content) {
+      const ttlHours = await getCacheTTL('page');
+      await upsertPublicUrlCache({
+        url,
+        etag: urlCache?.etag || null,
+        lastModified: urlCache?.lastModified || null,
+        contentType: urlCache?.contentType || null,
+        byteSize: urlCache?.byteSize || null,
+        status: 'valid',
+        ttlHours
+      });
+
+      await cachePage(
+        url,
+        cachedPage.content || '',
+        cachedPage.status || 'success',
+        cachedPage.statusCode || 200
+      );
+
+      logger.info('Fetch', `Conditional revalidation hit (304) for ${url}`);
+      return {
+        content: cachedPage.content || '',
+        success: cachedPage.status === 'success',
+        status: cachedPage.statusCode || 200,
+        blocked: cachedPage.status === 'blocked' || cachedPage.status === 'auth_required',
+        error: cachedPage.error,
+        fromCache: true,
+        revalidated: true
+      };
+    }
+
     if (!response.ok) {
       logger.info('Fetch', `HTTP ${status} from ${domain}`);
+      const ttlHours = await getCacheTTL('blocked_page');
+      await upsertPublicUrlCache({
+        url,
+        status: resolvePublicCacheStatus(status, false),
+        ttlHours
+      });
       return {
         content: '',
         success: false,
@@ -1130,6 +1819,7 @@ export async function fetchPageContent(url, maxLength = 8000) {
     }
 
     const contentText = await response.text();
+    const byteSize = Buffer.byteLength(contentText);
 
     // Check for blocked/consent indicators
     const isBlocked =
@@ -1143,6 +1833,16 @@ export async function fetchPageContent(url, maxLength = 8000) {
 
     if (isBlocked) {
       logger.info('Fetch', `Blocked/consent page from ${domain} (${contentText.length} chars)`);
+      const ttlHours = await getCacheTTL('blocked_page');
+      await upsertPublicUrlCache({
+        url,
+        etag: response.headers.get('etag'),
+        lastModified: response.headers.get('last-modified'),
+        contentType: response.headers.get('content-type'),
+        byteSize,
+        status: 'error',
+        ttlHours
+      });
       return {
         content: '',
         success: false,
@@ -1232,9 +1932,19 @@ export async function fetchPageContent(url, maxLength = 8000) {
         error: `Too short (${text.length} chars)`,
         fromCache: false
       };
+      const ttlHours = await getCacheTTL('blocked_page');
+      await upsertPublicUrlCache({
+        url,
+        etag: response.headers.get('etag'),
+        lastModified: response.headers.get('last-modified'),
+        contentType: response.headers.get('content-type'),
+        byteSize,
+        status: 'error',
+        ttlHours
+      });
       // Cache blocked/failed result (shorter TTL)
       try {
-        cachePage(url, text, 'insufficient_content', status, result.error);
+        await cachePage(url, text, 'insufficient_content', status, result.error);
       } catch (err) {
         logger.warn('Cache', `Page cache write failed: ${err.message}`);
       }
@@ -1255,7 +1965,17 @@ export async function fetchPageContent(url, maxLength = 8000) {
 
     // Cache successful result
     try {
-      cachePage(url, finalContent, 'success', status, null);
+      const ttlHours = await getCacheTTL('page');
+      await upsertPublicUrlCache({
+        url,
+        etag: response.headers.get('etag'),
+        lastModified: response.headers.get('last-modified'),
+        contentType: response.headers.get('content-type'),
+        byteSize,
+        status: 'valid',
+        ttlHours
+      });
+      await cachePage(url, finalContent, 'success', status, null);
     } catch (err) {
       logger.warn('Cache', `Page cache write failed: ${err.message}`);
     }
@@ -1273,9 +1993,15 @@ export async function fetchPageContent(url, maxLength = 8000) {
       error: errorMsg,
       fromCache: false
     };
+    const ttlHours = await getCacheTTL('blocked_page');
+    await upsertPublicUrlCache({
+      url,
+      status: 'error',
+      ttlHours
+    });
     // Cache error result (shorter TTL for retry)
     try {
-      cachePage(url, '', error.name === 'AbortError' ? 'timeout' : 'error', null, errorMsg);
+      await cachePage(url, '', error.name === 'AbortError' ? 'timeout' : 'error', null, errorMsg);
     } catch (err) {
       logger.warn('Cache', `Page cache write failed: ${err.message}`);
     }
@@ -1404,8 +2130,51 @@ function extractSearchTokens(wineName) {
  * @param {string} wineName - Original wine name
  * @returns {string[]} Array of name variations
  */
+/**
+ * Range/tier qualifiers that distinguish wine product lines.
+ * These are NOT stripped from the original name - they're used for precision matching.
+ * "Vineyard Selection" vs "Cellar Selection" are DIFFERENT wines.
+ * "Crianza" vs "Gran Reserva" are DIFFERENT aging classifications.
+ */
+const RANGE_QUALIFIERS = [
+  // Product line/tier names (distinct ranges)
+  'vineyard selection', 'cellar selection', 'family selection',
+  'estate selection', 'special selection', 'limited edition',
+  'private collection', 'family reserve', 'barrel select',
+  // Spanish aging classifications (legally defined)
+  'crianza', 'reserva', 'gran reserva', 'joven',
+  // Italian classifications
+  'riserva', 'selezione', 'classico', 'superiore',
+  // German classifications
+  'spätlese', 'auslese', 'kabinett', 'trockenbeerenauslese',
+  // French designations
+  'cuvée', 'grande cuvée', 'prestige', 'vieilles vignes', 'grand cru', 'premier cru'
+];
+
+/**
+ * Generate wine name variations for DISCOVERY (Layer 1).
+ * These simplified names help find the producer's pages and general results.
+ * The original name is always first and used for PRECISION matching (Layer 2).
+ *
+ * TWO-LAYER STRATEGY:
+ * - Layer 1 (Discovery): Simplified names to cast a wider net
+ * - Layer 2 (Precision): Results are re-ranked by match to ORIGINAL name
+ *
+ * @param {string} wineName - Original wine name (e.g., "Kleine Zalze Vineyard Selection Chenin Blanc 2019")
+ * @returns {Object} { variations: string[], originalName: string, rangeQualifier: string|null }
+ */
 function generateWineNameVariations(wineName) {
-  const variations = [wineName];
+  const variations = [wineName]; // Original ALWAYS first for precision matching
+  let detectedRangeQualifier = null;
+
+  // Detect if this wine has a range/tier qualifier (important for Layer 2 precision)
+  const wineNameLower = wineName.toLowerCase();
+  for (const qualifier of RANGE_QUALIFIERS) {
+    if (wineNameLower.includes(qualifier)) {
+      detectedRangeQualifier = qualifier;
+      break;
+    }
+  }
 
   // Strip parentheses content and try as variation
   // e.g., "Kleine Zalze Chenin Blanc (vineyard Selection)" -> "Kleine Zalze Chenin Blanc Vineyard Selection"
@@ -1436,14 +2205,78 @@ function generateWineNameVariations(wineName) {
     }
   }
 
-  // Try without "Selected Vineyards" or "Single Vineyard" etc.
-  const simplified = wineName
-    .replace(/\s+Selected\s+Vineyards?/i, '')
-    .replace(/\s+Single\s+Vineyards?/i, '')
-    .replace(/\s+Reserve/i, '')
-    .trim();
+  // DISCOVERY patterns: Simplified names to find producer pages
+  // These are marked as 'discovery' type - results will be re-ranked by original name
+  const DISCOVERY_STRIP_PATTERNS = [
+    // Strip range qualifiers for DISCOVERY only
+    /\s+Vineyard\s+Selection/gi,
+    /\s+Cellar\s+Selection/gi,
+    /\s+Selected\s+Vineyards?/gi,
+    /\s+Single\s+Vineyards?/gi,
+    /\s+Estate\s+Selection/gi,
+    /\s+Limited\s+Edition/gi,
+    /\s+Special\s+Selection/gi,
+    /\s+Private\s+Collection/gi,
+    /\s+Family\s+Reserve/gi,
+    /\s+Barrel\s+Select(ion|ed)?/gi,
+    /\s+Reserve(?!\s+\w)/gi,  // "Reserve" alone, not "Reserve Cabernet"
+    // Spanish (strip for discovery, but remember for precision)
+    /\s+Reserva(?!\s+\w)/gi,
+    /\s+Gran\s+Reserva/gi,
+    /\s+Crianza/gi,
+    /\s+Selección/gi,
+    // Italian
+    /\s+Riserva/gi,
+    /\s+Selezione/gi,
+    // French
+    /\s+Cuvée\s+\w+/gi,
+    /\s+Grande?\s+Cuvée/gi,
+    /\s+Prestige/gi,
+    /\s+Vieilles\s+Vignes/gi,
+    // German
+    /\s+Spätlese/gi,
+    /\s+Auslese/gi
+  ];
+
+  // Generate simplified variation for DISCOVERY
+  let simplified = wineName;
+  for (const pattern of DISCOVERY_STRIP_PATTERNS) {
+    simplified = simplified.replace(pattern, ' ');
+  }
+  simplified = simplified.replace(/\s+/g, ' ').trim();
+
   if (simplified !== wineName && simplified.length > 5) {
     variations.push(simplified);
+  }
+
+  // Try: Producer + Grape only (e.g., "Kleine Zalze Chenin Blanc")
+  // For DISCOVERY - helps find producer's awards pages that list all wines
+  const grapeVarieties = [
+    'chenin blanc', 'sauvignon blanc', 'chardonnay', 'riesling', 'pinot grigio', 'pinot gris',
+    'viognier', 'gewürztraminer', 'semillon', 'verdelho', 'albariño', 'grüner veltliner',
+    'cabernet sauvignon', 'merlot', 'pinot noir', 'shiraz', 'syrah', 'malbec', 'tempranillo',
+    'sangiovese', 'nebbiolo', 'pinotage', 'zinfandel', 'grenache', 'mourvèdre', 'petit verdot',
+    'carmenere', 'barbera', 'primitivo', 'touriga nacional', 'tinta roriz'
+  ];
+  for (const grape of grapeVarieties) {
+    if (wineNameLower.includes(grape)) {
+      const grapeIndex = wineNameLower.indexOf(grape);
+      // Extract producer (everything before the grape, cleaned of qualifiers)
+      let producerPart = wineName.substring(0, grapeIndex).trim();
+      for (const pattern of DISCOVERY_STRIP_PATTERNS) {
+        producerPart = producerPart.replace(pattern, ' ');
+      }
+      producerPart = producerPart.replace(/\s+/g, ' ').trim();
+      // Extract grape with proper casing from original
+      const grapePart = wineName.substring(grapeIndex, grapeIndex + grape.length);
+      if (producerPart.length >= 3) {
+        const producerGrapeOnly = `${producerPart} ${grapePart}`.trim();
+        if (producerGrapeOnly !== wineName && producerGrapeOnly.length > 5) {
+          variations.push(producerGrapeOnly);
+        }
+      }
+      break; // Only process first grape found
+    }
   }
 
   // Try without leading articles (The, La, Le, etc.)
@@ -1561,12 +2394,21 @@ function extractProducerName(wineName) {
 
 /**
  * Search for producer's official website and awards page.
+ * Includes searches for PDF/DOC award documents - producers often publish award lists as documents.
+ * Respects AbortController signal for cancellation.
  * @param {string} wineName - Wine name
  * @param {string} vintage - Vintage year
  * @param {string|null} country - Wine country
+ * @param {SearchBudget} budget - Per-search budget tracker
+ * @param {AbortSignal} signal - Optional abort signal for cancellation
  * @returns {Promise<Object[]>} Array of search results
  */
-async function searchProducerWebsite(wineName, vintage, _country) {
+async function searchProducerWebsite(wineName, vintage, _country, budget = null, signal = null) {
+  if (signal?.aborted) {
+    logger.info('Producer', 'Producer search aborted');
+    return [];
+  }
+
   const producerName = extractProducerName(wineName);
   if (!producerName || producerName.length < 3) {
     return [];
@@ -1577,43 +2419,85 @@ async function searchProducerWebsite(wineName, vintage, _country) {
   const producerTokens = extractSearchTokens(producerName);
 
   // Try different queries to find producer's awards page
+  // Include document searches (filetype:) - producers often publish award lists as PDF/DOC
   const queries = [
+    // Standard web searches
     `"${producerName}" winery official site awards`,
     `${producerTokens.join(' ')} wine estate awards medals`,
-    `${producerTokens.join(' ')} ${vintage} award gold silver medal`
+    // Document searches - globally applicable pattern
+    `"${producerName}" awards filetype:pdf`,
+    `"${producerName}" awards filetype:doc`,
+    `"${producerName}" medals accolades filetype:pdf`
   ];
 
   const results = [];
 
-  for (const query of queries.slice(0, 2)) { // Limit to 2 queries to save API calls
+  // Run web searches (first 2) and document searches (next 3) with a limit
+  for (const query of queries.slice(0, 4)) { // Limit to 4 queries total
+    if (signal?.aborted) {
+      logger.info('Producer', 'Producer search aborted mid-loop');
+      break;
+    }
+
     logger.info('Producer', `Search query: "${query}"`);
 
     try {
-      const searchResults = await searchGoogle(query, []);
-      // Filter to only include potential producer sites (not known retailers)
-      const producerResults = searchResults.filter(r => {
+      const isDocumentQuery = query.includes('filetype:');
+      const queryType = isDocumentQuery ? 'serp_producer_document' : 'serp_producer';
+      const searchResults = await searchGoogle(query, [], queryType, budget);
+
+      // For document queries, accept any result with the producer name
+      const filteredResults = searchResults.filter(r => {
+        if (isDocumentQuery) {
+          // For document searches, accept if URL or title contains producer name tokens
+          const urlLower = (r.url || '').toLowerCase();
+          const titleLower = (r.title || '').toLowerCase();
+          const producerLower = producerName.toLowerCase();
+          return urlLower.includes(producerLower.replace(/\s+/g, '')) ||
+                 titleLower.includes(producerLower) ||
+                 producerTokens.some(t => titleLower.includes(t.toLowerCase()));
+        }
+        // For web searches, check if it's a producer site
         const tokens = extractSearchTokens(producerName);
         return checkIfProducerSite(r.url, producerName.toLowerCase(), tokens);
       });
 
-      if (producerResults.length > 0) {
-        logger.info('Producer', `Found ${producerResults.length} producer site(s)`);
-        results.push(...producerResults.map(r => ({
-          ...r,
-          sourceId: 'producer_website',
-          lens: 'producer',
-          credibility: 1.2, // Higher than community, lower than critics
-          relevance: 1.0,
-          isProducerSite: true
-        })));
-        break; // Stop after finding results
+      if (filteredResults.length > 0) {
+        logger.info('Producer', `Found ${filteredResults.length} result(s) for "${query.substring(0, 50)}..."`);
+        results.push(...filteredResults.map(r => {
+          const isDocument = /\.(pdf|doc|docx|xls|xlsx)(\?|$)/i.test(r.url);
+          return {
+            ...r,
+            sourceId: isDocument ? 'producer_document' : 'producer_website',
+            lens: 'producer',
+            // Documents from producers are highly authoritative (official award lists)
+            credibility: isDocument ? 1.4 : 1.2,
+            relevance: 1.0,
+            isProducerSite: true,
+            isDocument
+          };
+        }));
+        // Don't break early - collect from multiple query types
       }
     } catch (err) {
+      if (err.name === 'AbortError') {
+        logger.info('Producer', 'Search aborted');
+        break;
+      }
       logger.error('Producer', `Search failed: ${err.message}`);
     }
   }
 
-  return results;
+  // Deduplicate by URL
+  const seen = new Set();
+  const uniqueResults = results.filter(r => {
+    if (seen.has(r.url)) return false;
+    seen.add(r.url);
+    return true;
+  });
+
+  logger.info('Producer', `Total unique producer results: ${uniqueResults.length}`);
+  return uniqueResults;
 }
 
 /**
@@ -1679,11 +2563,29 @@ function checkIfProducerSite(url, wineNameLower, keyWords) {
  * @param {string|number} vintage - Vintage year
  * @returns {Object} { relevant: boolean, score: number }
  */
+/**
+ * Calculate result relevance with TWO-LAYER precision scoring.
+ *
+ * Layer 1 (Discovery): Simplified names help find producer pages
+ * Layer 2 (Precision): Results are re-ranked by match to ORIGINAL name,
+ *                      especially range qualifiers like "Vineyard Selection"
+ *
+ * @param {Object} result - Search result
+ * @param {string} wineName - ORIGINAL wine name (not simplified)
+ * @param {string|number} vintage - Vintage year
+ * @returns {Object} { relevant, score, isProducerSite, rangeMatch }
+ */
 function calculateResultRelevance(result, wineName, vintage) {
   const title = (result.title || '').toLowerCase();
   const snippet = (result.snippet || '').toLowerCase();
   const titleAndSnippet = `${title} ${snippet}`;
   const wineNameLower = wineName.toLowerCase();
+
+  // Feature contribution logging
+  const rankingExplanation = {
+    base: 0,
+    features: []
+  };
 
   // Extract key words from wine name using same logic as search tokens
   const stopWords = new Set([
@@ -1720,14 +2622,74 @@ function calculateResultRelevance(result, wineName, vintage) {
   const hasVintageInTitle = vintage && title.includes(String(vintage));
   const hasVintageInSnippet = vintage && snippet.includes(String(vintage));
 
-  // Calculate relevance score
+  // Calculate relevance score with feature logging
   let score = 0;
-  score += titleMatchCount * 3;       // Title exact matches are worth 3x
-  score += snippetMatchCount * 1;     // Snippet exact matches worth 1x
-  score += fuzzyTitleMatches * 1.5;   // Fuzzy title matches worth 1.5x
-  score += fuzzySnippetMatches * 0.5; // Fuzzy snippet matches worth 0.5x
-  score += hasVintageInTitle ? 5 : 0; // Vintage in title is very good
-  score += hasVintageInSnippet ? 2 : 0; // Vintage in snippet is good
+  
+  // Title and snippet matches
+  const titleScore = titleMatchCount * 3;
+  const snippetScore = snippetMatchCount * 1;
+  const fuzzyTitleScore = fuzzyTitleMatches * 1.5;
+  const fuzzySnippetScore = fuzzySnippetMatches * 0.5;
+  
+  score += titleScore;
+  score += snippetScore;
+  score += fuzzyTitleScore;
+  score += fuzzySnippetScore;
+  
+  rankingExplanation.base = score;
+  if (titleMatchCount > 0) {
+    rankingExplanation.features.push(`+${titleScore} (${titleMatchCount} title matches)`);
+  }
+  if (snippetMatchCount > 0) {
+    rankingExplanation.features.push(`+${snippetScore} (${snippetMatchCount} snippet matches)`);
+  }
+  if (fuzzyTitleMatches > 0) {
+    rankingExplanation.features.push(`+${fuzzyTitleScore.toFixed(1)} (${fuzzyTitleMatches} fuzzy title)`);
+  }
+  if (fuzzySnippetMatches > 0) {
+    rankingExplanation.features.push(`+${fuzzySnippetScore.toFixed(1)} (${fuzzySnippetMatches} fuzzy snippet)`);
+  }
+
+  // Vintage matching
+  if (hasVintageInTitle) {
+    score += RERANK_WEIGHTS.EXACT_VINTAGE_MATCH;
+    rankingExplanation.features.push(`+${RERANK_WEIGHTS.EXACT_VINTAGE_MATCH} (vintage in title: ${vintage})`);
+  } else if (hasVintageInSnippet) {
+    score += 2; // Snippet vintage is less valuable than title
+    rankingExplanation.features.push(`+2 (vintage in snippet: ${vintage})`);
+  } else if (vintage) {
+    score += RERANK_WEIGHTS.VINTAGE_MISSING;
+    rankingExplanation.features.push(`${RERANK_WEIGHTS.VINTAGE_MISSING} (vintage missing: ${vintage})`);
+  }
+
+  // =========================================================================
+  // LAYER 2: PRECISION SCORING - Range/Tier Qualifier Matching
+  // =========================================================================
+  // If the wine has a range qualifier (e.g., "Vineyard Selection", "Gran Reserva"),
+  // boost results that specifically mention that range. These are distinct products!
+  let rangeMatch = null;
+  let rangeBonus = 0;
+
+  // Check for range qualifier match in title/snippet
+  for (const qualifier of RANGE_QUALIFIERS) {
+    if (wineNameLower.includes(qualifier)) {
+      // Wine has this qualifier - check if result mentions it
+      const qualifierInResult = titleAndSnippet.includes(qualifier);
+      if (qualifierInResult) {
+        rangeMatch = qualifier;
+        rangeBonus = RERANK_WEIGHTS.RANGE_QUALIFIER_MATCH;
+        rankingExplanation.features.push(`+${RERANK_WEIGHTS.RANGE_QUALIFIER_MATCH} (range match: "${qualifier}")`);
+        break;
+      } else {
+        // Result found via discovery but doesn't mention the specific range
+        // This might be a generic page listing multiple ranges - small penalty
+        rangeBonus = RERANK_WEIGHTS.RANGE_QUALIFIER_MISS;
+        rankingExplanation.features.push(`${RERANK_WEIGHTS.RANGE_QUALIFIER_MISS} (range missing: "${qualifier}")`);
+      }
+    }
+  }
+
+  score += rangeBonus;
 
   // Bonus for rating/review sites appearing specific to this wine
   const isRatingPage = titleAndSnippet.includes('rating') ||
@@ -1741,13 +2703,21 @@ function calculateResultRelevance(result, wineName, vintage) {
     titleAndSnippet.includes('award');
   if (isRatingPage && (titleMatchCount >= 1 || fuzzyTitleMatches >= 1)) {
     score += 3;
+    rankingExplanation.features.push('+3 (rating/review page)');
   }
 
   // Bonus for producer/winery websites - they often have awards, tech specs, tasting notes
   const url = (result.url || '').toLowerCase();
   const isProducerSite = checkIfProducerSite(url, wineNameLower, keyWords);
   if (isProducerSite) {
-    score += 5; // Producer sites are very valuable
+    score += RERANK_WEIGHTS.PRODUCER_ONLY_MATCH;
+    rankingExplanation.features.push(`+${RERANK_WEIGHTS.PRODUCER_ONLY_MATCH} (producer site)`);
+    
+    // If it's a producer site with range match, extra boost (authoritative source)
+    if (rangeMatch) {
+      score += 3;
+      rankingExplanation.features.push('+3 (producer + range match)');
+    }
   }
 
   // Penalty for generic competition/award list pages
@@ -1756,6 +2726,7 @@ function calculateResultRelevance(result, wineName, vintage) {
     titleMatchCount < 1;
   if (isGenericAwardPage) {
     score -= 3;
+    rankingExplanation.features.push('-3 (generic award list)');
   }
 
   // Determine relevance - more flexible matching:
@@ -1772,7 +2743,16 @@ function calculateResultRelevance(result, wineName, vintage) {
     (totalExactMatches >= 1 && hasVintage) ||
     (totalFuzzyMatches >= 2 && hasVintage);
 
-  return { relevant, score, isProducerSite };
+  return { 
+    relevant, 
+    score, 
+    isProducerSite, 
+    rangeMatch,
+    rankingExplanation: {
+      totalScore: score,
+      ...rankingExplanation
+    }
+  };
 }
 
 /**
@@ -1800,6 +2780,23 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   // Detect grape variety from wine name
   const detectedGrape = detectGrape(wineName);
 
+  // Detect range qualifiers and locale hints for improved scoring
+  const qualifiers = detectQualifiers(wineName);
+  const localeHints = detectLocaleHints(wineName);
+
+  if (qualifiers.length > 0) {
+    logger.info('Search', `Detected qualifiers: ${qualifiers.map(q => q.term).join(', ')}`);
+  }
+  if (Object.keys(localeHints).length > 0) {
+    logger.info('Search', `Detected locale hints: ${Object.entries(localeHints).map(([loc, conf]) => `${loc}:${(conf * 100).toFixed(0)}%`).join(', ')}`);
+  }
+
+  const budget = createSearchBudgetTracker();
+  logger.info(
+    'Budget',
+    `Search budget - SERP:${budget.limits.MAX_SERP_CALLS}, Docs:${budget.limits.MAX_DOCUMENT_FETCHES}, Bytes:${Math.round(budget.limits.MAX_TOTAL_BYTES / 1024 / 1024)}MB, Wall:${budget.limits.MAX_WALL_CLOCK_MS}ms`
+  );
+
   // Infer country from style if not provided or unknown
   let effectiveCountry = country;
   if (!country || country === 'Unknown' || country === '') {
@@ -1824,8 +2821,9 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   logger.info('Search', `Name variations: ${wineNameVariations.join(', ')}`);
   logger.info('Search', `Top sources: ${topSources.map(s => s.id).join(', ')}`);
 
-  // Strategy 1: Targeted searches for diverse sources
-  // Include grape-specific competitions, top competitions, AND top critics for balanced coverage
+  // Strategy 1: Targeted searches + Producer search (run in PARALLEL)
+  // Producer websites are often the most authoritative source for awards
+  // Running them in parallel with targeted searches ensures we don't miss producer data
   const targetedResults = [];
 
   // Get grape-specific competitions first (if grape detected)
@@ -1842,12 +2840,12 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   const prioritySources = [...grapeCompetitions, ...topCompetitions, ...topCritics, ...(communitySource ? [communitySource] : [])].slice(0, 7);
   logger.info('Search', `Targeted sources: ${prioritySources.map(s => s.id).join(', ')}`);
 
-  // Run all targeted searches in parallel for better performance
+  // Run targeted searches in parallel
   const targetedSearchPromises = prioritySources.map(source => {
     const query = buildSourceQuery(source, wineName, vintage);
     logger.info('Search', `Targeted search for ${source.id}: "${query}"`);
 
-    return searchGoogle(query, [source.domain]).then(results =>
+    return searchGoogle(query, [source.domain], 'serp_targeted', budget).then(results =>
       results.map(r => ({
         ...r,
         sourceId: source.id,
@@ -1858,10 +2856,64 @@ export async function searchWineRatings(wineName, vintage, country, style = null
     );
   });
 
-  const targetedResultsArrays = await Promise.all(targetedSearchPromises);
+  // Run producer search IN PARALLEL with targeted searches (elevated from Strategy 4)
+  // Producer websites/documents often have the most authoritative award data
+  // Use hedged search with AbortController: start with delay, cancel if discovery is high-confidence
+  const producerController = new AbortController();
+
+  const producerSearchPromise = (async () => {
+    // Check for "hard wine" heuristics - if detected, start producer search immediately
+    const hasLowAmbiguityQualifier = qualifiers.some(q => q.ambiguity === 'low');
+    const hasHighTokenCount = wineName.split(/\s+/).length >= 7;
+    const isMissingVintage = !vintage || vintage === 'NV';
+    const hasProducerToken = /\b(domaine|weingut|château|bodega|tenuta)\b/i.test(wineName);
+
+    const startImmediately = hasLowAmbiguityQualifier || hasHighTokenCount || isMissingVintage || hasProducerToken;
+    const delayMs = startImmediately ? 0 : LIMITS.PRODUCER_SEARCH_DELAY_MS;
+
+    if (delayMs > 0) {
+      logger.info('Producer', `Delayed start: ${delayMs}ms (waiting for targeted results)`);
+    } else {
+      logger.info('Producer', 'Starting immediately (hard wine detected)');
+    }
+
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+
+    if (producerController.signal.aborted) {
+      logger.info('Producer', 'Skipped (discovery results were sufficient)');
+      return [];
+    }
+
+    try {
+      return await searchProducerWebsite(wineName, vintage, effectiveCountry, budget, producerController.signal);
+    } catch (err) {
+      if (err.name === 'AbortError') {
+        logger.info('Producer', 'Search aborted');
+        return [];
+      }
+      throw err;
+    }
+  })();
+
+  // Wait for both targeted and producer searches together
+  const [targetedResultsArrays, producerResults] = await Promise.all([
+    Promise.all(targetedSearchPromises),
+    producerSearchPromise
+  ]);
+
   targetedResultsArrays.forEach(results => targetedResults.push(...results));
 
+  // Check if discovery results are high-confidence; if so, abort producer search
+  const discoveryConfidence = calculateDiscoveryConfidence(targetedResults);
+  if (discoveryConfidence >= LIMITS.MIN_DISCOVERY_CONFIDENCE && !producerController.signal.aborted) {
+    logger.info('Search', `Discovery confidence ${(discoveryConfidence * 100).toFixed(0)}% >= ${(LIMITS.MIN_DISCOVERY_CONFIDENCE * 100).toFixed(0)}%, aborting producer search`);
+    producerController.abort();
+  }
+
   logger.info('Search', `Targeted searches found: ${targetedResults.length} results`);
+  if (producerResults.length > 0) {
+    logger.info('Search', `Producer search found: ${producerResults.length} result(s) (including documents: ${producerResults.filter(r => r.isDocument).length})`);
+  }
 
   // Strategy 2: Broad Google search for remaining domains
   const remainingDomains = topSources.slice(3).map(s => s.domain);
@@ -1869,33 +2921,29 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   const broadQuery = `${tokens.join(' ')} ${vintage} rating`;
 
   const broadResults = remainingDomains.length > 0
-    ? await searchGoogle(broadQuery, remainingDomains)
+    ? await searchGoogle(broadQuery, remainingDomains, 'serp_broad', budget)
     : [];
 
   logger.info('Search', `Broad search found: ${broadResults.length} results`);
 
   // Strategy 3: Try name variations with Google if we still have few results
   const variationResults = [];
-  if (targetedResults.length + broadResults.length < 5 && wineNameVariations.length > 1) {
+  const shouldTryVariations = targetedResults.length + broadResults.length + producerResults.length < 5 && wineNameVariations.length > 1;
+  if (shouldTryVariations && hasWallClockBudget(budget)) {
     logger.info('Search', 'Trying wine name variations...');
     for (const variation of wineNameVariations.slice(1)) { // Skip first (original)
       const varTokens = extractSearchTokens(variation);
-      const varResults = await searchGoogle(`${varTokens.join(' ')} ${vintage} wine rating`, []);
+      const varResults = await searchGoogle(`${varTokens.join(' ')} ${vintage} wine rating`, [], 'serp_variation', budget);
       variationResults.push(...varResults);
       if (variationResults.length >= 5) break;
     }
     logger.info('Search', `Variation searches found: ${variationResults.length} results`);
+  } else if (shouldTryVariations && !hasWallClockBudget(budget)) {
+    logger.warn('Budget', 'Wall-clock budget exceeded; skipping variation searches');
   }
 
-  // Strategy 4: Search producer's official website for awards
-  // Wineries often display accolades prominently on their own sites
-  const producerResults = await searchProducerWebsite(wineName, vintage, effectiveCountry);
-  if (producerResults.length > 0) {
-    logger.info('Search', `Producer website search found: ${producerResults.length} result(s)`);
-  }
-
-  // Combine and deduplicate by URL
-  const allResults = [...targetedResults, ...broadResults, ...variationResults, ...producerResults];
+  // Combine and deduplicate by URL (producer results now come from parallel execution)
+  const allResults = [...targetedResults, ...producerResults, ...broadResults, ...variationResults];
   const seen = new Set();
   const uniqueResults = allResults.filter(r => {
     if (seen.has(r.url)) return false;
@@ -1936,6 +2984,28 @@ export async function searchWineRatings(wineName, vintage, country, style = null
       relevance: matchedSource?.relevance || 0.5
     };
   });
+
+  // Corroboration gate: Mark community source claims that require secondary source confirmation
+  const tasteAtlasResults = enrichedResults.filter(r => r.sourceId === 'tasteatlasranked' || r.lens === 'community');
+  if (tasteAtlasResults.length > 0) {
+    const authoritativeSources = enrichedResults.filter(r =>
+      ['producer', 'competition', 'critic', 'panel_guide'].includes(r.lens)
+    );
+
+    tasteAtlasResults.forEach(tasteAtlasResult => {
+      // Mark TasteAtlas claims as requiring corroboration
+      tasteAtlasResult.requires_corroboration = true;
+
+      // Check if we have authoritative corroboration
+      if (authoritativeSources.length > 0) {
+        tasteAtlasResult.has_corroboration = true;
+        tasteAtlasResult.corroboration_count = authoritativeSources.length;
+      } else {
+        tasteAtlasResult.has_corroboration = false;
+        logger.warn('Search', `TasteAtlas claim "${tasteAtlasResult.title}" has no authoritative corroboration`);
+      }
+    });
+  }
 
   // Sort by relevance score first, then by source credibility
   // This ensures wine-specific pages rank above generic competition pages

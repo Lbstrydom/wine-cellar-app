@@ -18,7 +18,7 @@ import {
   clearAuthState,
   setAuthErrorHandler
 } from './api.js';
-import { renderFridge, renderCellar, initZoomControls } from './grid.js';
+import { renderFridge, renderCellar, renderStorageAreas, initZoomControls } from './grid.js';
 import { initModals, showWineModalFromList } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
@@ -545,8 +545,28 @@ async function initAuth() {
  */
 export async function loadLayout() {
   state.layout = await fetchLayout();
-  renderFridge();
-  renderCellar();
+
+  const hasAreas = Array.isArray(state.layout?.areas) && state.layout.areas.length > 0;
+  const areasContainer = document.getElementById('storage-areas-container');
+  const fridgeSection = document.querySelector('.fridge-section');
+  const cellarZone = document.querySelector('#cellar-container')?.closest('.zone');
+
+  if (hasAreas) {
+    // Show dynamic areas and hide legacy sections
+    if (areasContainer) areasContainer.style.display = '';
+    if (fridgeSection) fridgeSection.style.display = 'none';
+    if (cellarZone) cellarZone.style.display = 'none';
+
+    renderStorageAreas();
+  } else {
+    // Show legacy fridge/cellar
+    if (areasContainer) areasContainer.style.display = 'none';
+    if (fridgeSection) fridgeSection.style.display = '';
+    if (cellarZone) cellarZone.style.display = '';
+
+    renderFridge();
+    renderCellar();
+  }
 }
 
 /**

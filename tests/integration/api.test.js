@@ -10,6 +10,9 @@ import { apiCall, setupTestAuth, cleanupTestAuth } from './helpers.js';
 
 describe('Wine API Integration Tests', () => {
   let testWineId;
+  // Use timestamp to ensure unique wine names across test runs
+  const testRunId = Date.now();
+  const testWineName = `Test Cabernet ${testRunId}`;
 
   beforeAll(async () => {
     // Ensure test auth is set up
@@ -17,7 +20,15 @@ describe('Wine API Integration Tests', () => {
   });
 
   afterAll(async () => {
-    // Clean up test data
+    // Clean up test wine if created
+    if (testWineId) {
+      try {
+        await apiCall('DELETE', `/wines/${testWineId}`);
+      } catch {
+        // Ignore cleanup errors
+      }
+    }
+    // Clean up test auth
     await cleanupTestAuth();
   });
 
@@ -49,7 +60,7 @@ describe('Wine API Integration Tests', () => {
   describe('POST /api/wines', () => {
     it('should create a new wine', async () => {
       const newWine = {
-        wine_name: 'Test Cabernet Sauvignon',
+        wine_name: testWineName,
         style: 'Cabernet Sauvignon',
         colour: 'red',
         vintage: 2020,
@@ -59,11 +70,11 @@ describe('Wine API Integration Tests', () => {
       const response = await apiCall('POST', '/wines', { body: newWine });
 
       expect(response.status).toBe(201);
-      
+
       const result = await response.json();
       expect(result.id).toBeDefined();
       expect(result.message).toBe('Wine added');
-      
+
       testWineId = result.id;
     });
 
@@ -82,10 +93,10 @@ describe('Wine API Integration Tests', () => {
     it('should return a specific wine', async () => {
       const response = await apiCall('GET', `/wines/${testWineId}`);
       expect(response.status).toBe(200);
-      
+
       const wine = await response.json();
       expect(wine.id).toBe(testWineId);
-      expect(wine.wine_name).toBe('Test Cabernet Sauvignon');
+      expect(wine.wine_name).toBe(testWineName);
     });
 
     it('should return 404 for non-existent wine', async () => {
@@ -100,7 +111,7 @@ describe('Wine API Integration Tests', () => {
   describe('PUT /api/wines/:id', () => {
     it('should update a wine', async () => {
       const updates = {
-        wine_name: 'Updated Test Cabernet',
+        wine_name: `Updated ${testWineName}`,
         style: 'Cabernet Sauvignon',
         colour: 'red',
         vintage: 2021,
@@ -110,7 +121,7 @@ describe('Wine API Integration Tests', () => {
       const response = await apiCall('PUT', `/wines/${testWineId}`, { body: updates });
 
       expect(response.status).toBe(200);
-      
+
       const result = await response.json();
       expect(result.message).toBe('Wine updated');
     });

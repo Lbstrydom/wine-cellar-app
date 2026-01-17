@@ -202,6 +202,59 @@ export async function getCellars() {
 }
 
 /**
+ * Storage Areas API
+ * All calls include auth and X-Cellar-ID headers via api.js wrapper.
+ */
+export async function getStorageAreas() {
+  const res = await fetch(`${API_BASE}/api/storage-areas`);
+  return handleResponse(res, 'Failed to fetch storage areas');
+}
+
+export async function getStorageAreaById(id) {
+  const res = await fetch(`${API_BASE}/api/storage-areas/${encodeURIComponent(id)}`);
+  return handleResponse(res, 'Failed to fetch storage area');
+}
+
+export async function createStorageArea(area) {
+  const res = await fetch(`${API_BASE}/api/storage-areas`, {
+    method: 'POST',
+    body: JSON.stringify(area)
+  });
+  return handleResponse(res, 'Failed to create storage area');
+}
+
+export async function updateStorageArea(id, updates) {
+  const res = await fetch(`${API_BASE}/api/storage-areas/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: JSON.stringify(updates)
+  });
+  return handleResponse(res, 'Failed to update storage area');
+}
+
+export async function updateStorageAreaLayout(id, rows) {
+  const res = await fetch(`${API_BASE}/api/storage-areas/${encodeURIComponent(id)}/layout`, {
+    method: 'PUT',
+    body: JSON.stringify({ rows })
+  });
+  return handleResponse(res, 'Failed to update storage layout');
+}
+
+export async function deleteStorageArea(id) {
+  const res = await fetch(`${API_BASE}/api/storage-areas/${encodeURIComponent(id)}`, {
+    method: 'DELETE'
+  });
+  return handleResponse(res, 'Failed to delete storage area');
+}
+
+export async function createStorageAreaFromTemplate(template, overrides = {}) {
+  const res = await fetch(`${API_BASE}/api/storage-areas/from-template`, {
+    method: 'POST',
+    body: JSON.stringify({ template, ...overrides })
+  });
+  return handleResponse(res, 'Failed to create storage area from template');
+}
+
+/**
  * Set the active cellar for the current user.
  * @param {string} cellarId
  * @returns {Promise<Object>}
@@ -221,6 +274,15 @@ export async function setActiveCellar(cellarId) {
 export async function fetchLayout() {
   const res = await fetch(`${API_BASE}/api/stats/layout`);
   return handleResponse(res, 'Failed to fetch layout');
+}
+
+/**
+ * Fetch cellar layout in lite mode (structure only).
+ * @returns {Promise<Object>}
+ */
+export async function fetchLayoutLite() {
+  const res = await fetch(`${API_BASE}/api/stats/layout?lite=true`);
+  return handleResponse(res, 'Failed to fetch layout (lite)');
 }
 
 /**

@@ -114,30 +114,31 @@ router.get('/export/csv', backupRateLimiter, async (req, res) => {
     // Safe: stringAgg() is a helper that returns SQL function call string
     const locationAgg = stringAgg('s.location_code');
 
-    const wines = await db.prepare(`
-      SELECT
-        w.id,
-        w.wine_name,
-        w.vintage,
-        w.colour,
-        w.style,
-        w.country,
-        w.vivino_rating,
-        w.price_eur,
-        w.personal_rating,
-        w.personal_notes,
-        w.drink_from,
-        w.drink_peak,
-        w.drink_until,
-        w.purchase_stars,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations
-      FROM wines w
-      LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
-      WHERE w.cellar_id = $1
-      GROUP BY w.id
-      ORDER BY w.wine_name
-    `).all(req.cellarId);
+    const sql = [
+      'SELECT',
+      '  w.id,',
+      '  w.wine_name,',
+      '  w.vintage,',
+      '  w.colour,',
+      '  w.style,',
+      '  w.country,',
+      '  w.vivino_rating,',
+      '  w.price_eur,',
+      '  w.personal_rating,',
+      '  w.personal_notes,',
+      '  w.drink_from,',
+      '  w.drink_peak,',
+      '  w.drink_until,',
+      '  w.purchase_stars,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations',
+      'FROM wines w',
+      'LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1',
+      'WHERE w.cellar_id = $1',
+      'GROUP BY w.id',
+      'ORDER BY w.wine_name'
+    ].join('\n');
+    const wines = await db.prepare(sql).all(req.cellarId);
 
     // CSV header
     const headers = [

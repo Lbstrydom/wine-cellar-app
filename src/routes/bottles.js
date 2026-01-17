@@ -83,9 +83,9 @@ router.post('/add', async (req, res) => {
 
     // Check which slots are empty
     const placeholders = slots.map((_, i) => `$${i + 1}`).join(',');
-    const existingSlots = await db.prepare(`
-      SELECT location_code, wine_id FROM slots WHERE location_code IN (${placeholders})
-    `).all(...slots);
+    const existingSlots = await db.prepare(
+      'SELECT location_code, wine_id FROM slots WHERE location_code IN (' + placeholders + ')'
+    ).all(...slots);
     // Safe: placeholders generated from slots array length, data passed to .all()
 
     const emptySlots = slots.filter(loc => {

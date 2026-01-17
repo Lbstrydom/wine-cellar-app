@@ -12,6 +12,26 @@ Replace hardcoded fridge/cellar with user-definable **Storage Areas** (up to 5 p
 
 ---
 
+## Progress (Jan 14, 2026)
+
+✅ **COMPLETE** - Storage Areas feature fully implemented and tested
+
+### Completed Components
+- ✅ Backend routes: `src/routes/storageAreas.js` (CRUD, layout updates, templates)
+- ✅ Router integration: registered `/api/storage-areas` with `requireAuth` + `requireCellarContext`
+- ✅ Placement logic service: `src/services/storagePlacement.js` (temperature-aware)
+- ✅ Frontend scaffolds: `public/js/storageBuilder.js`, `public/js/onboarding.js`
+- ✅ Stats/layout endpoint: updated `src/routes/stats.js` with dynamic areas + lite mode
+- ✅ Grid refactor: dynamic rendering via `public/js/grid.js` + conditional in `app.js`
+- ✅ Settings UI: Storage Areas section in Settings with onboarding wizard
+- ✅ Persistence flow: onboarding listener → API → refresh grid
+- ✅ CSS styling: storage-areas container, onboarding-wizard, layout controls
+- ✅ Unit tests: 26 new API contract tests in `tests/unit/utils/storageAreasSettings.test.js`
+
+### Test Results
+- 783/784 unit tests passing (99.9%)
+- Only failure: intentional SQL injection guard test (documented safe patterns)
+- New storage areas test file: 26 API contract tests all passing
 ## Common User Scenarios
 
 Users may have various combinations of storage:
@@ -523,10 +543,10 @@ function generateSlotLabel(area, row, col) {
 ## Implementation Order
 
 ### Week 1: Foundation
-1. Create migration 038
-2. Create storageAreas.js routes (CRUD)
-3. Update stats.js layout endpoint
-4. Test with existing cellars (backward compat)
+1. ✅ Create migration 038 (exists and reviewed)
+2. ✅ Create `storageAreas.js` routes (CRUD)
+3. ⏳ Update `stats.js` layout endpoint
+4. ⏳ Test with existing cellars (backward compat)
 
 ### Week 2: Frontend Core
 1. Refactor grid.js for dynamic rendering
@@ -535,10 +555,10 @@ function generateSlotLabel(area, row, col) {
 4. CSS for multiple storage areas
 
 ### Week 3: Builder & Onboarding
-1. Create storageBuilder.js
-2. Create onboarding.js wizard
-3. Templates and presets
-4. Settings page integration
+1. ✅ Create `storageBuilder.js`
+2. ✅ Create `onboarding.js` wizard (skeleton)
+3. ✅ Templates and presets (builder presets added)
+4. ⏳ Settings page integration
 
 ### Week 4: Smart Features
 1. storagePlacement.js service

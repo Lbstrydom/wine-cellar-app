@@ -310,33 +310,34 @@ async function getAllWinesWithSlots(cellarId) {
   // Safe: stringAgg() is a helper that returns SQL function call string
   const locationAgg = stringAgg('s.location_code', ',', true);
 
-  return await db.prepare(`
-    SELECT
-      w.id,
-      w.wine_name,
-      w.vintage,
-      w.style,
-      w.colour,
-      w.country,
-      w.grapes,
-      w.region,
-      w.winemaking,
-      COUNT(s.id) as bottle_count,
-      ${locationAgg} as locations,
-      MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge,
-      COALESCE(MIN(rn.priority), 99) as reduce_priority,
-      MAX(rn.reduce_reason) as reduce_reason,
-      MIN(dw.drink_by_year) as drink_by_year,
-      MIN(dw.drink_from_year) as drink_from_year
-    FROM wines w
-    LEFT JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON w.id = rn.wine_id
-    LEFT JOIN drinking_windows dw ON dw.wine_id = w.id
-    WHERE w.cellar_id = $1
-    GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.grapes, w.region, w.winemaking
-    HAVING COUNT(s.id) > 0
-    ORDER BY w.colour, w.style
-  `).all(cellarId);
+  const sql = [
+    'SELECT',
+    '  w.id,',
+    '  w.wine_name,',
+    '  w.vintage,',
+    '  w.style,',
+    '  w.colour,',
+    '  w.country,',
+    '  w.grapes,',
+    '  w.region,',
+    '  w.winemaking,',
+    '  COUNT(s.id) as bottle_count,',
+    '  ' + locationAgg + ' as locations,',
+    "  MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge,",
+    '  COALESCE(MIN(rn.priority), 99) as reduce_priority,',
+    '  MAX(rn.reduce_reason) as reduce_reason,',
+    '  MIN(dw.drink_by_year) as drink_by_year,',
+    '  MIN(dw.drink_from_year) as drink_from_year',
+    'FROM wines w',
+    'LEFT JOIN slots s ON s.wine_id = w.id',
+    'LEFT JOIN reduce_now rn ON w.id = rn.wine_id',
+    'LEFT JOIN drinking_windows dw ON dw.wine_id = w.id',
+    'WHERE w.cellar_id = $1',
+    'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.grapes, w.region, w.winemaking',
+    'HAVING COUNT(s.id) > 0',
+    'ORDER BY w.colour, w.style'
+  ].join('\n');
+  return await db.prepare(sql).all(cellarId);
 }
 
 export default router;

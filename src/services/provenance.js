@@ -181,12 +181,13 @@ export async function getProvenanceForSource(wineId, sourceId, fieldName) {
 export async function hasFreshData(wineId, sourceId, fieldName) {
   try {
     const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
-    const result = await db.prepare(`
-      SELECT 1 FROM data_provenance
-      WHERE wine_id = ? AND source_id = ? AND field_name = ?
-      AND expires_at > ${currentTime}
-      LIMIT 1
-    `).get(wineId, sourceId, fieldName);
+    const sql = [
+      'SELECT 1 FROM data_provenance',
+      'WHERE wine_id = ? AND source_id = ? AND field_name = ?',
+      'AND expires_at > ' + currentTime,
+      'LIMIT 1'
+    ].join('\n');
+    const result = await db.prepare(sql).get(wineId, sourceId, fieldName);
     return !!result;
   } catch (error) {
     logger.error('[Provenance] Failed to check fresh data:', error);
@@ -219,11 +220,12 @@ export async function hasContentChanged(wineId, sourceId, fieldName, newContent)
 export async function getExpiredRecords() {
   try {
     const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
-    return await db.prepare(`
-      SELECT * FROM data_provenance
-      WHERE expires_at <= ${currentTime}
-      ORDER BY expires_at ASC
-    `).all();
+    const sql = [
+      'SELECT * FROM data_provenance',
+      'WHERE expires_at <= ' + currentTime,
+      'ORDER BY expires_at ASC'
+    ].join('\n');
+    return await db.prepare(sql).all();
   } catch (error) {
     logger.error('[Provenance] Failed to get expired records:', error);
     return [];
@@ -237,10 +239,11 @@ export async function getExpiredRecords() {
 export async function purgeExpiredRecords() {
   try {
     const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
-    const result = await db.prepare(`
-      DELETE FROM data_provenance
-      WHERE expires_at <= ${currentTime}
-    `).run();
+    const sql = [
+      'DELETE FROM data_provenance',
+      'WHERE expires_at <= ' + currentTime
+    ].join('\n');
+    const result = await db.prepare(sql).run();
 
     if (result.changes > 0) {
       logger.info(`[Provenance] Purged ${result.changes} expired records`);
@@ -290,10 +293,11 @@ export async function getProvenanceStats() {
 
     // Fresh vs expired
     const currentTime = nowFunc(); // Safe: nowFunc() returns CURRENT_TIMESTAMP SQL
-    const freshResult = await db.prepare(`
-      SELECT COUNT(*) as count FROM data_provenance
-      WHERE expires_at > ${currentTime}
-    `).get();
+    const sqlFresh = [
+      'SELECT COUNT(*) as count FROM data_provenance',
+      'WHERE expires_at > ' + currentTime
+    ].join('\n');
+    const freshResult = await db.prepare(sqlFresh).get();
     stats.fresh = freshResult.count;
 
     stats.expired = stats.total - stats.fresh;

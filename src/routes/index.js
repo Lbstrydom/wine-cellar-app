@@ -20,6 +20,7 @@ import settingsRoutes from './settings.js';
 import drinkingWindowsRoutes from './drinkingWindows.js';
 import cellarRoutes from './cellar.js';
 import cellarsRoutes from './cellars.js';
+import storageAreasRoutes from './storageAreas.js';
 import profileRoutes from './profile.js';
 import awardsRoutes from './awards.js';
 import backupRoutes from './backup.js';
@@ -71,12 +72,14 @@ router.post('/errors/log', optionalAuth, (req, res) => {
 router.use('/profile', requireAuth, profileRoutes);  // User profile management
 router.use('/cellars', requireAuth, cellarsRoutes);  // Cellar management (user-scoped, not cellar-scoped)
 
+
 // DATA ROUTES (require both auth + cellar context)
 // All use requireCellarContext middleware to validate membership and set req.cellarId
 router.use('/wines', requireAuth, requireCellarContext, wineRoutes);
 router.use('/wines', requireAuth, requireCellarContext, ratingsRoutes);  // Wine-specific ratings
 router.use('/slots', requireAuth, requireCellarContext, slotRoutes);
 router.use('/bottles', requireAuth, requireCellarContext, bottleRoutes);
+router.use('/storage-areas', requireAuth, requireCellarContext, storageAreasRoutes);
 router.use('/pairing', requireAuth, requireCellarContext, pairingRoutes);
 router.use('/reduce-now', requireAuth, requireCellarContext, reduceNowRoutes);
 router.use('/stats', requireAuth, requireCellarContext, statsRoutes);

@@ -161,6 +161,67 @@ export async function renderCellar() {
 }
 
 /**
+ * Render dynamic storage areas (experimental).
+ * Expects state.layout.areas = [{ name, storage_type, temp_zone, rows: [{row_num,col_count}], slots? }]
+ * If slots are not provided (lite mode), renders empty placeholders.
+ */
+export function renderStorageAreas() {
+  const container = document.getElementById('storage-areas-container');
+  if (!container || !state.layout?.areas) return;
+
+  container.innerHTML = '';
+
+  for (const area of state.layout.areas) {
+    const zoneWrap = document.createElement('div');
+    zoneWrap.className = 'zone';
+
+    const header = document.createElement('div');
+    header.className = 'zone-header';
+    const title = document.createElement('span');
+    title.className = 'zone-title';
+    title.textContent = area.name;
+    header.appendChild(title);
+    zoneWrap.appendChild(header);
+
+    const grid = document.createElement('div');
+    grid.className = 'cellar-grid';
+
+    // Render rows using col_count; use slots if provided
+    for (const row of area.rows || []) {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'cellar-row';
+
+      // Optional row label
+      const label = document.createElement('div');
+      label.className = 'row-label';
+      label.textContent = `R${row.row_num}`;
+      rowEl.appendChild(label);
+
+      if (Array.isArray(row.slots)) {
+        row.slots.forEach(slot => {
+          rowEl.appendChild(createSlotElement(slot));
+        });
+      } else {
+        for (let c = 1; c <= (row.col_count || 0); c++) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'slot empty';
+          placeholder.dataset.row = row.row_num;
+          placeholder.dataset.col = c;
+          rowEl.appendChild(placeholder);
+        }
+      }
+
+      grid.appendChild(rowEl);
+    }
+
+    zoneWrap.appendChild(grid);
+    container.appendChild(zoneWrap);
+  }
+
+  setupInteractions();
+}
+
+/**
  * Clean up grid event listeners.
  * Must be called before re-rendering.
  */

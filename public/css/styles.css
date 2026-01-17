@@ -195,6 +195,170 @@ header .search-trigger {
   max-width: 75px;
 }
 
+/* Storage Areas Container */
+.storage-areas {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  margin-bottom: 1rem;
+}
+
+.storage-areas .zone {
+  margin-bottom: 0;
+}
+
+/* Onboarding Wizard */
+.onboarding-wizard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 2rem;
+  margin: 1rem 0;
+}
+
+.onboarding-wizard h2 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  color: var(--text);
+  margin-bottom: 1rem;
+}
+
+.onboarding-wizard p {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  line-height: 1.5;
+}
+
+.onboarding-wizard input[type="number"],
+.onboarding-wizard input[type="text"],
+.onboarding-wizard select {
+  width: 100%;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-slot);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.onboarding-wizard input[type="number"]:focus,
+.onboarding-wizard input[type="text"]:focus,
+.onboarding-wizard select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.1);
+}
+
+.area-card {
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.area-card input,
+.area-card select {
+  margin-bottom: 0.75rem;
+}
+
+.layout-preview {
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.layout-preview .zone {
+  margin-bottom: 1.5rem;
+}
+
+.layout-preview .zone:last-child {
+  margin-bottom: 0;
+}
+
+.layout-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1.5rem;
+}
+
+.area-controls {
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.area-controls h3 {
+  margin-top: 0;
+  margin-bottom: 1rem;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.area-controls > button {
+  margin-bottom: 1rem;
+}
+
+.area-controls > div {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.area-controls > div span {
+  min-width: 150px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.area-controls > div input {
+  flex: 1;
+  min-width: 80px;
+}
+
+.area-controls > div button {
+  white-space: nowrap;
+}
+
+.onboarding-wizard button {
+  padding: 0.75rem 1.5rem;
+  margin-right: 0.75rem;
+  margin-top: 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.onboarding-wizard button.btn-primary {
+  background: var(--accent);
+  color: white;
+}
+
+.onboarding-wizard button.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.onboarding-wizard button.btn-secondary {
+  background: var(--bg-slot);
+  color: var(--text);
+  border: 1px solid var(--border);
+}
+
+.onboarding-wizard button.btn-secondary:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* AI Drink Recommendations Panel */
 .recommendation-panel {
   background: linear-gradient(135deg, var(--bg-card) 0%, rgba(139, 92, 246, 0.05) 100%);

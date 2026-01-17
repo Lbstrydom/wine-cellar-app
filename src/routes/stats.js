@@ -55,12 +55,140 @@ router.get('/', async (req, res) => {
  */
 router.get('/layout', async (req, res) => {
   try {
-    // Optimized: Use LEFT JOIN instead of correlated subqueries for reduce_now
-    // This reduces 342 subqueries (2 per slot) to a single JOIN
-    const slots = await db.prepare(`
+    const isLite = String(req.query.lite).toLowerCase() === 'true';
+
+    // Detect dynamic storage areas for this cellar
+    const areaCountRow = await db.prepare(`
+      SELECT COUNT(*) AS count FROM storage_areas WHERE cellar_id = $1
+    `).get(req.cellarId);
+    const hasDynamicAreas = Number(areaCountRow?.count ?? 0) > 0;
+
+    if (!hasDynamicAreas) {
+      // Legacy layout fallback (fridge + cellar)
+      const slots = await db.prepare(`
+        SELECT
+          s.id as slot_id,
+          s.zone,
+          s.location_code,
+          s.row_num,
+          s.col_num,
+          s.is_open,
+          s.opened_at,
+          w.id as wine_id,
+          w.style,
+          w.colour,
+          w.wine_name,
+          w.vintage,
+          w.vivino_rating,
+          w.price_eur,
+          w.drink_from,
+          w.drink_peak,
+          w.drink_until,
+          w.tasting_notes,
+          rn.priority as reduce_priority,
+          rn.reduce_reason
+        FROM slots s
+        LEFT JOIN wines w ON s.wine_id = w.id AND w.cellar_id = $1
+        LEFT JOIN reduce_now rn ON rn.wine_id = w.id AND rn.cellar_id = $1
+        WHERE s.cellar_id = $1
+        ORDER BY s.zone DESC, s.row_num, s.col_num
+      `).all(req.cellarId);
+
+      const layout = {
+        fridge: { rows: [{ slots: [] }, { slots: [] }] },
+        cellar: { rows: [] }
+      };
+
+      for (let r = 1; r <= 19; r++) {
+        const maxCol = r === 1 ? 7 : 9;
+        layout.cellar.rows.push({ row: r, maxCols: maxCol, slots: [] });
+      }
+
+      slots.forEach(slot => {
+        const slotData = {
+          slot_id: slot.slot_id,
+          location_code: slot.location_code,
+          wine_id: slot.wine_id,
+          wine_name: slot.wine_name,
+          vintage: slot.vintage,
+          colour: slot.colour,
+          style: slot.style,
+          rating: slot.vivino_rating,
+          price: slot.price_eur,
+          drink_from: slot.drink_from,
+          drink_peak: slot.drink_peak,
+          drink_until: slot.drink_until,
+          tasting_notes: slot.tasting_notes,
+          reduce_priority: slot.reduce_priority,
+          reduce_reason: slot.reduce_reason,
+          is_open: slot.is_open,
+          opened_at: slot.opened_at
+        };
+
+        if (slot.zone === 'fridge') {
+          const fridgeRow = slot.row_num - 1;
+          layout.fridge.rows[fridgeRow].slots.push(slotData);
+        } else {
+          layout.cellar.rows[slot.row_num - 1].slots.push(slotData);
+        }
+      });
+
+      return res.json(layout);
+    }
+
+    // Dynamic storage areas path
+    // Fetch areas metadata
+    const areas = await db.prepare(`
+      SELECT id, name, storage_type, temp_zone, display_order
+      FROM storage_areas
+      WHERE cellar_id = $1
+      ORDER BY display_order, created_at
+    `).all(req.cellarId);
+
+    // Fetch all rows for these areas
+    const areaIds = areas.map(a => a.id);
+    let rows = [];
+    if (areaIds.length > 0) {
+      rows = await db.prepare(`
+        SELECT storage_area_id, row_num, col_count, label
+        FROM storage_area_rows
+        WHERE storage_area_id = ANY($1)
+        ORDER BY storage_area_id, row_num
+      `).all(areaIds);
+    }
+
+    // Build base structure
+    const layout = { areas: [] };
+    const areaMap = new Map();
+    for (const area of areas) {
+      const entry = {
+        id: area.id,
+        name: area.name,
+        storage_type: area.storage_type,
+        temp_zone: area.temp_zone,
+        rows: []
+      };
+      layout.areas.push(entry);
+      areaMap.set(area.id, entry);
+    }
+
+    for (const r of rows) {
+      const parent = areaMap.get(r.storage_area_id);
+      if (parent) {
+        parent.rows.push({ row_num: r.row_num, col_count: r.col_count, label: r.label });
+      }
+    }
+
+    if (isLite) {
+      // Lite mode: return only structure without slot occupancy
+      return res.json(layout);
+    }
+
+    // Full mode: include slot occupancy per area/row/col
+    const slotRows = await db.prepare(`
       SELECT
         s.id as slot_id,
-        s.zone,
+        s.storage_area_id,
         s.location_code,
         s.row_num,
         s.col_num,
@@ -83,49 +211,51 @@ router.get('/layout', async (req, res) => {
       LEFT JOIN wines w ON s.wine_id = w.id AND w.cellar_id = $1
       LEFT JOIN reduce_now rn ON rn.wine_id = w.id AND rn.cellar_id = $1
       WHERE s.cellar_id = $1
-      ORDER BY s.zone DESC, s.row_num, s.col_num
+      ORDER BY s.storage_area_id, s.row_num, s.col_num
     `).all(req.cellarId);
 
-  const layout = {
-    fridge: { rows: [{ slots: [] }, { slots: [] }] },
-    cellar: { rows: [] }
-  };
-
-  for (let r = 1; r <= 19; r++) {
-    const maxCol = r === 1 ? 7 : 9;
-    layout.cellar.rows.push({ row: r, maxCols: maxCol, slots: [] });
-  }
-
-  slots.forEach(slot => {
-    const slotData = {
-      slot_id: slot.slot_id,
-      location_code: slot.location_code,
-      wine_id: slot.wine_id,
-      wine_name: slot.wine_name,
-      vintage: slot.vintage,
-      colour: slot.colour,
-      style: slot.style,
-      rating: slot.vivino_rating,
-      price: slot.price_eur,
-      drink_from: slot.drink_from,
-      drink_peak: slot.drink_peak,
-      drink_until: slot.drink_until,
-      tasting_notes: slot.tasting_notes,
-      reduce_priority: slot.reduce_priority,
-      reduce_reason: slot.reduce_reason,
-      is_open: slot.is_open,
-      opened_at: slot.opened_at
-    };
-
-      if (slot.zone === 'fridge') {
-        const fridgeRow = slot.row_num - 1;
-        layout.fridge.rows[fridgeRow].slots.push(slotData);
-      } else {
-        layout.cellar.rows[slot.row_num - 1].slots.push(slotData);
+    // Create row slots arrays
+    for (const area of layout.areas) {
+      for (const row of area.rows) {
+        row.slots = [];
       }
-    });
+    }
 
-    res.json(layout);
+    // Helper map for row lookup
+    const rowKeyMap = new Map();
+    for (const area of layout.areas) {
+      for (const row of area.rows) {
+        rowKeyMap.set(`${area.id}:${row.row_num}`, row);
+      }
+    }
+
+    for (const s of slotRows) {
+      const rowKey = `${s.storage_area_id}:${s.row_num}`;
+      const row = rowKeyMap.get(rowKey);
+      if (!row) continue;
+
+      row.slots.push({
+        slot_id: s.slot_id,
+        location_code: s.location_code,
+        wine_id: s.wine_id,
+        wine_name: s.wine_name,
+        vintage: s.vintage,
+        colour: s.colour,
+        style: s.style,
+        rating: s.vivino_rating,
+        price: s.price_eur,
+        drink_from: s.drink_from,
+        drink_peak: s.drink_peak,
+        drink_until: s.drink_until,
+        tasting_notes: s.tasting_notes,
+        reduce_priority: s.reduce_priority,
+        reduce_reason: s.reduce_reason,
+        is_open: s.is_open,
+        opened_at: s.opened_at
+      });
+    }
+
+    return res.json(layout);
   } catch (error) {
     console.error('Layout error:', error);
     res.status(500).json({ error: error.message });

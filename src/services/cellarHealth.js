@@ -21,20 +21,21 @@ export async function getCellarHealth() {
 
   // Get all wines with bottles
   const locationAgg = stringAgg('s.location_code'); // Safe: helper returns SQL function string
-  const wines = await db.prepare(`
-    SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
-           w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
-           w.drink_from, w.drink_peak, w.drink_until, w.created_at,
-           COUNT(s.id) as bottle_count,
-           ${locationAgg} as locations,
-           MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge
-    FROM wines w
-    JOIN slots s ON s.wine_id = w.id
-    GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,
-             w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,
-             w.drink_from, w.drink_peak, w.drink_until, w.created_at
-    HAVING COUNT(s.id) > 0
-  `).all();
+  const winesSql = [
+    'SELECT w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,',
+    '       w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,',
+    '       w.drink_from, w.drink_peak, w.drink_until, w.created_at,',
+    '       COUNT(s.id) as bottle_count,',
+    '       ' + locationAgg + ' as locations,',
+    "       MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge",
+    'FROM wines w',
+    'JOIN slots s ON s.wine_id = w.id',
+    'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,',
+    '         w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,',
+    '         w.drink_from, w.drink_peak, w.drink_until, w.created_at',
+    'HAVING COUNT(s.id) > 0'
+  ].join('\n');
+  const wines = await db.prepare(winesSql).all();
 
   // Get drinking windows
   const drinkingWindows = await db.prepare(`

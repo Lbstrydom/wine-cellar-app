@@ -140,24 +140,25 @@ router.get('/drinking-windows/urgent', async (req, res) => {
     // Safe: stringAgg() is a helper that returns SQL function call string
     const locationAgg = stringAgg('s.location_code', ',', true);
 
-    const urgent = await db.prepare(`
-      SELECT
-        w.id, w.wine_name, w.vintage, w.style, w.colour,
-        COUNT(s.id) as bottle_count,
-        ${locationAgg} as locations,
-        dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,
-        (dw.drink_by_year - $1) as years_remaining
-      FROM wines w
-      JOIN drinking_windows dw ON w.id = dw.wine_id
-      LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE w.cellar_id = $2
-        AND dw.drink_by_year IS NOT NULL
-        AND dw.drink_by_year <= $3
-      GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour,
-               dw.id, dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source
-      HAVING COUNT(s.id) > 0
-      ORDER BY dw.drink_by_year ASC
-    `).all(currentYear, req.cellarId, urgencyYear);
+    const sql = [
+      'SELECT',
+      '  w.id, w.wine_name, w.vintage, w.style, w.colour,',
+      '  COUNT(s.id) as bottle_count,',
+      '  ' + locationAgg + ' as locations,',
+      '  dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source as window_source,',
+      '  (dw.drink_by_year - $1) as years_remaining',
+      'FROM wines w',
+      'JOIN drinking_windows dw ON w.id = dw.wine_id',
+      'LEFT JOIN slots s ON s.wine_id = w.id',
+      'WHERE w.cellar_id = $2',
+      '  AND dw.drink_by_year IS NOT NULL',
+      '  AND dw.drink_by_year <= $3',
+      'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour,',
+      '         dw.id, dw.drink_from_year, dw.drink_by_year, dw.peak_year, dw.source',
+      'HAVING COUNT(s.id) > 0',
+      'ORDER BY dw.drink_by_year ASC'
+    ].join('\n');
+    const urgent = await db.prepare(sql).all(currentYear, req.cellarId, urgencyYear);
 
     res.json(urgent);
   } catch (error) {

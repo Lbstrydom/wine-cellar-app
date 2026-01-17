@@ -1275,6 +1275,38 @@ export const SOURCES = {
     notes: 'Oldest wine merchant. Curates critic scores for fine wine.'
   },
 
+  // Taste Atlas - Global food and wine aggregator
+  // Excellent for competition medal aggregation - includes DWWA, Concours Mondial, etc.
+  taste_atlas: {
+    name: 'Taste Atlas',
+    short_name: 'TasteAtlas',
+    lens: LENS.AGGREGATOR,
+    credibility: 0.75,
+    scope: 'global',
+    home_regions: [],
+    domain: 'tasteatlas.com',
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'aggregated',
+    is_aggregator: true,
+    aggregates_sources: ['concours_mondial', 'decanter', 'iwc', 'iwsc', 'mundus_vini'],
+    query_template: '{wine} {vintage} site:tasteatlas.com',
+    normalise: (raw) => {
+      // Taste Atlas aggregates competition medals
+      const lower = raw.toLowerCase();
+      if (lower.includes('gold')) return 94;
+      if (lower.includes('silver')) return 88;
+      if (lower.includes('bronze')) return 82;
+      return null;
+    },
+    medal_bands: {
+      gold: { min: 94, max: 100, label: 'Gold' },
+      silver: { min: 88, max: 93, label: 'Silver' },
+      bronze: { min: 82, max: 87, label: 'Bronze' }
+    },
+    notes: 'Global food/wine aggregator. Aggregates major competition awards and user ratings.'
+  },
+
   // ===========================================================================
   // PRODUCER WEBSITE
   // ===========================================================================
@@ -1329,7 +1361,7 @@ export const REGION_SOURCE_PRIORITY = {
   'Portugal': ['revista_vinhos', 'jancis_robinson', 'tim_atkin', 'decanter', 'vivino', 'wine_searcher'],
   'Greece': ['elloinos', 'decanter', 'vivino', 'wine_searcher'],
   'Switzerland': ['vinum', 'falstaff', 'decanter', 'vivino', 'wine_searcher'],
-  '_default': ['decanter', 'wine_enthusiast', 'james_suckling', 'tim_atkin', 'vivino', 'cellar_tracker', 'wine_searcher'],
+  '_default': ['decanter', 'wine_enthusiast', 'james_suckling', 'tim_atkin', 'vivino', 'taste_atlas', 'cellar_tracker', 'wine_searcher'],
   '_premium': ['wine_advocate', 'jancis_robinson', 'vinous', 'wine_spectator', 'james_suckling', 'tim_atkin']
 };
 

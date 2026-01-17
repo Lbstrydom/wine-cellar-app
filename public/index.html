@@ -121,6 +121,9 @@
       </div>
     </section>
 
+    <!-- Dynamic Storage Areas Container (used when areas are configured) -->
+    <div class="storage-areas" id="storage-areas-container" style="display: none;"></div>
+
     <div class="fridge-section zone">
       <div class="zone-header">
         <span class="zone-title">Fridge</span>
@@ -497,6 +500,19 @@
           <button class="btn btn-secondary btn-small" id="clear-candidates-btn">Dismiss</button>
         </div>
       </div>
+    </div>
+
+    <!-- Storage Areas Configuration Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Storage Areas</h3>
+      <p class="settings-section-desc">Configure your wine storage layout: cellar, fridge, racks, or custom areas.</p>
+
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="configure-storage-areas-btn">Configure Storage Areas</button>
+      </div>
+
+      <!-- Onboarding wizard container (hidden by default) -->
+      <div id="storage-areas-wizard" class="onboarding-wizard" style="display: none; margin-top: 2rem;"></div>
     </div>
 
     <!-- Storage Conditions Section -->

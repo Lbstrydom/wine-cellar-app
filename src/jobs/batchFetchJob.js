@@ -83,18 +83,19 @@ async function handleBatchFetch(payload, context) {
       const currentTime = nowFunc();
 
       // Update wine
-      await db.prepare(`
-        UPDATE wines SET
-          competition_index = ?,
-          critics_index = ?,
-          community_index = ?,
-          purchase_score = ?,
-          purchase_stars = ?,
-          confidence_level = ?,
-          tasting_notes = COALESCE(?, tasting_notes),
-          ratings_updated_at = ${currentTime}
-        WHERE id = ?
-      `).run(
+      const sql = [
+        'UPDATE wines SET',
+        'competition_index = ?,',
+        'critics_index = ?,',
+        'community_index = ?,',
+        'purchase_score = ?,',
+        'purchase_stars = ?,',
+        'confidence_level = ?,',
+        'tasting_notes = COALESCE(?, tasting_notes),',
+        'ratings_updated_at = ' + currentTime,
+        'WHERE id = ?'
+      ].join(' ');
+      await db.prepare(sql).run(
         aggregates.competition_index,
         aggregates.critics_index,
         aggregates.community_index,

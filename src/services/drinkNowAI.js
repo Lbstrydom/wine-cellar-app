@@ -57,51 +57,52 @@ Guidelines:
  */
 async function getUrgentWines() {
   const currentYear = new Date().getFullYear();
-  const locationAgg = stringAgg('s.location_code', ',', true); // Safe: helper returns SQL function string
+  const locationAgg = stringAgg('s.location_code', ',', true);
 
-  return await db.prepare(`
-    SELECT
-      w.id,
-      w.wine_name,
-      w.vintage,
-      w.style,
-      w.colour,
-      w.price_eur,
-      w.vivino_rating,
-      w.purchase_stars,
-      w.drink_from,
-      w.drink_peak,
-      w.drink_until,
-      w.personal_rating,
-      w.tasting_notes,
-      COUNT(s.id) as bottle_count,
-      ${locationAgg} as locations,
-      MIN(rn.priority) as reduce_priority,
-      MAX(rn.reduce_reason) as reduce_reason,
-      CASE
-        WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 'past_peak'
-        WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 'at_peak'
-        WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 'ready'
-        WHEN w.drink_from IS NOT NULL AND w.drink_from > ? THEN 'too_young'
-        ELSE 'unknown'
-      END as drinking_status
-    FROM wines w
-    LEFT JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON rn.wine_id = w.id
-    GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.price_eur, w.vivino_rating,
-             w.purchase_stars, w.drink_from, w.drink_peak, w.drink_until, w.personal_rating, w.tasting_notes
-    HAVING COUNT(s.id) > 0
-    ORDER BY
-      CASE
-        WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 1
-        WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 2
-        WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 3
-        ELSE 4
-      END,
-      ${nullsLast('MIN(rn.priority)', 'ASC')},
-      ${nullsLast('w.purchase_stars', 'DESC')}
-    LIMIT 30
-  `).all(currentYear, currentYear, currentYear, currentYear, currentYear, currentYear, currentYear);
+  const urgentWinesSql = [
+    'SELECT',
+    '  w.id,',
+    '  w.wine_name,',
+    '  w.vintage,',
+    '  w.style,',
+    '  w.colour,',
+    '  w.price_eur,',
+    '  w.vivino_rating,',
+    '  w.purchase_stars,',
+    '  w.drink_from,',
+    '  w.drink_peak,',
+    '  w.drink_until,',
+    '  w.personal_rating,',
+    '  w.tasting_notes,',
+    '  COUNT(s.id) as bottle_count,',
+    '  ' + locationAgg + ' as locations,',
+    '  MIN(rn.priority) as reduce_priority,',
+    '  MAX(rn.reduce_reason) as reduce_reason,',
+    '  CASE',
+    "    WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 'past_peak'",
+    "    WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 'at_peak'",
+    "    WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 'ready'",
+    "    WHEN w.drink_from IS NOT NULL AND w.drink_from > ? THEN 'too_young'",
+    "    ELSE 'unknown'",
+    '  END as drinking_status',
+    'FROM wines w',
+    'LEFT JOIN slots s ON s.wine_id = w.id',
+    'LEFT JOIN reduce_now rn ON rn.wine_id = w.id',
+    'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.price_eur, w.vivino_rating,',
+    '         w.purchase_stars, w.drink_from, w.drink_peak, w.drink_until, w.personal_rating, w.tasting_notes',
+    'HAVING COUNT(s.id) > 0',
+    'ORDER BY',
+    '  CASE',
+    '    WHEN w.drink_until IS NOT NULL AND w.drink_until <= ? THEN 1',
+    '    WHEN w.drink_peak IS NOT NULL AND w.drink_peak <= ? THEN 2',
+    '    WHEN w.drink_from IS NOT NULL AND w.drink_from <= ? THEN 3',
+    '    ELSE 4',
+    '  END,',
+    '  ' + nullsLast('MIN(rn.priority)', 'ASC') + ',',
+    '  ' + nullsLast('w.purchase_stars', 'DESC'),
+    'LIMIT 30'
+  ].join('\n');
+  return await db.prepare(urgentWinesSql).all(currentYear, currentYear, currentYear, currentYear, currentYear, currentYear, currentYear);
 }
 
 /**

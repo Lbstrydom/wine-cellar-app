@@ -1,0 +1,384 @@
+{
+  "version": "1.0",
+  "description": "Wine search regression test cases - 'hard wines' with challenging characteristics",
+  "purpose": "Ensure search quality remains high for difficult cases (range qualifiers, foreign scripts, etc.)",
+  "cases": [
+    {
+      "id": "range-qualifier-vineyard-selection",
+      "wine": "Kleine Zalze Vineyard Selection Chenin Blanc 2019",
+      "vintage": "2019",
+      "difficulty": "high",
+      "challenges": [
+        "range_qualifier",
+        "producer_pdf_awards",
+        "south_african",
+        "chenin_blanc_varietal"
+      ],
+      "expected": {
+        "range_qualifier_detected": "vineyard selection",
+        "min_results": 3,
+        "must_find_sources": [
+          "producer_website"
+        ],
+        "known_awards": [
+          "Concours Mondial de Bruxelles Gold"
+        ],
+        "known_ratings": {
+          "min": 85,
+          "sources": ["decanter", "vivino"]
+        }
+      },
+      "notes": "Classic range qualifier case - Vineyard Selection is a distinct product line above their base range"
+    },
+    {
+      "id": "spanish-gran-reserva",
+      "wine": "Marqués de Riscal Gran Reserva 2015",
+      "vintage": "2015",
+      "difficulty": "high",
+      "challenges": [
+        "aging_classification",
+        "accented_chars",
+        "spanish_wine",
+        "regulated_designation"
+      ],
+      "expected": {
+        "range_qualifier_detected": "gran reserva",
+        "locale_hint": "es",
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_awards": []
+      },
+      "notes": "Gran Reserva is a regulated aging classification in Spain - critical to match correctly"
+    },
+    {
+      "id": "german-spaetlese",
+      "wine": "Weingut Müller Scharzhofberger Riesling Spätlese 2018",
+      "vintage": "2018",
+      "difficulty": "very_high",
+      "challenges": [
+        "german_pradikat",
+        "umlaut_chars",
+        "vineyard_site_name",
+        "regulated_classification",
+        "low_ambiguity_qualifier"
+      ],
+      "expected": {
+        "range_qualifier_detected": "spätlese",
+        "locale_hint": "de",
+        "locale_confidence": 0.95,
+        "min_results": 3,
+        "must_find_sources": [
+          "producer_website"
+        ]
+      },
+      "notes": "Spätlese is a low-ambiguity German Prädikat classification - should trigger immediate producer search"
+    },
+    {
+      "id": "french-premier-cru",
+      "wine": "Domaine Leflaive Puligny-Montrachet 1er Cru Les Pucelles 2017",
+      "vintage": "2017",
+      "difficulty": "very_high",
+      "challenges": [
+        "french_cru_classification",
+        "specific_vineyard_parcel",
+        "premier_cru",
+        "burgundy_naming"
+      ],
+      "expected": {
+        "range_qualifier_detected": "premier cru",
+        "locale_hint": "fr",
+        "min_results": 4,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 90,
+          "sources": ["decanter", "wine_spectator"]
+        }
+      },
+      "notes": "Premier Cru with specific vineyard parcel - precision critical for Burgundy"
+    },
+    {
+      "id": "italian-riserva",
+      "wine": "Antinori Tignanello Riserva 2016",
+      "vintage": "2016",
+      "difficulty": "medium",
+      "challenges": [
+        "italian_classification",
+        "super_tuscan",
+        "regulated_designation"
+      ],
+      "expected": {
+        "range_qualifier_detected": "riserva",
+        "locale_hint": "it",
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website"
+        ]
+      },
+      "notes": "Riserva is an Italian aging classification - distinct from base Tignanello"
+    },
+    {
+      "id": "nv-champagne-prestige",
+      "wine": "Dom Pérignon Vintage Champagne 2012",
+      "vintage": "2012",
+      "difficulty": "high",
+      "challenges": [
+        "champagne_house",
+        "prestige_cuvee",
+        "accented_chars",
+        "vintage_champagne"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": "fr",
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 95,
+          "sources": ["wine_spectator", "decanter"]
+        }
+      },
+      "notes": "Prestige cuvée Champagne - high-value wine with extensive reviews"
+    },
+    {
+      "id": "australian-reserve-ambiguity",
+      "wine": "Penfolds Bin 389 Cabernet Shiraz 2018",
+      "vintage": "2018",
+      "difficulty": "medium",
+      "challenges": [
+        "bin_number_naming",
+        "blend_varietal",
+        "australian_wine",
+        "no_range_qualifier"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": null,
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website"
+        ],
+        "known_ratings": {
+          "min": 90,
+          "sources": ["wine_spectator", "vivino"]
+        }
+      },
+      "notes": "Bin number system instead of range qualifier - should still find high-quality results"
+    },
+    {
+      "id": "south-african-blend-multiple-qualifiers",
+      "wine": "Kanonkop Estate Pinotage 2019",
+      "vintage": "2019",
+      "difficulty": "medium",
+      "challenges": [
+        "south_african",
+        "pinotage_varietal",
+        "estate_wine",
+        "producer_pdf_awards"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": null,
+        "min_results": 4,
+        "must_find_sources": [
+          "producer_website"
+        ],
+        "known_awards": [
+          "Platter's Guide 5 Stars"
+        ]
+      },
+      "notes": "Estate wine with strong awards history - should find producer PDF with awards"
+    },
+    {
+      "id": "new-zealand-sauvignon-blanc",
+      "wine": "Cloudy Bay Sauvignon Blanc 2021",
+      "vintage": "2021",
+      "difficulty": "low",
+      "challenges": [
+        "new_zealand",
+        "sauvignon_blanc",
+        "iconic_producer"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": null,
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 88,
+          "sources": ["wine_spectator", "vivino"]
+        }
+      },
+      "notes": "Iconic NZ Sauvignon Blanc - should be easy to find with high-quality results"
+    },
+    {
+      "id": "american-cult-cabernet",
+      "wine": "Screaming Eagle Cabernet Sauvignon 2015",
+      "vintage": "2015",
+      "difficulty": "low",
+      "challenges": [
+        "cult_wine",
+        "napa_valley",
+        "high_value"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": null,
+        "min_results": 5,
+        "must_find_sources": [
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 95,
+          "sources": ["wine_spectator", "wine_advocate"]
+        }
+      },
+      "notes": "Cult Napa Cabernet - extensive critical reviews, high visibility"
+    },
+    {
+      "id": "portuguese-reserva-ambiguity",
+      "wine": "Quinta do Crasto Reserva Old Vines 2017",
+      "vintage": "2017",
+      "difficulty": "medium",
+      "challenges": [
+        "portuguese_wine",
+        "reserva_ambiguity",
+        "old_vines_qualifier",
+        "douro_region"
+      ],
+      "expected": {
+        "range_qualifier_detected": "reserva",
+        "locale_hint": "pt",
+        "min_results": 3,
+        "must_find_sources": [
+          "producer_website"
+        ]
+      },
+      "notes": "Portuguese Reserva with 'Old Vines' - multiple qualifiers, medium ambiguity"
+    },
+    {
+      "id": "organic-biodynamic-qualifier",
+      "wine": "Domaine Zind-Humbrecht Riesling Grand Cru Rangen de Thann 2018",
+      "vintage": "2018",
+      "difficulty": "very_high",
+      "challenges": [
+        "alsace_grand_cru",
+        "specific_vineyard",
+        "grand_cru_classification",
+        "hyphenated_producer",
+        "french_wine"
+      ],
+      "expected": {
+        "range_qualifier_detected": "grand cru",
+        "locale_hint": "fr",
+        "min_results": 3,
+        "must_find_sources": [
+          "producer_website"
+        ],
+        "known_ratings": {
+          "min": 92,
+          "sources": ["wine_spectator", "decanter"]
+        }
+      },
+      "notes": "Alsace Grand Cru with specific vineyard - high precision required"
+    },
+    {
+      "id": "sparkling-blanc-de-blancs",
+      "wine": "Taittinger Comtes de Champagne Blanc de Blancs 2011",
+      "vintage": "2011",
+      "difficulty": "high",
+      "challenges": [
+        "champagne_house",
+        "blanc_de_blancs",
+        "prestige_cuvee",
+        "french_wine"
+      ],
+      "expected": {
+        "range_qualifier_detected": "blanc de blancs",
+        "locale_hint": "fr",
+        "min_results": 4,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 93,
+          "sources": ["wine_spectator"]
+        }
+      },
+      "notes": "Blanc de Blancs is a specific style (100% Chardonnay) - should match precisely"
+    },
+    {
+      "id": "dessert-wine-sauternes",
+      "wine": "Château d'Yquem Sauternes 2015",
+      "vintage": "2015",
+      "difficulty": "low",
+      "challenges": [
+        "dessert_wine",
+        "sauternes",
+        "premier_cru_superieur",
+        "french_wine",
+        "accented_chars"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": "fr",
+        "min_results": 5,
+        "must_find_sources": [
+          "producer_website",
+          "top_critic"
+        ],
+        "known_ratings": {
+          "min": 96,
+          "sources": ["wine_spectator", "wine_advocate"]
+        }
+      },
+      "notes": "Premier Cru Supérieur Sauternes - legendary dessert wine with extensive reviews"
+    },
+    {
+      "id": "orange-wine-skin-contact",
+      "wine": "Gravner Ribolla Gialla Anfora 2013",
+      "vintage": "2013",
+      "difficulty": "very_high",
+      "challenges": [
+        "orange_wine",
+        "skin_contact",
+        "amphora_aging",
+        "italian_wine",
+        "natural_wine"
+      ],
+      "expected": {
+        "range_qualifier_detected": null,
+        "locale_hint": "it",
+        "min_results": 2,
+        "must_find_sources": [
+          "producer_website"
+        ]
+      },
+      "notes": "Natural/orange wine - niche category with limited but passionate coverage"
+    }
+  ],
+  "test_instructions": {
+    "purpose": "Run this test suite to validate search quality improvements",
+    "usage": "Load this fixture in test code and assert expected outcomes",
+    "success_criteria": {
+      "range_qualifier_detection": "100% accuracy on qualifier detection",
+      "min_results": "At least N results per wine (as specified)",
+      "top_3_accuracy": "Top 3 results must include at least one 'must_find_sources'",
+      "known_awards": "If awards listed, at least one must be found in results",
+      "known_ratings": "If ratings specified, at least one source must return rating >= min"
+    },
+    "regression_tracking": "If a test case starts failing, investigate before merging code changes"
+  }
+}

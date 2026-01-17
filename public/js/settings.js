@@ -23,12 +23,142 @@ import {
   getBackupInfo,
   exportBackupJSON,
   exportBackupCSV,
-  importBackup
+  importBackup,
+  fetchLayoutLite,
+  createStorageArea,
+  updateStorageAreaLayout
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
+import { startOnboarding } from './onboarding.js';
+import { refreshLayout } from './app.js';
 
 // Track current import type
 let currentImportType = 'webpage';
+
+// ============================================
+// Storage Areas Configuration
+// ============================================
+
+/**
+ * Initialize storage areas wizard button and listener.
+ */
+function initStorageAreasWizard() {
+  const btn = document.getElementById('configure-storage-areas-btn');
+  if (!btn) return;
+
+  btn.addEventListener('click', openStorageAreasWizard);
+}
+
+/**
+ * Open storage areas configuration wizard.
+ * Loads existing layout in lite mode and initializes the onboarding UI.
+ */
+async function openStorageAreasWizard() {
+  const btn = document.getElementById('configure-storage-areas-btn');
+  const wizardContainer = document.getElementById('storage-areas-wizard');
+  if (!btn || !wizardContainer) return;
+
+  try {
+    btn.disabled = true;
+    btn.textContent = 'Loading...';
+
+    // Load existing layout in lite mode to prefill areas
+    const layout = await fetchLayoutLite();
+
+    // Show wizard container
+    wizardContainer.style.display = 'block';
+
+    // Initialize onboarding wizard
+    startOnboarding(wizardContainer);
+
+    // Prefill areas if they exist
+    if (layout?.areas && layout.areas.length > 0) {
+      // Import existing areas into the builder state
+      // The builder has its own state that we'll populate
+      const { setAreas } = await import('./storageBuilder.js');
+      setAreas(layout.areas);
+      // Note: After setAreas, the wizard will show the appropriate step
+    }
+
+    // Listen for save event
+    wizardContainer.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
+
+  } catch (err) {
+    showToast('Error loading configuration: ' + err.message);
+    console.error('Wizard error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Configure Storage Areas';
+  }
+}
+
+/**
+ * Handle storage areas save from onboarding wizard.
+ * Persists areas and layout to the backend API.
+ * @param {CustomEvent} event
+ */
+async function handleStorageAreasSave(event) {
+  const wizardContainer = document.getElementById('storage-areas-wizard');
+  const btn = document.getElementById('configure-storage-areas-btn');
+  if (!wizardContainer || !btn) return;
+
+  const { areas } = event.detail;
+  if (!Array.isArray(areas) || areas.length === 0) {
+    showToast('No areas to save');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving...';
+
+  try {
+    // Create each area and store its ID
+    const createdAreas = [];
+    for (const area of areas) {
+      const areaData = {
+        name: area.name,
+        storage_type: area.storage_type,
+        temp_zone: area.temp_zone,
+        display_order: createdAreas.length + 1
+      };
+      const result = await createStorageArea(areaData);
+      const areaId = result.data?.id || result.id;
+      if (!areaId) {
+        throw new Error(`Failed to create area: ${area.name}`);
+      }
+      createdAreas.push({ ...area, id: areaId });
+    }
+
+    // Update layout for each area
+    for (const area of createdAreas) {
+      if (Array.isArray(area.rows) && area.rows.length > 0) {
+        await updateStorageAreaLayout(area.id, area.rows);
+      }
+    }
+
+    // Hide wizard and reset
+    wizardContainer.style.display = 'none';
+    wizardContainer.innerHTML = '';
+
+    // Refresh the cellar grid to show new areas
+    await refreshLayout();
+
+    showToast(`Storage configuration saved: ${createdAreas.length} areas created`);
+
+  } catch (err) {
+    showToast('Error saving configuration: ' + err.message);
+    console.error('Save error:', err);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Configure Storage Areas';
+
+    // Re-attach listener in case user wants to try again
+    const container = document.getElementById('storage-areas-wizard');
+    if (container) {
+      container.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
+    }
+  }
+}
 
 // ============================================
 // Text Size / Display Settings
@@ -400,6 +530,9 @@ async function handleAddCandidates() {
 export function initSettings() {
   // Initialize display settings (text size)
   initTextSizeSelector();
+
+  // Initialize storage areas wizard
+  initStorageAreasWizard();
 
   // Initialize backup section
   initBackupSection();

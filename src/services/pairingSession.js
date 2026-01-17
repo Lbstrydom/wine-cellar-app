@@ -161,26 +161,26 @@ export async function recordFeedback(sessionId, {
  * @returns {Promise<Object[]>} Sessions needing feedback
  */
 export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays = 2) {
-  // Safe: INTERVAL '${days} days' pattern safe with numeric input
   const intervalDays = `INTERVAL '${maxAgeDays} days'`;
 
-  const results = await db.prepare(`
-    SELECT 
-      ps.id,
-      ps.dish_description,
-      ps.chosen_wine_id,
-      ps.chosen_at,
-      ps.confirmed_consumed,
-      w.wine_name,
-      w.vintage
-    FROM pairing_sessions ps
-    LEFT JOIN wines w ON ps.chosen_wine_id = w.id
-    WHERE ps.user_id = $1
-      AND ps.chosen_wine_id IS NOT NULL
-      AND ps.pairing_fit_rating IS NULL
-      AND ps.created_at > NOW() - ${intervalDays}
-    ORDER BY ps.created_at DESC
-  `).all(userId);
+  const sql = [
+    'SELECT',
+    '  ps.id,',
+    '  ps.dish_description,',
+    '  ps.chosen_wine_id,',
+    '  ps.chosen_at,',
+    '  ps.confirmed_consumed,',
+    '  w.wine_name,',
+    '  w.vintage',
+    'FROM pairing_sessions ps',
+    'LEFT JOIN wines w ON ps.chosen_wine_id = w.id',
+    'WHERE ps.user_id = $1',
+    '  AND ps.chosen_wine_id IS NOT NULL',
+    '  AND ps.pairing_fit_rating IS NULL',
+    '  AND ps.created_at > NOW() - ' + intervalDays,
+    'ORDER BY ps.created_at DESC'
+  ].join('\n');
+  const results = await db.prepare(sql).all(userId);
   
   return results;
 }
@@ -195,19 +195,19 @@ export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays 
  * @returns {Promise<Object|null>} Most recent matching session or null
  */
 export async function findRecentSessionForWine(wineId, userId = 'default', maxAgeHours = 48) {
-  // Safe: INTERVAL '${hours} hours' pattern safe with numeric input
   const intervalHours = `INTERVAL '${maxAgeHours} hours'`;
 
-  const result = await db.prepare(`
-    SELECT id, dish_description, created_at
-    FROM pairing_sessions
-    WHERE user_id = $1
-      AND chosen_wine_id = $2
-      AND consumption_log_id IS NULL
-      AND created_at > NOW() - ${intervalHours}
-    ORDER BY created_at DESC
-    LIMIT 1
-  `).get(userId, wineId);
+  const sql = [
+    'SELECT id, dish_description, created_at',
+    'FROM pairing_sessions',
+    'WHERE user_id = $1',
+    '  AND chosen_wine_id = $2',
+    '  AND consumption_log_id IS NULL',
+    '  AND created_at > NOW() - ' + intervalHours,
+    'ORDER BY created_at DESC',
+    'LIMIT 1'
+  ].join('\n');
+  const result = await db.prepare(sql).get(userId, wineId);
   
   return result || null;
 }
@@ -227,28 +227,29 @@ export async function getPairingHistory(userId = 'default', { limit = 20, offset
   // Safe: feedbackFilter is a conditional clause string, all values from whitelist
   const feedbackFilter = feedbackOnly ? 'AND ps.pairing_fit_rating IS NOT NULL' : '';
   
-  const results = await db.prepare(`
-    SELECT 
-      ps.id,
-      ps.dish_description,
-      ps.food_signals,
-      ps.created_at,
-      ps.chosen_wine_id,
-      ps.chosen_rank,
-      ps.confirmed_consumed,
-      ps.pairing_fit_rating,
-      ps.would_pair_again,
-      ps.failure_reasons,
-      w.wine_name,
-      w.vintage,
-      w.colour
-    FROM pairing_sessions ps
-    LEFT JOIN wines w ON ps.chosen_wine_id = w.id
-    WHERE ps.user_id = $1
-      ${feedbackFilter}
-    ORDER BY ps.created_at DESC
-    LIMIT $2 OFFSET $3
-  `).all(userId, limit, offset);
+  const sql = [
+    'SELECT',
+    '  ps.id,',
+    '  ps.dish_description,',
+    '  ps.food_signals,',
+    '  ps.created_at,',
+    '  ps.chosen_wine_id,',
+    '  ps.chosen_rank,',
+    '  ps.confirmed_consumed,',
+    '  ps.pairing_fit_rating,',
+    '  ps.would_pair_again,',
+    '  ps.failure_reasons,',
+    '  w.wine_name,',
+    '  w.vintage,',
+    '  w.colour',
+    'FROM pairing_sessions ps',
+    'LEFT JOIN wines w ON ps.chosen_wine_id = w.id',
+    'WHERE ps.user_id = $1',
+    '  ' + feedbackFilter,
+    'ORDER BY ps.created_at DESC',
+    'LIMIT $2 OFFSET $3'
+  ].filter(line => !line.match(/^\s*$/)).join('\n');
+  const results = await db.prepare(sql).all(userId, limit, offset);
   
   return results.map(r => ({
     ...r,

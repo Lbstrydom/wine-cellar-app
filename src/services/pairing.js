@@ -16,46 +16,46 @@ import { stringAgg } from '../db/helpers.js';
 export async function scorePairing(db, signals, preferReduceNow, limit) {
   const placeholders = signals.map(() => '?').join(',');
 
-  const styleScores = await db.prepare(`
-    SELECT
-      wine_style_bucket,
-      SUM(CASE match_level
-        WHEN 'primary' THEN 3
-        WHEN 'good' THEN 2
-        WHEN 'fallback' THEN 1
-        ELSE 0 END) as score
-    FROM pairing_rules
-    WHERE food_signal IN (${placeholders})
-    GROUP BY wine_style_bucket
-    ORDER BY score DESC
-  `).all(...signals);
+  const styleScoresSql = [
+    'SELECT',
+    '  wine_style_bucket,',
+    '  SUM(CASE match_level',
+    "    WHEN 'primary' THEN 3",
+    "    WHEN 'good' THEN 2",
+    "    WHEN 'fallback' THEN 1",
+    '    ELSE 0 END) as score',
+    'FROM pairing_rules',
+    'WHERE food_signal IN (' + placeholders + ')',
+    'GROUP BY wine_style_bucket',
+    'ORDER BY score DESC'
+  ].join('\n');
+  const styleScores = await db.prepare(styleScoresSql).all(...signals);
   // Safe: placeholders generated from signals array length, data passed to .all()
 
-  // Safe: stringAgg() returns SQL function call string
   const locationAgg = stringAgg('s.location_code', ',', true);
-  // Safe: conditional ternary builds ORDER BY clause
   const orderByClause = preferReduceNow ? 'reduce_priority ASC,' : '';
 
-  const wines = await db.prepare(`
-    SELECT
-      w.id,
-      w.style,
-      w.colour,
-      w.wine_name,
-      w.vintage,
-      w.vivino_rating,
-      COUNT(s.id) as bottle_count,
-      ${locationAgg} as locations,
-      MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,
-      COALESCE(MIN(rn.priority), 99) as reduce_priority,
-      MAX(rn.reduce_reason) as reduce_reason
-    FROM wines w
-    JOIN slots s ON s.wine_id = w.id
-    LEFT JOIN reduce_now rn ON w.id = rn.wine_id
-    GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating
-    HAVING COUNT(s.id) > 0
-    ORDER BY ${orderByClause} w.vivino_rating DESC
-  `).all();
+  const winesSql = [
+    'SELECT',
+    '  w.id,',
+    '  w.style,',
+    '  w.colour,',
+    '  w.wine_name,',
+    '  w.vintage,',
+    '  w.vivino_rating,',
+    '  COUNT(s.id) as bottle_count,',
+    '  ' + locationAgg + ' as locations,',
+    "  MAX(CASE WHEN s.zone = 'fridge' THEN 1 ELSE 0 END) as in_fridge,",
+    '  COALESCE(MIN(rn.priority), 99) as reduce_priority,',
+    '  MAX(rn.reduce_reason) as reduce_reason',
+    'FROM wines w',
+    'JOIN slots s ON s.wine_id = w.id',
+    'LEFT JOIN reduce_now rn ON w.id = rn.wine_id',
+    'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating',
+    'HAVING COUNT(s.id) > 0',
+    'ORDER BY ' + orderByClause + ' w.vivino_rating DESC'
+  ].join('\n');
+  const wines = await db.prepare(winesSql).all();
 
   // Match wines to scored styles
   const suggestions = [];

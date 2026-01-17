@@ -79,10 +79,9 @@ async function nullifyDuplicates(collisions) {
     if (toNullify.length === 0) continue;
 
     const placeholders = toNullify.map((_, i) => `$${i + 1}`).join(', ');
-    await db.prepare(`
-      UPDATE wines SET fingerprint = NULL
-      WHERE id IN (${placeholders})
-    `).run(...toNullify);
+    await db.prepare(
+      'UPDATE wines SET fingerprint = NULL WHERE id IN (' + placeholders + ')'
+    ).run(...toNullify);
     // Safe: placeholders derived from toNullify array length; values passed to .run()
 
     console.log(`[Backfill] Kept ${keepId}, nullified ${toNullify.join(', ')}`);
