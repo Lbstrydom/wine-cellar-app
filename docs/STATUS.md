@@ -40,7 +40,20 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
     - Fallback to legacy relevance scoring if all URLs rejected
     - Accuracy alerting: WARNING/CRITICAL levels with configurable thresholds
     - Backfill script: `scripts/backfill-identity-validation.js` (dry-run default)
-  - All 848 unit tests + 53 integration tests passing
+  - **Deployment Status**: All enhancements deployed to production ✅
+    - Commit 8e85550: Foundation infrastructure (migrations 045-046, 6 service files)
+    - Commit 8d206dc: Phase 3 integration (queryBuilder → searchProviders)
+    - Commit 1c6386e: Optional enhancements (URL scoring, accuracy alerting, backfill)
+    - Auto-deployed to Railway: https://cellar.creathyst.com
+  - **Test Coverage**: All 901 tests passing ✅
+    - 848 unit tests (985ms runtime)
+    - 53 integration tests (auto-managed server)
+    - Zero regressions after integration
+  - **Production Impact**:
+    - Search now locale-aware (SA→za, AU→au, FR→fr)
+    - URL scoring filters invalid matches before fetch (saves API costs)
+    - Identity confidence gate prevents wrong wine ratings
+    - Market-aware caps optimize result quality per country
   - Files: `queryBuilder.js`, `wineIdentity.js`, `urlScoring.js`, `accuracyMetrics.js`, `accuracyAlerting.js`, `backfill-identity-validation.js`, migrations 045-046
 
 **Previous Enhancements** (17 Jan 2026):
