@@ -137,9 +137,9 @@ Each search tier uses site-restricted Google queries:
 - Search: "Kleine Zalze winery official site awards"
 - Filter out retailers (Dan Murphy's, Wine-Searcher, etc.)
 
-### Result Relevance Scoring
+### Result Relevance Scoring (Legacy)
 
-Each search result is scored for relevance before scraping:
+Traditional URL scoring (superseded by identity-based scoring in Jan 2026):
 
 | Factor | Points |
 |--------|--------|
@@ -150,11 +150,231 @@ Each search result is scored for relevance before scraping:
 | Producer official site | +5 |
 | Known review URL pattern | +3 |
 
-Results with score < 5 are discarded.
+Results with score < 5 were discarded.
 
 ---
 
-## 2.5. Hybrid Search Pipeline (NEW - January 2026)
+## 2.4. Identity Validation & URL Scoring (NEW - January 2026) ✨
+
+**Status**: PRODUCTION ACTIVE
+
+The search pipeline now uses **two-tier URL scoring** to validate wine identity before fetching content, preventing wrong-wine matches and reducing API costs.
+
+### Phase A: Identity Token Generation
+
+Before searching, the system generates identity tokens from wine data:
+
+```javascript
+// src/services/wineIdentity.js
+const tokens = generateIdentityTokens(wine);
+
+// Returns:
+{
+  producer: 'kanonkop',           // Required - normalized producer name
+  vintage: '2019',                // Required - year as string
+  range: 'paul sauer',            // Optional - cuvée/range name
+  grape: 'cabernet blend',        // Optional - varietal
+  region: 'stellenbosch',         // Optional - sub-region
+  negatives: ['shiraz', 'merlot'] // Reject URLs mentioning wrong wines
+}
+```
+
+### Phase B: URL Scoring (Identity + Priority)
+
+Each search result receives **two scores**:
+
+**1. Identity Score (0-7)** - Validates correct wine match:
+```
+Producer match:  +2 points (REQUIRED)
+Vintage match:   +2 points (REQUIRED)
+Range match:     +1 point
+Grape match:     +1 point
+Region match:    +1 point
+Negative token:  -10 points (immediate reject)
+```
+
+**Confidence Gate**: URLs with identity score < 4 are rejected (missing producer OR vintage).
+
+**2. Fetch Priority (0-10)** - Orders valid URLs by source quality:
+```
+Competition URL:     10 points (Decanter, IWC, IWSC)
+Panel guide URL:     9 points (Platter's, Halliday)
+Critic URL:          7 points (Wine Spectator, Advocate)
+Community URL:       5 points (Vivino, CellarTracker)
+Aggregator URL:      3 points (Wine-Searcher)
+Generic URL:         1 point
+```
+
+### Phase C: Market-Aware Caps
+
+After scoring, URLs are capped by market and source type to optimize quality:
+
+```javascript
+// src/services/urlScoring.js
+const MARKET_CAPS = {
+  'South Africa': {
+    competition: 3,  // Max 3 SA competition URLs (Veritas, Michelangelo, SAGWA)
+    panel: 2,        // Max 2 panel guides (Platter's, Tim Atkin)
+    critics: 2,
+    community: 2,
+    total: 8         // Max 8 URLs total
+  },
+  'Australia': {
+    competition: 2,  // Fewer AU competitions
+    panel: 3,        // More panel guides (Halliday, Campbell Mattinson)
+    critics: 2,
+    community: 2,
+    total: 8
+  },
+  'default': {
+    competition: 2,
+    panel: 2,
+    critics: 3,      // More critics for other markets
+    community: 2,
+    total: 8
+  }
+};
+```
+
+### Integration into Search Flow
+
+```
+SERP Results (raw URLs)
+    ↓
+Generate Identity Tokens
+    ↓
+Score Each URL (identity + priority)
+    ↓
+Filter: identity_score >= 4
+    ↓
+Sort by: identity_score DESC, fetch_priority DESC, discovery_order ASC
+    ↓
+Apply Market Caps (max 8 URLs)
+    ↓
+Fallback: If all rejected, use legacy relevance scoring
+    ↓
+Fetch Queue
+```
+
+### Example: Before vs After
+
+**Before (Legacy)**:
+- 15 SERP results → 12 fetched (filtered by title matching)
+- 3 wrong vintage, 2 wrong producer → wasted API calls
+- No market-aware prioritization
+
+**After (Identity Validation)**:
+- 15 SERP results → 8 valid URLs (identity_score >= 4)
+- 7 rejected pre-fetch: 3 missing vintage, 2 wrong producer, 2 negative tokens
+- Market caps ensure optimal source mix per country
+- ~40% reduction in unnecessary fetches
+
+### Accuracy Metrics
+
+New metrics track validation effectiveness:
+
+```javascript
+// Migration 046: search_metrics table
+{
+  vintage_mismatch_count: 0,     // Ratings with wrong vintage persisted
+  wrong_wine_count: 0,           // User-flagged incorrect ratings
+  identity_rejection_count: 7    // URLs rejected pre-fetch
+}
+```
+
+**Alerting Thresholds** (src/services/accuracyAlerting.js):
+- `vintage_mismatch_rate` > 5%: **CRITICAL**
+- `wrong_wine_rate` > 1%: **CRITICAL**
+- `identity_rejection_rate` > 15%: **WARNING**
+
+### Key Files
+
+| File | Purpose |
+|------|---------|
+| `src/services/wineIdentity.js` | Identity token generation, score calculation |
+| `src/services/urlScoring.js` | Two-tier scoring, market caps, ranking |
+| `src/services/searchProviders.js` | Integration into SERP processing pipeline |
+| `src/services/accuracyAlerting.js` | Threshold monitoring and alerts |
+| `scripts/backfill-identity-validation.js` | Revalidate existing ratings |
+
+---
+
+## 2.5. Locale-Aware Query Building (NEW - January 2026) ✨
+
+**Status**: PRODUCTION ACTIVE
+
+All SERP queries now use **country→locale mapping** for region-specific results.
+
+### Country to Locale Mapping
+
+```javascript
+// src/services/queryBuilder.js
+const LOCALE_MAP = {
+  'South Africa': { hl: 'en', gl: 'za' },  // English, South African results
+  'Australia':    { hl: 'en', gl: 'au' },
+  'France':       { hl: 'fr', gl: 'fr' },  // French language & results
+  'Italy':        { hl: 'it', gl: 'it' },
+  'Spain':        { hl: 'es', gl: 'es' },
+  'USA':          { hl: 'en', gl: 'us' },
+  'default':      { hl: 'en', gl: 'us' }
+};
+
+// Applied to all SERP calls
+const { hl, gl } = getLocaleParams(wine);
+const serpUrl = `https://www.google.com/search?q=${query}&hl=${hl}&gl=${gl}`;
+```
+
+### Intent-Based Query Variants
+
+Queries are optimized by search intent (reviews, awards, tasting notes):
+
+```javascript
+// Primary query (comprehensive)
+buildQueryVariants(wine, 'reviews');
+// Returns: "Kanonkop Paul Sauer 2019 review rating wine score tasting notes"
+
+// Fallback query (simplified, no operators)
+buildQueryVariants(wine, 'reviews', { useOperators: false });
+// Returns: "Kanonkop Paul Sauer 2019 review"
+```
+
+### Regional Source Targeting
+
+Queries include region-specific critics and competitions:
+
+**South Africa**:
+```
+"Kanonkop Paul Sauer 2019 (Platter's OR Tim Atkin OR Veritas OR Michelangelo) rating"
+```
+
+**Australia**:
+```
+"Penfolds Grange 2018 (Halliday OR Campbell Mattinson OR Winestate) review"
+```
+
+**France**:
+```
+"Château Margaux 2015 (Revue du Vin de France OR Bettane Desseauve OR Hachette) note"
+```
+
+### Integration
+
+Locale parameters are passed to all SERP providers:
+
+```javascript
+// Google Custom Search
+searchGoogle(query, { hl: 'fr', gl: 'fr', ... });
+
+// Bright Data SERP
+searchBrightDataSerp(query, { hl: 'en', gl: 'za', ... });
+
+// Decanter-specific search
+searchGoogleForDecanter(wine, { hl: 'en', gl: wine.country_code });
+```
+
+---
+
+## 2.6. Hybrid Search Pipeline (NEW - January 2026)
 
 The hybrid search pipeline uses **Google Gemini with Search Grounding** for discovery, followed by **Claude** for structured extraction. This approach often finds 10-15 rating sources vs 3-5 from traditional SERP searches.
 
