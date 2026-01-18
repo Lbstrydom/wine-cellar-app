@@ -21,6 +21,7 @@ import { TIMEOUTS, LIMITS, RERANK_WEIGHTS, SEARCH_BUDGET } from '../config/scrap
 import { semaphoredFetch, globalFetchSemaphore } from '../utils/fetchSemaphore.js';
 import { createRequestDeduper } from '../utils/requestDedup.js';
 import { detectQualifiers, detectLocaleHints, getEffectiveWeight } from '../config/rangeQualifiers.js';
+import { getLocaleParams, buildQueryVariants, shouldRetryWithoutOperators } from './queryBuilder.js';
 
 const serpRequestDeduper = createRequestDeduper();
 
@@ -280,6 +281,10 @@ async function scrapeDecanterWithWebUnlocker(url, apiKey, webZone) {
  * @returns {Promise<string[]>} Array of Decanter review URLs
  */
 async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZone) {
+  // Get locale parameters based on wine country
+  const wine = { wine_name: wineName, vintage, country: null }; // country will be fetched if available
+  const { hl, gl } = getLocaleParams(wine);
+
   // Extract key tokens from wine name
   const tokens = wineName
     .toLowerCase()
@@ -292,13 +297,13 @@ async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZ
 
   const googleQuery = `site:decanter.com/wine-reviews ${tokens.join(' ')} ${vintage || ''} points`.trim();
 
-  logger.info('Decanter', `Google query: "${googleQuery}"`);
+  logger.info('Decanter', `Google query: "${googleQuery}" (${hl}/${gl})`);
 
   try {
     const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.SERP_API_TIMEOUT);
 
     let response;
-    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10&hl=en&gl=us`;
+    const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}&num=10&hl=${hl}&gl=${gl}`;
 
     if (serpZone) {
       response = await fetch(BRIGHTDATA_API_URL, {
@@ -980,9 +985,10 @@ export function getSourcesForWine(country, grape = null) {
  * @param {string} queryType - Type of query for cache categorization
  * @returns {Promise<Object[]>} Search results
  */
-export async function searchGoogle(query, domains = [], queryType = 'serp_broad', budget = null) {
+export async function searchGoogle(query, domains = [], queryType = 'serp_broad', budget = null, localeOptions = {}) {
   const domainList = [...domains].sort();
-  const dedupeKey = `${budget?.id || 'global'}|${queryType}|${query}|${domainList.join(',')}`;
+  const { hl = 'en', gl = 'us' } = localeOptions; // Extract locale params
+  const dedupeKey = `${budget?.id || 'global'}|${queryType}|${query}|${domainList.join(',')}|${hl}-${gl}`;
 
   return serpRequestDeduper.run(dedupeKey, async () => {
     if (budget && !hasWallClockBudget(budget)) {
@@ -990,13 +996,13 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
       return [];
     }
 
-    const queryParams = { query, domains: domainList };
+    const queryParams = { query, domains: domainList, hl, gl };
 
     // Check cache first
     try {
       const cached = await getCachedSerpResults(queryParams);
       if (cached) {
-        logger.info('Cache', `SERP HIT: ${query.substring(0, 50)}...`);
+        logger.info('Cache', `SERP HIT: ${query.substring(0, 50)}... (${hl}/${gl})`);
         return cached.results;
       }
     } catch (err) {
@@ -1016,7 +1022,7 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
     let results = [];
 
     if (brightDataApiKey && serpZone) {
-      results = await searchBrightDataSerp(query, domainList);
+      results = await searchBrightDataSerp(query, domainList, { hl, gl });
     } else {
       // Fallback to Google Custom Search API
       const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
@@ -1038,8 +1044,10 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
       url.searchParams.set('cx', engineId);
       url.searchParams.set('q', fullQuery);
       url.searchParams.set('num', '10');
+      url.searchParams.set('hl', hl);
+      url.searchParams.set('gl', gl);
 
-      logger.info('Google', `Searching: "${query}" across ${domainList.length} domains`);
+      logger.info('Google', `Searching: "${query}" across ${domainList.length} domains (${hl}/${gl})`);
 
       try {
         const response = await fetch(url.toString());
@@ -1118,9 +1126,10 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
  * @param {string[]} domains - Domains to restrict search to
  * @returns {Promise<Object[]>} Search results
  */
-async function searchBrightDataSerp(query, domains = []) {
+async function searchBrightDataSerp(query, domains = [], localeOptions = {}) {
   const apiKey = process.env.BRIGHTDATA_API_KEY;
   const zone = process.env.BRIGHTDATA_SERP_ZONE;
+  const { hl = 'en', gl = 'us' } = localeOptions;
 
   let fullQuery = query;
   if (domains.length > 0 && domains.length <= 10) {
@@ -1128,10 +1137,10 @@ async function searchBrightDataSerp(query, domains = []) {
     fullQuery = `${query} (${siteRestriction})`;
   }
 
-  // Build Google search URL
-  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(fullQuery)}&num=10`;
+  // Build Google search URL with locale parameters
+  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(fullQuery)}&num=10&hl=${hl}&gl=${gl}`;
 
-  logger.info('SERP', `Searching: "${query}" across ${domains.length} domains`);
+  logger.info('SERP', `Searching: "${query}" across ${domains.length} domains (${hl}/${gl})`);
 
   try {
     const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.WEB_UNLOCKER_TIMEOUT);
@@ -2935,14 +2944,22 @@ export async function searchWineRatings(wineName, vintage, country, style = null
 
   // Strategy 2: Broad Google search for remaining domains
   const remainingDomains = topSources.slice(3).map(s => s.domain);
-  const tokens = extractSearchTokens(wineName);
-  const broadQuery = `${tokens.join(' ')} ${vintage} rating`;
+  
+  // Use queryBuilder for locale-aware query with proper intent
+  const { hl, gl } = getLocaleParams({ country: wine.country || wine.winery?.country || null });
+  const queryVariants = buildQueryVariants(
+    { wine_name: wineName, vintage, country: wine.country || null },
+    'reviews' // Intent: looking for reviews/ratings
+  );
+  
+  // Use primary query for broad search
+  const broadQuery = queryVariants.primary || `${extractSearchTokens(wineName).join(' ')} ${vintage} rating`;
 
   const broadResults = remainingDomains.length > 0
-    ? await searchGoogle(broadQuery, remainingDomains, 'serp_broad', budget)
+    ? await searchGoogle(broadQuery, remainingDomains, 'serp_broad', budget, { hl, gl })
     : [];
 
-  logger.info('Search', `Broad search found: ${broadResults.length} results`);
+  logger.info('Search', `Broad search found: ${broadResults.length} results (${hl}/${gl})`);
 
   // Strategy 3: Try name variations with Google if we still have few results
   const variationResults = [];
