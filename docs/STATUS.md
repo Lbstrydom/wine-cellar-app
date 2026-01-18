@@ -10,18 +10,32 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 18 Jan 2026**:
-- **Search Redesign Foundation (Phases 1-6) - INFRASTRUCTURE COMPLETE** ✅:
+- **Search Redesign Foundation (Phases 1-6) - INTEGRATION COMPLETE** ✅:
   - **Phase 2 (Identity Validation)**: Migration 045 adds `identity_score`, `identity_reason` columns to `wine_ratings`
-  - **Phase 3 (Query Optimization)**: New `queryBuilder.js` service with locale-aware query building, region-specific source targeting (Platters, Halliday, RVF, etc.), automatic retry without operators
+    - `validateRatingsWithIdentity()` service active in production
+    - Confidence gate validates identity score >= 4 before persistence
+    - Ratings with producer+vintage match required for validity
+  - **Phase 3 (Query Optimization)**: Locale-aware query building **INTEGRATED INTO LIVE FLOW** ✅
+    - `queryBuilder.js` service integrated into `searchProviders.js`
+    - All SERP queries now use `getLocaleParams()` for country→locale mapping
+    - Broad queries use `buildQueryVariants()` for intent-based query generation
+    - Google Custom Search and Bright Data SERP calls include `hl`/`gl` parameters
+    - Region-specific sources (Platters, Halliday, RVF) targeted in queries
   - **Phase 6 (Observability)**: Migration 046 adds accuracy metrics (`vintage_mismatch_count`, `wrong_wine_count`, `identity_rejection_count`) to `search_metrics`
-  - New service: `accuracyMetrics.js` for data quality tracking
-  - Enhanced `searchMetrics.js` with `GET /accuracy` endpoint
-  - Enhanced `ratings.js` with `GET /:wineId/identity-diagnostics` endpoint
-  - Country→locale mappings for 12 countries with SERP `hl`/`gl` parameters
-  - **Status**: Foundation modules complete (queryBuilder, accuracyMetrics) but NOT yet integrated into live search pipeline
-  - **Next Sprint**: Wire queryBuilder into searchProviders.js, create wineIdentity.js/urlScoring.js services, integrate identity validation into domain flows
-  - All 848 unit tests passing (20 new queryBuilder tests)
-  - Files: `queryBuilder.js` (new), `accuracyMetrics.js` (new), migrations 045-046
+    - New `accuracyMetrics.js` service for data quality tracking
+    - Enhanced `searchMetrics.js` with `GET /accuracy` endpoint
+    - Enhanced `ratings.js` with `GET /:wineId/identity-diagnostics` endpoint
+  - **Status**: Core integration complete and deployed
+    - ✅ queryBuilder integrated into searchProviders.js
+    - ✅ Identity validation active in rating persistence
+    - ✅ Confidence gate enforced (identity score >= 4 threshold)
+    - ✅ Locale-aware SERP queries in production
+  - **Remaining Optional Enhancements**:
+    - URL scoring and ranking (urlScoring.js service exists but not yet integrated into fetch flow)
+    - Frontend UI for identity diagnostics panel
+    - Alerting when accuracy metrics exceed thresholds
+  - All 848 unit tests + 53 integration tests passing
+  - Files: `queryBuilder.js`, `wineIdentity.js`, `urlScoring.js`, `accuracyMetrics.js`, migrations 045-046
 
 **Previous Enhancements** (17 Jan 2026):
 - **3-Tier Waterfall Rating Search Strategy - COMPLETE** ✅:
