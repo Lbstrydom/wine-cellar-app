@@ -13,6 +13,10 @@ RUN apk add --no-cache python3 make g++ dos2unix \
 # Configure Puppeteer to use system Chromium instead of downloading
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true
 ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser
+# Required for running Chromium as root in Docker container
+ENV PUPPETEER_ARGS="--no-sandbox --disable-setuid-sandbox"
+# Chromium flags for headless in Docker
+ENV CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 
 # Set UTF-8 locale for proper character handling
 ENV LANG=C.UTF-8

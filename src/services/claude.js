@@ -14,6 +14,19 @@ import { sanitizeDishDescription, sanitizeWineList, sanitizeChatMessage } from '
 import { parseAndValidate, createFallback } from './responseValidator.js';
 
 /**
+ * Extract domain from URL for source identification.
+ * @param {string} url - Full URL
+ * @returns {string} Domain name
+ */
+function extractDomain(url) {
+  try {
+    return new URL(url).hostname.replace('www.', '');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Add vintage year parameter to Vivino URLs for correct vintage-specific data.
  * @param {string} url - Original URL
  * @param {string|number} vintage - Vintage year
@@ -457,9 +470,13 @@ RULES:
  * Tries authenticated sources first (Vivino, CellarTracker) if credentials are configured,
  * then falls back to web search + Claude extraction.
  * @param {Object} wine - Wine object
+ * @param {Object} [options={}] - Optional settings
+ * @param {Object} [options.existingSerpResults] - Pre-fetched SERP results from Tier 1 to avoid duplicate API calls
  * @returns {Promise<Object>} Fetched ratings
  */
-export async function fetchWineRatings(wine) {
+export async function fetchWineRatings(wine, options = {}) {
+  const { existingSerpResults = null } = options;
+
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('Claude API key not configured');
   }
@@ -480,8 +497,24 @@ export async function fetchWineRatings(wine) {
     logger.info('Ratings', `Got ${authenticatedRatings.length} ratings from authenticated sources`);
   }
 
-  // Step 1: Search for relevant pages (pass style for country inference)
-  const searchResults = await searchWineRatings(wineName, vintage, country, style);
+  // Step 1: Search for relevant pages (reuse SERP results from Tier 1 if available)
+  let searchResults;
+  if (existingSerpResults?.organic?.length > 0) {
+    // Reuse SERP results from Tier 1 to avoid duplicate API calls
+    logger.info('Ratings', `Reusing ${existingSerpResults.organic.length} SERP results from Tier 1`);
+    searchResults = {
+      results: existingSerpResults.organic.map(item => ({
+        title: item.title || '',
+        url: item.link || item.url || '',
+        snippet: (item.description || item.snippet || '').replace(/Read more$/, '').trim(),
+        source: item.source || extractDomain(item.link || item.url || '')
+      })),
+      reused: true
+    };
+  } else {
+    // Fresh SERP search
+    searchResults = await searchWineRatings(wineName, vintage, country, style);
+  }
 
   if (searchResults.results.length === 0) {
     logger.warn('Ratings', 'No search results found');

@@ -143,8 +143,9 @@ async function recordSearchMetrics(cellarId, fingerprint, data) {
     await db.prepare(`
       INSERT INTO search_metrics
         (cellar_id, fingerprint, pipeline_version, latency_ms, total_cost_cents,
-         extraction_method, match_confidence, stop_reason, details)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         extraction_method, match_confidence, stop_reason, details,
+         vintage_mismatch_count, wrong_wine_count, identity_rejection_count)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
     `).run(
       cellarId,
       fingerprint,
@@ -154,7 +155,10 @@ async function recordSearchMetrics(cellarId, fingerprint, data) {
       data.extractionMethod || null,
       data.matchConfidence || null,
       data.stopReason || null,
-      JSON.stringify(data.details || {})
+      JSON.stringify(data.details || {}),
+      data.vintageMismatchCount || 0,
+      data.wrongWineCount || 0,
+      data.identityRejectionCount || 0
     );
   } catch (error) {
     // Metrics should never block the pipeline

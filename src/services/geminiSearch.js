@@ -13,8 +13,8 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
 // Supported Gemini models for grounded search
-// Use gemini-2.5-flash for fastest stable response times (2026)
-const GEMINI_MODEL = 'gemini-2.5-flash';
+// Use gemini-3.0-flash for fastest stable response times with improved accuracy (2026)
+const GEMINI_MODEL = 'gemini-3.0-flash';
 
 /**
  * Get priority critics/sources for a wine's country of origin.
@@ -88,6 +88,35 @@ export async function searchWineWithGemini(wine) {
 
   const startTime = Date.now();
   try {
+    // OPTIMIZED PROMPT: Concise format to prevent MAX_TOKENS truncation
+    // Goal: Get structured data quickly like Google AI Overview
+    const prompt = `Wine Analyst Report for: ${searchQuery}${countryHint}
+
+Return ONLY a structured summary (max 800 words):
+
+## Ratings (${vintage || 'NV'} vintage only)
+List each as: Source | Score | Reviewer | Vintage | Key note
+Priority sources: ${criticList}
+Community: Vivino, CellarTracker (include rating count)
+
+## Awards
+Format: Competition | Award | Year
+Priority: ${competitionList}
+
+## Tasting Profile
+- Aromas: (comma-separated list)
+- Palate: (comma-separated list)
+- Structure: body/tannins/acidity
+- Finish: (brief)
+
+## Drinking Window
+drink_from: YYYY, drink_by: YYYY, peak: YYYY (if available)
+
+## Pairings
+(comma-separated list)
+
+CRITICAL: Only ${vintage || 'matching'} vintage ratings. Omit sections with no data.`;
+
     const response = await fetch(
       `${GEMINI_API_URL}/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
       {
@@ -96,25 +125,7 @@ export async function searchWineWithGemini(wine) {
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: `Find comprehensive wine reviews, ratings, and tasting notes for: ${searchQuery}${countryHint}
-
-Please search for and compile:
-1. Professional critic scores and reviews - PRIORITIZE: ${criticList}
-2. Competition medals and awards - PRIORITIZE: ${competitionList}
-3. Community ratings (Vivino, CellarTracker, Wine-Searcher)
-4. Detailed tasting notes describing aromas, flavors, structure
-5. Drinking window recommendations for the ${vintage || 'current'} vintage specifically
-6. Food pairing suggestions
-
-IMPORTANT: When searching for ratings, ensure the vintage year matches ${vintage || 'the wine being searched'}. Do not report ratings for different vintages unless clearly noted.
-
-For each rating/review found, include:
-- Source name
-- Score/rating (in original format)
-- Reviewer name (if applicable)
-- The specific vintage the rating applies to
-- Key tasting descriptors
-- Any drinking window mentioned`
+              text: prompt
             }]
           }],
           tools: [{
@@ -122,7 +133,7 @@ For each rating/review found, include:
           }],
           generationConfig: {
             temperature: 0.2,
-            maxOutputTokens: 4096
+            maxOutputTokens: 8192  // Increased from 4096 to handle complex wines
           }
         })
       }
@@ -224,6 +235,39 @@ function buildWineSearchQuery(wineName, vintage, producer) {
  * @param {Object} wine - Original wine object for context
  * @returns {Promise<Object>} Structured wine data
  */
+/**
+ * Attempt to repair truncated or malformed JSON.
+ * Handles common issues from MAX_TOKENS truncation.
+ * @param {string} jsonStr - Potentially malformed JSON string
+ * @returns {string} Repaired JSON string
+ */
+function repairJson(jsonStr) {
+  let repaired = jsonStr.trim();
+
+  // Count open/close brackets
+  const openBraces = (repaired.match(/{/g) || []).length;
+  const closeBraces = (repaired.match(/}/g) || []).length;
+  const openBrackets = (repaired.match(/\[/g) || []).length;
+  const closeBrackets = (repaired.match(/]/g) || []).length;
+
+  // If truncated mid-string, try to close it
+  // Remove trailing incomplete string/number values
+  repaired = repaired.replace(/,\s*"[^"]*$/, '');  // Truncated string key
+  repaired = repaired.replace(/:\s*"[^"]*$/, ': null');  // Truncated string value
+  repaired = repaired.replace(/:\s*[\d.]+$/, ': null');  // Truncated number
+  repaired = repaired.replace(/,\s*$/, '');  // Trailing comma
+
+  // Close unclosed brackets
+  for (let i = 0; i < openBrackets - closeBrackets; i++) {
+    repaired += ']';
+  }
+  for (let i = 0; i < openBraces - closeBraces; i++) {
+    repaired += '}';
+  }
+
+  return repaired;
+}
+
 export async function extractWineDataWithClaude(geminiResults, wine) {
   if (!geminiResults?.content) {
     logger.warn('GeminiSearch', 'extractWineDataWithClaude called with no content');
@@ -235,62 +279,25 @@ export async function extractWineDataWithClaude(geminiResults, wine) {
 
   const anthropic = new Anthropic();
 
-  const prompt = `You are a wine data extraction specialist. Extract structured information from the following search results about a wine.
+  // OPTIMIZED: Shorter prompt, explicit JSON-only output
+  const prompt = `Extract wine data from these search results. Return ONLY valid JSON.
 
-WINE CONTEXT:
-- Name: ${wine.wine_name || wine.name}
-- Vintage: ${wine.vintage || 'Unknown'}
-- Colour: ${wine.colour || 'Unknown'}
-- Grapes: ${wine.grapes || 'Unknown'}
+WINE: ${wine.wine_name || wine.name} ${wine.vintage || ''}
+COLOUR: ${wine.colour || 'Unknown'}
 
 SEARCH RESULTS:
-${geminiResults.content}
+${geminiResults.content.substring(0, 6000)}
 
-SOURCES FOUND:
-${geminiResults.sources.map((s, i) => `${i + 1}. ${s.title} - ${s.url}`).join('\n')}
-
-Extract and return a JSON object with the following structure:
+Return JSON:
 {
-  "ratings": [
-    {
-      "source": "source name",
-      "source_lens": "competition|critics|community",
-      "score_type": "points|stars|medal",
-      "raw_score": "original score as string",
-      "raw_score_numeric": number or null,
-      "reviewer_name": "reviewer name if mentioned",
-      "tasting_notes": "brief notes from this source",
-      "vintage_match": "exact|inferred|non_vintage",
-      "confidence": "high|medium|low",
-      "source_url": "url if available"
-    }
-  ],
-  "tasting_notes": {
-    "nose": ["list", "of", "aromas"],
-    "palate": ["list", "of", "flavors"],
-    "structure": {
-      "body": "light|medium|full",
-      "tannins": "soft|medium|firm",
-      "acidity": "low|medium|high"
-    },
-    "finish": "description of finish"
-  },
-  "drinking_window": {
-    "drink_from": year or null,
-    "drink_by": year or null,
-    "peak": year or null,
-    "recommendation": "text recommendation"
-  },
-  "food_pairings": ["list", "of", "pairings"],
-  "style_summary": "One sentence wine style description"
+  "ratings": [{"source":"", "source_lens":"competition|critics|community", "score_type":"points|stars|medal", "raw_score":"", "raw_score_numeric":null, "reviewer_name":"", "tasting_notes":"", "vintage_match":"exact|inferred|non_vintage", "confidence":"high|medium|low", "source_url":""}],
+  "tasting_notes": {"nose":[], "palate":[], "structure":{"body":"", "tannins":"", "acidity":""}, "finish":""},
+  "drinking_window": {"drink_from":null, "drink_by":null, "peak":null, "recommendation":""},
+  "food_pairings": [],
+  "style_summary": ""
 }
 
-Important:
-- Only include ratings you find actual evidence for
-- Use the source_lens categories: "competition" for medals/awards, "critics" for professional reviews, "community" for user ratings
-- Normalize scores: points (0-100), stars (0-5), medals (Gold/Silver/Bronze/Double Gold)
-- Set confidence based on vintage match and source reliability
-- If no data found for a section, use null or empty array`;
+Rules: Only verified data. Empty array/null for missing. No markdown, no explanation.`;
 
   try {
     const message = await anthropic.messages.create({
@@ -304,7 +311,35 @@ Important:
     // Extract JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      const extracted = JSON.parse(jsonMatch[0]);
+      let jsonStr = jsonMatch[0];
+      let extracted;
+
+      // First attempt: direct parse
+      try {
+        extracted = JSON.parse(jsonStr);
+      } catch (parseErr) {
+        // Second attempt: repair truncated JSON
+        logger.warn('GeminiSearch', `JSON parse failed at position, attempting repair: ${parseErr.message}`);
+        try {
+          const repairedJson = repairJson(jsonStr);
+          extracted = JSON.parse(repairedJson);
+          logger.info('GeminiSearch', 'JSON repair successful');
+        } catch (repairErr) {
+          logger.error('GeminiSearch', `JSON repair failed: ${repairErr.message}`);
+          // Return partial data if we can extract ratings
+          const ratingsMatch = jsonStr.match(/"ratings"\s*:\s*\[([\s\S]*?)\]/);
+          if (ratingsMatch) {
+            try {
+              extracted = { ratings: JSON.parse(`[${ratingsMatch[1]}]`) };
+              logger.info('GeminiSearch', 'Partial extraction: recovered ratings array');
+            } catch {
+              return null;
+            }
+          } else {
+            return null;
+          }
+        }
+      }
 
       // Add source metadata
       extracted._metadata = {

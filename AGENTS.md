@@ -1170,6 +1170,99 @@ items.sort((a, b) => {
 
 ---
 
+## Search Pipeline Patterns
+
+### Query Builder Service Pattern
+
+When building search queries, use locale-aware query construction:
+
+```javascript
+import { getLocaleParams, buildQueryVariants, shouldRetryWithoutOperators } from './queryBuilder.js';
+
+// Get locale for SERP calls based on wine country
+const { hl, gl } = getLocaleParams(wine);
+
+// Build query variants by intent
+const queries = buildQueryVariants(wine, 'reviews');
+// Returns: { primary: "...", fallback: "..." }
+
+// Check if retry needed
+if (shouldRetryWithoutOperators(results, query)) {
+  // Retry with simplified query
+  const simplified = buildQueryVariants(wine, 'reviews', { useOperators: false });
+}
+```
+
+**Country→Locale Mappings**:
+- South Africa → `hl=en&gl=za`
+- Australia → `hl=en&gl=au`
+- France → `hl=fr&gl=fr`
+- Default → `hl=en&gl=us`
+
+### Region-Specific Sources
+
+Include regional critics/competitions in queries:
+
+| Country | Critics/Competitions |
+|---------|---------------------|
+| South Africa | Platter Guide, Tim Atkin, Michelangelo Awards, SAGWA |
+| Australia | Halliday, Campbell Mattinson, Winestate |
+| France | Revue du Vin de France, Bettane Desseauve, Guide Hachette |
+| USA | Wine Spectator, Wine Advocate, Wine Enthusiast |
+
+### Identity Validation Pattern (Planned)
+
+**Status**: Schema complete (migrations 045-046), services pending implementation.
+
+Future pattern for validating ratings belong to correct wine:
+
+```javascript
+// Generate identity tokens (producer + vintage required)
+const tokens = generateIdentityTokens(wine);
+// { producer: 'kanonkop', vintage: '2019', range: 'paul sauer' }
+
+// Calculate identity score for URL/content
+const score = calculateIdentityScore(urlTitle, tokens);
+// { score: 5, producer_match: true, vintage_match: true, range_match: true }
+
+// Apply confidence gate before persistence
+if (score.score < 4) {
+  // Reject: missing producer or vintage
+}
+```
+
+**Identity Score Weights**:
+- Producer match: +2 (required)
+- Vintage match: +2 (required)
+- Range/cuvee match: +1
+- Grape match: +1
+- Region match: +1
+- Negative token: -10 (reject)
+
+**Minimum threshold**: 4 (producer + vintage)
+
+### Accuracy Metrics Tracking
+
+New metrics for data quality monitoring:
+
+```javascript
+// After rating aggregation
+const metrics = {
+  vintage_mismatch_count: 0,     // Ratings with wrong vintage
+  wrong_wine_count: 0,           // User-flagged incorrect ratings
+  identity_rejection_count: 0    // URLs rejected by identity score
+};
+
+// Record in search_metrics table
+await recordSearchMetrics(searchId, wineId, cellarId, metrics);
+
+// Query accuracy stats
+const accuracy = await getAccuracyMetrics(cellarId, dateRange);
+// { avg_vintage_mismatch_rate: 0.02, wrong_wine_corrections: 3 }
+```
+
+---
+
 ## Do NOT
 
 - Put API keys in code

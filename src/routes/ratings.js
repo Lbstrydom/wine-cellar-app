@@ -1,19 +1,50 @@
 /**
  * @fileoverview Wine rating endpoints.
+ * Implements 3-Tier Waterfall Strategy for sync fetch:
+ *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
+ *   Tier 2: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
+ *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
  * @module routes/ratings
  */
 
 import { Router } from 'express';
 import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
-import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
+import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings.js';
 import { fetchWineRatings } from '../services/claude.js';
 import { hybridWineSearch, isGeminiSearchAvailable } from '../services/geminiSearch.js';
+import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/serpAi.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
+import { withCircuitBreaker, isCircuitOpen } from '../services/circuitBreaker.js';
 import jobQueue from '../services/jobQueue.js';
 import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
 import logger from '../utils/logger.js';
 import { getWineAwards } from '../services/awards.js';
+
+// Timeout constants for tier waterfall
+const GEMINI_TIMEOUT_MS = 45000; // 45 seconds for Gemini + Claude
+const SERP_AI_TIMEOUT_MS = 15000; // 15 seconds for SERP AI extraction
+
+/**
+ * Log tier resolution for cost tracking and latency analysis.
+ * @param {string} tier - Tier that resolved the request
+ * @param {Object} wine - Wine object
+ * @param {number} startTime - Start timestamp
+ * @param {number} ratingsFound - Number of ratings found
+ */
+function logTierResolution(tier, wine, startTime, ratingsFound = 0) {
+  const latencyMs = Date.now() - startTime;
+  logger.info('CostTrack', JSON.stringify({
+    wineId: wine.id,
+    wineName: wine.wine_name,
+    vintage: wine.vintage,
+    tier,
+    ratingsFound,
+    latencyMs,
+    timestamp: new Date().toISOString(),
+    endpoint: 'sync'
+  }));
+}
 
 const router = Router();
 
@@ -86,9 +117,14 @@ router.get('/:wineId/ratings', async (req, res) => {
 });
 
 /**
- * Fetch ratings from web using multi-provider search.
+ * Fetch ratings from web using 3-tier waterfall strategy.
  * Uses transactional replacement - only deletes if we have valid replacements.
- * UPDATED: Now uses Gemini Hybrid Search if available (faster, more sources).
+ *
+ * 3-Tier Waterfall:
+ *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
+ *   Tier 2: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
+ *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
+ *
  * @route POST /api/wines/:wineId/ratings/fetch
  */
 router.post('/:wineId/ratings/fetch', async (req, res) => {
@@ -101,30 +137,86 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
   try {
     let result;
-    let usedMethod = 'legacy';
+    let usedMethod = 'legacy_tier3';
+    let serpForReuse = null;
+    const startTime = Date.now();
+    const identityTokens = buildIdentityTokensFromWine(wine);
 
-    // 1. Try Gemini Hybrid Search First (Fast, more sources) with STRICT TIMEOUT
-    // Prevents "double wait" scenario where Gemini hangs then legacy runs (55s+ total)
-    const GEMINI_TIMEOUT_MS = 30000; // 30 seconds for Gemini + Claude (2 API calls)
-
-    if (isGeminiSearchAvailable()) {
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TIER 1: Quick SERP AI (~3-8s)
+    // Extract ratings from AI Overview, Knowledge Graph, Featured Snippets
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (isSerpAiAvailable() && !isCircuitOpen('serp_ai')) {
       try {
-        logger.info('Ratings', `Attempting Gemini Hybrid Search for wine ${wineId} (${GEMINI_TIMEOUT_MS}ms timeout)`);
+        logger.info('Ratings', `Tier 1: Quick SERP AI for wine ${wineId} (${SERP_AI_TIMEOUT_MS}ms timeout)`);
 
-        // Race Gemini against a strict timeout to fail fast
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Gemini search timed out')), GEMINI_TIMEOUT_MS)
+        const tier1Promise = withCircuitBreaker('serp_ai', () =>
+          quickSerpAiExtraction(wine, identityTokens)
         );
 
-        const hybridResult = await Promise.race([
-          hybridWineSearch(wine),
-          timeoutPromise
-        ]);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Tier 1 SERP AI timed out')), SERP_AI_TIMEOUT_MS)
+        );
 
-        if (hybridResult?.ratings?.length > 0) {
-          // Transform hybrid result to match legacy format
-          result = {
-            ratings: hybridResult.ratings.map(r => ({
+        const tier1 = await Promise.race([tier1Promise, timeoutPromise]);
+
+        // Save rawSerp for Tier 3 reuse
+        if (tier1.rawSerp) {
+          serpForReuse = tier1.rawSerp;
+          logger.info('Ratings', `Tier 1: Captured ${serpForReuse.organic?.length || 0} organic results for Tier 3 reuse`);
+        }
+
+        if (tier1.success && tier1.ratings?.length > 0) {
+          const { ratings: validatedTier1 } = validateRatingsWithIdentity(wine, tier1.ratings, identityTokens);
+
+          if (validatedTier1.length > 0) {
+            result = {
+              ratings: validatedTier1,
+              tasting_notes: tier1.tasting_notes,
+              search_notes: tier1.search_notes
+            };
+            usedMethod = 'serp_ai_tier1';
+            logTierResolution('tier1_serp_ai', wine, startTime, tier1.ratings.length);
+            logger.info('Ratings', `Tier 1 SUCCESS: ${tier1.ratings.length} ratings in ${Date.now() - startTime}ms`);
+          } else {
+            logger.info('Ratings', 'Tier 1: Identity gate rejected all ratings, proceeding to Tier 2');
+          }
+        } else {
+          logger.info('Ratings', 'Tier 1: No ratings found, proceeding to Tier 2');
+        }
+      } catch (err) {
+        logger.warn('Ratings', `Tier 1 failed: ${err.message}`);
+      }
+    } else if (!isSerpAiAvailable()) {
+      logger.info('Ratings', 'Tier 1: SERP AI not available (missing API keys)');
+    } else {
+      logger.info('Ratings', 'Tier 1: Circuit open, skipping');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TIER 2: Gemini Hybrid (~15-45s)
+    // Uses Gemini grounded search + Claude extraction for comprehensive coverage
+    // ═══════════════════════════════════════════════════════════════════════════
+    if (!result && isGeminiSearchAvailable() && !isCircuitOpen('gemini_hybrid')) {
+      try {
+        logger.info('Ratings', `Tier 2: Gemini Hybrid for wine ${wineId} (${GEMINI_TIMEOUT_MS}ms timeout)`);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+
+        try {
+          const hybridResult = await withCircuitBreaker('gemini_hybrid', async () => {
+            const res = await hybridWineSearch(wine);
+            if (controller.signal.aborted) {
+              throw new Error('Gemini search aborted due to timeout');
+            }
+            return res;
+          });
+
+          clearTimeout(timeoutId);
+
+          if (hybridResult?.ratings?.length > 0) {
+            const normalizedRatings = hybridResult.ratings.map(r => ({
               source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
               source_lens: r.source_lens || 'critics',
               score_type: r.score_type || 'points',
@@ -134,26 +226,52 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
               match_confidence: r.confidence || 'medium',
               source_url: r.source_url,
               tasting_notes: r.tasting_notes
-            })),
-            tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
-            search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
-          };
-          usedMethod = 'gemini_hybrid';
-          logger.info('Ratings', `Gemini found ${result.ratings.length} ratings`);
-        } else {
-          logger.info('Ratings', 'Gemini search returned no ratings, falling back to legacy');
+            }));
+
+            const { ratings: validatedTier2 } = validateRatingsWithIdentity(wine, normalizedRatings, identityTokens);
+
+            if (validatedTier2.length > 0) {
+              result = {
+                ratings: validatedTier2,
+                tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
+                search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
+              };
+              usedMethod = 'gemini_tier2';
+              logTierResolution('tier2_gemini', wine, startTime, hybridResult.ratings.length);
+              logger.info('Ratings', `Tier 2 SUCCESS: ${hybridResult.ratings.length} ratings in ${Date.now() - startTime}ms`);
+            } else {
+              logger.info('Ratings', 'Tier 2: Identity gate rejected all ratings, proceeding to Tier 3');
+            }
+          } else {
+            logger.info('Ratings', 'Tier 2: No ratings found, proceeding to Tier 3');
+          }
+        } catch (err) {
+          clearTimeout(timeoutId);
+          throw err;
         }
       } catch (err) {
-        // If timed out or failed, log and move instantly to legacy
-        logger.warn('Ratings', `Gemini search skipped: ${err.message}, falling back to legacy`);
+        logger.warn('Ratings', `Tier 2 failed: ${err.message}`);
       }
+    } else if (!result && !isGeminiSearchAvailable()) {
+      logger.info('Ratings', 'Tier 2: Gemini not available (missing API key)');
+    } else if (!result) {
+      logger.info('Ratings', 'Tier 2: Circuit open, skipping');
     }
 
-    // 2. Fallback to Legacy Search (Slow but established)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // TIER 3: Legacy Deep Scraping
+    // Full web scraping with Claude extraction - slower but comprehensive
+    // Reuses SERP results from Tier 1 to avoid duplicate API calls
+    // ═══════════════════════════════════════════════════════════════════════════
     if (!result) {
-      logger.info('Ratings', `Using Legacy Search for wine ${wineId}`);
-      result = await fetchWineRatings(wine);
-      usedMethod = 'legacy';
+      logger.info('Ratings', `Tier 3: Legacy Scraping for wine ${wineId}`);
+      const tier3 = await fetchWineRatings(wine, { existingSerpResults: serpForReuse });
+      const { ratings: validatedTier3 } = validateRatingsWithIdentity(wine, tier3.ratings || [], identityTokens);
+
+      result = { ...tier3, ratings: validatedTier3 };
+      usedMethod = 'legacy_tier3';
+      logTierResolution('tier3_legacy', wine, startTime, result.ratings?.length || 0);
+      logger.info('Ratings', `Tier 3 COMPLETE: ${result.ratings?.length || 0} ratings in ${Date.now() - startTime}ms`);
     }
 
     // Get existing ratings count for comparison
@@ -163,9 +281,11 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
 
     const rawRatings = result.ratings || [];
 
-    // Filter ratings by vintage sensitivity
+    // Identity validation (defensive) and vintage sensitivity filter
+    const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+
     const sensitivity = getVintageSensitivity(wine);
-    const newRatings = filterRatingsByVintageSensitivity(wine, rawRatings);
+    const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
     if (rawRatings.length > newRatings.length) {
       logger.info('Ratings', `Filtered ${rawRatings.length - newRatings.length} ratings due to vintage mismatch (sensitivity: ${sensitivity})`);
@@ -239,8 +359,9 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
             normalized_min, normalized_max, normalized_mid,
             award_name, competition_year, rating_count,
             source_url, evidence_excerpt, matched_wine_label,
+            identity_score, identity_reason,
             vintage_match, match_confidence, fetched_at, is_user_override
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP, FALSE)
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP, FALSE)
         `).run(
           wineId,
           wine.vintage,
@@ -258,6 +379,8 @@ router.post('/:wineId/ratings/fetch', async (req, res) => {
           rating.source_url || null,
           rating.evidence_excerpt || null,
           rating.matched_wine_label || null,
+          rating.identity_score ?? null,
+          rating.identity_reason || null,
           rating.vintage_match || 'inferred',
           rating.match_confidence || 'medium'
         );
@@ -754,6 +877,85 @@ router.post('/:wineId/ratings/hybrid-search', async (req, res) => {
     });
   } catch (error) {
     logger.error('HybridSearch', `Failed: ${error.message}`);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/ratings/:wineId/identity-diagnostics
+ * Get identity validation diagnostics for a wine's ratings
+ */
+router.get('/:wineId/identity-diagnostics', async (req, res) => {
+  try {
+    const { wineId } = req.params;
+
+    // Verify wine belongs to this cellar
+    const wine = await db.prepare('SELECT * FROM wines WHERE id = $1 AND cellar_id = $2')
+      .get(wineId, req.cellarId);
+
+    if (!wine) {
+      return res.status(404).json({ error: 'Wine not found' });
+    }
+
+    const ratings = await db.prepare(`
+      SELECT 
+        source,
+        source_lens,
+        raw_score,
+        normalized_mid,
+        vintage_match,
+        match_confidence,
+        identity_score,
+        identity_reason,
+        source_url,
+        evidence_excerpt,
+        matched_wine_label,
+        fetched_at
+      FROM wine_ratings
+      WHERE wine_id = $1 AND cellar_id = $2
+      ORDER BY fetched_at DESC
+    `).all(wineId, req.cellarId);
+
+    // Calculate summary stats
+    const summary = {
+      total_ratings: ratings.length,
+      exact_vintage_matches: ratings.filter(r => r.vintage_match === 'exact').length,
+      inferred_vintage_matches: ratings.filter(r => r.vintage_match === 'inferred').length,
+      high_confidence: ratings.filter(r => r.match_confidence === 'high').length,
+      medium_confidence: ratings.filter(r => r.match_confidence === 'medium').length,
+      low_confidence: ratings.filter(r => r.match_confidence === 'low').length,
+      avg_identity_score: ratings.length > 0
+        ? (ratings.reduce((sum, r) => sum + (r.identity_score || 0), 0) / ratings.length).toFixed(2)
+        : 0
+    };
+
+    res.json({
+      data: {
+        wine: {
+          id: wine.id,
+          name: wine.wine_name,
+          vintage: wine.vintage,
+          producer: wine.producer
+        },
+        summary,
+        ratings: ratings.map(r => ({
+          source: r.source,
+          lens: r.source_lens,
+          score: r.raw_score,
+          normalized: r.normalized_mid,
+          vintage_match: r.vintage_match,
+          confidence: r.match_confidence,
+          identity_score: r.identity_score,
+          identity_reason: r.identity_reason,
+          url: r.source_url,
+          evidence: r.evidence_excerpt?.substring(0, 150),
+          matched_label: r.matched_wine_label,
+          fetched_at: r.fetched_at
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Identity diagnostics error:', error);
     res.status(500).json({ error: error.message });
   }
 });

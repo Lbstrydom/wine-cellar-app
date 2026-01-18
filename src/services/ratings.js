@@ -3,8 +3,10 @@
  * @module services/ratings
  */
 
-import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
+import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY, LENS } from '../config/unifiedSources.js';
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
+import { generateIdentityTokens, calculateIdentityScore } from './wineIdentity.js';
 
 /**
  * Sources using 20-point scale that need conversion.
@@ -128,6 +130,92 @@ export function normalizeScore(source, scoreType, rawScore) {
 }
 
 /**
+ * Build identity tokens from a wine row.
+ * @param {Object} wine - Wine object
+ * @returns {Object} Identity tokens
+ */
+export function buildIdentityTokensFromWine(wine) {
+  return generateIdentityTokens({
+    producer_name: wine.producer || wine.winery || '',
+    winery: wine.producer || wine.winery || '',
+    range_name: wine.wine_name || '',
+    grape_variety: wine.grapes || '',
+    country: wine.country || '',
+    region: wine.region || '',
+    wine_type: wine.colour || wine.style || 'unknown',
+    vintage: wine.vintage
+  });
+}
+
+function deriveMatchConfidence(rating, identityScore) {
+  const lens = rating.source_lens || 'critics';
+  const isLowCredLens = lens === LENS.COMMUNITY || lens === LENS.AGGREGATOR;
+
+  if (!rating.source_url && isLowCredLens) return 'low';
+
+  if (identityScore >= 5 && !isLowCredLens) return 'high';
+
+  if (isLowCredLens) {
+    return rating.rating_count && rating.rating_count > 50 ? 'medium' : 'low';
+  }
+
+  return 'medium';
+}
+
+/**
+ * Validate ratings against wine identity tokens and annotate confidence.
+ * @param {Object} wine - Wine object
+ * @param {Array} ratings - Ratings to validate
+ * @param {Object} [identityTokens] - Precomputed identity tokens
+ * @returns {{ratings: Array, rejected: Array}}
+ */
+export function validateRatingsWithIdentity(wine, ratings, identityTokens = null) {
+  if (!ratings || ratings.length === 0) {
+    return { ratings: [], rejected: [] };
+  }
+
+  const tokens = identityTokens || buildIdentityTokensFromWine(wine);
+
+  const validated = [];
+  const rejected = [];
+
+  for (const rating of ratings) {
+    const validationText = [
+      rating.matched_wine_label,
+      rating.evidence_excerpt,
+      rating.source_url,
+      rating.search_snippet,
+      rating.label_text
+    ].filter(Boolean).join(' ');
+
+    const identity = calculateIdentityScore(validationText || rating.source || '', tokens);
+
+    if (!identity.valid) {
+      rejected.push({ rating, reason: identity.reason });
+      continue;
+    }
+
+    const match_confidence = deriveMatchConfidence(rating, identity.score);
+    const vintage_match = rating.vintage_match || (identity.matches?.vintageMatch ? 'exact' : 'inferred');
+
+    validated.push({
+      ...rating,
+      match_confidence,
+      vintage_match,
+      identity_score: identity.score,
+      identity_reason: identity.reason,
+      identity_matches: identity.matches
+    });
+  }
+
+  if (rejected.length > 0) {
+    logger.info('Ratings', `Identity gate rejected ${rejected.length} rating(s)`);
+  }
+
+  return { ratings: validated, rejected };
+}
+
+/**
  * Save ratings to the database.
  * @param {number} wineId - Wine ID
  * @param {string|number} vintage - Wine vintage
@@ -181,8 +269,9 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
           normalized_min, normalized_max, normalized_mid,
           award_name, competition_year, rating_count,
           source_url, evidence_excerpt, matched_wine_label,
+          identity_score, identity_reason,
           vintage_match, match_confidence, fetched_at, is_user_override
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, FALSE)
       `).run(
         cellarId,
         wineId,
@@ -201,6 +290,8 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
         rating.source_url || null,
         rating.evidence_excerpt || null,
         rating.matched_wine_label || null,
+        rating.identity_score ?? null,
+        rating.identity_reason || null,
         rating.vintage_match || 'inferred',
         rating.match_confidence || 'medium'
       );
@@ -321,12 +412,28 @@ function calculateLensIndex(ratings, wine) {
     const relevance = getRelevance(r.source, wine);
     // For unknown sources (manual entries), use a reasonable default credibility
     const credibility = source?.credibility || 0.65;
-    const effectiveWeight = credibility * relevance;
+    // Confidence factor influences weight: high=1.0, medium=0.8, low=0.5
+    const confFactor = r.match_confidence === 'high' ? 1.0 : r.match_confidence === 'medium' ? 0.8 : 0.5;
+    let effectiveWeight = credibility * relevance * confFactor;
 
     // Use override if present, otherwise midpoint
-    const score = r.is_user_override && r.override_normalized_mid
+    let score = r.is_user_override && r.override_normalized_mid
       ? r.override_normalized_mid
       : r.normalized_mid;
+
+    // Aggregator unattributed discount: reduce impact if no original source URL
+    const lens = (r.source_lens || '').toLowerCase();
+    const isAggregator = lens === 'aggregator';
+    const unattributed = isAggregator && (!r.source_url || r.source_url === '');
+    if (unattributed) {
+      score = Math.round(score * 0.7 * 10) / 10; // 0.7x with rounding
+    }
+
+    // Confidence gate: exclude low-confidence community/aggregator from purchase score
+    const isCommunity = lens === 'community';
+    if ((isCommunity || isAggregator) && r.match_confidence === 'low') {
+      effectiveWeight = 0; // does not contribute unless user opts in (future setting)
+    }
 
     return { score, weight: effectiveWeight, rating: r };
   }).filter(w => w.weight > 0);

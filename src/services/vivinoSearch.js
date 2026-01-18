@@ -382,7 +382,31 @@ export async function searchVivinoWines({ query, producer, vintage }) {
       }
 
       if (wineData) {
-        matches.push(normalizeWineData(wineData, { vintage, wineUrl: url }));
+        const normalized = normalizeWineData(wineData, { vintage, wineUrl: url });
+
+        // Early identity validation when producer/vintage provided
+        if (producer || vintage) {
+          try {
+            const { generateIdentityTokens, calculateIdentityScore } = await import('./wineIdentity.js');
+            const tokens = generateIdentityTokens({ producer_name: producer || '', vintage });
+            const validationText = [normalized.wineName, normalized.winery, normalized.region, normalized.grape]
+              .filter(Boolean)
+              .join(' ');
+            const identity = calculateIdentityScore(validationText, tokens);
+
+            if (!identity.valid) {
+              logger.info('VivinoSearch', `Rejected non-matching Vivino candidate: ${identity.reason}`);
+              continue;
+            }
+
+            normalized.identity_score = identity.score;
+            normalized.identity_reason = identity.reason;
+          } catch (e) {
+            logger.warn('VivinoSearch', `Identity validation skipped: ${e.message}`);
+          }
+        }
+
+        matches.push(normalized);
       }
     }
 

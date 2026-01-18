@@ -81,12 +81,13 @@ router.get('/search/history', async (req, res) => {
  *   apiCalls: { serpCalls, unlockerCalls, claudeExtractions },
  *   cache: { hits, misses, hitRate },
  *   byDomain: { domain: { calls, hits, hitRate } },
- *   byLens: { lens: { hits, misses, hitRate, avgTokensPerExtraction } }
+ *   byLens: { lens: { hits, misses, hitRate, avgTokensPerExtraction } },
+ *   accuracy: { vintageMismatchCount, wrongWineCount, identityRejectionCount } (optional)
  * }
  */
 router.post('/search/record', async (req, res) => {
   try {
-    const { summary, apiCalls, cache, byDomain: _byDomain, byLens: _byLens } = req.body;
+    const { summary, apiCalls, cache, byDomain: _byDomain, byLens: _byLens, accuracy } = req.body;
 
     if (!summary || !apiCalls) {
       return res.status(400).json({ error: 'Missing required metrics fields' });
@@ -100,8 +101,9 @@ router.post('/search/record', async (req, res) => {
       await db.prepare(`
         INSERT INTO search_metrics (
           cellar_id, fingerprint, pipeline_version, latency_ms, total_cost_cents,
-          extraction_method, match_confidence, stop_reason, details
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+          extraction_method, match_confidence, stop_reason, details,
+          vintage_mismatch_count, wrong_wine_count, identity_rejection_count
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       `).run(
         req.cellarId,
         req.body.fingerprint || null,
@@ -111,7 +113,10 @@ router.post('/search/record', async (req, res) => {
         req.body.extraction_method || null,
         req.body.match_confidence || null,
         req.body.stop_reason || null,
-        JSON.stringify(req.body)
+        JSON.stringify(req.body),
+        accuracy?.vintageMismatchCount || 0,
+        accuracy?.wrongWineCount || 0,
+        accuracy?.identityRejectionCount || 0
       );
     } catch (dbErr) {
       // Database table might not exist yet - that's ok, metrics still stored in memory
@@ -198,6 +203,42 @@ router.delete('/search/clear', async (req, res) => {
     res.json({ message: 'Metrics history cleared' });
   } catch (error) {
     console.error('Error clearing metrics:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/metrics/search/accuracy
+ * Get accuracy metrics aggregated from search_metrics table
+ */
+router.get('/search/accuracy', async (req, res) => {
+  try {
+    const stats = await db.prepare(`
+      SELECT
+        COUNT(*) as total_searches,
+        SUM(vintage_mismatch_count) as total_vintage_mismatches,
+        SUM(wrong_wine_count) as total_wrong_wines,
+        SUM(identity_rejection_count) as total_identity_rejections,
+        AVG(CAST(vintage_mismatch_count AS FLOAT) / NULLIF(ratings_found, 0)) as avg_vintage_mismatch_rate,
+        SUM(CASE WHEN vintage_mismatch_count > 0 THEN 1 ELSE 0 END) as searches_with_mismatches
+      FROM search_metrics
+      WHERE cellar_id = $1
+    `).get(req.cellarId);
+
+    res.json({
+      data: {
+        total_searches: Number(stats?.total_searches || 0),
+        total_vintage_mismatches: Number(stats?.total_vintage_mismatches || 0),
+        total_wrong_wines: Number(stats?.total_wrong_wines || 0),
+        total_identity_rejections: Number(stats?.total_identity_rejections || 0),
+        avg_vintage_mismatch_rate: stats?.avg_vintage_mismatch_rate 
+          ? Number(stats.avg_vintage_mismatch_rate).toFixed(4)
+          : '0.0000',
+        searches_with_mismatches: Number(stats?.searches_with_mismatches || 0)
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching accuracy metrics:', error);
     res.status(500).json({ error: error.message });
   }
 });

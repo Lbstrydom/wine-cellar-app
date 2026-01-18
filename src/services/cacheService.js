@@ -19,20 +19,74 @@ export function generateCacheKey(params) {
 }
 
 /**
- * Get cache TTL from config.
+ * Get cache TTL from config, with support for domain and status-specific TTLs.
+ * Phase 1: Implement short TTL for blocked/empty pages
+ *
  * @param {string} type - TTL type (serp, page, extraction, blocked_page)
+ * @param {Object} options - Additional options for domain/status specific TTLs
+ * @param {string} [options.domain] - Domain for status-specific TTLs
+ * @param {string} [options.status] - Page status (success, blocked, empty)
  * @returns {Promise<number>} TTL in hours
  */
-export async function getCacheTTL(type) {
+export async function getCacheTTL(type, options = {}) {
+  const { domain = null, status = 'success' } = options;
+
+  // Domain-specific short TTL for blocked/empty pages
+  if (status === 'blocked' || status === 'empty') {
+    const domainShortTTL = await getDomainSpecificBlockedTTL(domain);
+    if (domainShortTTL) {
+      return domainShortTTL;
+    }
+  }
+
   const configKey = `${type}_ttl_hours`;
   try {
     const result = await db.prepare('SELECT value FROM cache_config WHERE key = ?').get(configKey);
-    return result ? parseInt(result.value) : 24;
-  } catch {
-    return 24; // Default fallback
+    if (result) {
+      return parseInt(result.value);
+    }
+  } catch (err) {
+    logger.warn('Cache', `TTL config lookup failed: ${err.message}`);
   }
+
+  // Fallback defaults by type
+  const defaults = {
+    serp: 168, // 7 days
+    page: 24,  // 24 hours
+    extraction: 720, // 30 days
+    blocked_page: 2  // 2 hours for blocked pages
+  };
+
+  return defaults[type] || 24;
 }
 
+/**
+ * Get domain-specific TTL for blocked pages.
+ * Protected domains get shorter TTLs for faster retry.
+ *
+ * @param {string} domain - Domain to check
+ * @returns {Promise<number|null>} TTL in hours or null
+ */
+async function getDomainSpecificBlockedTTL(domain) {
+  if (!domain) return null;
+
+  // Domain-specific short TTLs for blocked pages
+  const domainBlockedTTLs = {
+    'vivino.com': 2,      // 2 hours
+    'decanter.com': 4,    // 4 hours
+    'wine-searcher.com': 2,  // 2 hours
+    'jancisrobinson.com': 4, // 4 hours
+    'robertparker.com': 4    // 4 hours
+  };
+
+  for (const [domainKey, ttl] of Object.entries(domainBlockedTTLs)) {
+    if (domain.includes(domainKey)) {
+      return ttl;
+    }
+  }
+
+  return null;
+}
 /**
  * Calculate expiry timestamp.
  * @param {number} hours - Hours from now

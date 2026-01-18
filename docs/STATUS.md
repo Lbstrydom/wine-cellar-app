@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 15 January 2026
+## 18 January 2026
 
 ---
 
@@ -9,13 +9,47 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 15 Jan 2026**:
+**Recent Enhancements** ✨ **NEW - 18 Jan 2026**:
+- **Search Redesign Foundation (Phases 1-6) - INFRASTRUCTURE COMPLETE** ✅:
+  - **Phase 2 (Identity Validation)**: Migration 045 adds `identity_score`, `identity_reason` columns to `wine_ratings`
+  - **Phase 3 (Query Optimization)**: New `queryBuilder.js` service with locale-aware query building, region-specific source targeting (Platters, Halliday, RVF, etc.), automatic retry without operators
+  - **Phase 6 (Observability)**: Migration 046 adds accuracy metrics (`vintage_mismatch_count`, `wrong_wine_count`, `identity_rejection_count`) to `search_metrics`
+  - New service: `accuracyMetrics.js` for data quality tracking
+  - Enhanced `searchMetrics.js` with `GET /accuracy` endpoint
+  - Enhanced `ratings.js` with `GET /:wineId/identity-diagnostics` endpoint
+  - Country→locale mappings for 12 countries with SERP `hl`/`gl` parameters
+  - **Status**: Foundation modules complete (queryBuilder, accuracyMetrics) but NOT yet integrated into live search pipeline
+  - **Next Sprint**: Wire queryBuilder into searchProviders.js, create wineIdentity.js/urlScoring.js services, integrate identity validation into domain flows
+  - All 848 unit tests passing (20 new queryBuilder tests)
+  - Files: `queryBuilder.js` (new), `accuracyMetrics.js` (new), migrations 045-046
+
+**Previous Enhancements** (17 Jan 2026):
+- **3-Tier Waterfall Rating Search Strategy - COMPLETE** ✅:
+  - **Tier 1: Quick SERP AI (~3-8s)** - Extracts ratings from Google AI Overview, Knowledge Graph, Featured Snippets before expensive API calls
+  - **Tier 2: Gemini Hybrid (~15-45s)** - Gemini grounded search with Claude extraction for comprehensive coverage
+  - **Tier 3: Legacy Deep Scraping** - Full web scraping with page fetches (reuses SERP results from Tier 1)
+  - New service: `serpAi.js` for Tier 1 extraction
+  - SERP result reuse between tiers avoids duplicate API calls
+  - Circuit breakers protect against cascading failures (`serp_ai`, `gemini_hybrid`)
+  - AbortController for clean Gemini timeout handling
+  - Cost tracking logs with `CostTrack` category for latency/tier analysis
+  - Updated Gemini model to `gemini-3.0-flash` (2026)
+  - Files: `serpAi.js` (new), `ratingFetchJob.js`, `ratings.js`, `claude.js`, `geminiSearch.js`
+
+- **Puppeteer Sandbox Fix (P0)** ✅:
+  - Refactored `puppeteerScraper.js` from MCP wrapper to direct `puppeteer.launch()`
+  - Explicit sandbox flags for Docker/Railway stability: `--no-sandbox`, `--disable-setuid-sandbox`, `--disable-dev-shm-usage`
+  - Dockerfile updated with Chromium installation and environment variables
+  - Added `puppeteer: ^24.0.0` dependency
+
+- All 817 unit tests + 53 integration tests passing
+
+**Previous Enhancements** (15 Jan 2026):
 - **SQL Injection Security Refactor (Issue #1) - COMPLETE** ✅:
   - Eliminated all unsafe SQL template literal patterns from codebase
   - Converted template interpolations to parameterized queries across 12 files
   - Applied safe concatenation patterns for helper functions (stringAgg, nullsLast, nowFunc)
   - Implemented column whitelisting for dynamic UPDATE queries
-  - All 817 unit tests passing with zero SQL injection vulnerabilities
   - Files refactored: wines.js, ratings.js, pairing.js, pairingSession.js, drinkNowAI.js, awards.js, cacheService.js, cellarHealth.js, provenance.js, searchCache.js, zoneMetadata.js, storageAreas.js
   - Regression test in place: tests/unit/utils/sqlInjectionPatterns.test.js
 
@@ -48,15 +82,16 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Key Differentiators**:
 - Progressive Web App with offline support and cross-platform installation
 - Multi-source rating aggregation with data provenance tracking
+- **3-Tier Waterfall Rating Search** ✨ NEW: Quick SERP AI → Gemini Hybrid → Legacy Scraping
 - Claude AI integration for pairing, drink recommendations, and tasting analysis
 - **Cloud-native deployment**: Railway + Supabase PostgreSQL
 - **Award Extractor Skill** for structured PDF processing
-- **Consolidated Tasting & Service card** ✨ UPDATED: unified wine detail with evidence indicators
-- **Resource-safe search** ✨ NEW: prevents document download exhaustion
+- **Consolidated Tasting & Service card**: unified wine detail with evidence indicators
+- **Resource-safe search**: prevents document download exhaustion
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (333 tests, 85% coverage)
+- Comprehensive testing infrastructure (870 tests, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
@@ -82,17 +117,18 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   "dependencies": {
     "express": "^5.2.1",
     "@anthropic-ai/sdk": "^0.71.2",
-    "openai": "^4.x",
-    "pg": "^8.11.3",
-    "better-sqlite3": "^11.8.1",
+    "openai": "^6.15.0",
+    "pg": "^8.16.3",
+    "puppeteer": "^24.0.0",
     "multer": "^2.0.2",
     "cors": "^2.8.5",
-    "dotenv": "^17.2.3"
+    "dotenv": "^17.2.3",
+    "zod": "^4.3.5"
   },
   "devDependencies": {
-    "vitest": "^2.1.8",
-    "@vitest/coverage-v8": "^2.1.8",
-    "eslint": "^9.18.0"
+    "vitest": "^4.0.17",
+    "@vitest/coverage-v8": "^4.0.17",
+    "eslint": "^9.39.2"
   }
 }
 ```
@@ -137,7 +173,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **836+ tests passing** (783 unit + 53 integration)
+- **870 tests passing** (817 unit + 53 integration)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -146,8 +182,8 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 783 unit tests (~0.5s) | ❌ No |
-| `npm run test:integration` | Runs 53 integration tests (~5s) | ✅ Auto-managed |
+| `npm run test:unit` | Runs 817 unit tests (~0.9s) | ❌ No |
+| `npm run test:integration` | Runs 53 integration tests (~6s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
 

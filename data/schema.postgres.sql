@@ -125,6 +125,8 @@ CREATE TABLE IF NOT EXISTS wine_ratings (
     source_url TEXT,
     evidence_excerpt TEXT,
     matched_wine_label TEXT,
+    identity_score INTEGER,
+    identity_reason TEXT,
     fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     vintage_match TEXT DEFAULT 'exact',
     match_confidence TEXT DEFAULT 'high',
@@ -263,6 +265,9 @@ CREATE TABLE IF NOT EXISTS search_metrics (
     match_confidence REAL,
     stop_reason TEXT,
     details JSONB,
+    vintage_mismatch_count INTEGER DEFAULT 0,
+    wrong_wine_count INTEGER DEFAULT 0,
+    identity_rejection_count INTEGER DEFAULT 0,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 

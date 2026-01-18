@@ -446,6 +446,22 @@ async function searchDecanterWithWebUnlocker(wineName, vintage) {
       }
 
       if (reviewData && reviewData.score) {
+        // Early identity validation using provided wineName/vintage
+        try {
+          const { generateIdentityTokens, calculateIdentityScore } = await import('./wineIdentity.js');
+          const tokens = generateIdentityTokens({ producer_name: wineName || '', vintage });
+          const validationText = [reviewData.wineName || wineName, url].filter(Boolean).join(' ');
+          const identity = calculateIdentityScore(validationText, tokens);
+          if (!identity.valid) {
+            logger.info('Decanter', `Rejected non-matching Decanter review: ${identity.reason}`);
+            continue;
+          }
+          reviewData.identity_score = identity.score;
+          reviewData.identity_reason = identity.reason;
+        } catch (e) {
+          logger.warn('Decanter', `Identity validation skipped: ${e.message}`);
+        }
+
         return reviewData;
       }
     }
@@ -1479,8 +1495,10 @@ async function fetchDocumentContent(url, maxLength = 8000, budget = null) {
 
       // Try to use existing PDF extraction service
       try {
-        const { extractAwardsFromPdfBuffer } = await import('./awards.js');
-        const extractedData = await extractAwardsFromPdfBuffer(buffer);
+        const { extractFromPDF } = await import('./awards.js');
+        // extractFromPDF expects base64 string, not Buffer
+        const pdfBase64 = buffer.toString('base64');
+        const extractedData = await extractFromPDF(pdfBase64, null, null);
         if (extractedData && extractedData.text) {
           const content = extractedData.text.substring(0, LIMITS.MAX_CONTENT_CHARS);
           // Cache successful extraction
