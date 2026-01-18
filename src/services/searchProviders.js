@@ -2679,6 +2679,12 @@ function calculateResultRelevance(result, wineName, vintage) {
     rankingExplanation.features.push(`+${fuzzySnippetScore.toFixed(1)} (${fuzzySnippetMatches} fuzzy snippet)`);
   }
 
+  const hasFullTitleMatch = keyWords.length > 0 && keyWords.every(w => title.includes(w));
+  if (hasFullTitleMatch) {
+    score += RERANK_WEIGHTS.FULL_NAME_MATCH;
+    rankingExplanation.features.push(`+${RERANK_WEIGHTS.FULL_NAME_MATCH} (full name in title)`);
+  }
+
   // Vintage matching
   if (hasVintageInTitle) {
     score += RERANK_WEIGHTS.EXACT_VINTAGE_MATCH;

@@ -36,15 +36,15 @@ export function generateIdentityTokens(wine) {
   // Tokenize and normalize strings
   const tokenize = (str) => {
     if (!str) return [];
-    return str
-      .toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
+    const normalized = normalizeText(str);
+    return normalized
       .split(/\s+/)
       .filter(t => t.length > 1 && !isStopWord(t));
   };
 
   // Producer tokens (required for identity match)
   const producerTokens = tokenize(producerName);
+  const producerAliases = getProducerAliases(producerName).map(tokenize).filter(a => a.length > 0);
 
   // Range/Cuvee tokens (optional match)
   const rangeTokens = tokenize(rangeName);
@@ -76,6 +76,7 @@ export function generateIdentityTokens(wine) {
     // Identity validation (strict matching)
     identity: {
       producer: producerTokens,
+      producerAliases,
       producerRequired: true, // Must match for valid rating
       vintage: vintageSafe,
       vintageRequired: true, // Must match for valid rating
@@ -92,6 +93,7 @@ export function generateIdentityTokens(wine) {
       allTokens: allNameTokens,
       regionTokens,
       countryTokens,
+      vintage: vintageSafe,
       vineyard: producerTokens[0] || '' // Primary vineyard identifier
     },
 
@@ -154,7 +156,7 @@ export function calculateIdentityScore(text, identityTokens) {
 
   // Required: Producer match
   if (identity.producerRequired && identity.producer.length > 0) {
-    if (matchesTokens(tokens, identity.producer)) {
+    if (matchesTokens(tokens, identity.producer) || matchesAnyTokenSet(tokens, identity.producerAliases)) {
       score += 2;
       matches.producerMatch = true;
     } else {
@@ -228,6 +230,17 @@ function matchesTokens(tokens, targetTokens) {
 }
 
 /**
+ * Match text tokens against any token set.
+ * @param {string[]} tokens - Tokenized text
+ * @param {string[][]} tokenSets - List of token arrays to match
+ * @returns {boolean} True if any token set fully matches
+ */
+function matchesAnyTokenSet(tokens, tokenSets) {
+  if (!tokenSets || tokenSets.length === 0) return false;
+  return tokenSets.some(set => matchesTokens(tokens, set));
+}
+
+/**
  * Match vintage in text.
  * @param {string} text - Normalized text
  * @param {number} targetVintage - Target vintage year
@@ -294,6 +307,44 @@ function getCompetingProducerTokens(producerName) {
 }
 
 /**
+ * Get producer aliases for matching (e.g., acronyms or common variants).
+ * @param {string} producerName - Primary producer name
+ * @returns {string[]} Alias names to match
+ */
+function getProducerAliases(producerName) {
+  if (!producerName) return [];
+
+  const normalized = normalizeText(producerName);
+  const aliasMap = {
+    'cvne': [
+      'cune',
+      'compania vinicola del norte de espana'
+    ],
+    'louis roederer': [
+      'roederer',
+      'maison roederer'
+    ],
+    'ridge': [
+      'ridge vineyards'
+    ],
+    'opus one': [
+      'opus one winery'
+    ],
+    'vega sicilia': [
+      'bodegas vega sicilia'
+    ],
+    'matsu': [
+      'bodegas matsu'
+    ],
+    'backsberg': [
+      'backsberg estate'
+    ]
+  };
+
+  return aliasMap[normalized] || [];
+}
+
+/**
 /**
  * Get wrong vintage patterns to reject.
  * DEPRECATED: Don't use this - check vintage separately in calculateIdentityScore
@@ -330,8 +381,13 @@ function getWineTypeForbidden(wineType) {
 function normalizeText(text) {
   if (!text) return '';
   return text
+    .toString()
     .toLowerCase()
-    .replace(/[^\w\s]/g, ' ')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’`]/g, '')
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -346,7 +402,9 @@ function isStopWord(word) {
     'and', 'the', 'a', 'an', 'or', 'but', 'in', 'on', 'at', 'to', 'for',
     'of', 'from', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been',
     'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
-    'should', 'may', 'might', 'must', 'can', 'www', 'com', 'co', 'uk'
+    'should', 'may', 'might', 'must', 'can', 'www', 'com', 'co', 'uk',
+    'de', 'del', 'da', 'di', 'du', 'la', 'le', 'les', 'los', 'las', 'el',
+    'von', 'van', 'der', 'den', 'st'
   ]);
   return stopWords.has(word.toLowerCase());
 }
@@ -365,7 +423,7 @@ export function calculateDiscoveryTokenOverlap(urlTitle, discoveryTokens) {
   const normalizedUrl = normalizeText(urlTitle);
   const urlTokens = normalizedUrl.split(/\s+/);
 
-  const { allTokens, regionTokens, countryTokens } = discoveryTokens;
+  const { allTokens, regionTokens, countryTokens, vintage } = discoveryTokens;
 
   let matches = 0;
   let totalPossible = 0;
@@ -391,5 +449,16 @@ export function calculateDiscoveryTokenOverlap(urlTitle, discoveryTokens) {
     totalPossible += Math.ceil(countryTokens.length * 0.5);
   }
 
-  return totalPossible > 0 ? Math.min(100, Math.round((matches / totalPossible) * 100)) : 0;
+  const baseScore = totalPossible > 0 ? Math.round((matches / totalPossible) * 100) : 0;
+  let bonus = 0;
+
+  if (allTokens && allTokens.length > 0) {
+    const allNamePresent = allTokens.every(t => urlTokens.includes(t));
+    if (allNamePresent) bonus += 10;
+    if (vintage && urlTokens.includes(vintage.toString())) {
+      bonus += allNamePresent ? 10 : 5;
+    }
+  }
+
+  return Math.min(100, baseScore + bonus);
 }
