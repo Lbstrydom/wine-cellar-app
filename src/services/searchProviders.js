@@ -22,6 +22,8 @@ import { semaphoredFetch, globalFetchSemaphore } from '../utils/fetchSemaphore.j
 import { createRequestDeduper } from '../utils/requestDedup.js';
 import { detectQualifiers, detectLocaleHints, getEffectiveWeight } from '../config/rangeQualifiers.js';
 import { getLocaleParams, buildQueryVariants, shouldRetryWithoutOperators } from './queryBuilder.js';
+import { generateIdentityTokens } from './wineIdentity.js';
+import { scoreAndRankUrls, applyMarketCaps } from './urlScoring.js';
 
 const serpRequestDeduper = createRequestDeduper();
 
@@ -2986,13 +2988,97 @@ export async function searchWineRatings(wineName, vintage, country, style = null
     return true;
   });
 
-  // Filter and score results by relevance
+  // ═══════════════════════════════════════════════════════════════════════════
+  // URL Scoring & Ranking (Phase 4 Integration)
+  // Uses two-tier scoring: identity score (validity) + fetch priority (order)
+  // ═══════════════════════════════════════════════════════════════════════════
+  
+  // Generate identity tokens for URL validation
+  const identityTokens = generateIdentityTokens({
+    producer_name: wine.winery || wine.producer || '',
+    winery: wine.winery || wine.producer || '',
+    range_name: wine.wine_name || '',
+    grape_variety: wine.grapes || '',
+    country: wine.country || country || '',
+    region: wine.region || '',
+    wine_type: wine.colour || wine.style || 'unknown',
+    vintage: wine.vintage || vintage
+  });
+
+  // Score and rank URLs with identity validation
+  const rankedUrls = scoreAndRankUrls(
+    uniqueResults.map(r => ({
+      url: r.url,
+      title: r.title || '',
+      snippet: r.snippet || '',
+      domain: r.source || '',
+      source: r.sourceId,
+      position: r.position,
+      lens: r.lens
+    })),
+    identityTokens,
+    wine.country || country || 'default'
+  );
+
+  // Apply market-aware caps (max 8 URLs)
+  const cappedUrls = applyMarketCaps(rankedUrls, wine.country || country || 'default');
+
+  logger.info('Search', `URL scoring: ${uniqueResults.length} raw → ${rankedUrls.length} valid → ${cappedUrls.length} capped`);
+
+  // Merge scored URLs back with original result data
+  const urlScoreMap = new Map(cappedUrls.map(u => [u.url, u]));
   const scoredResults = uniqueResults
+    .filter(r => urlScoreMap.has(r.url)) // Keep only URLs that passed scoring
     .map(r => {
-      const { relevant, score, isProducerSite } = calculateResultRelevance(r, wineName, vintage);
-      return { ...r, relevant, relevanceScore: score, isProducerSite };
+      const scored = urlScoreMap.get(r.url);
+      return {
+        ...r,
+        identityScore: scored.identityScore,
+        identityValid: scored.identityValid,
+        fetchPriority: scored.fetchPriority,
+        discoveryScore: scored.discoveryScore,
+        compositeScore: scored.compositeScore
+      };
     })
-    .filter(r => r.relevant);
+    .sort((a, b) => {
+      // Sort by composite score (identity → priority → discovery)
+      if (a.compositeScore.identity !== b.compositeScore.identity) {
+        return b.compositeScore.identity - a.compositeScore.identity;
+      }
+      if (a.compositeScore.priority !== b.compositeScore.priority) {
+        return b.compositeScore.priority - a.compositeScore.priority;
+      }
+      return b.compositeScore.discovery - a.compositeScore.discovery;
+    });
+
+  // Fallback: If URL scoring filtered out too many results, use legacy relevance scoring
+  if (scoredResults.length === 0 && uniqueResults.length > 0) {
+    logger.warn('Search', 'URL scoring rejected all results, falling back to legacy relevance scoring');
+    // Use original relevance-based scoring as fallback
+    const fallbackScored = uniqueResults
+      .map(r => {
+        const { relevant, score, isProducerSite } = calculateResultRelevance(r, wineName, vintage);
+        return { ...r, relevant, relevanceScore: score, isProducerSite };
+      })
+      .filter(r => r.relevant);
+    
+    scoredResults.push(...fallbackScored.slice(0, 8)); // Apply cap to fallback results
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Legacy enrichment (kept for compatibility)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  // Filter and score results by relevance (legacy path for fallback results)
+  const legacyFiltered = scoredResults.filter(r => !r.identityScore); // Only process non-scored results
+  if (legacyFiltered.length > 0) {
+    legacyFiltered.forEach(r => {
+      const { relevant, score, isProducerSite } = calculateResultRelevance(r, wineName, vintage);
+      r.relevant = relevant;
+      r.relevanceScore = score;
+      r.isProducerSite = isProducerSite;
+    });
+  }
 
   // Log producer sites found
   const producerSites = scoredResults.filter(r => r.isProducerSite);

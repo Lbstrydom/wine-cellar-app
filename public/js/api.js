@@ -733,6 +733,16 @@ export async function getRatingsJobStatus(jobId) {
 }
 
 /**
+ * Get identity diagnostics for a wine's ratings.
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getIdentityDiagnostics(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/ratings/identity-diagnostics`);
+  return handleResponse(res, 'Failed to fetch identity diagnostics');
+}
+
+/**
  * Add manual rating.
  * @param {number} wineId - Wine ID
  * @param {Object} rating - Rating details
