@@ -1210,23 +1210,25 @@ Include regional critics/competitions in queries:
 | France | Revue du Vin de France, Bettane Desseauve, Guide Hachette |
 | USA | Wine Spectator, Wine Advocate, Wine Enthusiast |
 
-### Identity Validation Pattern (Planned)
+### Identity Validation Pattern
 
-**Status**: Schema complete (migrations 045-046), services pending implementation.
+**Status**: PRODUCTION ACTIVE (implemented in `src/services/wineIdentity.js`)
 
-Future pattern for validating ratings belong to correct wine:
+Wine identity validation ensures ratings belong to the correct wine before persistence:
 
 ```javascript
+import { generateIdentityTokens, calculateIdentityScore } from './wineIdentity.js';
+
 // Generate identity tokens (producer + vintage required)
 const tokens = generateIdentityTokens(wine);
-// { producer: 'kanonkop', vintage: '2019', range: 'paul sauer' }
+// { producer: ['kanonkop'], vintage: 2019, range: ['paul', 'sauer'], ... }
 
 // Calculate identity score for URL/content
 const score = calculateIdentityScore(urlTitle, tokens);
-// { score: 5, producer_match: true, vintage_match: true, range_match: true }
+// { score: 5, valid: true, reason: 'valid', matches: { producerMatch: true, vintageMatch: true, ... } }
 
 // Apply confidence gate before persistence
-if (score.score < 4) {
+if (!score.valid || score.score < 4) {
   // Reject: missing producer or vintage
 }
 ```
@@ -1237,9 +1239,25 @@ if (score.score < 4) {
 - Range/cuvee match: +1
 - Grape match: +1
 - Region match: +1
-- Negative token: -10 (reject)
+- Negative token: -10 (instant reject)
 
-**Minimum threshold**: 4 (producer + vintage)
+**Minimum threshold**: 4 (producer + vintage required)
+
+### Algorithmic Producer Aliases
+
+Producer alias generation uses patterns, not hardcoded mappings:
+
+```javascript
+// Generated automatically from producer name:
+// "Bodegas Vega Sicilia" → ["vega sicilia"]  (prefix removed)
+// "Ridge Vineyards" → ["ridge"]  (suffix removed)
+// "Louis Roederer" → ["roederer"]  (last name only for 2-word names)
+// "Smith and Hook" → ["smith", "hook"]  (split on "and")
+```
+
+**Company Prefixes** (stripped): bodegas, maison, domaine, chateau, castello, tenuta, cantina, cave, weingut, schloss, casa
+
+**Company Suffixes** (stripped): vineyards, vineyard, estate, estates, winery, wines, cellars, cellar
 
 ### Accuracy Metrics Tracking
 
@@ -1260,6 +1278,54 @@ await recordSearchMetrics(searchId, wineId, cellarId, metrics);
 const accuracy = await getAccuracyMetrics(cellarId, dateRange);
 // { avg_vintage_mismatch_rate: 0.02, wrong_wine_corrections: 3 }
 ```
+
+### Wine Search Benchmark System
+
+The benchmark system evaluates search identity matching quality using deterministic CI testing.
+
+**Test Files**:
+- `tests/benchmark/searchBenchmark.test.js` - Main benchmark test suite
+- `tests/benchmark/identityScorer.js` - Identity scoring wrapper with metrics
+- `tests/benchmark/goldenWines.test.js` - Golden wine extraction tests
+- `tests/fixtures/Search_Benchmark_v2_1.json` - 50 wine test cases
+
+**Key Metrics** (as of January 2026):
+- **hit@1**: 82% - Correct wine in top result
+- **hit@3**: 96% - Correct wine in top 3 results
+- **MRR**: 0.89 - Mean Reciprocal Rank
+
+**Running Benchmarks**:
+```bash
+# Run benchmark suite (REPLAY mode - uses fixtures)
+npm run test:benchmark
+
+# Run specific benchmark file
+npx vitest run tests/benchmark/searchBenchmark.test.js --reporter=verbose
+```
+
+**Fuzzy Matching Algorithm** (Jaccard Similarity):
+
+The benchmark uses balanced precision/recall matching:
+
+```javascript
+// tests/benchmark/identityScorer.js
+export function fuzzyMatch(a, b, threshold = 0.65) {
+  const tokensA = getMatchTokens(a);  // Tokenize and filter stop words
+  const tokensB = getMatchTokens(b);
+
+  // Jaccard similarity: |A ∩ B| / |A ∪ B|
+  const intersection = [...tokensA].filter(t => tokensB.has(t));
+  const union = new Set([...tokensA, ...tokensB]);
+
+  return intersection.length / union.size >= threshold;
+}
+```
+
+**Design Principles**:
+- **No overfitting** - Avoid benchmark-specific tuning
+- **Algorithmic patterns** - Use generalizable rules, not hardcoded mappings
+- **Balanced metrics** - Jaccard treats precision and recall equally
+- **Honest baselines** - 82% hit@1 is realistic for flexible search
 
 ---
 

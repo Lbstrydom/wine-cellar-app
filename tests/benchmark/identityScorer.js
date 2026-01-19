@@ -58,34 +58,42 @@ export function normalizeWineName(name) {
 
 /**
  * Calculate token-based fuzzy match between two wine names.
+ * Uses Jaccard similarity (intersection over union) for balanced precision/recall.
+ *
  * @param {string} a - First wine name (normalized)
  * @param {string} b - Second wine name (normalized)
- * @param {number} [threshold=0.7] - Minimum overlap for match
+ * @param {number} [threshold=0.65] - Minimum Jaccard similarity for match
  * @returns {boolean} True if names match above threshold
  */
-export function fuzzyMatch(a, b, threshold = 0.7) {
+export function fuzzyMatch(a, b, threshold = 0.65) {
   const tokensA = getMatchTokens(a);
   const tokensB = getMatchTokens(b);
 
   if (tokensA.size === 0 || tokensB.size === 0) return false;
 
-  const intersection = [...tokensB].filter(t => tokensA.has(t));
-  const recall = intersection.length / tokensB.size;
-  const sizeThreshold = tokensB.size <= 3 ? 1 : tokensB.size <= 5 ? 0.8 : threshold;
+  // Calculate Jaccard similarity: |A ∩ B| / |A ∪ B|
+  const intersection = [...tokensA].filter(t => tokensB.has(t));
+  const union = new Set([...tokensA, ...tokensB]);
 
-  return recall >= sizeThreshold;
+  // Jaccard treats both directions equally - no bias toward recall
+  const jaccard = intersection.length / union.size;
+
+  return jaccard >= threshold;
 }
 
 /**
  * Tokenize a normalized wine name for matching.
+ * Stop words are language articles and prepositions that don't carry wine identity.
+ * Wine-specific terms (IGT, DOC, etc.) are NOT stop words - they identify the wine.
+ *
  * @param {string} name - Normalized name
  * @returns {Set<string>} Token set for matching
  */
 function getMatchTokens(name) {
+  // Only true linguistic stop words - not wine classification terms
   const stopTokens = new Set([
     'the', 'el', 'la', 'le', 'les', 'los', 'las',
-    'de', 'del', 'di', 'da', 'du', 'von', 'van', 'der', 'den', 'st',
-    'igt'
+    'de', 'del', 'di', 'da', 'du', 'von', 'van', 'der', 'den', 'st'
   ]);
 
   return new Set(
@@ -213,8 +221,9 @@ export function scoreIdentityMatch(ranking, goldName) {
     }
 
     // Also check snippet/description for wine name presence
+    // Use same threshold as title - snippets shouldn't get special treatment
     const snippetNormalized = normalizeWineName(result.snippet || result.description || '');
-    if (fuzzyMatch(snippetNormalized, normalizedGold, 0.6)) {
+    if (fuzzyMatch(snippetNormalized, normalizedGold)) {
       return {
         position: i + 1,
         found: true,

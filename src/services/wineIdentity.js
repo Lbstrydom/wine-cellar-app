@@ -307,7 +307,10 @@ function getCompetingProducerTokens(producerName) {
 }
 
 /**
- * Get producer aliases for matching (e.g., acronyms or common variants).
+ * Get producer aliases for matching using algorithmic generation.
+ * Instead of hardcoding specific producer aliases (which leads to overfitting),
+ * we generate common alias patterns algorithmically.
+ *
  * @param {string} producerName - Primary producer name
  * @returns {string[]} Alias names to match
  */
@@ -315,43 +318,49 @@ function getProducerAliases(producerName) {
   if (!producerName) return [];
 
   const normalized = normalizeText(producerName);
-  const aliasMap = {
-    'cvne': [
-      'cune',
-      'compania vinicola del norte de espana'
-    ],
-    'louis roederer': [
-      'roederer',
-      'maison roederer'
-    ],
-    'ridge': [
-      'ridge vineyards'
-    ],
-    'opus one': [
-      'opus one winery'
-    ],
-    'vega sicilia': [
-      'bodegas vega sicilia'
-    ],
-    'matsu': [
-      'bodegas matsu'
-    ],
-    'backsberg': [
-      'backsberg estate'
-    ]
-  };
+  const tokens = normalized.split(/\s+/).filter(t => t.length > 1);
+  const aliases = [];
 
-  return aliasMap[normalized] || [];
+  // Pattern 1: If name starts with common prefixes, create alias without prefix
+  // e.g., "Bodegas Vega Sicilia" -> "Vega Sicilia"
+  // e.g., "Maison Louis Roederer" -> "Louis Roederer"
+  const companyPrefixes = ['bodegas', 'bodega', 'maison', 'domaine', 'chateau', 'castello',
+                           'tenuta', 'cantina', 'cave', 'weingut', 'schloss', 'casa'];
+  if (tokens.length > 1 && companyPrefixes.includes(tokens[0])) {
+    aliases.push(tokens.slice(1).join(' '));
+  }
+
+  // Pattern 2: If name ends with common suffixes, create alias without suffix
+  // e.g., "Ridge Vineyards" -> "Ridge"
+  // e.g., "Backsberg Estate" -> "Backsberg"
+  const companySuffixes = ['vineyards', 'vineyard', 'estate', 'estates', 'winery',
+                           'wines', 'cellars', 'cellar'];
+  if (tokens.length > 1 && companySuffixes.includes(tokens[tokens.length - 1])) {
+    aliases.push(tokens.slice(0, -1).join(' '));
+  }
+
+  // Pattern 3: For multi-word names, try last name only if 2+ words
+  // e.g., "Louis Roederer" -> "Roederer" (common shorthand)
+  if (tokens.length === 2 && !companyPrefixes.includes(tokens[0]) && !companySuffixes.includes(tokens[1])) {
+    aliases.push(tokens[1]); // Last name only
+  }
+
+  // Pattern 4: For names with "and" or "&", try each part
+  // e.g., "Smith and Hook" -> "Smith", "Hook"
+  if (normalized.includes(' and ')) {
+    const parts = normalized.split(' and ');
+    aliases.push(...parts.map(p => p.trim()).filter(p => p.length > 2));
+  }
+
+  return aliases;
 }
 
-/**
 /**
  * Get wrong vintage patterns to reject.
  * DEPRECATED: Don't use this - check vintage separately in calculateIdentityScore
  * @param {number} targetVintage - Target vintage year
  * @returns {string[]} Vintage patterns to reject
  */
-
 function getWrongVintagePatterns(targetVintage) {
   // Don't return vintage patterns here - they're checked separately in calculateIdentityScore
   // to avoid false rejections on text containing multiple vintages
