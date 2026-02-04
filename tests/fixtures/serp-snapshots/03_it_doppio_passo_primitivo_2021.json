@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "caseId": "03_it_doppio_passo_primitivo_2021",
+    "capturedAt": "2026-01-18T19:00:00.000Z",
+    "fixtureVersion": 1
+  },
+  "query": "Doppio Passo Primitivo 2021",
+  "timestamp": "2026-01-18T19:00:00.000Z",
+  "totalResults": 10,
+  "organic": [
+    {
+      "position": 1,
+      "title": "Doppio Passo Primitivo 2021 - Wine-Searcher",
+      "link": "https://www.wine-searcher.com/find/doppio-passo-primitivo-2021",
+      "url": "https://www.wine-searcher.com/find/doppio-passo-primitivo-2021",
+      "snippet": "Doppio Passo Primitivo 2021. Italy Puglia. Rich and full-bodied Primitivo.",
+      "source": "wine-searcher.com"
+    },
+    {
+      "position": 2,
+      "title": "Botter Doppio Passo Primitivo 2021 | Vivino",
+      "link": "https://www.vivino.com/botter-doppio-passo-primitivo/w/2222222",
+      "url": "https://www.vivino.com/botter-doppio-passo-primitivo/w/2222222",
+      "snippet": "Rated 3.9 out of 5. Popular Italian Primitivo with double fermentation.",
+      "source": "vivino.com"
+    }
+  ]
+}

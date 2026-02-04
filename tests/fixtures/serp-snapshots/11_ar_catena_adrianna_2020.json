@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "caseId": "11_ar_catena_adrianna_2020",
+    "capturedAt": "2026-01-18T19:00:00.000Z",
+    "fixtureVersion": 1
+  },
+  "query": "Catena Zapata Adrianna Vineyard Malbec 2020",
+  "timestamp": "2026-01-18T19:00:00.000Z",
+  "totalResults": 12,
+  "organic": [
+    {
+      "position": 1,
+      "title": "Catena Zapata Adrianna Vineyard Malbec 2020 - Wine-Searcher",
+      "link": "https://www.wine-searcher.com/find/catena-zapata-adrianna-vineyard-malbec-2020",
+      "url": "https://www.wine-searcher.com/find/catena-zapata-adrianna-vineyard-malbec-2020",
+      "snippet": "Catena Zapata Adrianna Vineyard Malbec 2020. Argentina Mendoza. 98 points James Suckling. Producer: Catena Zapata.",
+      "source": "wine-searcher.com"
+    },
+    {
+      "position": 2,
+      "title": "Catena Zapata Adrianna Vineyard Malbec 2020 Review | JamesSuckling.com",
+      "link": "https://www.jamessuckling.com/wines/catena-zapata-adrianna-vineyard-malbec-2020",
+      "url": "https://www.jamessuckling.com/wines/catena-zapata-adrianna-vineyard-malbec-2020",
+      "snippet": "98 Points. A stunning Malbec from the high-altitude Adrianna vineyard in Gualtallary.",
+      "source": "jamessuckling.com"
+    },
+    {
+      "position": 3,
+      "title": "Catena Zapata Adrianna Vineyard Malbec | Vivino",
+      "link": "https://www.vivino.com/catena-zapata-adrianna-vineyard-malbec/w/2345678",
+      "url": "https://www.vivino.com/catena-zapata-adrianna-vineyard-malbec/w/2345678",
+      "snippet": "Rated 4.6 out of 5. High-altitude Malbec from Argentina's most prestigious vineyard.",
+      "source": "vivino.com"
+    }
+  ]
+}

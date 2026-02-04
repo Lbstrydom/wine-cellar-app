@@ -1,0 +1,150 @@
+name: Wine Search Benchmark
+
+on:
+  schedule:
+    - cron: '0 3 * * *'  # Nightly at 3 AM UTC
+  workflow_dispatch:      # Manual trigger
+  push:
+    branches: [main]
+    paths:
+      - 'src/services/wineIdentity.js'
+      - 'src/services/searchProviders.js'
+      - 'tests/benchmark/**'
+      - 'tests/fixtures/Search_Benchmark_v2_2.json'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/services/wineIdentity.js'
+      - 'src/services/searchProviders.js'
+      - 'tests/benchmark/**'
+      - 'tests/fixtures/Search_Benchmark_v2_2.json'
+
+jobs:
+  benchmark-replay:
+    name: Benchmark (REPLAY)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate benchmark schema
+        run: npm run test:benchmark:validate
+
+      - name: Run benchmark (REPLAY mode)
+        run: npm run test:benchmark
+        env:
+          BENCHMARK_MODE: replay
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-replay-results
+          path: |
+            tests/benchmark/results/
+          retention-days: 30
+
+  benchmark-live:
+    name: Benchmark (LIVE)
+    runs-on: ubuntu-latest
+    # Only run on schedule or manual trigger, not on PR/push
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run benchmark (LIVE mode)
+        run: npm run test:benchmark:live
+        env:
+          BENCHMARK_MODE: live
+          BRIGHTDATA_API_KEY: ${{ secrets.BRIGHTDATA_API_KEY }}
+          BRIGHTDATA_SERP_ZONE: ${{ secrets.BRIGHTDATA_SERP_ZONE }}
+        timeout-minutes: 10
+
+      - name: Upload live benchmark results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmark-live-results-${{ github.run_number }}
+          path: |
+            tests/benchmark/results/
+          retention-days: 90
+
+  fixture-staleness:
+    name: Check Fixture Staleness
+    runs-on: ubuntu-latest
+    # Run on schedule to detect stale fixtures
+    if: github.event_name == 'schedule'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check fixture age
+        run: npm run test:benchmark:staleness
+        continue-on-error: true
+
+      - name: Create issue if fixtures stale
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = '🔄 Benchmark fixtures are stale (>30 days old)';
+            const body = `The benchmark SERP fixtures are more than 30 days old and should be refreshed.
+
+            Run locally:
+            \`\`\`bash
+            BENCHMARK_MODE=record npm run test:benchmark:record
+            \`\`\`
+
+            Or trigger the fixture refresh workflow manually.
+
+            This issue was automatically created by the nightly benchmark workflow.`;
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'benchmark'
+            });
+
+            const existingIssue = issues.data.find(i => i.title === title);
+            if (!existingIssue) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['benchmark', 'maintenance']
+              });
+            }

@@ -1,0 +1,44 @@
+{
+  "_meta": {
+    "caseId": "01_sa_nederburg_two_centuries_2019",
+    "capturedAt": "2026-01-18T19:00:00.000Z",
+    "fixtureVersion": 1
+  },
+  "query": "Nederburg Private Bin Cabernet Sauvignon 2019",
+  "timestamp": "2026-01-18T19:00:00.000Z",
+  "totalResults": 8,
+  "organic": [
+    {
+      "position": 1,
+      "title": "Nederburg Private Bin Two Centuries Cabernet Sauvignon 2019 - Wine-Searcher",
+      "link": "https://www.wine-searcher.com/find/nederburg-private-bin-two-centuries-cabernet-sauvignon-2019",
+      "url": "https://www.wine-searcher.com/find/nederburg-private-bin-two-centuries-cabernet-sauvignon-2019",
+      "snippet": "Nederburg Private Bin Two Centuries Cabernet Sauvignon 2019. South Africa Western Cape Paarl. Producer: Nederburg. Average Rating: 90 points.",
+      "source": "wine-searcher.com"
+    },
+    {
+      "position": 2,
+      "title": "Nederburg Private Bin Two Centuries Cabernet Sauvignon 2019 | Vivino",
+      "link": "https://www.vivino.com/nederburg-private-bin-two-centuries-cabernet-sauvignon/w/1234567",
+      "url": "https://www.vivino.com/nederburg-private-bin-two-centuries-cabernet-sauvignon/w/1234567",
+      "snippet": "Rated 4.2 out of 5. A premium South African Cabernet from Paarl. Full-bodied with dark fruit flavors.",
+      "source": "vivino.com"
+    },
+    {
+      "position": 3,
+      "title": "Nederburg Wines - Official Site",
+      "link": "https://www.nederburg.com/wines/private-bin",
+      "url": "https://www.nederburg.com/wines/private-bin",
+      "snippet": "Explore the Nederburg Private Bin range. Two Centuries Cabernet Sauvignon showcases the best of Paarl terroir.",
+      "source": "nederburg.com"
+    },
+    {
+      "position": 4,
+      "title": "Buy Nederburg Private Bin Cabernet 2019 - CyberCellar",
+      "link": "https://www.cybercellar.com/nederburg-private-bin-cabernet-2019",
+      "url": "https://www.cybercellar.com/nederburg-private-bin-cabernet-2019",
+      "snippet": "Order Nederburg Private Bin Two Centuries Cabernet Sauvignon 2019 online. South African premium wine.",
+      "source": "cybercellar.com"
+    }
+  ]
+}

@@ -411,18 +411,25 @@ describe('Market Packs Configuration', () => {
   });
 
   describe('Integration with Language Config', () => {
-    it('should reference sources that exist in languageConfig', () => {
-      // This test ensures market packs don't reference non-existent sources
+    it('should reference sources that exist in languageConfig', async () => {
+      // This test ensures market packs reference sources that exist in languageConfig
+      const { LANGUAGE_QUERY_TEMPLATES } = await import('../../../src/config/languageConfig.js');
       const sources = getMarketSources('usa');
       const sourceIds = sources.map(s => s.sourceId);
+
+      // Get all source IDs defined in languageConfig across all languages
+      const languageConfigSources = new Set();
+      Object.values(LANGUAGE_QUERY_TEMPLATES).forEach(langSources => {
+        Object.keys(langSources).forEach(sourceId => languageConfigSources.add(sourceId));
+      });
 
       // Key sources that should be defined in languageConfig
       const expectedSources = ['wine_searcher', 'vivino'];
       expectedSources.forEach(expectedSource => {
-        if (sourceIds.includes(expectedSource)) {
-          // If market pack references it, it should exist
-          expect(true).toBe(true); // Placeholder - actual integration test would check languageConfig
-        }
+        // Verify source exists in market pack
+        expect(sourceIds).toContain(expectedSource);
+        // Verify source has query template in languageConfig
+        expect(languageConfigSources.has(expectedSource)).toBe(true);
       });
     });
   });

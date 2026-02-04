@@ -92,59 +92,201 @@ describe('recordProvenance', () => {
     vi.clearAllMocks();
   });
 
-  it('should be importable without errors', async () => {
-    // Dynamic import to test module loading
+  it('should record provenance with required fields', async () => {
     const { recordProvenance } = await import('../../../src/services/provenance.js');
-    expect(recordProvenance).toBeDefined();
-    expect(typeof recordProvenance).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 42 });
+    db.prepare.mockReturnValue({ run: mockRun });
+
+    const result = await recordProvenance({
+      wineId: 123,
+      fieldName: 'rating_score',
+      sourceId: 'decanter',
+      sourceUrl: 'https://decanter.com/wine/123',
+      retrievalMethod: 'scrape',
+      confidence: 0.95,
+      rawContent: 'Rating: 94 points'
+    });
+
+    expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining('INSERT INTO data_provenance'));
+    expect(result.lastInsertRowid).toBe(42);
+  });
+
+  it('should use default expiry when not specified', async () => {
+    const { recordProvenance } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1, lastInsertRowid: 1 });
+    db.prepare.mockReturnValue({ run: mockRun });
+
+    await recordProvenance({
+      wineId: 1,
+      fieldName: 'rating_score',
+      sourceId: 'vivino'
+    });
+
+    // Verify the function was called (default expiry applied internally)
+    expect(mockRun).toHaveBeenCalled();
   });
 });
 
 describe('getProvenance', () => {
-  it('should be importable without errors', async () => {
+  it('should return provenance records for a wine', async () => {
     const { getProvenance } = await import('../../../src/services/provenance.js');
-    expect(getProvenance).toBeDefined();
-    expect(typeof getProvenance).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    const mockRecords = [
+      { id: 1, wine_id: 123, field_name: 'rating_score', source_id: 'decanter' },
+      { id: 2, wine_id: 123, field_name: 'tasting_notes', source_id: 'vivino' }
+    ];
+    db.prepare.mockReturnValue({ all: vi.fn().mockResolvedValue(mockRecords) });
+
+    const result = await getProvenance(123);
+
+    expect(result).toHaveLength(2);
+    expect(result[0].source_id).toBe('decanter');
+  });
+
+  it('should filter by field name when specified', async () => {
+    const { getProvenance } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({
+      all: vi.fn().mockResolvedValue([{ id: 1, field_name: 'rating_score' }])
+    });
+
+    const result = await getProvenance(123, 'rating_score');
+
+    expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining('field_name = ?'));
+    expect(result).toHaveLength(1);
   });
 });
 
 describe('hasFreshData', () => {
-  it('should be importable without errors', async () => {
+  it('should return true when fresh data exists', async () => {
     const { hasFreshData } = await import('../../../src/services/provenance.js');
-    expect(hasFreshData).toBeDefined();
-    expect(typeof hasFreshData).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue({ 1: 1 }) });
+
+    const result = await hasFreshData(123, 'decanter', 'rating_score');
+
+    expect(result).toBe(true);
+  });
+
+  it('should return false when no fresh data exists', async () => {
+    const { hasFreshData } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue(null) });
+
+    const result = await hasFreshData(123, 'decanter', 'rating_score');
+
+    expect(result).toBe(false);
   });
 });
 
 describe('hasContentChanged', () => {
-  it('should be importable without errors', async () => {
+  it('should return true when no previous record exists', async () => {
     const { hasContentChanged } = await import('../../../src/services/provenance.js');
-    expect(hasContentChanged).toBeDefined();
-    expect(typeof hasContentChanged).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue(null) });
+
+    const result = await hasContentChanged(123, 'decanter', 'rating_score', 'New content');
+
+    expect(result).toBe(true);
+  });
+
+  it('should return true when content hash differs', async () => {
+    const { hasContentChanged, hashContent } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    const oldHash = hashContent('Old content');
+    db.prepare.mockReturnValue({
+      get: vi.fn().mockResolvedValue({ raw_hash: oldHash })
+    });
+
+    const result = await hasContentChanged(123, 'decanter', 'rating_score', 'New different content');
+
+    expect(result).toBe(true);
+  });
+
+  it('should return false when content hash matches', async () => {
+    const { hasContentChanged, hashContent } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    const content = 'Same content';
+    const contentHash = hashContent(content);
+    db.prepare.mockReturnValue({
+      get: vi.fn().mockResolvedValue({ raw_hash: contentHash })
+    });
+
+    const result = await hasContentChanged(123, 'decanter', 'rating_score', content);
+
+    expect(result).toBe(false);
   });
 });
 
 describe('getProvenanceStats', () => {
-  it('should be importable without errors', async () => {
+  it('should return aggregate statistics', async () => {
     const { getProvenanceStats } = await import('../../../src/services/provenance.js');
-    expect(getProvenanceStats).toBeDefined();
-    expect(typeof getProvenanceStats).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({
+      get: vi.fn()
+        .mockResolvedValueOnce({ count: 100 })  // total
+        .mockResolvedValueOnce({ count: 80 })   // fresh
+        .mockResolvedValueOnce({ avg: 0.92 }),  // avgConfidence
+      all: vi.fn().mockResolvedValue([
+        { source_id: 'decanter', count: 50 }
+      ])
+    });
+
+    const stats = await getProvenanceStats();
+
+    expect(stats.total).toBe(100);
+    expect(stats).toHaveProperty('bySource');
+    expect(stats).toHaveProperty('byField');
   });
 });
 
 describe('purgeExpiredRecords', () => {
-  it('should be importable without errors', async () => {
+  it('should delete expired records and return count', async () => {
     const { purgeExpiredRecords } = await import('../../../src/services/provenance.js');
-    expect(purgeExpiredRecords).toBeDefined();
-    expect(typeof purgeExpiredRecords).toBe('function');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({
+      run: vi.fn().mockResolvedValue({ changes: 15 })
+    });
+
+    const count = await purgeExpiredRecords();
+
+    expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining('DELETE FROM data_provenance'));
+    expect(count).toBe(15);
+  });
+
+  it('should return 0 when no expired records exist', async () => {
+    const { purgeExpiredRecords } = await import('../../../src/services/provenance.js');
+    const db = (await import('../../../src/db/index.js')).default;
+
+    db.prepare.mockReturnValue({
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    });
+
+    const count = await purgeExpiredRecords();
+
+    expect(count).toBe(0);
   });
 });
 
 describe('initProvenanceTable', () => {
-  it('should be importable without errors', async () => {
+  it('should be a no-op function (table created via migrations)', async () => {
     const { initProvenanceTable } = await import('../../../src/services/provenance.js');
-    expect(initProvenanceTable).toBeDefined();
-    expect(typeof initProvenanceTable).toBe('function');
+
+    // Should not throw and should complete without error
+    expect(() => initProvenanceTable()).not.toThrow();
   });
 });
 

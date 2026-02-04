@@ -1,0 +1,36 @@
+{
+  "_meta": {
+    "caseId": "21_es_vega_sicilia_unico_2012",
+    "capturedAt": "2026-01-18T19:00:00.000Z",
+    "fixtureVersion": 1
+  },
+  "query": "Vega Sicilia Unico 2012",
+  "timestamp": "2026-01-18T19:00:00.000Z",
+  "totalResults": 15,
+  "organic": [
+    {
+      "position": 1,
+      "title": "Vega Sicilia Unico 2012 - Wine-Searcher",
+      "link": "https://www.wine-searcher.com/find/vega-sicilia-unico-2012",
+      "url": "https://www.wine-searcher.com/find/vega-sicilia-unico-2012",
+      "snippet": "Vega Sicilia Unico 2012. Spain Castilla y Leon Ribera del Duero. 99 points. The iconic Spanish wine.",
+      "source": "wine-searcher.com"
+    },
+    {
+      "position": 2,
+      "title": "Vega Sicilia Unico 2012 | Decanter Rating",
+      "link": "https://www.decanter.com/wine-reviews/vega-sicilia-unico-2012",
+      "url": "https://www.decanter.com/wine-reviews/vega-sicilia-unico-2012",
+      "snippet": "98 points. One of Spain's greatest wines. Tempranillo-based blend from Ribera del Duero.",
+      "source": "decanter.com"
+    },
+    {
+      "position": 3,
+      "title": "Vega Sicilia Unico 2012 | Vivino",
+      "link": "https://www.vivino.com/vega-sicilia-unico/w/3456789",
+      "url": "https://www.vivino.com/vega-sicilia-unico/w/3456789",
+      "snippet": "Rated 4.8 out of 5. Spain's most legendary wine. Rich and complex.",
+      "source": "vivino.com"
+    }
+  ]
+}

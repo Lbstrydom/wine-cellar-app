@@ -1,0 +1,622 @@
+{
+  "version": "2.2",
+  "updated": "2026-01-18",
+  "notes": "Cases 1-10 from WINE_MATCH_BENCHMARK.md. Cases 11-50 expand coverage for main markets + key failure modes. v2.2 adds producer field to all cases, standardizes challenge taxonomy, adds expected constraints to 20 key cases.",
+  "instructions": {
+    "purpose": "Benchmark fixture for evaluating wine search identity matching (primary) and enrichment retrieval (secondary).",
+    "runner_modes": {
+      "replay": "Use recorded SERP snapshots; deterministic; ranking-only. Recommended for CI.",
+      "record": "Fetch live SERP once and write snapshots for replay.",
+      "live": "Run full pipeline (SERP + fetch + extraction). Use for nightly/manual runs; enforce live-only expectations."
+    },
+    "scoring": {
+      "identity": {
+        "primary_metrics": ["hit@1", "hit@3", "mrr"],
+        "match_basis": "Normalized text match against gold_canonical_name; when present, vintage must match (or be NV)."
+      },
+      "enrichment": {
+        "tracked_metrics": ["corroborated_claims_count", "sources_count", "latency_ms", "serp_calls", "pages_fetched", "bytes_downloaded"],
+        "note": "Enrichment should be evaluated separately from identity to avoid flakiness across vintages and web changes."
+      }
+    },
+    "case_fields": {
+      "required": ["id", "query", "country", "challenges", "gold_canonical_name", "producer"],
+      "optional": {
+        "vintage": "Integer year if vintage is known. Omit for NV wines.",
+        "expected": {
+          "min_results": "Minimum number of results expected in live mode.",
+          "must_include_domains": "List of domains that must appear among top results in live mode.",
+          "must_include_source_types": "List of source types required in live mode (e.g., producer_website, critic, competition)."
+        },
+        "notes": "Human explanation of why this case exists / what it stresses."
+      }
+    },
+    "challenge_taxonomy": {
+      "name_complexity": ["long_name", "very_long_name", "short_query", "hyphenated_producer", "apostrophe", "definite_article"],
+      "diacritics": ["diacritics_optional", "umlaut_optional", "special_chars_optional", "accented_grape"],
+      "classification": ["classification_reserva", "classification_gran_reserva", "premier_cru", "pradikat_term", "gg_term", "gg_abbrev", "igt_tokens"],
+      "vineyard": ["single_vineyard", "vineyard_name", "vineyard_tokens", "finca_keyword", "estate_name", "estate_token"],
+      "brand_producer": ["brand_vs_producer", "producer_as_brand", "brand_only", "brand_line", "brand_family_range", "producer_acronym", "producer_small_footprint"],
+      "numeric": ["numeric_bin", "numeric_cuvee"],
+      "region": ["subregion_token", "appellation_token", "region_tokens"],
+      "special_types": ["non_vintage", "super_tuscan", "appassimento_style", "prestige_champagne"],
+      "search_difficulty": ["retail_noise", "many_retail_pages", "icon_wine", "icon_wine_short_query", "rare_high_value", "high_value", "low_critic_coverage"]
+    }
+  },
+  "cases": [
+    {
+      "id": "01_sa_nederburg_two_centuries_2019",
+      "query": "Nederburg Private Bin Cabernet Sauvignon 2019",
+      "country": "South Africa",
+      "producer": "Nederburg",
+      "vintage": 2019,
+      "challenges": ["tier_name_hidden", "brand_vs_producer", "high_value"],
+      "gold_canonical_name": "Nederburg Private Bin Two Centuries Cabernet Sauvignon 2019",
+      "expected": {
+        "min_results": 3,
+        "must_include_domains": ["wine-searcher.com", "vivino.com"],
+        "must_include_source_types": ["retailer", "aggregator"]
+      },
+      "notes": "Tier 'Two Centuries' hidden on physical label but present in databases"
+    },
+    {
+      "id": "02_sa_kleine_zalze_vineyard_selection_2023",
+      "query": "Kleine Zalze Chenin Blanc Vineyard Selection 2023",
+      "country": "South Africa",
+      "producer": "Kleine Zalze",
+      "vintage": 2023,
+      "challenges": ["range_qualifier", "tier_disambiguation"],
+      "gold_canonical_name": "Kleine Zalze Vineyard Selection Chenin Blanc 2023",
+      "notes": "Range qualifier 'Vineyard Selection' is meaningful tier, not noise"
+    },
+    {
+      "id": "03_it_doppio_passo_primitivo_2021",
+      "query": "Doppio Passo Primitivo 2021",
+      "country": "Italy",
+      "producer": "Botter",
+      "vintage": 2021,
+      "challenges": ["igt_tokens", "retail_noise"],
+      "gold_canonical_name": "Doppio Passo Primitivo Salento IGT 2021",
+      "notes": "High-volume commercial wine with many retail pages; IGT region tokens important"
+    },
+    {
+      "id": "04_cl_san_pedro_1865_carmenere_2018",
+      "query": "1865 Selected Vineyards Carmenere 2018",
+      "country": "Chile",
+      "producer": "Viña San Pedro",
+      "vintage": 2018,
+      "challenges": ["brand_vs_producer", "accented_grape"],
+      "gold_canonical_name": "Viña San Pedro 1865 Selected Vineyards Carmenère 2018",
+      "notes": "1865 is brand line; producer Viña San Pedro often hidden; Carmenère has accent"
+    },
+    {
+      "id": "05_it_biscardo_enigma_2018",
+      "query": "Biscardo Enigma 2018",
+      "country": "Italy",
+      "producer": "Biscardo",
+      "vintage": 2018,
+      "challenges": ["igt_tokens", "brand_only"],
+      "gold_canonical_name": "Biscardo Enigma Sangiovese Rubicone IGT 2018",
+      "notes": "Trade name 'Enigma' without grape; IGT classification important"
+    },
+    {
+      "id": "06_it_prinsi_gaia_principe_2015",
+      "query": "Prinsi Barbaresco Gaia Principe 2015",
+      "country": "Italy",
+      "producer": "Prinsi",
+      "vintage": 2015,
+      "challenges": ["single_vineyard", "producer_small_footprint"],
+      "gold_canonical_name": "Prinsi Barbaresco Gaia Principe 2015",
+      "notes": "Small producer with limited web presence; single vineyard designation"
+    },
+    {
+      "id": "07_es_matsu_el_recio_2023",
+      "query": "Matsu El Recio 2023",
+      "country": "Spain",
+      "producer": "Matsu",
+      "vintage": 2023,
+      "challenges": ["brand_family_range", "low_critic_coverage"],
+      "gold_canonical_name": "Matsu El Recio 2023",
+      "notes": "Matsu is brand with El Recio/El Viejo/El Picaro family; recent vintage may lack critic scores"
+    },
+    {
+      "id": "08_fr_albert_bichot_origines_2023",
+      "query": "Albert Bichot Bourgogne Pinot Noir Origins 2023",
+      "country": "France",
+      "producer": "Albert Bichot",
+      "vintage": 2023,
+      "challenges": ["translation_variant", "generic_appellation"],
+      "gold_canonical_name": "Albert Bichot Bourgogne Pinot Noir Origines 2023",
+      "notes": "English 'Origins' vs French 'Origines'; generic Bourgogne appellation has many similar wines"
+    },
+    {
+      "id": "09_sa_rijks_reserve_chenin_2024",
+      "query": "Rijks Reserve Chenin Blanc 2024",
+      "country": "South Africa",
+      "producer": "Rijk's",
+      "vintage": 2024,
+      "challenges": ["classification_reserva", "tier_disambiguation", "apostrophe"],
+      "gold_canonical_name": "Rijk's Reserve Chenin Blanc 2024",
+      "notes": "Apostrophe in producer name; Reserve tier must not match Touch of Oak or other lines"
+    },
+    {
+      "id": "10_sa_backsberg_the_patriarch_2022",
+      "query": "Backsberg Patriarch 2022",
+      "country": "South Africa",
+      "producer": "Backsberg",
+      "vintage": 2022,
+      "challenges": ["definite_article", "flagship"],
+      "gold_canonical_name": "Backsberg The Patriarch Cabernet Franc 2022",
+      "expected": {
+        "min_results": 3,
+        "must_include_domains": ["wine-searcher.com"],
+        "must_include_source_types": ["retailer"]
+      },
+      "notes": "Query missing 'The'; flagship wine so rating miss is critical"
+    },
+    {
+      "id": "11_ar_catena_adrianna_fortuna_terrae_2018",
+      "query": "Catena Zapata Adrianna Vineyard Fortuna Terrae Malbec 2018",
+      "country": "Argentina",
+      "producer": "Catena Zapata",
+      "vintage": 2018,
+      "challenges": ["single_vineyard", "very_long_name", "vineyard_tokens", "high_value"],
+      "gold_canonical_name": "Catena Zapata Adrianna Vineyard Fortuna Terrae Malbec 2018",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "jamesuckling.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Top-tier Argentine wine with very long name; multiple vineyard tokens"
+    },
+    {
+      "id": "12_ar_zuccardi_piedra_infinita_2019",
+      "query": "Zuccardi Finca Piedra Infinita Malbec 2019",
+      "country": "Argentina",
+      "producer": "Zuccardi",
+      "vintage": 2019,
+      "challenges": ["finca_keyword", "single_vineyard"],
+      "gold_canonical_name": "Zuccardi Finca Piedra Infinita Malbec 2019",
+      "notes": "Finca (estate) keyword important for identity; single vineyard wine"
+    },
+    {
+      "id": "13_ar_achaval_ferrer_altamira_2019",
+      "query": "Achaval-Ferrer Finca Altamira Malbec 2019",
+      "country": "Argentina",
+      "producer": "Achaval-Ferrer",
+      "vintage": 2019,
+      "challenges": ["hyphenated_producer", "finca_keyword"],
+      "gold_canonical_name": "Achaval-Ferrer Finca Altamira Malbec 2019",
+      "notes": "Hyphenated producer name; Finca designation"
+    },
+    {
+      "id": "14_ar_el_enemigo_malbec_2020",
+      "query": "El Enemigo Malbec 2020",
+      "country": "Argentina",
+      "producer": "El Enemigo",
+      "vintage": 2020,
+      "challenges": ["brand_only", "spanish_article"],
+      "gold_canonical_name": "El Enemigo Malbec 2020",
+      "notes": "Brand without clear producer attribution; Spanish article 'El' in name"
+    },
+    {
+      "id": "15_cl_marques_de_casa_concha_2019",
+      "query": "Concha y Toro Marques de Casa Concha Cabernet Sauvignon 2019",
+      "country": "Chile",
+      "producer": "Concha y Toro",
+      "vintage": 2019,
+      "challenges": ["diacritics_optional", "brand_line"],
+      "gold_canonical_name": "Concha y Toro Marqués de Casa Concha Cabernet Sauvignon 2019",
+      "notes": "Marqués has accent; brand line within larger producer"
+    },
+    {
+      "id": "16_cl_montes_alpha_carmenere_2020",
+      "query": "Montes Alpha Carmenere 2020",
+      "country": "Chile",
+      "producer": "Montes",
+      "vintage": 2020,
+      "challenges": ["accented_grape", "brand_line"],
+      "gold_canonical_name": "Montes Alpha Carmenère 2020",
+      "notes": "Carmenère grape has accent; Alpha is brand tier"
+    },
+    {
+      "id": "17_cl_santa_rita_medalla_real_2018",
+      "query": "Santa Rita Medalla Real Cabernet Sauvignon 2018",
+      "country": "Chile",
+      "producer": "Santa Rita",
+      "vintage": 2018,
+      "challenges": ["medal_word_false_positive", "brand_line"],
+      "gold_canonical_name": "Santa Rita Medalla Real Cabernet Sauvignon 2018",
+      "notes": "'Medalla' means medal - risk of false positive on award mentions"
+    },
+    {
+      "id": "18_es_cvne_imperial_gran_reserva_2015",
+      "query": "CVNE Imperial Gran Reserva 2015",
+      "country": "Spain",
+      "producer": "CVNE",
+      "vintage": 2015,
+      "challenges": ["producer_acronym", "classification_gran_reserva"],
+      "gold_canonical_name": "CVNE (Cune) Imperial Gran Reserva 2015",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "decanter.com"],
+        "must_include_source_types": ["critic", "retailer"]
+      },
+      "notes": "CVNE is acronym (also spelled Cune); Gran Reserva classification"
+    },
+    {
+      "id": "19_es_rioja_alta_904_2015",
+      "query": "La Rioja Alta Gran Reserva 904 2015",
+      "country": "Spain",
+      "producer": "La Rioja Alta",
+      "vintage": 2015,
+      "challenges": ["numeric_cuvee", "classification_gran_reserva"],
+      "gold_canonical_name": "La Rioja Alta Gran Reserva 904 2015",
+      "notes": "Numeric cuvée designation 904; Gran Reserva classification"
+    },
+    {
+      "id": "20_es_muga_reserva_2019",
+      "query": "Muga Reserva 2019",
+      "country": "Spain",
+      "producer": "Muga",
+      "vintage": 2019,
+      "challenges": ["classification_reserva", "short_query"],
+      "gold_canonical_name": "Muga Reserva 2019",
+      "notes": "Short query; Reserva classification important for tier matching"
+    },
+    {
+      "id": "21_es_vega_sicilia_unico_2010",
+      "query": "Vega Sicilia Unico 2010",
+      "country": "Spain",
+      "producer": "Vega Sicilia",
+      "vintage": 2010,
+      "challenges": ["diacritics_optional", "icon_wine_short_query"],
+      "gold_canonical_name": "Vega Sicilia Único 2010",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "decanter.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Único has accent; icon wine with short query"
+    },
+    {
+      "id": "22_es_torres_mas_la_plana_2018",
+      "query": "Torres Mas La Plana Cabernet Sauvignon 2018",
+      "country": "Spain",
+      "producer": "Torres",
+      "vintage": 2018,
+      "challenges": ["estate_name", "catalan_tokens"],
+      "gold_canonical_name": "Torres Mas La Plana Cabernet Sauvignon 2018",
+      "notes": "Mas La Plana is multi-word estate name; Catalan language tokens"
+    },
+    {
+      "id": "23_es_marques_de_riscal_gran_reserva_2015",
+      "query": "Marques de Riscal Gran Reserva 2015",
+      "country": "Spain",
+      "producer": "Marqués de Riscal",
+      "vintage": 2015,
+      "challenges": ["diacritics_optional", "classification_gran_reserva"],
+      "gold_canonical_name": "Marqués de Riscal Gran Reserva 2015",
+      "notes": "Marqués has accent in canonical form; Gran Reserva classification"
+    },
+    {
+      "id": "24_it_tignanello_2019",
+      "query": "Antinori Tignanello 2019",
+      "country": "Italy",
+      "producer": "Antinori",
+      "vintage": 2019,
+      "challenges": ["brand_only", "super_tuscan"],
+      "gold_canonical_name": "Antinori Tignanello 2019",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "vinous.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Super Tuscan - no appellation tokens; brand name is wine name"
+    },
+    {
+      "id": "25_it_quintarelli_amarone_2013",
+      "query": "Quintarelli Amarone della Valpolicella Classico 2013",
+      "country": "Italy",
+      "producer": "Giuseppe Quintarelli",
+      "vintage": 2013,
+      "challenges": ["appassimento_style", "long_name"],
+      "gold_canonical_name": "Giuseppe Quintarelli Amarone della Valpolicella Classico 2013",
+      "notes": "Full producer name is Giuseppe Quintarelli; long appellation name"
+    },
+    {
+      "id": "26_it_gaja_barbaresco_2018",
+      "query": "Gaja Barbaresco 2018",
+      "country": "Italy",
+      "producer": "Gaja",
+      "vintage": 2018,
+      "challenges": ["producer_as_brand", "short_query"],
+      "gold_canonical_name": "Gaja Barbaresco 2018",
+      "notes": "Producer name is the brand; short query"
+    },
+    {
+      "id": "27_it_vietti_barolo_castiglione_2019",
+      "query": "Vietti Barolo Castiglione 2019",
+      "country": "Italy",
+      "producer": "Vietti",
+      "vintage": 2019,
+      "challenges": ["village_token", "region_tokens"],
+      "gold_canonical_name": "Vietti Barolo Castiglione 2019",
+      "notes": "Castiglione is village cru designation in Barolo"
+    },
+    {
+      "id": "28_fr_leflaive_pucelles_2018",
+      "query": "Domaine Leflaive Puligny-Montrachet 1er Cru Les Pucelles 2018",
+      "country": "France",
+      "producer": "Domaine Leflaive",
+      "vintage": 2018,
+      "challenges": ["premier_cru", "very_long_name"],
+      "gold_canonical_name": "Domaine Leflaive Puligny-Montrachet 1er Cru Les Pucelles 2018",
+      "expected": {
+        "min_results": 3,
+        "must_include_domains": ["wine-searcher.com", "burghound.com"],
+        "must_include_source_types": ["critic"]
+      },
+      "notes": "Premier Cru designation; very long full name with vineyard"
+    },
+    {
+      "id": "29_fr_chateau_palmer_2016",
+      "query": "Chateau Palmer 2016",
+      "country": "France",
+      "producer": "Château Palmer",
+      "vintage": 2016,
+      "challenges": ["diacritics_optional", "brand_only"],
+      "gold_canonical_name": "Château Palmer 2016",
+      "notes": "Château has accent; no grape variety in Bordeaux naming"
+    },
+    {
+      "id": "30_fr_tempier_bandol_2019",
+      "query": "Domaine Tempier Bandol Rouge 2019",
+      "country": "France",
+      "producer": "Domaine Tempier",
+      "vintage": 2019,
+      "challenges": ["appellation_token", "producer_small_footprint"],
+      "gold_canonical_name": "Domaine Tempier Bandol Rouge 2019",
+      "notes": "Bandol appellation important; smaller producer footprint online"
+    },
+    {
+      "id": "31_fr_krug_grande_cuvee_nv",
+      "query": "Krug Grande Cuvee NV",
+      "country": "France",
+      "producer": "Krug",
+      "challenges": ["non_vintage", "cuvee_spelling_variant"],
+      "gold_canonical_name": "Krug Grande Cuvée NV",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "champagne.com"],
+        "must_include_source_types": ["critic", "retailer"]
+      },
+      "notes": "Non-vintage Champagne; Cuvée has accent"
+    },
+    {
+      "id": "32_fr_roederer_cristal_2014",
+      "query": "Louis Roederer Cristal 2014",
+      "country": "France",
+      "producer": "Louis Roederer",
+      "vintage": 2014,
+      "challenges": ["prestige_champagne", "icon_wine_short_query"],
+      "gold_canonical_name": "Louis Roederer Cristal 2014",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "decanter.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Prestige cuvée Champagne; iconic wine"
+    },
+    {
+      "id": "33_de_loosen_spatlese_2020",
+      "query": "Dr. Loosen Wehlener Sonnenuhr Spatlese 2020",
+      "country": "Germany",
+      "producer": "Dr. Loosen",
+      "vintage": 2020,
+      "challenges": ["umlaut_optional", "pradikat_term", "vineyard_name"],
+      "gold_canonical_name": "Dr. Loosen Wehlener Sonnenuhr Spätlese 2020",
+      "notes": "Spätlese has umlaut; Wehlener Sonnenuhr is famous vineyard"
+    },
+    {
+      "id": "34_de_prum_kabinett_2021",
+      "query": "JJ Prum Wehlener Sonnenuhr Kabinett 2021",
+      "country": "Germany",
+      "producer": "Joh. Jos. Prüm",
+      "vintage": 2021,
+      "challenges": ["abbreviation_tokens", "pradikat_term", "vineyard_name"],
+      "gold_canonical_name": "Joh. Jos. Prüm Wehlener Sonnenuhr Kabinett 2021",
+      "notes": "Producer commonly abbreviated as JJ Prum; full name is Joh. Jos. Prüm"
+    },
+    {
+      "id": "35_de_donnhoff_gg_2019",
+      "query": "Donnhoff Norheimer Dellchen Riesling Grosses Gewachs 2019",
+      "country": "Germany",
+      "producer": "Dönnhoff",
+      "vintage": 2019,
+      "challenges": ["special_chars_optional", "gg_term", "very_long_name"],
+      "gold_canonical_name": "Dönnhoff Norheimer Dellchen Riesling Grosses Gewächs 2019",
+      "notes": "Dönnhoff has umlaut; Gewächs has special char; GG designation"
+    },
+    {
+      "id": "36_de_egon_muller_auslese_2018",
+      "query": "Egon Muller Scharzhofberger Riesling Auslese 2018",
+      "country": "Germany",
+      "producer": "Egon Müller",
+      "vintage": 2018,
+      "challenges": ["umlaut_optional", "pradikat_term", "rare_high_value"],
+      "gold_canonical_name": "Egon Müller Scharzhofberger Riesling Auslese 2018",
+      "expected": {
+        "min_results": 3,
+        "must_include_domains": ["wine-searcher.com", "jancisrobinson.com"],
+        "must_include_source_types": ["critic"]
+      },
+      "notes": "Müller has umlaut; Auslese pradikat; rare and expensive wine"
+    },
+    {
+      "id": "37_de_keller_kirchspiel_gg_2019",
+      "query": "Keller Kirchspiel Riesling GG 2019",
+      "country": "Germany",
+      "producer": "Weingut Keller",
+      "vintage": 2019,
+      "challenges": ["gg_abbrev", "short_query"],
+      "gold_canonical_name": "Weingut Keller Kirchspiel Riesling Grosses Gewächs 2019",
+      "notes": "GG abbreviation for Grosses Gewächs; short producer name in query"
+    },
+    {
+      "id": "38_nz_cloudy_bay_sauvignon_2024",
+      "query": "Cloudy Bay Sauvignon Blanc 2024",
+      "country": "New Zealand",
+      "producer": "Cloudy Bay",
+      "vintage": 2024,
+      "challenges": ["retail_noise", "many_retail_pages"],
+      "gold_canonical_name": "Cloudy Bay Sauvignon Blanc 2024",
+      "notes": "Very common wine with many retail pages; need to find critic reviews"
+    },
+    {
+      "id": "39_nz_dog_point_sauvignon_2023",
+      "query": "Dog Point Sauvignon Blanc 2023",
+      "country": "New Zealand",
+      "producer": "Dog Point",
+      "vintage": 2023,
+      "challenges": ["near_competitor_disambiguation", "region_tokens"],
+      "gold_canonical_name": "Dog Point Sauvignon Blanc 2023",
+      "notes": "Must disambiguate from other Marlborough Sauvignon Blancs"
+    },
+    {
+      "id": "40_nz_felton_road_pinot_2022",
+      "query": "Felton Road Bannockburn Pinot Noir 2022",
+      "country": "New Zealand",
+      "producer": "Felton Road",
+      "vintage": 2022,
+      "challenges": ["subregion_token", "pinot_disambiguation"],
+      "gold_canonical_name": "Felton Road Bannockburn Pinot Noir 2022",
+      "notes": "Bannockburn is subregion; must disambiguate from other Pinot Noirs"
+    },
+    {
+      "id": "41_nz_kumeu_river_chardonnay_2022",
+      "query": "Kumeu River Estate Chardonnay 2022",
+      "country": "New Zealand",
+      "producer": "Kumeu River",
+      "vintage": 2022,
+      "challenges": ["producer_as_brand", "estate_token"],
+      "gold_canonical_name": "Kumeu River Estate Chardonnay 2022",
+      "notes": "Producer name is brand; Estate is tier designation"
+    },
+    {
+      "id": "42_au_penfolds_bin_389_2021",
+      "query": "Penfolds Bin 389 2021",
+      "country": "Australia",
+      "producer": "Penfolds",
+      "vintage": 2021,
+      "challenges": ["numeric_bin", "series_disambiguation"],
+      "gold_canonical_name": "Penfolds Bin 389 Cabernet Shiraz 2021",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "vivino.com"],
+        "must_include_source_types": ["aggregator", "retailer"]
+      },
+      "notes": "Bin 389 numeric designation; must disambiguate from other Bin wines"
+    },
+    {
+      "id": "43_au_penfolds_bin_407_2021",
+      "query": "Penfolds Bin 407 2021",
+      "country": "Australia",
+      "producer": "Penfolds",
+      "vintage": 2021,
+      "challenges": ["numeric_bin", "series_disambiguation"],
+      "gold_canonical_name": "Penfolds Bin 407 Cabernet Sauvignon 2021",
+      "notes": "Bin 407 numeric designation; similar to 389 case"
+    },
+    {
+      "id": "44_au_henschke_hill_of_grace_2018",
+      "query": "Henschke Hill of Grace 2018",
+      "country": "Australia",
+      "producer": "Henschke",
+      "vintage": 2018,
+      "challenges": ["icon_wine_short_query", "vineyard_name"],
+      "gold_canonical_name": "Henschke Hill of Grace Shiraz 2018",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "jamesuckling.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Iconic Australian wine; Hill of Grace is single vineyard"
+    },
+    {
+      "id": "45_au_darenberg_dead_arm_2019",
+      "query": "d'Arenberg The Dead Arm Shiraz 2019",
+      "country": "Australia",
+      "producer": "d'Arenberg",
+      "vintage": 2019,
+      "challenges": ["apostrophe", "marketing_phrase_tokens"],
+      "gold_canonical_name": "d'Arenberg The Dead Arm Shiraz 2019",
+      "notes": "d'Arenberg has apostrophe; The Dead Arm is marketing name"
+    },
+    {
+      "id": "46_usca_stags_leap_wc_artemis_2018",
+      "query": "Stags Leap Artemis Cabernet Sauvignon 2018",
+      "country": "USA (California)",
+      "producer": "Stag's Leap Wine Cellars",
+      "vintage": 2018,
+      "challenges": ["name_collision", "apostrophe"],
+      "gold_canonical_name": "Stag's Leap Wine Cellars Artemis Cabernet Sauvignon 2018",
+      "expected": {
+        "min_results": 3,
+        "must_include_domains": ["wine-searcher.com", "winespectator.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "Stag's Leap Wine Cellars vs Stags' Leap Winery - apostrophe position matters"
+    },
+    {
+      "id": "47_usca_stags_leap_winery_cab_2018",
+      "query": "Stags Leap Winery Cabernet Sauvignon 2018",
+      "country": "USA (California)",
+      "producer": "Stags' Leap Winery",
+      "vintage": 2018,
+      "challenges": ["name_collision", "apostrophe"],
+      "gold_canonical_name": "Stags' Leap Winery Cabernet Sauvignon 2018",
+      "notes": "Stags' Leap Winery vs Stag's Leap Wine Cellars - different producer"
+    },
+    {
+      "id": "48_usca_opus_one_2018",
+      "query": "Opus One 2018",
+      "country": "USA (California)",
+      "producer": "Opus One",
+      "vintage": 2018,
+      "challenges": ["brand_only", "retail_noise"],
+      "gold_canonical_name": "Opus One 2018",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "vivino.com"],
+        "must_include_source_types": ["aggregator", "retailer"]
+      },
+      "notes": "Brand name only; many retail and counterfeit pages"
+    },
+    {
+      "id": "49_usca_caymus_special_selection_2019",
+      "query": "Caymus Special Selection Cabernet Sauvignon 2019",
+      "country": "USA (California)",
+      "producer": "Caymus",
+      "vintage": 2019,
+      "challenges": ["tier_disambiguation", "retail_noise"],
+      "gold_canonical_name": "Caymus Special Selection Cabernet Sauvignon 2019",
+      "notes": "Special Selection tier must not match standard Caymus"
+    },
+    {
+      "id": "50_usca_ridge_monte_bello_2018",
+      "query": "Ridge Monte Bello 2018",
+      "country": "USA (California)",
+      "producer": "Ridge Vineyards",
+      "vintage": 2018,
+      "challenges": ["brand_only", "icon_wine_short_query"],
+      "gold_canonical_name": "Ridge Monte Bello 2018",
+      "expected": {
+        "min_results": 5,
+        "must_include_domains": ["wine-searcher.com", "winespectator.com"],
+        "must_include_source_types": ["critic", "aggregator"]
+      },
+      "notes": "No grape in query; iconic California wine"
+    }
+  ]
+}

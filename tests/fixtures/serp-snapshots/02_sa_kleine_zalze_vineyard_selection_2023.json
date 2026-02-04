@@ -1,0 +1,28 @@
+{
+  "_meta": {
+    "caseId": "02_sa_kleine_zalze_vineyard_selection_2023",
+    "capturedAt": "2026-01-18T19:00:00.000Z",
+    "fixtureVersion": 1
+  },
+  "query": "Kleine Zalze Vineyard Selection Chenin Blanc 2023",
+  "timestamp": "2026-01-18T19:00:00.000Z",
+  "totalResults": 6,
+  "organic": [
+    {
+      "position": 1,
+      "title": "Kleine Zalze Vineyard Selection Chenin Blanc 2023 - Wine-Searcher",
+      "link": "https://www.wine-searcher.com/find/kleine-zalze-vineyard-selection-chenin-blanc-2023",
+      "url": "https://www.wine-searcher.com/find/kleine-zalze-vineyard-selection-chenin-blanc-2023",
+      "snippet": "Kleine Zalze Vineyard Selection Chenin Blanc 2023. South Africa Stellenbosch. Fresh and vibrant.",
+      "source": "wine-searcher.com"
+    },
+    {
+      "position": 2,
+      "title": "Kleine Zalze Vineyard Selection Chenin Blanc | Vivino",
+      "link": "https://www.vivino.com/kleine-zalze-vineyard-selection-chenin-blanc/w/1111111",
+      "url": "https://www.vivino.com/kleine-zalze-vineyard-selection-chenin-blanc/w/1111111",
+      "snippet": "Rated 4.0 out of 5. South African Chenin Blanc from Stellenbosch.",
+      "source": "vivino.com"
+    }
+  ]
+}
