@@ -165,6 +165,7 @@ async function handleStorageAreasSave(event) {
 // ============================================
 
 const TEXT_SIZE_KEY = 'wine-cellar-text-size';
+const THEME_KEY = 'wine-cellar-theme';
 
 /**
  * Load and apply saved text size preference.
@@ -204,6 +205,70 @@ function initTextSizeSelector() {
       applyTextSize(newSize);
       localStorage.setItem(TEXT_SIZE_KEY, newSize);
       showToast(`Text size set to ${newSize}`);
+    });
+  });
+}
+
+/**
+ * Apply theme preference to document and meta tags.
+ * @param {string} theme - 'system', 'dark', or 'light'
+ */
+function applyThemePreference(theme) {
+  if (theme === 'light' || theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', theme);
+  } else {
+    // For 'system' mode, REMOVE the attribute (don't set it to 'system')
+    // This allows CSS @media (prefers-color-scheme) to control the theme.
+    // Setting data-theme="system" would incorrectly match :root:not([data-theme="dark"])
+    // and force light mode even on dark OS.
+    document.documentElement.removeAttribute('data-theme');
+  }
+
+  updateThemeMeta();
+}
+
+/**
+ * Update theme-related meta tags.
+ */
+function updateThemeMeta() {
+  const currentTheme = document.documentElement.getAttribute('data-theme');
+  // Detect actual theme: explicit attribute or OS preference
+  const isDark = currentTheme === 'dark' || (!currentTheme && !window.matchMedia('(prefers-color-scheme: light)').matches);
+  const themeColor = isDark ? '#722F37' : '#7A6240';
+  const tileColor = isDark ? '#1a1a1a' : '#FAF6F1';
+
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', themeColor);
+  document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('content', tileColor);
+}
+
+/**
+ * Initialize theme selector in settings.
+ */
+function initThemeSelector() {
+  const radios = document.querySelectorAll('input[name="theme"]');
+  if (radios.length === 0) return;
+
+  const savedTheme = localStorage.getItem(THEME_KEY) || 'system';
+  radios.forEach((radio) => {
+    radio.checked = radio.value === savedTheme;
+  });
+
+  applyThemePreference(savedTheme);
+
+  // Listen for OS theme changes when in "system" mode
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    const currentSetting = localStorage.getItem(THEME_KEY) || 'system';
+    if (currentSetting === 'system') {
+      updateThemeMeta();
+    }
+  });
+
+  radios.forEach((radio) => {
+    radio.addEventListener('change', (e) => {
+      const newTheme = e.target.value;
+      localStorage.setItem(THEME_KEY, newTheme);
+      applyThemePreference(newTheme);
+      showToast(`Theme set to ${newTheme}`);
     });
   });
 }
@@ -530,6 +595,9 @@ async function handleAddCandidates() {
 export function initSettings() {
   // Initialize display settings (text size)
   initTextSizeSelector();
+
+  // Initialize theme selector
+  initThemeSelector();
 
   // Initialize storage areas wizard
   initStorageAreasWizard();

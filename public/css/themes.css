@@ -1,8 +1,210 @@
+/* Light mode palette */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-dark: #FAF6F1;
+    --bg-card: #FFFFFF;
+    --bg-slot: #F0EBE4;
+    --bg-slot-hover: #E8E1D8;
+    --border: #D4CBC0;
+    --fridge-bg: #E8EEF2;
+    --fridge-bg-fallback: #E8EEF2;
+    --text: #2C2420;
+    --text-muted: #6B5F54;
+    --text-secondary: #7A6E63;
+    --accent: #7A6240;
+    --accent-hover: #634F33;
+    --accent-rgb: 122, 98, 64;
+    --red-wine: #8B2332;
+    --white-wine: #B8960A;
+    --rose-wine: #C4646E;
+    --sparkling: #9E8A1E;
+    --wine-red: var(--red-wine);
+    --wine-white: var(--white-wine);
+    --wine-rose: var(--rose-wine);
+    --wine-sparkling: var(--sparkling);
+    --priority-1: #D93636;
+    --priority-2: #D97020;
+    --priority-3: #C49A20;
+    --gold: #B8960A;
+    --primary: var(--accent);
+    --color-success: #2E7D32;
+    --color-success-muted: #388E3C;
+    --color-success-bg: rgba(46, 125, 50, 0.12);
+    --color-error: #C62828;
+    --color-error-muted: #D32F2F;
+    --color-error-bg: rgba(198, 40, 40, 0.1);
+    --color-warning: #E65100;
+    --color-warning-muted: #EF6C00;
+    --color-warning-bg: rgba(230, 81, 0, 0.1);
+    --color-info: #1565C0;
+    --color-info-bg: rgba(21, 101, 192, 0.1);
+    --color-caution: #F57F17;
+    --color-caution-muted: #F9A825;
+    --color-caution-bg: rgba(245, 127, 23, 0.1);
+    --color-fragmented: #7B1FA2;
+    --color-fragmented-muted: #9C27B0;
+    --color-fragmented-bg: rgba(123, 31, 162, 0.1);
+    --color-hold: #1565C0;
+    --color-hold-bg: rgba(21, 101, 192, 0.1);
+    --color-gold-medal: #C49000;
+    --color-silver-medal: #757575;
+    --color-bronze-medal: #8D6E34;
+    --text-on-light: #2C2420;
+    --text-on-accent: #FFFFFF;
+    --color-success-rgb: 46, 125, 50;
+    --color-error-rgb: 198, 40, 40;
+    --color-warning-rgb: 230, 81, 0;
+    --color-caution-rgb: 245, 127, 23;
+    --color-info-rgb: 21, 101, 192;
+    --color-hold-rgb: 21, 101, 192;
+    --color-fragmented-rgb: 123, 31, 162;
+    --color-gold-rgb: 196, 144, 0;
+    --color-silver-rgb: 117, 117, 117;
+    --color-bronze-rgb: 141, 110, 52;
+    --color-gray-500-rgb: 107, 95, 84;
+  }
+}
+
+/* Explicit override (user picks light in Settings) */
+:root[data-theme="light"] {
+  --bg-dark: #FAF6F1;
+  --bg-card: #FFFFFF;
+  --bg-slot: #F0EBE4;
+  --bg-slot-hover: #E8E1D8;
+  --border: #D4CBC0;
+  --fridge-bg: #E8EEF2;
+  --fridge-bg-fallback: #E8EEF2;
+  --text: #2C2420;
+  --text-muted: #6B5F54;
+  --text-secondary: #7A6E63;
+  --accent: #7A6240;
+  --accent-hover: #634F33;
+  --accent-rgb: 122, 98, 64;
+  --red-wine: #8B2332;
+  --white-wine: #B8960A;
+  --rose-wine: #C4646E;
+  --sparkling: #9E8A1E;
+  --wine-red: var(--red-wine);
+  --wine-white: var(--white-wine);
+  --wine-rose: var(--rose-wine);
+  --wine-sparkling: var(--sparkling);
+  --priority-1: #D93636;
+  --priority-2: #D97020;
+  --priority-3: #C49A20;
+  --gold: #B8960A;
+  --primary: var(--accent);
+  --color-success: #2E7D32;
+  --color-success-muted: #388E3C;
+  --color-success-bg: rgba(46, 125, 50, 0.12);
+  --color-error: #C62828;
+  --color-error-muted: #D32F2F;
+  --color-error-bg: rgba(198, 40, 40, 0.1);
+  --color-warning: #E65100;
+  --color-warning-muted: #EF6C00;
+  --color-warning-bg: rgba(230, 81, 0, 0.1);
+  --color-info: #1565C0;
+  --color-info-bg: rgba(21, 101, 192, 0.1);
+  --color-caution: #F57F17;
+  --color-caution-muted: #F9A825;
+  --color-caution-bg: rgba(245, 127, 23, 0.1);
+  --color-fragmented: #7B1FA2;
+  --color-fragmented-muted: #9C27B0;
+  --color-fragmented-bg: rgba(123, 31, 162, 0.1);
+  --color-hold: #1565C0;
+  --color-hold-bg: rgba(21, 101, 192, 0.1);
+  --color-gold-medal: #C49000;
+  --color-silver-medal: #757575;
+  --color-bronze-medal: #8D6E34;
+  --text-on-light: #2C2420;
+  --text-on-accent: #FFFFFF;
+  --color-success-rgb: 46, 125, 50;
+  --color-error-rgb: 198, 40, 40;
+  --color-warning-rgb: 230, 81, 0;
+  --color-caution-rgb: 245, 127, 23;
+  --color-info-rgb: 21, 101, 192;
+  --color-hold-rgb: 21, 101, 192;
+  --color-fragmented-rgb: 123, 31, 162;
+  --color-gold-rgb: 196, 144, 0;
+  --color-silver-rgb: 117, 117, 117;
+  --color-bronze-rgb: 141, 110, 52;
+  --color-gray-500-rgb: 107, 95, 84;
+}
+
+/* Light mode: Use dark text on accent backgrounds for WCAG AA compliance */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    /* Light mode accent (#7A6240) gives only 4.1:1 with white text (fails AA for normal text).
+       Override to use dark text instead. */
+    .onboarding-wizard button.btn-primary,
+    .btn-primary,
+    .confirm-dialog-confirm,
+    .toggle-btn.active,
+    .award-badge,
+    .zone-chat-panel .chat-message.user .chat-content,
+    .zone-order {
+      color: var(--text-on-light);
+    }
+
+    /* Step number indicator (wizard progress dots) */
+    .onboarding-progress .step.active::before,
+    .onboarding-progress .step.completed::before {
+      color: var(--text-on-light);
+    }
+
+    /* Reduce heavy box-shadows for light backgrounds */
+    .global-search-modal {
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+    }
+
+    .auth-card {
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+    }
+
+    /* Notification/announcement shadows (if exists) */
+    [class*="notification"],
+    [class*="announcement"] {
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    }
+  }
+}
+
+:root[data-theme="light"] {
+  /* Explicit light mode: same overrides */
+  .onboarding-wizard button.btn-primary,
+  .btn-primary,
+  .confirm-dialog-confirm,
+  .toggle-btn.active,
+  .award-badge,
+  .zone-chat-panel .chat-message.user .chat-content,
+  .zone-order {
+    color: var(--text-on-light);
+  }
+
+  .onboarding-progress .step.active::before,
+  .onboarding-progress .step.completed::before {
+    color: var(--text-on-light);
+  }
+
+  /* Reduce heavy box-shadows for light backgrounds */
+  .global-search-modal {
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+  }
+
+  .auth-card {
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+  }
+
+  [class*="notification"],
+  [class*="announcement"] {
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+}
+
 /* High contrast mode support */
 @media (prefers-contrast: high) {
   :root {
-    --border: #666;
-    --text-muted: #aaa;
+    --border: var(--hc-border);
+    --text-muted: var(--hc-text-muted);
   }
 
   .btn {
