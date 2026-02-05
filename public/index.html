@@ -13,7 +13,7 @@
   <meta name="apple-mobile-web-app-title" content="Wine Cellar">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="application-name" content="Wine Cellar">
-  <meta name="msapplication-TileColor" content="#1a1a2e">
+  <meta name="msapplication-TileColor" content="#1a1a1a">
   <meta name="msapplication-TileImage" content="/images/icon-144.png">
 
   <!-- Manifest -->
@@ -27,7 +27,8 @@
   <!-- Preconnect for fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/css/styles.css?v=20260205b">
+  <script src="/js/theme-init.js"></script>
+  <link rel="stylesheet" href="/css/styles.css?v=20260205g">
 </head>
 <body>
   <header>
@@ -409,7 +410,34 @@
     <!-- Display Settings Section -->
     <div class="settings-section">
       <h3 class="settings-section-title">Display Settings</h3>
-      <p class="settings-section-desc">Adjust text size for better readability on your device.</p>
+      <p class="settings-section-desc">Adjust theme and text size for better readability on your device.</p>
+
+      <fieldset class="theme-selector">
+        <legend class="settings-label">Theme</legend>
+        <div class="theme-options">
+          <label class="theme-option">
+            <input type="radio" name="theme" value="system" checked />
+            <span class="theme-btn">
+              <span class="theme-name">System</span>
+              <span class="theme-desc">Match device</span>
+            </span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="dark" />
+            <span class="theme-btn">
+              <span class="theme-name">Dark</span>
+              <span class="theme-desc">Low light</span>
+            </span>
+          </label>
+          <label class="theme-option">
+            <input type="radio" name="theme" value="light" />
+            <span class="theme-btn">
+              <span class="theme-name">Light</span>
+              <span class="theme-desc">Bright rooms</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
 
       <fieldset class="text-size-selector">
         <legend class="settings-label">Text Size</legend>

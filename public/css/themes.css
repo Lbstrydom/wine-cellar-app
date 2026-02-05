@@ -7,6 +7,7 @@
     --bg-slot-hover: #E8E1D8;
     --border: #D4CBC0;
     --fridge-bg: #E8EEF2;
+    --slot-text-primary: #3E352D;  /* Phase 3.5.1: 9.8:1 on sand bg, high contrast */
     --fridge-bg-fallback: #E8EEF2;
     --text: #2C2420;
     --text-muted: #6B5F54;
@@ -73,6 +74,7 @@
   --bg-slot-hover: #E8E1D8;
   --border: #D4CBC0;
   --fridge-bg: #E8EEF2;
+  --slot-text-primary: #3E352D;  /* Phase 3.5.1: 9.8:1 on sand bg */
   --fridge-bg-fallback: #E8EEF2;
   --text: #2C2420;
   --text-muted: #6B5F54;
@@ -166,6 +168,36 @@
     [class*="announcement"] {
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
     }
+
+    /* Phase 3.5.1: Slot text contrast fix (WCAG AA - 9.8:1 ratio) */
+    .slot-name,
+    .slot-vintage,
+    .slot-loc {
+      color: var(--slot-text-primary);
+      opacity: 1;  /* Remove opacity that kills contrast */
+      font-weight: 500;  /* Increase weight for readability */
+    }
+
+    /* Phase 3.5.2: Strengthen primary CTA (WCAG + 60-30-10 accent layer) */
+    .btn-primary,
+    .confirm-dialog-confirm {
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+      border: 1px solid rgba(0, 0, 0, 0.1);
+      font-weight: 600;
+    }
+
+    /* Phase 3.5.3: Figure-ground separation (60-30-10 card layer) */
+    .slot,
+    .wine-card,
+    .modal-content,
+    .settings-panel {
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .slot:hover,
+    .wine-card:hover {
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
+    }
   }
 }
 
@@ -199,6 +231,36 @@
   [class*="notification"],
   [class*="announcement"] {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  }
+
+  /* Phase 3.5.1: Slot text contrast fix */
+  .slot-name,
+  .slot-vintage,
+  .slot-loc {
+    color: var(--slot-text-primary);
+    opacity: 1;
+    font-weight: 500;
+  }
+
+  /* Phase 3.5.2: Strengthen primary CTA */
+  .btn-primary,
+  .confirm-dialog-confirm {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
+    border: 1px solid rgba(0, 0, 0, 0.1);
+    font-weight: 600;
+  }
+
+  /* Phase 3.5.3: Figure-ground separation */
+  .slot,
+  .wine-card,
+  .modal-content,
+  .settings-panel {
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+
+  .slot:hover,
+  .wine-card:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   }
 }
 

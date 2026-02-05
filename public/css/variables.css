@@ -13,9 +13,9 @@
  * #ffb74d                            → var(--color-warning-muted)
  * #ffc107, #eab308                   → var(--color-caution)
  * #ffd54f                            → var(--color-caution-muted)
- * #f59e0b, #ca8a04                   → var(--color-caution-alt)
+ * #f59e0b, #ca8a04                   → var(--color-caution)
  * #2196f3, #4a90d9, #4169e1          → var(--color-info)
- * #6495ed                            → var(--color-info-muted)
+ * #6495ed                            → var(--color-hold)
  * #9c27b0                            → var(--color-fragmented)
  * #ce93d8                            → var(--color-fragmented-muted)
  *
@@ -95,6 +95,61 @@
   --accent-hover: #C4B494;        /* Phase 1.1 */
   --accent-rgb: 176, 160, 128;    /* Phase 1.4: matches --accent #B0A080 */
   --fridge-bg: #1e2a35;
+  --fridge-bg-fallback: #2d4a5e;
+
+  /* Phase 2: Semantic status tokens */
+  --color-success: #4caf50;
+  --color-success-muted: #81c784;
+  --color-error: #f44336;
+  --color-error-muted: #e57373;
+  --color-warning: #ff9800;
+  --color-warning-muted: #ffb74d;
+  --color-caution: #ffc107;
+  --color-caution-muted: #ffd54f;
+  --color-info: #4a90d9;
+
+  /* Phase 2: Medal tokens */
+  --color-gold-medal: #ffd700;
+  --color-silver-medal: #c0c0c0;
+  --color-bronze-medal: #cd7f32;
+
+  /* Phase 2: Zone health tokens */
+  --color-healthy: var(--color-success);
+  --color-fragmented: #9c27b0;
+  --color-fragmented-muted: #ce93d8;
+  --color-hold: #6495ed;
+
+  /* Phase 2: Utility tokens */
+  --text-on-light: #2C2420;
+  --text-on-accent: #FFFFFF;
+  --color-black: #000;
+  --color-white: #fff;
+  --color-gray-900: #333;
+  --color-gray-500: #9e9e9e;
+  --color-gray-300: #d0d0d0;
+  --color-error-light: #ff6868;
+
+  /* Phase 2: RGB helpers for overlays */
+  --color-success-rgb: 76, 175, 80;
+  --color-error-rgb: 244, 67, 54;
+  --color-warning-rgb: 255, 152, 0;
+  --color-caution-rgb: 255, 193, 7;
+  --color-info-rgb: 74, 144, 217;
+  --color-hold-rgb: 100, 149, 237;
+  --color-fragmented-rgb: 156, 39, 176;
+  --color-gold-rgb: 212, 175, 55;
+  --color-silver-rgb: 192, 192, 192;
+  --color-bronze-rgb: 205, 127, 50;
+  --color-gray-500-rgb: 158, 158, 158;
+
+  /* Phase 2: Background helpers */
+  --color-success-bg: rgba(var(--color-success-rgb), 0.2);
+  --color-error-bg: rgba(var(--color-error-rgb), 0.2);
+  --color-warning-bg: rgba(var(--color-warning-rgb), 0.15);
+  --color-caution-bg: rgba(var(--color-caution-rgb), 0.2);
+  --color-info-bg: rgba(var(--color-info-rgb), 0.15);
+  --color-fragmented-bg: rgba(var(--color-fragmented-rgb), 0.2);
+  --color-hold-bg: rgba(var(--color-hold-rgb), 0.2);
   /* Phase 1.4: Aliases for undefined variables used in components */
   --wine-red: var(--red-wine);
   --wine-white: var(--white-wine);
@@ -104,6 +159,8 @@
   --text-secondary: var(--text-muted);
   --text-primary: var(--text);
   --bg-primary: var(--bg-card);
+  --hc-border: #666;
+  --hc-text-muted: #aaa;
 }
 
 /* ============================================================

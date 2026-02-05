@@ -208,7 +208,7 @@ header .search-trigger {
   font-size: 0.7rem;
   color: var(--text-muted);
   border-left: 3px solid var(--accent);
-  background: rgba(139, 115, 85, 0.1);
+  background: rgba(var(--accent-rgb), 0.1);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
