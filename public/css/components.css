@@ -1260,6 +1260,12 @@
 .slot.priority-2::after { content: 'S'; background: var(--priority-2); }
 .slot.priority-3::after { content: 'H'; background: var(--priority-3); }
 
+/* Phase 3.5.5: Color noise reduction - limit to 2 simultaneous signals */
+/* Hide lower-priority indicators when higher-priority ones exist */
+.slot.has-urgency::before {
+  display: none;  /* Hide drinking window icon when priority badge exists */
+}
+
 /* Open bottle indicator */
 .slot.is-open {
   border: 2px solid var(--sparkling);

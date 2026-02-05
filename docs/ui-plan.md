@@ -663,11 +663,11 @@ else if (slot.windowStatus) slotEl.classList.add('has-window');
 > - **3.5.2**: CTA emphasis strengthened - double-layer shadow (0 3px 8px + 0 1px 3px), 1px border, font-weight: 600, filter: brightness(0.95) for darker accent background, hover state with brightness(0.9) and stronger shadow for clear visual hierarchy.
 > - **3.5.3**: Figure-ground separation applied - 0 1px 3px shadow on base, 0 2px 6px on hover. CRITICAL FIX: Corrected selector mismatches (.modal-content → .modal, .settings-panel → .settings-section) to target actual DOM elements.
 > - **3.5.4**: Verified wine-type uses LEFT border, priority badge positioned TOP-RIGHT (spatial separation already correct in implementation).
-> - **3.5.5**: **NOT IMPLEMENTED** - Documented strategy only. Requires JS changes in grid.js to add has-urgency/has-window classes and corresponding CSS selectors. Deferred to future phase.
-> - Cache bumped: `sw.js` `CACHE_VERSION` → `v75`, CSS version strings → `?v=20260205g` (subsequent fix: v75 → v76, 20260205g → 20260205h).
+> - **3.5.5**: Color noise reduction FULLY IMPLEMENTED - Added `has-urgency` class when priority exists, `has-window` class when drinking window exists without priority. CSS rule `.slot.has-urgency::before { display: none; }` hides drinking window icons when urgency badge is present. Slots now show max 2 simultaneous color signals: wine-type (left border) + one action signal (priority OR drinking window).
+> - Cache bumped: `sw.js` `CACHE_VERSION` → `v76` (subsequent: v77), CSS version strings → `20260205h` (subsequent: 20260205i).
 > - All 942 unit tests pass.
 >
-> **Phase 3.5 status: CODE COMPLETE (with critical audit fixes). 3.5.1-3.5.4 implemented, 3.5.5 pending. Light mode WCAG AA compliance restored. Ready for visual QA.**
+> **Phase 3.5 status: DONE. All 5 priority fixes implemented. Light mode WCAG AA compliance restored. Ready for visual QA.**
 
 ---
 

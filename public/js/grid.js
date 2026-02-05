@@ -341,11 +341,15 @@ export function createSlotElement(slot) {
 
     if (slot.reduce_priority) {
       el.classList.add(`priority-${Math.min(slot.reduce_priority, 3)}`);
+      el.classList.add('has-urgency');  // Phase 3.5.5: Mark for color noise reduction
     }
 
     const drinkClass = getDrinkWindowClass(slot);
     if (drinkClass) {
       el.classList.add(drinkClass);
+      if (!slot.reduce_priority) {
+        el.classList.add('has-window');  // Phase 3.5.5: Mark drinking window (only if no urgency)
+      }
     }
 
     // Add open bottle styling
