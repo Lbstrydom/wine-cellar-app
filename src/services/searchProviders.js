@@ -2820,6 +2820,9 @@ function _isResultRelevant(result, wineName, vintage) {
  * @returns {Promise<Object>} Search results
  */
 export async function searchWineRatings(wineName, vintage, country, style = null) {
+  // Build wine object from parameters for identity validation and locale selection
+  const wine = { wine_name: wineName, vintage, country, style };
+
   // Detect grape variety from wine name
   const detectedGrape = detectGrape(wineName);
 

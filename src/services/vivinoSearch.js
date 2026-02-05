@@ -389,7 +389,7 @@ export async function searchVivinoWines({ query, producer, vintage }) {
           try {
             const { generateIdentityTokens, calculateIdentityScore } = await import('./wineIdentity.js');
             const tokens = generateIdentityTokens({ producer_name: producer || '', vintage });
-            const validationText = [normalized.wineName, normalized.winery, normalized.region, normalized.grape]
+            const validationText = [normalized.name, normalized.winery?.name, normalized.region, normalized.grapeVariety]
               .filter(Boolean)
               .join(' ');
             const identity = calculateIdentityScore(validationText, tokens);
