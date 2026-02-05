@@ -1,0 +1,15 @@
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  :root {
+    --border: #666;
+    --text-muted: #aaa;
+  }
+
+  .btn {
+    border: 2px solid currentColor;
+  }
+
+  .slot {
+    border: 1px solid var(--text-muted);
+  }
+}

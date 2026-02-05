@@ -1,0 +1,116 @@
+/*
+ * COLOR MIGRATION MAP  (Phase 0.2 audit — 2026-02-05)
+ * ---------------------------------------------------
+ * Every hardcoded hex / rgba below will migrate to a semantic
+ * CSS custom property in Phase 1.  Grouped by intent.
+ *
+ * ── Semantic status colours ─────────────────────────────────
+ * #4caf50, #22c55e, #2e7d32          → var(--color-success)
+ * #81c784, #c8f2c8, #8bc34a          → var(--color-success-muted)
+ * #f44336, #ef4444, #ff4444, #ff5555 → var(--color-error)
+ * #e57373, #ffb3b3                   → var(--color-error-muted)
+ * #ff9800                            → var(--color-warning)
+ * #ffb74d                            → var(--color-warning-muted)
+ * #ffc107, #eab308                   → var(--color-caution)
+ * #ffd54f                            → var(--color-caution-muted)
+ * #f59e0b, #ca8a04                   → var(--color-caution-alt)
+ * #2196f3, #4a90d9, #4169e1          → var(--color-info)
+ * #6495ed                            → var(--color-info-muted)
+ * #9c27b0                            → var(--color-fragmented)
+ * #ce93d8                            → var(--color-fragmented-muted)
+ *
+ * ── Medal / award colours ───────────────────────────────────
+ * #ffd700                            → var(--color-gold-medal)
+ * #c0c0c0                            → var(--color-silver-medal)
+ * #cd7f32                            → var(--color-bronze-medal)
+ *
+ * ── Wine type colours (already tokens) ──────────────────────
+ * #722f37                            → var(--red-wine)       ✓ exists
+ * #f5e6c8                            → var(--white-wine)     ✓ exists
+ * #e8a0a0                            → var(--rose-wine)      ✓ exists
+ * #d4af37                            → var(--sparkling)      ✓ exists
+ *
+ * ── Priority / urgency (already tokens) ─────────────────────
+ * #ff4444                            → var(--priority-1)     ✓ exists
+ * #ff8844                            → var(--priority-2)     ✓ exists
+ * #ffbb44                            → var(--priority-3)     ✓ exists
+ *
+ * ── Surface & neutral colours (already tokens) ──────────────
+ * #1a1a1a                            → var(--bg-dark)        ✓ exists
+ * #252525                            → var(--bg-card)        ✓ exists
+ * #2d2d2d                            → var(--bg-slot)        ✓ exists
+ * #363636                            → var(--bg-slot-hover)  ✓ exists
+ * #3a3a3a                            → var(--border)         ✓ exists
+ * #e8e8e8                            → var(--text)           ✓ exists
+ * #999999                            → var(--text-muted)     ✓ exists (Phase 1.2: was #888)
+ * #B0A080                            → var(--accent)         ✓ exists (Phase 1.1: was #8B7355)
+ * #1e2a35                            → var(--fridge-bg)      ✓ exists
+ *
+ * ── Neutral orphans (need new tokens) ───────────────────────
+ * #000, #333                         → var(--color-black), var(--color-gray-900)
+ * #fff                               → var(--color-white)
+ * #9e9e9e, #d0d0d0                   → var(--color-gray-500), var(--color-gray-300)
+ * #2d4a5e                            → var(--fridge-bg-fallback)
+ * #ff6868                            → var(--color-error-light)
+ *
+ * ── RGBA overlay families (derive from base hex + alpha) ────
+ * rgba(139,115,85, 0.1–0.4)         → var(--accent-rgb) based
+ * rgba(0,0,0, 0.15–0.8)             → var(--overlay-dark-*) scale
+ * rgba(255,255,255, 0.1)            → var(--overlay-light-10)
+ * rgba(76,175,80, 0.1–0.5)          → var(--color-success-rgb) based
+ * rgba(244,67,54, 0.2)              → var(--color-error-rgb) based
+ * rgba(255,152,0, 0.1–0.3)          → var(--color-warning-rgb) based
+ * rgba(255,193,7, 0.15–0.3)         → var(--color-caution-rgb) based
+ * rgba(33,150,243, 0.15–0.2)        → var(--color-info-rgb) based
+ * rgba(100,149,237, 0.15–0.2)       → var(--color-info-muted-rgb) based
+ * rgba(156,39,176, 0.2)             → var(--color-fragmented-rgb) based
+ * rgba(212,175,55, 0.15–0.2)        → var(--color-gold-rgb) based
+ * rgba(192,192,192, 0.2)            → var(--color-silver-rgb) based
+ * rgba(205,127,50, 0.2)             → var(--color-bronze-rgb) based
+ * rgba(139,92,246, 0.05–0.1)        → var(--accent-purple-rgb) based
+ * rgba(20,20,30, 0.96–0.98)         → var(--auth-gradient-*) scale
+ *
+ * ── High-contrast overrides (themes.css) ────────────────────
+ * #aaa                               → var(--hc-text-muted)
+ * #666                               → var(--hc-border)
+ */
+
+:root {
+  --bg-dark: #1a1a1a;
+  --bg-card: #252525;
+  --bg-slot: #2d2d2d;
+  --bg-slot-hover: #363636;
+  --border: #3a3a3a;
+  --text: #e8e8e8;
+  --text-muted: #999;             /* Phase 1.2: 5.7:1 on #1a1a1a, 4.8:1 on #252525 (was #888 ~4.2:1) */
+  --red-wine: #722F37;
+  --white-wine: #F5E6C8;
+  --rose-wine: #E8A0A0;
+  --sparkling: #D4AF37;
+  --priority-1: #ff4444;
+  --priority-2: #ff8844;
+  --priority-3: #ffbb44;
+  --gold: #D4AF37;
+  --accent: #B0A080;              /* Phase 1.1: 6.2:1 on #1a1a1a, 5.0:1 on #252525 (was #8B7355 ~3.5:1) */
+  --accent-hover: #C4B494;        /* Phase 1.1 */
+  --accent-rgb: 176, 160, 128;    /* Phase 1.4: matches --accent #B0A080 */
+  --fridge-bg: #1e2a35;
+  /* Phase 1.4: Aliases for undefined variables used in components */
+  --wine-red: var(--red-wine);
+  --wine-white: var(--white-wine);
+  --wine-rose: var(--rose-wine);
+  --wine-sparkling: var(--sparkling);
+  --primary: var(--accent);
+  --text-secondary: var(--text-muted);
+  --text-primary: var(--text);
+  --bg-primary: var(--bg-card);
+}
+
+/* ============================================================
+   Text Size Settings & Mobile Accessibility Fixes
+   ============================================================ */
+
+/* Text size CSS custom properties */
+:root {
+  --text-size-multiplier: 1;
+}
