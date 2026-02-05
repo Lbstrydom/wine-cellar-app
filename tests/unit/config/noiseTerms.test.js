@@ -3,7 +3,6 @@
  * Tests filtering of food pairing terms and marketing hyperbole.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   FOOD_PAIRING_NOISE,
   MARKETING_HYPERBOLE,

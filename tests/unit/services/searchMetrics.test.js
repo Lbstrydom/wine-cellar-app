@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+
 import { SearchMetricsCollector } from '../../../src/services/searchMetrics.js';
 
 describe('SearchMetricsCollector', () => {

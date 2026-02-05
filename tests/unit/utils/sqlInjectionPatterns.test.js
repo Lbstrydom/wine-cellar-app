@@ -3,7 +3,6 @@
  * Scans backend code for db.prepare() calls containing ${...} patterns.
  */
 
-import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 

@@ -3,7 +3,7 @@
  * @module tests/unit/services/queryBuilder.test.js
  */
 
-import { describe, it, expect } from 'vitest';
+
 import {
   getLocaleParams,
   buildQueryVariants,

@@ -4,7 +4,7 @@
  * CRITICAL: Validates that X-Cellar-ID is never trusted without membership check.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 
 // Set DATABASE_URL before any imports
 process.env.DATABASE_URL = 'postgresql://mock:mock@localhost/mock';

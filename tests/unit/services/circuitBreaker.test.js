@@ -2,7 +2,7 @@
  * @fileoverview Unit tests for circuit breaker service.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import {
   isCircuitOpen,
   recordSuccess,

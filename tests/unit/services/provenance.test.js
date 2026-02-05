@@ -3,7 +3,7 @@
  * Tests provenance recording, querying, and expiry management.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 import {
   hashContent,
   RETRIEVAL_METHODS,

@@ -3,7 +3,6 @@
  * Tests JSON seed files, database population, and initial state consistency.
  */
 
-import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 

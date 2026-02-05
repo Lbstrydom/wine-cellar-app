@@ -45,6 +45,21 @@ export const createWineSchema = z.object({
   vivino_id: z.string().max(100).optional().nullable(),
   vivino_url: z.string().url().max(500).optional().nullable().or(z.literal('')),
   vivino_confirmed: z.union([z.boolean(), z.number().transform(Boolean)]).optional(),
+  drink_from: z.union([
+    z.number().int().min(1900).max(2100),
+    z.string().regex(/^\d{4}$/).transform(Number),
+    z.null()
+  ]).optional().nullable(),
+  drink_peak: z.union([
+    z.number().int().min(1900).max(2100),
+    z.string().regex(/^\d{4}$/).transform(Number),
+    z.null()
+  ]).optional().nullable(),
+  drink_until: z.union([
+    z.number().int().min(1900).max(2100),
+    z.string().regex(/^\d{4}$/).transform(Number),
+    z.null()
+  ]).optional().nullable(),
   external_match: z.object({
     source: z.string().max(50),
     external_id: z.string().max(200),
@@ -63,9 +78,9 @@ export const createWineSchema = z.object({
  */
 export const updateWineSchema = createWineSchema.extend({
   wine_name: z.string().min(1).max(300).optional(),
-  drink_from: z.union([z.number().int().min(1900).max(2100), z.null()]).optional().nullable(),
-  drink_peak: z.union([z.number().int().min(1900).max(2100), z.null()]).optional().nullable(),
-  drink_until: z.union([z.number().int().min(1900).max(2100), z.null()]).optional().nullable()
+  drink_from: z.union([z.number().int().min(1900).max(2100), z.string().regex(/^\d{4}$/).transform(Number), z.null()]).optional().nullable(),
+  drink_peak: z.union([z.number().int().min(1900).max(2100), z.string().regex(/^\d{4}$/).transform(Number), z.null()]).optional().nullable(),
+  drink_until: z.union([z.number().int().min(1900).max(2100), z.string().regex(/^\d{4}$/).transform(Number), z.null()]).optional().nullable()
 });
 
 /**

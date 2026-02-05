@@ -3,7 +3,6 @@
  * Tests the API calls and data transformation in the storage areas save flow.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
 
 describe('Storage Areas Settings - API Contract Tests', () => {
   describe('createStorageArea', () => {

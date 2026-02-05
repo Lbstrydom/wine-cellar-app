@@ -2,7 +2,6 @@
  * @fileoverview Unit tests for error response utilities.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   AppError,
   ErrorCodes,

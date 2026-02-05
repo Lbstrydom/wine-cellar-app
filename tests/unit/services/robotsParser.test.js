@@ -4,7 +4,7 @@
  * @module tests/unit/services/robotsParser
  */
 
-import { describe, it, expect } from 'vitest';
+
 
 // Import only the pure functions that don't depend on database
 // The robotsParser module imports db, but we mock the specific exports

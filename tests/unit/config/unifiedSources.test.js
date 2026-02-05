@@ -3,7 +3,6 @@
  * Tests source metadata, normalization functions, and helper utilities.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   SOURCES,
   LENS,

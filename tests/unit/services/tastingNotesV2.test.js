@@ -3,7 +3,6 @@
  * Tests schema conversion and pure functions using mocked database.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Mock the database module BEFORE importing the service
 vi.mock('../../../src/db/index.js', () => ({

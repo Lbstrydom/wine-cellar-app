@@ -3,7 +3,7 @@
  * @module tests/unit/services/movePlanner.test
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 
 // Mock database BEFORE importing the module that uses it
 vi.mock('../../../src/db/index.js', () => ({

@@ -3,7 +3,6 @@
  * Tests identity score calculation and token generation.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   generateIdentityTokens,
   calculateIdentityScore,

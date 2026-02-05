@@ -3,7 +3,7 @@
  * Tests score normalization, relevance calculation, and purchase score calculation.
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+
 
 // Mock the database before importing ratings
 vi.mock('../../../src/db/index.js', () => ({

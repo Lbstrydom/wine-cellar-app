@@ -3,7 +3,6 @@
  * Tests synonym mapping, category grouping, structure value normalisation.
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   NORMALISER_VERSION,
   SYNONYM_MAP,

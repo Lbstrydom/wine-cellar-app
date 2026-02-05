@@ -7,7 +7,6 @@
  * New files must use api.js functions.
  */
 
-import { describe, it, expect } from 'vitest';
 import fs from 'fs';
 import path from 'path';
 

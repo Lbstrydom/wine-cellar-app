@@ -3,7 +3,6 @@
  * Tests grape, region, and style detection from wine names.
  */
 
-import { describe, it, expect } from 'vitest';
 import { parseWineName } from '../../../src/services/wineNameParser.js';
 
 describe('parseWineName', () => {

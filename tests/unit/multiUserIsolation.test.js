@@ -3,7 +3,7 @@
  * Validates that cellar scoping is enforced for new Phase 6 tables.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 
 // Mock the database module
 vi.mock('../../src/db/index.js', () => ({

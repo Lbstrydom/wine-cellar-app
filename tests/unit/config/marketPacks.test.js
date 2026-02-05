@@ -2,7 +2,6 @@
  * @fileoverview Unit tests for Market Packs configuration (Phase 4).
  */
 
-import { describe, it, expect } from 'vitest';
 import {
   getMarketPack,
   detectMarketFromLocale,

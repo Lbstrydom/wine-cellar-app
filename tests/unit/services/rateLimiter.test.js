@@ -2,7 +2,7 @@
  * @fileoverview Unit tests for rate limiter service.
  */
 
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+
 import {
   waitForRateLimit,
   checkRateLimit,

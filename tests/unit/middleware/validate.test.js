@@ -2,7 +2,7 @@
  * @fileoverview Unit tests for validation middleware.
  */
 
-import { describe, it, expect, vi } from 'vitest';
+
 import { z } from 'zod';
 import { validate, validateBody, validateQuery, validateParams } from '../../../src/middleware/validate.js';
 

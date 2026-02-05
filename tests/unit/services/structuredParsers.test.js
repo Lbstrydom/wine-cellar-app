@@ -2,7 +2,6 @@
  * @fileoverview Unit tests for Structured Parsers (Phase 5).
  */
 
-import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import {

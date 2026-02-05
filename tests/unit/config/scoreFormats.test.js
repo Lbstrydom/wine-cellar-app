@@ -3,7 +3,6 @@
  * Tests score normalization for various rating sources.
  */
 
-import { describe, it, expect } from 'vitest';
 import { normaliseScore, getScoreFormatsForSources, buildScoreFormatPrompt } from '../../../src/config/unifiedSources.js';
 
 describe('scoreFormats', () => {

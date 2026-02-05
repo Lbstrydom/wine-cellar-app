@@ -3,7 +3,7 @@
  * Tests session creation, wine choice recording, feedback submission, and statistics.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+
 
 // Mock database
 const mockDb = {

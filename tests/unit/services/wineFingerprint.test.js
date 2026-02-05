@@ -1,4 +1,3 @@
-import { describe, it, expect } from 'vitest';
 import { WineFingerprint, WINE_ALIASES, findAliases } from '../../../src/services/wineFingerprint.js';
 
 describe('WineFingerprint', () => {

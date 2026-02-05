@@ -3,7 +3,6 @@
  * Tests Phase 3: Search Breadth Governance.
  */
 
-import { describe, it, expect, beforeEach } from 'vitest';
 import {
   SearchSessionContext,
   BUDGET_PRESETS,

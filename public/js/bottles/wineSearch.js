@@ -33,7 +33,8 @@ async function handleWineSearch(query) {
   }
 
   try {
-    const wines = await searchWines(query);
+    const result = await searchWines(query);
+    const wines = Array.isArray(result) ? result : (result?.data || []);
 
     if (wines.length === 0) {
       resultsContainer.innerHTML = '<div class="search-result-item">No wines found. Try "New Wine" tab.</div>';

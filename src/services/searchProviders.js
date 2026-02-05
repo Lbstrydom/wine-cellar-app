@@ -337,6 +337,7 @@ async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZ
       });
     } else {
       logger.warn('Decanter', 'No SERP or Web Unlocker zone configured');
+      cleanup();
       return [];
     }
 
@@ -347,8 +348,10 @@ async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZ
       return [];
     }
 
-    const data = await response.json().catch(() => null);
-    const text = data ? null : await response.text();
+    // Read body once as text, then try parsing as JSON
+    const text = await response.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* not JSON, use text */ }
 
     // Extract Decanter wine review URLs
     const decanterUrls = [];
@@ -397,6 +400,7 @@ async function searchGoogleForDecanter(wineName, vintage, apiKey, serpZone, webZ
       .map(u => u.url);
 
   } catch (error) {
+    cleanup();
     logger.error('Decanter', `SERP search failed: ${error.message}`);
     return [];
   }
@@ -1191,6 +1195,7 @@ async function searchBrightDataSerp(query, domains = [], localeOptions = {}) {
     return results;
 
   } catch (error) {
+    cleanup();
     const errorMsg = error.name === 'AbortError' ? 'Timeout' : error.message;
     logger.error('SERP', `Search failed: ${errorMsg}`);
     return [];
@@ -1291,6 +1296,7 @@ async function fetchDocumentContent(url, maxLength = 8000, budget = null) {
         headContentLength = parseInt(headResponse.headers.get('content-length') || '0', 10);
         if (headContentLength > LIMITS.MAX_DOCUMENT_BYTES) {
           logger.warn('Document', `HEAD Content-Length ${headContentLength} exceeds limit ${LIMITS.MAX_DOCUMENT_BYTES}, aborting`);
+          cleanup();
           return {
             content: '',
             success: false,
@@ -1302,6 +1308,7 @@ async function fetchDocumentContent(url, maxLength = 8000, budget = null) {
         }
         if (budget && headContentLength > 0 && !canConsumeBytes(budget, headContentLength)) {
           logger.warn('Budget', `Byte budget would be exceeded by HEAD length ${headContentLength}`);
+          cleanup();
           return {
             content: '',
             success: false,
@@ -2012,6 +2019,7 @@ export async function fetchPageContent(url, maxLength = 8000, budget = null) {
     return result;
 
   } catch (error) {
+    cleanup();
     const errorMsg = error.name === 'AbortError' ? 'Timeout' : error.message;
     logger.error('Fetch', `Failed for ${url}: ${errorMsg}`);
     const result = {

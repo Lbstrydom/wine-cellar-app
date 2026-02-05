@@ -505,6 +505,7 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
       });
     } else {
       logger.warn('VivinoSearch', 'No SERP or Web Unlocker zone configured');
+      cleanup();
       return [];
     }
 
@@ -515,8 +516,10 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
       return [];
     }
 
-    const data = await response.json().catch(() => null);
-    const text = data ? null : await response.text();
+    // Read body once as text, then try parsing as JSON
+    const text = await response.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch { /* not JSON, use text */ }
 
     // Extract Vivino URLs from results
     const vivinoUrls = [];
@@ -537,6 +540,7 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
     return vivinoUrls;
 
   } catch (error) {
+    cleanup();
     logger.error('VivinoSearch', `SERP search failed: ${error.message}`);
     return [];
   }
