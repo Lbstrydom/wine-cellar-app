@@ -91,7 +91,7 @@ router.get('/score/:wineId', validateParams(palateWineIdSchema), asyncHandler(as
  * @query {number} [limit=10] - Max recommendations
  */
 router.get('/recommendations', validateQuery(recommendationsQuerySchema), asyncHandler(async (req, res) => {
-  const limit = req.validated?.query?.limit ?? parseInt(req.query.limit) || 10;
+  const limit = req.validated?.query?.limit ?? (parseInt(req.query.limit) || 10);
 
   const recommendations = await getPersonalizedRecommendations(limit, req.cellarId);
   res.json({ recommendations });
