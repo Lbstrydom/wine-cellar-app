@@ -1206,7 +1206,7 @@
 /* Slots */
 .slot {
   width: 90px;
-  height: 52px;
+  height: 60px;  /* Phase 3.5 fix: was 52px — increased for Phase 1.3 font sizes */
   background: var(--bg-slot);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -1265,6 +1265,10 @@
 .slot.has-urgency::before {
   display: none;  /* Hide drinking window icon when priority badge exists */
 }
+
+/* Phase 3.5.5: Hide medal badge when urgency or window indicators active */
+.slot.has-urgency .medal-badge { display: none; }
+.slot.has-window .medal-badge { display: none; }
 
 /* Open bottle indicator */
 .slot.is-open {

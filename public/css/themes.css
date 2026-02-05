@@ -132,146 +132,70 @@
   --color-gray-500-rgb: 107, 95, 84;
 }
 
-/* Light mode: Use dark text on accent backgrounds for WCAG AA compliance */
+/* Light mode component overrides (flattened — no CSS nesting for browser compat)
+   Phase 3.5: WCAG AA compliance, 60-30-10 hierarchy, figure-ground separation.
+   Duplicated for @media (system) and [data-theme] (explicit) paths. */
+
+/* === System light mode (@media path) === */
 @media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) {
-    /* Light mode accent (#7A6240) gives only 4.1:1 with white text (fails AA for normal text).
-       Override to use dark text instead. */
-    .onboarding-wizard button.btn-primary,
-    .btn-primary,
-    .confirm-dialog-confirm,
-    .toggle-btn.active,
-    .award-badge,
-    .zone-chat-panel .chat-message.user .chat-content,
-    .zone-order,
-    .recommendation-card .rank-badge {
-      color: var(--text-on-light);
-    }
-
-    /* Step number indicator (wizard progress dots) */
-    .onboarding-progress .step.active::before,
-    .onboarding-progress .step.completed::before {
-      color: var(--text-on-light);
-    }
-
-    /* Reduce heavy box-shadows for light backgrounds */
-    .global-search-modal {
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
-    }
-
-    .auth-card {
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
-    }
-
-    /* Notification/announcement shadows (if exists) */
-    [class*="notification"],
-    [class*="announcement"] {
-      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    }
-
-    /* Phase 3.5.1: Slot text contrast fix (WCAG AA - 9.8:1 ratio) */
-    .slot-name,
-    .slot-vintage,
-    .slot-loc {
-      color: var(--slot-text-primary);
-      opacity: 1;  /* Remove opacity that kills contrast */
-      font-weight: 500;  /* Increase weight for readability */
-    }
-
-    /* CRITICAL: Override empty slot opacity suppression in light mode */
-    .slot.empty {
-      opacity: 0.75;  /* Lighter suppression vs dark mode 0.4 */
-    }
-
-    .slot.empty:hover {
-      opacity: 0.9;  /* More visible on hover */
-    }
-
-    /* Phase 3.5.2: Strengthen primary CTA (WCAG + 60-30-10 accent layer) */
-    .btn-primary,
-    .confirm-dialog-confirm {
-      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
-      border: 1px solid rgba(0, 0, 0, 0.15);
-      font-weight: 600;
-      background: var(--accent);
-      /* Darken accent slightly for more pop */
-      filter: brightness(0.95);
-    }
-
-    .btn-primary:hover,
-    .confirm-dialog-confirm:hover {
-      filter: brightness(0.9);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
-    }
-
-    /* Phase 3.5.3: Figure-ground separation (60-30-10 card layer) */
-    .slot,
-    .wine-card,
-    .modal,  /* Fixed: was .modal-content */
-    .settings-section {  /* Fixed: was .settings-panel */
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
-    }
-
-    .slot:hover,
-    .wine-card:hover {
-      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
-    }
-  }
-}
-
-:root[data-theme="light"] {
-  /* Explicit light mode: same overrides */
-  .onboarding-wizard button.btn-primary,
-  .btn-primary,
-  .confirm-dialog-confirm,
-  .toggle-btn.active,
-  .award-badge,
-  .zone-chat-panel .chat-message.user .chat-content,
-  .zone-order,
-  .recommendation-card .rank-badge {
+  /* Dark text on accent backgrounds — light accent (#7A6240) fails AA with white text */
+  :root:not([data-theme="dark"]) .onboarding-wizard button.btn-primary,
+  :root:not([data-theme="dark"]) .btn-primary,
+  :root:not([data-theme="dark"]) .confirm-dialog-confirm,
+  :root:not([data-theme="dark"]) .toggle-btn.active,
+  :root:not([data-theme="dark"]) .award-badge,
+  :root:not([data-theme="dark"]) .zone-chat-panel .chat-message.user .chat-content,
+  :root:not([data-theme="dark"]) .zone-order,
+  :root:not([data-theme="dark"]) .recommendation-card .rank-badge {
     color: var(--text-on-light);
   }
 
-  .onboarding-progress .step.active::before,
-  .onboarding-progress .step.completed::before {
+  /* Tab active: white text on dark light-mode accent (5.2:1) */
+  :root:not([data-theme="dark"]) .tab.active {
+    color: var(--text-on-accent);
+  }
+
+  /* Wizard progress dots */
+  :root:not([data-theme="dark"]) .onboarding-progress .step.active::before,
+  :root:not([data-theme="dark"]) .onboarding-progress .step.completed::before {
     color: var(--text-on-light);
   }
 
   /* Reduce heavy box-shadows for light backgrounds */
-  .global-search-modal {
+  :root:not([data-theme="dark"]) .global-search-modal {
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
   }
 
-  .auth-card {
+  :root:not([data-theme="dark"]) .auth-card {
     box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
   }
 
-  [class*="notification"],
-  [class*="announcement"] {
+  :root:not([data-theme="dark"]) [class*="notification"],
+  :root:not([data-theme="dark"]) [class*="announcement"] {
     box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   }
 
-  /* Phase 3.5.1: Slot text contrast fix */
-  .slot-name,
-  .slot-vintage,
-  .slot-loc {
+  /* Phase 3.5.1: Slot text contrast fix (WCAG AA — 9.8:1 ratio) */
+  :root:not([data-theme="dark"]) .slot-name,
+  :root:not([data-theme="dark"]) .slot-vintage,
+  :root:not([data-theme="dark"]) .slot-loc {
     color: var(--slot-text-primary);
     opacity: 1;
     font-weight: 500;
   }
 
-  /* CRITICAL: Override empty slot opacity suppression */
-  .slot.empty {
+  /* Override empty slot opacity suppression in light mode */
+  :root:not([data-theme="dark"]) .slot.empty {
     opacity: 0.75;
   }
 
-  .slot.empty:hover {
+  :root:not([data-theme="dark"]) .slot.empty:hover {
     opacity: 0.9;
   }
 
-  /* Phase 3.5.2: Strengthen primary CTA */
-  .btn-primary,
-  .confirm-dialog-confirm {
+  /* Phase 3.5.2: Strengthen primary CTA (WCAG + 60-30-10 accent layer) */
+  :root:not([data-theme="dark"]) .btn-primary,
+  :root:not([data-theme="dark"]) .confirm-dialog-confirm {
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
     border: 1px solid rgba(0, 0, 0, 0.15);
     font-weight: 600;
@@ -279,24 +203,110 @@
     filter: brightness(0.95);
   }
 
-  .btn-primary:hover,
-  .confirm-dialog-confirm:hover {
+  :root:not([data-theme="dark"]) .btn-primary:hover,
+  :root:not([data-theme="dark"]) .confirm-dialog-confirm:hover {
     filter: brightness(0.9);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
   }
 
-  /* Phase 3.5.3: Figure-ground separation */
-  .slot,
-  .wine-card,
-  .modal,  /* Fixed: was .modal-content */
-  .settings-section {  /* Fixed: was .settings-panel */
+  /* Phase 3.5.3: Figure-ground separation (60-30-10 card layer) */
+  :root:not([data-theme="dark"]) .slot,
+  :root:not([data-theme="dark"]) .wine-card,
+  :root:not([data-theme="dark"]) .modal,
+  :root:not([data-theme="dark"]) .settings-section {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
 
-  .slot:hover,
-  .wine-card:hover {
+  :root:not([data-theme="dark"]) .slot:hover,
+  :root:not([data-theme="dark"]) .wine-card:hover {
     box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
   }
+}
+
+/* === Explicit light mode ([data-theme="light"] path) === */
+
+/* Dark text on accent backgrounds */
+:root[data-theme="light"] .onboarding-wizard button.btn-primary,
+:root[data-theme="light"] .btn-primary,
+:root[data-theme="light"] .confirm-dialog-confirm,
+:root[data-theme="light"] .toggle-btn.active,
+:root[data-theme="light"] .award-badge,
+:root[data-theme="light"] .zone-chat-panel .chat-message.user .chat-content,
+:root[data-theme="light"] .zone-order,
+:root[data-theme="light"] .recommendation-card .rank-badge {
+  color: var(--text-on-light);
+}
+
+/* Tab active: white text on dark light-mode accent (5.2:1) */
+:root[data-theme="light"] .tab.active {
+  color: var(--text-on-accent);
+}
+
+/* Wizard progress dots */
+:root[data-theme="light"] .onboarding-progress .step.active::before,
+:root[data-theme="light"] .onboarding-progress .step.completed::before {
+  color: var(--text-on-light);
+}
+
+/* Reduce heavy box-shadows for light backgrounds */
+:root[data-theme="light"] .global-search-modal {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+:root[data-theme="light"] .auth-card {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.18);
+}
+
+:root[data-theme="light"] [class*="notification"],
+:root[data-theme="light"] [class*="announcement"] {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+/* Phase 3.5.1: Slot text contrast fix */
+:root[data-theme="light"] .slot-name,
+:root[data-theme="light"] .slot-vintage,
+:root[data-theme="light"] .slot-loc {
+  color: var(--slot-text-primary);
+  opacity: 1;
+  font-weight: 500;
+}
+
+/* Override empty slot opacity suppression */
+:root[data-theme="light"] .slot.empty {
+  opacity: 0.75;
+}
+
+:root[data-theme="light"] .slot.empty:hover {
+  opacity: 0.9;
+}
+
+/* Phase 3.5.2: Strengthen primary CTA */
+:root[data-theme="light"] .btn-primary,
+:root[data-theme="light"] .confirm-dialog-confirm {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  font-weight: 600;
+  background: var(--accent);
+  filter: brightness(0.95);
+}
+
+:root[data-theme="light"] .btn-primary:hover,
+:root[data-theme="light"] .confirm-dialog-confirm:hover {
+  filter: brightness(0.9);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
+}
+
+/* Phase 3.5.3: Figure-ground separation */
+:root[data-theme="light"] .slot,
+:root[data-theme="light"] .wine-card,
+:root[data-theme="light"] .modal,
+:root[data-theme="light"] .settings-section {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .slot:hover,
+:root[data-theme="light"] .wine-card:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.18);
 }
 
 /* High contrast mode support */

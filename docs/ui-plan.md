@@ -667,7 +667,14 @@ else if (slot.windowStatus) slotEl.classList.add('has-window');
 > - Cache bumped: `sw.js` `CACHE_VERSION` → `v76` (subsequent: v77), CSS version strings → `20260205h` (subsequent: 20260205i).
 > - All 942 unit tests pass.
 >
-> **Phase 3.5 status: DONE. All 5 priority fixes implemented. Light mode WCAG AA compliance restored. Ready for visual QA.**
+> **Phase 3.5 post-audit fixes (2026-02-05b):**
+> - **Bug 1 — Slot text clipping**: Increased slot height from 52→60px (base), 44→52px (768px), 50→58px (480px), 48→56px (480px alt), 45→52px (360px). Phase 1.3 had increased font sizes to 11-12px without adjusting container height.
+> - **Bug 2 — Tab active contrast**: Added explicit `color: var(--text-on-light)` to `.tab.active` base rule (dark text on warm accent, 5.77:1 in dark mode). Added `color: var(--text-on-accent)` override in light-mode themes.css (white text on dark accent, 5.2:1). Previously inherited `var(--text)` gave only ~2:1 contrast.
+> - **Bug 3 — CSS nesting compat**: Flattened all CSS nesting in themes.css component overrides. Changed nested syntax (`:root:not(...) { .btn-primary { } }`) to flat selectors (`:root:not(...) .btn-primary { }`). CSS Nesting Module Level 1 has incomplete support in pre-2024 browsers (Safari <17.2, Chrome <120).
+> - **Bug 4 — Medal badge hiding**: Added `.slot.has-urgency .medal-badge { display: none; }` and `.slot.has-window .medal-badge { display: none; }` rules to enforce max-2-signal limit from Phase 3.5.5 plan.
+> - Cache bumped: `sw.js` → `v78`, CSS → `20260205j`.
+>
+> **Phase 3.5 status: DONE. All 5 priority fixes + 4 post-audit fixes implemented. Light mode WCAG AA compliance restored. Ready for visual QA.**
 
 ---
 
