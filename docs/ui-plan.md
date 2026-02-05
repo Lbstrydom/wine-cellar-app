@@ -11,7 +11,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 0.2 | **DONE** | 2026-02-05 | 51 hex + 40 rgba families mapped in variables.css |
 | Phase 1 | **DONE** | 2026-02-05 | Contrast, fonts, and missing vars fixed |
 | Phase 2 | **DONE** | 2026-02-05 | Semantic tokens + non-color cues |
-| Phase 3 | **DONE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + review fixes |
+| Phase 3 | **CODE COMPLETE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + review fixes (manual QA pending) |
 | Phase 4 | Pending | | |
 | Phase 5 | Pending | | |
 | Phase 6 | Pending | | |
@@ -469,7 +469,12 @@ document.querySelector('meta[name="msapplication-TileColor"]')?.setAttribute('co
 > - **V3 (Medium)**: Added light-mode overrides in `themes.css` for 8 elements with `background: var(--accent)` - now use dark text instead of white (white on light accent #7A6240 was 4.1:1, failed AA for normal text). Affected: `.btn-primary`, `.confirm-dialog-confirm`, `.toggle-btn.active`, `.award-badge`, chat bubbles, zone badges, wizard buttons.
 > - **V4 (Low)**: Reduced heavy box-shadows from 0.4-0.5 opacity to 0.15-0.18 in light mode for `.global-search-modal`, `.auth-card`, and notification elements.
 > - Cache bumped: `sw.js` `CACHE_VERSION` → `v74`, all 942 unit tests pass.
-> - **Phase 3 complete and ready for signoff.**
+>
+> **Phase 3 Additional Fixes (2026-02-05, post-commit):**
+> - **Cache drift (High)**: Fixed service worker version mismatch - `sw.js` CACHE_VERSION corrected to v74 (was incorrectly committed as v73), CSS version strings aligned to `v=20260205f` across `sw.js` and `index.html` to prevent offline/stale-cache clients from missing active CSS.
+> - **Incomplete contrast fix (Medium)**: Added `.recommendation-card .rank-badge` to light-mode text color overrides in `themes.css` (was missed in initial V3 fix - uses `background: var(--accent); color: white` which fails WCAG AA in light mode).
+>
+> **Phase 3 status: Code complete. Ready for manual acceptance QA (theme parity matrix + SVG audit + color-blind simulation + offline boot test).**
 
 ---
 
@@ -797,7 +802,7 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 2 | `grep` returns 0 hardcoded hex in component CSS + color-blind sim screenshot | **DONE** (grep passes, 27/27 non-color cues verified; color-blind sim pending manual DevTools validation) |
 | Phase 5 | `grep` confirms no font-size below 0.6875rem + visual check at all breakpoints | Pending |
 | Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | Pending |
-| Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **DONE** (implementation complete; parity matrix + SVG audit require manual validation) |
+| Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **CODE COMPLETE** (implementation + all review fixes done; parity matrix validation + SVG audit + color-blind simulation + offline boot test require manual QA) |
 | Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | Pending |
 | Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | Pending |
 
