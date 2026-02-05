@@ -3,6 +3,8 @@
  * @module services/accuracyMetrics
  */
 
+import logger from '../utils/logger.js';
+
 /**
  * Calculate accuracy metrics from a set of ratings for a search session.
  * @param {Array} ratings - Array of rating objects with identity metadata
@@ -57,7 +59,7 @@ export async function getWrongWineCorrections(db, cellarId, since = null) {
     
     return result?.count || 0;
   } catch (err) {
-    console.error('Error fetching wrong wine corrections:', err);
+    logger.error('Accuracy', 'Error fetching wrong wine corrections: ' + err.message);
     return 0;
   }
 }
@@ -91,7 +93,7 @@ export async function getVintageMismatchRate(db, cellarId, daysBack = 30) {
       total_mismatches: totalMismatches
     };
   } catch (err) {
-    console.error('Error calculating vintage mismatch rate:', err);
+    logger.error('Accuracy', 'Error calculating vintage mismatch rate: ' + err.message);
     return { rate: 0, total_searches: 0, total_mismatches: 0 };
   }
 }

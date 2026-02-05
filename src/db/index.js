@@ -18,8 +18,7 @@ console.log('[DB] Backend: PostgreSQL (production)');
 const postgres = await import('./postgres.js');
 const db = postgres.default;
 const awardsDb = postgres.awardsDb;
-const preparedStatements = postgres.preparedStatements;
 const pool = postgres.pool;
 
 export default db;
-export { awardsDb, preparedStatements, pool };
+export { awardsDb, pool };

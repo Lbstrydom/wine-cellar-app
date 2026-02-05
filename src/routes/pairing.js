@@ -12,6 +12,19 @@ import { scorePairing } from '../services/pairing.js';
 import { getHybridPairing, generateShortlist, extractSignals } from '../services/pairingEngine.js';
 import { getAvailableSignals, FOOD_SIGNALS, DEFAULT_HOUSE_STYLE } from '../config/pairingRules.js';
 import { strictRateLimiter } from '../middleware/rateLimiter.js';
+import { validateBody, validateParams } from '../middleware/validate.js';
+import { asyncHandler } from '../utils/errorResponse.js';
+import {
+  suggestPairingSchema,
+  naturalPairingSchema,
+  chatMessageSchema,
+  extractSignalsSchema,
+  shortlistSchema,
+  hybridPairingSchema,
+  sessionChooseSchema,
+  sessionFeedbackSchema,
+  sessionIdSchema
+} from '../schemas/pairing.js';
 
 const router = Router();
 
@@ -33,47 +46,29 @@ setInterval(() => {
  * Get pairing rules matrix.
  * @route GET /api/pairing/rules
  */
-router.get('/rules', async (req, res) => {
-  try {
-    const rules = await db.prepare('SELECT * FROM pairing_rules ORDER BY food_signal, match_level').all();
-    res.json(rules);
-  } catch (error) {
-    console.error('Pairing rules error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+router.get('/rules', asyncHandler(async (req, res) => {
+  const rules = await db.prepare('SELECT * FROM pairing_rules ORDER BY food_signal, match_level').all();
+  res.json(rules);
+}));
 
 /**
  * Get pairing suggestions based on food signals.
  * @route POST /api/pairing/suggest
  */
-router.post('/suggest', async (req, res) => {
-  const { signals, prefer_reduce_now = true, limit = 5 } = req.body;
+router.post('/suggest', validateBody(suggestPairingSchema), asyncHandler(async (req, res) => {
+  const { signals, prefer_reduce_now, limit } = req.body;
 
-  if (!signals || !Array.isArray(signals) || signals.length === 0) {
-    return res.status(400).json({ error: 'Provide food signals array' });
-  }
-
-  try {
-    const result = await scorePairing(db, signals, prefer_reduce_now, limit, req.cellarId);
-    res.json(result);
-  } catch (error) {
-    console.error('Pairing suggestion error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const result = await scorePairing(db, signals, prefer_reduce_now, limit, req.cellarId);
+  res.json(result);
+}));
 
 /**
  * Natural language pairing via Claude.
  * Rate limited to prevent abuse of AI API.
  * @route POST /api/pairing/natural
  */
-router.post('/natural', strictRateLimiter(), async (req, res) => {
-  const { dish, source = 'all', colour = 'any' } = req.body;
-
-  if (!dish || dish.trim().length === 0) {
-    return res.status(400).json({ error: 'Please describe a dish' });
-  }
+router.post('/natural', validateBody(naturalPairingSchema), strictRateLimiter(), asyncHandler(async (req, res) => {
+  const { dish, source, colour } = req.body;
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({
@@ -81,44 +76,32 @@ router.post('/natural', strictRateLimiter(), async (req, res) => {
     });
   }
 
-  try {
-    const result = await getSommelierRecommendation(db, dish, source, colour, req.cellarId);
+  const result = await getSommelierRecommendation(db, dish, source, colour, req.cellarId);
 
-    // Store chat context for follow-up conversations
-    const chatId = randomUUID();
-    if (result._chatContext) {
-      chatContexts.set(chatId, {
-        ...result._chatContext,
-        chatHistory: [],
-        createdAt: Date.now()
-      });
-      delete result._chatContext; // Don't send internal context to client
-    }
-
-    res.json({
-      ...result,
-      chatId
+  // Store chat context for follow-up conversations
+  const chatId = randomUUID();
+  if (result._chatContext) {
+    chatContexts.set(chatId, {
+      ...result._chatContext,
+      chatHistory: [],
+      createdAt: Date.now()
     });
-  } catch (error) {
-    console.error('Sommelier API error:', error);
-    res.status(500).json({
-      error: 'Sommelier service error',
-      message: error.message
-    });
+    delete result._chatContext; // Don't send internal context to client
   }
-});
+
+  res.json({
+    ...result,
+    chatId
+  });
+}));
 
 /**
  * Continue sommelier conversation with follow-up question.
  * Rate limited to prevent abuse of AI API.
  * @route POST /api/pairing/chat
  */
-router.post('/chat', strictRateLimiter(), async (req, res) => {
+router.post('/chat', validateBody(chatMessageSchema), strictRateLimiter(), asyncHandler(async (req, res) => {
   const { chatId, message } = req.body;
-
-  if (!chatId || !message || message.trim().length === 0) {
-    return res.status(400).json({ error: 'chatId and message are required' });
-  }
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({
@@ -133,25 +116,17 @@ router.post('/chat', strictRateLimiter(), async (req, res) => {
     });
   }
 
-  try {
-    const result = await continueSommelierChat(db, message.trim(), context);
+  const result = await continueSommelierChat(db, message.trim(), context);
 
-    // Update chat history
-    context.chatHistory.push(
-      { role: 'user', content: message.trim() },
-      { role: 'assistant', content: result.type === 'explanation' ? result.message : JSON.stringify(result) }
-    );
-    context.createdAt = Date.now(); // Refresh TTL
+  // Update chat history
+  context.chatHistory.push(
+    { role: 'user', content: message.trim() },
+    { role: 'assistant', content: result.type === 'explanation' ? result.message : JSON.stringify(result) }
+  );
+  context.createdAt = Date.now(); // Refresh TTL
 
-    res.json(result);
-  } catch (error) {
-    console.error('Sommelier chat error:', error);
-    res.status(500).json({
-      error: 'Sommelier service error',
-      message: error.message
-    });
-  }
-});
+  res.json(result);
+}));
 
 /**
  * Clear chat session.
@@ -183,12 +158,8 @@ router.get('/signals', (_req, res) => {
  * Extract signals from dish description.
  * @route POST /api/pairing/extract-signals
  */
-router.post('/extract-signals', (req, res) => {
+router.post('/extract-signals', validateBody(extractSignalsSchema), (req, res) => {
   const { dish } = req.body;
-
-  if (!dish || dish.trim().length === 0) {
-    return res.status(400).json({ error: 'Please provide a dish description' });
-  }
 
   const signals = extractSignals(dish);
   res.json({
@@ -205,82 +176,61 @@ router.post('/extract-signals', (req, res) => {
  * Get deterministic shortlist only (no AI).
  * @route POST /api/pairing/shortlist
  */
-router.post('/shortlist', async (req, res) => {
-  const { dish, source = 'all', colour = 'any', limit = 8, houseStyle } = req.body;
+router.post('/shortlist', validateBody(shortlistSchema), asyncHandler(async (req, res) => {
+  const { dish, source, colour, limit, houseStyle } = req.body;
 
-  if (!dish || dish.trim().length === 0) {
-    return res.status(400).json({ error: 'Please describe a dish' });
-  }
+  const wines = await getAllWinesWithSlots(req.cellarId);
 
-  try {
-    const wines = await getAllWinesWithSlots(req.cellarId);
+  const result = generateShortlist(wines, dish, {
+    colour,
+    source,
+    limit,
+    houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
+  });
 
-    const result = generateShortlist(wines, dish, {
-      colour,
-      source,
-      limit,
-      houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
-    });
-
-    res.json(result);
-  } catch (error) {
-    console.error('Shortlist error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.json(result);
+}));
 
 /**
  * Hybrid pairing: deterministic shortlist + AI explanation.
  * Rate limited as it uses AI.
  * @route POST /api/pairing/hybrid
  */
-router.post('/hybrid', strictRateLimiter(), async (req, res) => {
-  const { dish, source = 'all', colour = 'any', topN = 3, houseStyle } = req.body;
+router.post('/hybrid', validateBody(hybridPairingSchema), strictRateLimiter(), asyncHandler(async (req, res) => {
+  const { dish, source, colour, topN, houseStyle } = req.body;
 
-  if (!dish || dish.trim().length === 0) {
-    return res.status(400).json({ error: 'Please describe a dish' });
-  }
+  const wines = await getAllWinesWithSlots(req.cellarId);
 
-  try {
-    const wines = await getAllWinesWithSlots(req.cellarId);
+  const result = await getHybridPairing(wines, dish, {
+    colour,
+    source,
+    topN,
+    houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
+  });
 
-    const result = await getHybridPairing(wines, dish, {
-      colour,
+  // Store chat context for follow-up if AI succeeded
+  const chatId = randomUUID();
+  if (result.aiSuccess) {
+    chatContexts.set(chatId, {
+      dish,
       source,
-      topN,
-      houseStyle: houseStyle || DEFAULT_HOUSE_STYLE
-    });
-
-    // Store chat context for follow-up if AI succeeded
-    const chatId = randomUUID();
-    if (result.aiSuccess) {
-      chatContexts.set(chatId, {
-        dish,
-        source,
-        colour,
-        wines,
-        initialResponse: {
-          dish_analysis: result.dish_analysis,
-          signals: result.signals,
-          recommendations: result.recommendations
-        },
-        chatHistory: [],
-        createdAt: Date.now()
-      });
-    }
-
-    res.json({
-      ...result,
-      chatId: result.aiSuccess ? chatId : null
-    });
-  } catch (error) {
-    console.error('Hybrid pairing error:', error);
-    res.status(500).json({
-      error: 'Pairing service error',
-      message: error.message
+      colour,
+      wines,
+      initialResponse: {
+        dish_analysis: result.dish_analysis,
+        signals: result.signals,
+        recommendations: result.recommendations
+      },
+      chatHistory: [],
+      createdAt: Date.now()
     });
   }
-});
+
+  res.json({
+    ...result,
+    chatId: result.aiSuccess ? chatId : null
+  });
+}));
 
 /**
  * Get house style defaults.
@@ -356,89 +306,58 @@ import {
  * POST /api/pairing/sessions/:id/choose
  * Record which wine the user chose from recommendations.
  */
-router.post('/sessions/:id/choose', async (req, res) => {
-  try {
-    const sessionId = parseInt(req.params.id, 10);
-    const { wineId, rank } = req.body;
-    if (!wineId || !rank) {
-      return res.status(400).json({ error: 'wineId and rank are required' });
-    }
-    await recordWineChoice(sessionId, wineId, rank);
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error recording wine choice:', error);
-    res.status(500).json({ error: 'Failed to record wine choice' });
-  }
-});
+router.post('/sessions/:id/choose', validateParams(sessionIdSchema), validateBody(sessionChooseSchema), asyncHandler(async (req, res) => {
+  const sessionId = req.validated?.params?.id ?? parseInt(req.params.id, 10);
+  const { wineId, rank } = req.body;
+  await recordWineChoice(sessionId, wineId, rank);
+  res.json({ success: true });
+}));
 
 /**
  * POST /api/pairing/sessions/:id/feedback
  * Record user feedback on a pairing.
  */
-router.post('/sessions/:id/feedback', async (req, res) => {
-  try {
-    const sessionId = parseInt(req.params.id, 10);
-    const { pairingFitRating, wouldPairAgain, failureReasons, notes } = req.body;
-    if (pairingFitRating === undefined || wouldPairAgain === undefined) {
-      return res.status(400).json({ error: 'pairingFitRating and wouldPairAgain are required' });
-    }
-    await recordFeedback(sessionId, {
-      pairingFitRating,
-      wouldPairAgain,
-      failureReasons,
-      notes
-    });
-    res.json({ success: true });
-  } catch (error) {
-    console.error('Error recording feedback:', error);
-    res.status(500).json({ error: error.message || 'Failed to record feedback' });
-  }
-});
+router.post('/sessions/:id/feedback', validateParams(sessionIdSchema), validateBody(sessionFeedbackSchema), asyncHandler(async (req, res) => {
+  const sessionId = req.validated?.params?.id ?? parseInt(req.params.id, 10);
+  const { pairingFitRating, wouldPairAgain, failureReasons, notes } = req.body;
+  await recordFeedback(sessionId, {
+    pairingFitRating,
+    wouldPairAgain,
+    failureReasons,
+    notes
+  });
+  res.json({ success: true });
+}));
 
 /**
  * GET /api/pairing/sessions/pending-feedback
  * Get sessions that need feedback.
  */
-router.get('/sessions/pending-feedback', async (req, res) => {
-  try {
-    const sessions = await getPendingFeedbackSessions();
-    res.json({ sessions });
-  } catch (error) {
-    console.error('Error fetching pending sessions:', error);
-    res.status(500).json({ error: 'Failed to fetch pending sessions' });
-  }
-});
+router.get('/sessions/pending-feedback', asyncHandler(async (req, res) => {
+  const sessions = await getPendingFeedbackSessions();
+  res.json({ sessions });
+}));
 
 /**
  * GET /api/pairing/history
  * Get pairing history with optional filters.
  */
-router.get('/history', async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit, 10) || 20;
-    const offset = parseInt(req.query.offset, 10) || 0;
-    const feedbackOnly = req.query.feedbackOnly === 'true';
-    const history = await getPairingHistory('default', { limit, offset, feedbackOnly });
-    res.json({ history });
-  } catch (error) {
-    console.error('Error fetching pairing history:', error);
-    res.status(500).json({ error: 'Failed to fetch pairing history' });
-  }
-});
+router.get('/history', asyncHandler(async (req, res) => {
+  const limit = parseInt(req.query.limit, 10) || 20;
+  const offset = parseInt(req.query.offset, 10) || 0;
+  const feedbackOnly = req.query.feedbackOnly === 'true';
+  const history = await getPairingHistory('default', { limit, offset, feedbackOnly });
+  res.json({ history });
+}));
 
 /**
  * GET /api/pairing/stats
  * Get aggregate pairing statistics.
  */
-router.get('/stats', async (req, res) => {
-  try {
-    const stats = await getPairingStats();
-    res.json(stats);
-  } catch (error) {
-    console.error('Error fetching pairing stats:', error);
-    res.status(500).json({ error: 'Failed to fetch pairing stats' });
-  }
-});
+router.get('/stats', asyncHandler(async (req, res) => {
+  const stats = await getPairingStats();
+  res.json(stats);
+}));
 
 /**
  * GET /api/pairing/failure-reasons

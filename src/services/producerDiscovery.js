@@ -5,6 +5,7 @@
  */
 
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 /**
  * Register a discovered producer domain for verification and crawling.
@@ -45,7 +46,7 @@ export async function registerDiscoveredProducer(url, producerName, wineId = nul
   } catch (err) {
     // Handle URL parsing errors
     if (err.code === 'ERR_INVALID_URL') {
-      console.warn(`[Discovery] Invalid URL: ${url}`);
+      logger.warn('Discovery', `Invalid URL: ${url}`);
       return null;
     }
     throw err;

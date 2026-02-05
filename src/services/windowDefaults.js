@@ -7,6 +7,7 @@
 
 import db from '../db/index.js';
 import { parseWineName } from './wineNameParser.js';
+import logger from '../utils/logger.js';
 
 /**
  * Get estimated drinking window from defaults matrix
@@ -77,7 +78,7 @@ export async function getDefaultDrinkingWindow(wine, vintage) {
       notes: defaultWindow.notes
     };
   } catch (error) {
-    console.error('Error looking up default drinking window:', error);
+    logger.error('Windows', 'Error looking up default drinking window: ' + error.message);
     return getFallbackByColour(colour, vintage);
   }
 }
@@ -390,7 +391,7 @@ export async function getStorageSettings(cellarId) {
     }
     return settings;
   } catch (error) {
-    console.error('Error loading storage settings:', error);
+    logger.error('Windows', 'Error loading storage settings: ' + error.message);
     return {};
   }
 }

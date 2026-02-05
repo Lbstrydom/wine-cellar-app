@@ -10,6 +10,7 @@ import { getNeverMergeZones } from './zonePins.js';
 import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { getAllZoneAllocations } from './cellarAllocation.js';
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 import {
   reviewReconfigurationPlan,
   applyPatches,
@@ -419,14 +420,14 @@ Constraints:
         const fromValid = !!getZoneById(a.fromZoneId);
         const toValid = !!getZoneById(a.toZoneId);
         if (!fromValid || !toValid) {
-          console.warn(`[ZoneReconfigPlanner] Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
+          logger.warn('Reconfig', `Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
           return false;
         }
 
         const fromRows = zoneRowMap.get(a.fromZoneId) || [];
         const rowId = typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber);
         if (!fromRows.includes(rowId)) {
-          console.warn(`[ZoneReconfigPlanner] Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
+          logger.warn('Reconfig', `Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
           return false;
         }
 
@@ -434,46 +435,46 @@ Constraints:
       }
       if (a.type === 'expand_zone') {
         const valid = !!getZoneById(a.zoneId);
-        if (!valid) console.warn(`[ZoneReconfigPlanner] Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
+        if (!valid) logger.warn('Reconfig', `Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
         return valid;
       }
       if (a.type === 'merge_zones') {
         if (!Array.isArray(a.sourceZones)) {
-          console.warn('[ZoneReconfigPlanner] Filtering merge_zones: sourceZones is not an array');
+          logger.warn('Reconfig', 'Filtering merge_zones: sourceZones is not an array');
           return false;
         }
         if (!getZoneById(a.targetZoneId)) {
-          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: invalid targetZoneId="${a.targetZoneId}"`);
+          logger.warn('Reconfig', `Filtering merge_zones: invalid targetZoneId="${a.targetZoneId}"`);
           return false;
         }
         const invalidSources = a.sourceZones.filter(z => !getZoneById(z));
         if (invalidSources.length > 0) {
-          console.warn(`[ZoneReconfigPlanner] Filtering merge_zones: invalid sourceZones=${JSON.stringify(invalidSources)}`);
+          logger.warn('Reconfig', `Filtering merge_zones: invalid sourceZones=${JSON.stringify(invalidSources)}`);
           return false;
         }
         return a.sourceZones.every(z => !neverMerge.has(z));
       }
       if (a.type === 'retire_zone') {
         if (!getZoneById(a.zoneId)) {
-          console.warn(`[ZoneReconfigPlanner] Filtering retire_zone: invalid zoneId="${a.zoneId}"`);
+          logger.warn('Reconfig', `Filtering retire_zone: invalid zoneId="${a.zoneId}"`);
           return false;
         }
         if (!getZoneById(a.mergeIntoZoneId)) {
-          console.warn(`[ZoneReconfigPlanner] Filtering retire_zone: invalid mergeIntoZoneId="${a.mergeIntoZoneId}"`);
+          logger.warn('Reconfig', `Filtering retire_zone: invalid mergeIntoZoneId="${a.mergeIntoZoneId}"`);
           return false;
         }
         return !neverMerge.has(a.zoneId);
       }
-      console.warn(`[ZoneReconfigPlanner] Filtering unknown action type: ${a.type}`);
+      logger.warn('Reconfig', `Filtering unknown action type: ${a.type}`);
       return false;
     });
 
     if (plan.actions.length < originalCount) {
-      console.warn(`[ZoneReconfigPlanner] Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
+      logger.warn('Reconfig', `Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
     }
 
     if (plan.actions.length === 0 && originalCount > 0) {
-      console.warn(`[ZoneReconfigPlanner] All ${originalCount} AI actions were invalid and filtered out`);
+      logger.warn('Reconfig', `All ${originalCount} AI actions were invalid and filtered out`);
       plan.reasoning = `AI suggested ${originalCount} action(s), but all were invalid (e.g., reallocating rows that zones don't own). ` +
         'This may indicate the AI misunderstood the current zone allocations. Please try again or use manual zone management.';
     }
@@ -595,7 +596,7 @@ Constraints:
       // Await persistence so telemetry is reliably available immediately after the request.
       await saveTelemetry(db, reviewTelemetry, { swallowErrors: false });
     } catch (err) {
-      console.error('[ZoneReconfigPlanner] Failed to save telemetry:', err.message);
+      logger.error('Reconfig', 'Failed to save telemetry: ' + err.message);
     }
   }
 

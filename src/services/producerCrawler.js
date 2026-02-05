@@ -15,6 +15,7 @@ import {
 } from './cacheService.js';
 import { PRODUCER_CRAWL } from '../config/scraperConfig.js';
 import crypto from 'crypto';
+import logger from '../utils/logger.js';
 
 // Allowed paths for producer crawling (whitelist approach)
 export const ALLOWED_PATH_PREFIXES = [
@@ -117,7 +118,7 @@ export async function crawlProducerDomain(domain, options = {}) {
       }
 
     } catch (err) {
-      console.error(`[Crawler] Error crawling ${queueItem.url}: ${err.message}`);
+      logger.error('Crawler', `Error crawling ${queueItem.url}: ${err.message}`);
       await updateQueueStatus(queueItem.id, 'failed', null, err.message);
       stats.errors.push(`${queueItem.url}: ${err.message}`);
     }
@@ -412,7 +413,7 @@ async function seedInitialUrls(producerDomain) {
       `).run(producerDomain.id, seed.url, seed.path, urlType);
       inserted.push(seed);
     } catch (err) {
-      console.warn(`[Crawler] Failed to seed URL ${seed.url}: ${err.message}`);
+      logger.warn('Crawler', `Failed to seed URL ${seed.url}: ${err.message}`);
     }
   }
 

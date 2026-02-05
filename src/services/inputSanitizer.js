@@ -4,6 +4,8 @@
  * @module services/inputSanitizer
  */
 
+import logger from '../utils/logger.js';
+
 /**
  * Characters and patterns that could be used for prompt injection.
  * @type {Object}
@@ -74,7 +76,7 @@ export function sanitize(input, options = {}) {
   // Check and warn about injection patterns (don't remove, but log)
   for (const [patternName, pattern] of Object.entries(INJECTION_PATTERNS)) {
     if (pattern.test(result)) {
-      console.warn(`[Sanitizer] Potential ${patternName} pattern detected in input`);
+      logger.warn('Sanitizer', `Potential ${patternName} pattern detected in input`);
       // Reset lastIndex for global patterns
       pattern.lastIndex = 0;
     }

@@ -10,6 +10,7 @@ import { getModelForTask, getMaxTokens } from '../config/aiModels.js';
 import { sanitizeDishDescription, sanitizeWineList } from './inputSanitizer.js';
 import { parseAndValidate } from './responseValidator.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
+import logger from '../utils/logger.js';
 
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
@@ -461,7 +462,7 @@ OUTPUT FORMAT (JSON only):
     };
 
   } catch (err) {
-    console.error('[PairingEngine] AI explanation failed:', err.message);
+    logger.error('PairingEngine', 'AI explanation failed: ' + err.message);
     return {
       success: false,
       error: err.message,

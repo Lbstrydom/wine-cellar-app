@@ -7,6 +7,7 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { stringAgg, nullsLast } from '../db/helpers.js';
 import { getDefaultDrinkingWindow, adjustForStorage, getStorageSettings } from '../services/windowDefaults.js';
+import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();
 
@@ -14,84 +15,69 @@ const router = Router();
  * Get reduce-now list.
  * @route GET /api/reduce-now
  */
-router.get('/', async (req, res) => {
-  try {
-    // Safe: stringAgg() is a helper that returns SQL function call string
-    const locationAgg = stringAgg('s.location_code');
-    const sqlList = [
-      'SELECT',
-      '  rn.id,',
-      '  rn.priority,',
-      '  rn.reduce_reason,',
-      '  w.id as wine_id,',
-      '  w.style,',
-      '  w.colour,',
-      '  w.wine_name,',
-      '  w.vintage,',
-      '  w.vivino_rating,',
-      '  COUNT(s.id) as bottle_count,',
-      '  ' + locationAgg + ' as locations',
-      'FROM reduce_now rn',
-      'JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1',
-      'LEFT JOIN slots s ON s.wine_id = w.id',
-      'GROUP BY rn.id, rn.priority, rn.reduce_reason, w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating',
-      'ORDER BY rn.priority, w.wine_name'
-    ].join('\n');
-    const list = await db.prepare(sqlList).all(req.cellarId);
-    res.json(list);
-  } catch (error) {
-    console.error('Get reduce-now error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+router.get('/', asyncHandler(async (req, res) => {
+  // Safe: stringAgg() is a helper that returns SQL function call string
+  const locationAgg = stringAgg('s.location_code');
+  const sqlList = [
+    'SELECT',
+    '  rn.id,',
+    '  rn.priority,',
+    '  rn.reduce_reason,',
+    '  w.id as wine_id,',
+    '  w.style,',
+    '  w.colour,',
+    '  w.wine_name,',
+    '  w.vintage,',
+    '  w.vivino_rating,',
+    '  COUNT(s.id) as bottle_count,',
+    '  ' + locationAgg + ' as locations',
+    'FROM reduce_now rn',
+    'JOIN wines w ON w.id = rn.wine_id AND w.cellar_id = $1',
+    'LEFT JOIN slots s ON s.wine_id = w.id',
+    'GROUP BY rn.id, rn.priority, rn.reduce_reason, w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating',
+    'ORDER BY rn.priority, w.wine_name'
+  ].join('\n');
+  const list = await db.prepare(sqlList).all(req.cellarId);
+  res.json(list);
+}));
 
 /**
  * Add wine to reduce-now list.
  * @route POST /api/reduce-now
  */
-router.post('/', async (req, res) => {
-  try {
-    const { wine_id, priority, reduce_reason } = req.body;
+router.post('/', asyncHandler(async (req, res) => {
+  const { wine_id, priority, reduce_reason } = req.body;
 
-    // Validate wine belongs to this cellar
-    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
-    if (!wine) {
-      return res.status(404).json({ error: 'Wine not found' });
-    }
-
-    // PostgreSQL uses ON CONFLICT ... DO UPDATE
-    await db.prepare(`
-      INSERT INTO reduce_now (wine_id, priority, reduce_reason)
-      VALUES ($1, $2, $3)
-      ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
-    `).run(wine_id, priority || 3, reduce_reason || null);
-
-    res.json({ message: 'Added to reduce-now' });
-  } catch (error) {
-    console.error('Add reduce-now error:', error);
-    res.status(500).json({ error: error.message });
+  // Validate wine belongs to this cellar
+  const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
   }
-});
+
+  // PostgreSQL uses ON CONFLICT ... DO UPDATE
+  await db.prepare(`
+    INSERT INTO reduce_now (wine_id, priority, reduce_reason)
+    VALUES ($1, $2, $3)
+    ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
+  `).run(wine_id, priority || 3, reduce_reason || null);
+
+  res.json({ message: 'Added to reduce-now' });
+}));
 
 /**
  * Remove wine from reduce-now list.
  * @route DELETE /api/reduce-now/:wine_id
  */
-router.delete('/:wine_id', async (req, res) => {
-  try {
-    // Validate wine belongs to this cellar first
-    const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, req.params.wine_id);
-    if (!wine) {
-      return res.status(404).json({ error: 'Wine not found' });
-    }
-
-    await db.prepare('DELETE FROM reduce_now WHERE wine_id = $1').run(req.params.wine_id);
-    res.json({ message: 'Removed from reduce-now' });
-  } catch (error) {
-    console.error('Delete reduce-now error:', error);
-    res.status(500).json({ error: error.message });
+router.delete('/:wine_id', asyncHandler(async (req, res) => {
+  // Validate wine belongs to this cellar first
+  const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, req.params.wine_id);
+  if (!wine) {
+    return res.status(404).json({ error: 'Wine not found' });
   }
-});
+
+  await db.prepare('DELETE FROM reduce_now WHERE wine_id = $1').run(req.params.wine_id);
+  res.json({ message: 'Removed from reduce-now' });
+}));
 
 /**
  * Evaluate wines against auto-rules and return candidates.
@@ -101,9 +87,8 @@ router.delete('/:wine_id', async (req, res) => {
  *
  * Optimized: Single query to fetch all candidate wines, then process in-memory
  */
-router.post('/evaluate', async (req, res) => {
-  try {
-    // Get current settings (scoped to cellar)
+router.post('/evaluate', asyncHandler(async (req, res) => {
+  // Get current settings (scoped to cellar)
     const settings = {};
     const settingsRows = await db.prepare('SELECT key, value FROM user_settings WHERE cellar_id = $1').all(req.cellarId);
     for (const row of settingsRows) {
@@ -362,73 +347,59 @@ router.post('/evaluate', async (req, res) => {
         low: candidates.filter(c => c.urgency === 'low').length,
         storage_adjusted: candidates.filter(c => c.storage_adjusted).length
       }
-    });
-  } catch (error) {
-    console.error('Evaluate error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  });
+}));
 
 /**
  * Batch add wines to reduce-now from evaluation.
  * @route POST /api/reduce-now/batch
  */
-router.post('/batch', async (req, res) => {
-  try {
-    const { wine_ids, priority, reason_prefix } = req.body;
+router.post('/batch', asyncHandler(async (req, res) => {
+  const { wine_ids, priority, reason_prefix } = req.body;
 
-    if (!Array.isArray(wine_ids) || wine_ids.length === 0) {
-      return res.status(400).json({ error: 'wine_ids array required' });
-    }
-
-    let added = 0;
-    for (const wineId of wine_ids) {
-      // Get wine info for reason and validate it belongs to cellar
-      const wine = await db.prepare('SELECT wine_name, vintage FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
-      if (wine) {
-        const reason = reason_prefix ? `${reason_prefix}` : 'Auto-suggested';
-        await db.prepare(`
-          INSERT INTO reduce_now (wine_id, priority, reduce_reason)
-          VALUES ($1, $2, $3)
-          ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
-        `).run(wineId, priority || 3, reason);
-        added++;
-      }
-    }
-
-    res.json({ message: `Added ${added} wines to reduce-now`, added });
-  } catch (error) {
-    console.error('Batch add error:', error);
-    res.status(500).json({ error: error.message });
+  if (!Array.isArray(wine_ids) || wine_ids.length === 0) {
+    return res.status(400).json({ error: 'wine_ids array required' });
   }
-});
+
+  let added = 0;
+  for (const wineId of wine_ids) {
+    // Get wine info for reason and validate it belongs to cellar
+    const wine = await db.prepare('SELECT wine_name, vintage FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
+    if (wine) {
+      const reason = reason_prefix ? `${reason_prefix}` : 'Auto-suggested';
+      await db.prepare(`
+        INSERT INTO reduce_now (wine_id, priority, reduce_reason)
+        VALUES ($1, $2, $3)
+        ON CONFLICT(wine_id) DO UPDATE SET priority = EXCLUDED.priority, reduce_reason = EXCLUDED.reduce_reason
+      `).run(wineId, priority || 3, reason);
+      added++;
+    }
+  }
+
+  res.json({ message: `Added ${added} wines to reduce-now`, added });
+}));
 
 /**
  * Get AI-powered drink recommendations.
  * @route GET /api/reduce-now/ai-recommendations
  */
-router.get('/ai-recommendations', async (req, res) => {
-  try {
-    // Dynamic import to avoid issues if service not available
-    const { generateDrinkRecommendations } = await import('../services/drinkNowAI.js');
+router.get('/ai-recommendations', asyncHandler(async (req, res) => {
+  // Dynamic import to avoid issues if service not available
+  const { generateDrinkRecommendations } = await import('../services/drinkNowAI.js');
 
-    const context = {};
-    if (req.query.weather) context.weather = req.query.weather;
-    if (req.query.occasion) context.occasion = req.query.occasion;
-    if (req.query.food) context.food = req.query.food;
+  const context = {};
+  if (req.query.weather) context.weather = req.query.weather;
+  if (req.query.occasion) context.occasion = req.query.occasion;
+  if (req.query.food) context.food = req.query.food;
 
-    const limit = parseInt(req.query.limit, 10) || 5;
+  const limit = parseInt(req.query.limit, 10) || 5;
 
-    const recommendations = await generateDrinkRecommendations({
-      limit,
-      context: Object.keys(context).length > 0 ? context : null
-    });
+  const recommendations = await generateDrinkRecommendations({
+    limit,
+    context: Object.keys(context).length > 0 ? context : null
+  });
 
-    res.json(recommendations);
-  } catch (error) {
-    console.error('AI recommendations error:', error);
-    res.status(500).json({ error: 'Failed to generate recommendations' });
-  }
-});
+  res.json(recommendations);
+}));
 
 export default router;

@@ -6,6 +6,7 @@
  */
 
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 /**
  * Middleware: Require cellar context.
@@ -79,7 +80,7 @@ export async function requireCellarContext(req, res, next) {
 
     next();
   } catch (err) {
-    console.error('Cellar context middleware error:', err);
+    logger.error('CellarCtx', 'Cellar context middleware error: ' + err.message);
     res.status(500).json({ error: 'Cellar context error' });
   }
 }
@@ -148,7 +149,7 @@ export async function getUserCellars(req, res) {
 
     res.json({ data: cellars });
   } catch (err) {
-    console.error('Get user cellars error:', err);
+    logger.error('CellarCtx', 'Get user cellars error: ' + err.message);
     res.status(500).json({ error: 'Failed to fetch cellars' });
   }
 }
@@ -187,7 +188,7 @@ export async function setActiveCellar(req, res) {
 
     res.json({ message: 'Active cellar updated', cellar_id });
   } catch (err) {
-    console.error('Set active cellar error:', err);
+    logger.error('CellarCtx', 'Set active cellar error: ' + err.message);
     res.status(500).json({ error: 'Failed to set active cellar' });
   }
 }
@@ -225,7 +226,7 @@ export async function getActiveCellar(req, res) {
 
     res.json({ data: cellar });
   } catch (err) {
-    console.error('Get active cellar error:', err);
+    logger.error('CellarCtx', 'Get active cellar error: ' + err.message);
     res.status(500).json({ error: 'Failed to fetch active cellar' });
   }
 }

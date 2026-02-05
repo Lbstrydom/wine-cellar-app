@@ -5,6 +5,7 @@
  */
 
 import pg from 'pg';
+import logger from '../utils/logger.js';
 const { Pool } = pg;
 
 // Create connection pool from DATABASE_URL
@@ -22,7 +23,7 @@ pool.on('connect', () => {
 });
 
 pool.on('error', (err) => {
-  console.error('[DB] PostgreSQL pool error:', err.message);
+  logger.error('DB', 'PostgreSQL pool error: ' + err.message);
 });
 
 /**
@@ -48,7 +49,7 @@ async function testConnection() {
       console.log('[DB] Warning: wines table does not exist - run schema migration');
     }
   } catch (err) {
-    console.error('[DB] PostgreSQL connection failed:', err.message);
+    logger.error('DB', 'PostgreSQL connection failed: ' + err.message);
     throw err;
   }
 }
@@ -152,28 +153,6 @@ class PostgresDB {
 
 const db = new PostgresDB(pool);
 const awardsDb = db; // Same pool for awards (same database)
-
-/**
- * Prepared statements (all methods are async).
- * Uses ? placeholders which are auto-converted to $1, $2, etc.
- */
-export const preparedStatements = {
-  getWineById: db.prepare('SELECT * FROM wines WHERE id = ?'),
-  getAllWines: db.prepare('SELECT * FROM wines ORDER BY colour, style, wine_name'),
-  getWinesByColour: db.prepare('SELECT * FROM wines WHERE colour = ? ORDER BY style, wine_name'),
-  getSlotByLocation: db.prepare('SELECT * FROM slots WHERE location_code = ?'),
-  getAllSlots: db.prepare('SELECT * FROM slots ORDER BY zone, row_num, col_num'),
-  getSlotsByWineId: db.prepare('SELECT * FROM slots WHERE wine_id = ? ORDER BY location_code'),
-  getRatingsByWineId: db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ? ORDER BY fetched_at DESC'),
-  getReduceNowByWineId: db.prepare('SELECT * FROM reduce_now WHERE wine_id = ?'),
-  getBottleCount: db.prepare('SELECT COUNT(*) as count FROM slots WHERE wine_id = ?'),
-  getSetting: db.prepare('SELECT value FROM user_settings WHERE key = ?'),
-  upsertSetting: db.prepare(`
-    INSERT INTO user_settings (key, value, updated_at)
-    VALUES (?, ?, CURRENT_TIMESTAMP)
-    ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value, updated_at = CURRENT_TIMESTAMP
-  `)
-};
 
 /**
  * Direct pool access for complex queries

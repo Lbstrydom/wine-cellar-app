@@ -17,6 +17,7 @@ import {
 } from '../config/tastingVocabulary.js';
 import { getModelForTask } from '../config/aiModels.js';
 import { sanitizeTastingNote } from './inputSanitizer.js';
+import logger from '../utils/logger.js';
 
 let anthropic = null;
 
@@ -166,7 +167,7 @@ export async function extractTastingProfile(tastingNote, options = {}) {
         throw new Error('No JSON found in response');
       }
     } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError);
+      logger.error('Tasting', 'Failed to parse AI response: ' + parseError.message);
       // Fall back to deterministic
       profile = extractTastingProfileDeterministic(tastingNote, wineInfo);
       profile.extraction = {
@@ -192,7 +193,7 @@ export async function extractTastingProfile(tastingNote, options = {}) {
 
     return profile;
   } catch (error) {
-    console.error('AI extraction error:', error);
+    logger.error('Tasting', 'AI extraction error: ' + error.message);
     // Fall back to deterministic
     const profile = extractTastingProfileDeterministic(tastingNote, wineInfo);
     profile.extraction = {

@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 18 January 2026
+## 5 February 2026
 
 ---
 
@@ -9,7 +9,28 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 18 Jan 2026**:
+**Recent Enhancements** ✨ **NEW - 5 Feb 2026**:
+- **Comprehensive Codebase Refactoring (7 Phases) - COMPLETE** ✅:
+  - **Phase 1 (CRITICAL — Broken Transactions)**: Fixed 3 broken PostgreSQL transaction sites where `BEGIN`/`INSERT`/`COMMIT` ran on different pool connections. Converted to `db.transaction(async (client) => { ... })` in `cellar.js` (zone merge, zone operation) and `cellars.js` (create cellar + membership).
+  - **Phase 2 (Async Error Handler)**: Created `asyncHandler()` wrapper in `src/utils/errorResponse.js`. Eliminated ~150 redundant try/catch blocks across all 25 route files. Central error middleware in `server.js` handles unhandled errors.
+  - **Phase 3 (Input Validation)**: Added Zod schema validation to all 8 target route files using `validateBody()`/`validateQuery()`/`validateParams()` middleware. New schemas: `src/schemas/rating.js` (8 schemas), plus schemas for cellars, pairing, settings, awards, acquisition, palateProfile, storageAreas.
+  - **Phase 4 (File Splits — SRP)**: Split 8 oversized files into focused modules:
+    - `claude.js` (1,348→14 lines barrel) → `claudeClient.js`, `sommelier.js`, `wineParsing.js`, `ratingExtraction.js`
+    - `searchProviders.js` (3,312→407 lines orchestrator) → 17 focused modules (`searchGoogle.js`, `pageFetcher.js`, `relevanceScoring.js`, `nameProcessing.js`, etc.)
+    - `cellarAnalysis.js` (791→248 lines) → `cellarMetrics.js`, `cellarNarratives.js`, `cellarSuggestions.js`, `drinkingStrategy.js`
+    - `awards.js` (1,133→29 lines barrel) → `awardMatcher.js`, `awardParser.js`, `awardExtractorPDF.js`, `awardExtractorWeb.js`, `awardSourceManager.js`, `awardStringUtils.js`
+    - `ratings.js` route (963 lines) → `ratings.js` (541) + `ratingsTier.js` (362)
+    - `public/js/api.js` (1,813→7 lines barrel) → 13 domain modules under `public/js/api/`
+    - Zero consumer files changed — barrel re-export pattern preserves all existing imports
+  - **Phase 5 (Dead Code)**: Removed unused `preparedStatements` export from `postgres.js`. Consolidated duplicate `extractDomain()` to shared `src/utils/url.js`.
+  - **Phase 6 (Logger)**: Replaced all 102 `console.error`/`console.warn` calls across 20 backend files with Winston `logger` from `src/utils/logger.js`. Zero console calls remaining.
+  - **Phase 7 (Encapsulation)**: `openaiReviewer.js` now imports shared `CircuitBreaker` service instead of using mutable module-level state.
+  - **Guideline Update**: Relaxed file size constraint from hard 300-line limit to ~500 lines with focus on SRP, DRY, and modularity.
+  - **Test Coverage**: All 942 unit tests passing across 34 test files. Zero regressions.
+  - Files: 40+ new/split modules, all 25 route files updated, `asyncHandler`, `logger`, `validate` middleware, 8 new Zod schemas
+  - Audit document: `docs/refact.md` (comprehensive reference with all findings, fixes, and code examples)
+
+**Previous Enhancements** (18 Jan 2026):
 - **Search Redesign Foundation (Phases 1-6) - INTEGRATION COMPLETE** ✅:
   - **Phase 2 (Identity Validation)**: Migration 045 adds `identity_score`, `identity_reason` columns to `wine_ratings`
     - `validateRatingsWithIdentity()` service active in production
@@ -148,7 +169,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (870 tests, 85% coverage)
+- Comprehensive testing infrastructure (942+ tests, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 

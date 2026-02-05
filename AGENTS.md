@@ -1335,7 +1335,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use `var` (use `const` or `let`)
 - Leave `console.log` in production code (use proper error logging)
 - Mix tabs and spaces (use 2 spaces)
-- Create files over 300 lines (split them)
+- Let files grow beyond ~500 lines without splitting by responsibility
 - Use inline styles in HTML (use CSS classes)
 - Hardcode magic numbers (use named constants)
 - Use inline event handlers (`onclick`, `onchange`) in HTML - CSP blocks them

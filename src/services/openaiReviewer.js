@@ -8,6 +8,8 @@ import OpenAI from 'openai';
 import { z } from 'zod';
 import { zodTextFormat } from 'openai/helpers/zod';
 import crypto from 'crypto';
+import logger from '../utils/logger.js';
+import { isCircuitOpen, recordSuccess, recordFailure, getCircuitStatus } from './circuitBreaker.js';
 
 // Check feature flag at runtime (not module load) to handle env var changes
 function isFeatureEnabled() {
@@ -18,39 +20,8 @@ function isForceModelEnabled() {
   return process.env.OPENAI_REVIEW_FORCE_MODEL === 'true';
 }
 
-// Simple circuit breaker to avoid repeated failures
-const circuitBreaker = {
-  failures: 0,
-  lastFailure: null,
-  isOpen: false,
-  threshold: 3,
-  resetTimeMs: 5 * 60 * 1000, // 5 minutes
-
-  recordFailure() {
-    this.failures += 1;
-    this.lastFailure = Date.now();
-    if (this.failures >= this.threshold) {
-      this.isOpen = true;
-      console.warn('[OpenAIReviewer] Circuit breaker OPEN after', this.failures, 'failures');
-    }
-  },
-
-  recordSuccess() {
-    this.failures = 0;
-    this.isOpen = false;
-  },
-
-  canAttempt() {
-    if (!this.isOpen) return true;
-    if (Date.now() - (this.lastFailure || 0) > this.resetTimeMs) {
-      this.isOpen = false;
-      this.failures = 0;
-      console.info('[OpenAIReviewer] Circuit breaker RESET');
-      return true;
-    }
-    return false;
-  }
-};
+// Circuit breaker source ID for the shared service
+const CB_SOURCE = 'openai-reviewer';
 
 const ViolationSchema = z.object({
   action_id: z.number().int().min(0).describe('Index of the action in the plan (0-based)'),
@@ -160,7 +131,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
 
   // Check feature flag at runtime
   if (!isFeatureEnabled()) {
-    console.log('[OpenAIReviewer] Skipping - feature flag not enabled. Value:', process.env.OPENAI_REVIEW_ZONE_RECONFIG);
+    logger.info('OpenAI', 'Skipping - feature flag not enabled. Value: ' + process.env.OPENAI_REVIEW_ZONE_RECONFIG);
     return {
       skipped: true,
       reason: 'Feature flag OPENAI_REVIEW_ZONE_RECONFIG not enabled',
@@ -168,7 +139,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     };
   }
 
-  if (!circuitBreaker.canAttempt()) {
+  if (isCircuitOpen(CB_SOURCE)) {
     return {
       skipped: true,
       reason: 'Circuit breaker open due to recent failures',
@@ -277,7 +248,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
         const isModelNotFound = status === 404 || code === 'model_not_found' || msg.includes('model not found');
 
         if (!forceModel && isModelNotFound && modelsToTry.indexOf(modelId) < modelsToTry.length - 1) {
-          console.warn(`[OpenAIReviewer] Model ${modelId} not available, trying fallback...`);
+          logger.warn('OpenAI', `Model ${modelId} not available, trying fallback...`);
           continue;
         }
         throw modelError; // Re-throw if not a model error or no more fallbacks
@@ -291,7 +262,7 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Check for incomplete response - treat as failure, don't retry with more tokens
     if (response.status === 'incomplete') {
       const reason = response.incomplete_details?.reason || 'unknown';
-      console.warn(`[OpenAIReviewer] Incomplete response: ${reason}`);
+      logger.warn('OpenAI', `Incomplete response: ${reason}`);
       throw new Error(`Reviewer response incomplete: ${reason}`);
     }
 
@@ -301,12 +272,12 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     // Use output_parsed from responses.parse() - already validated by SDK
     const result = response.output_parsed;
     if (!result) {
-      console.error('[OpenAIReviewer] No parsed output. Response status:', response.status);
+      logger.error('OpenAI', 'No parsed output. Response status: ' + response.status);
       throw new Error('No parsed output from model');
     }
     const latencyMs = Date.now() - startTime;
 
-    circuitBreaker.recordSuccess();
+    recordSuccess(CB_SOURCE);
 
     const telemetry = {
       plan_id: planId,
@@ -342,9 +313,9 @@ export async function reviewReconfigurationPlan(plan, context, options = {}) {
     };
   } catch (error) {
     const latencyMs = Date.now() - startTime;
-    console.error('[OpenAIReviewer] Error:', error.message);
+    logger.error('OpenAI', 'Error: ' + error.message);
 
-    circuitBreaker.recordFailure();
+    recordFailure(CB_SOURCE);
 
     return {
       skipped: true,
@@ -380,7 +351,7 @@ export function applyPatches(plan, patches) {
     const { action_id: actionId, field, old_value: oldValue, new_value: newValue, reason } = patch;
 
     if (actionId < 0 || actionId >= patchedActions.length) {
-      console.warn('[OpenAIReviewer] Invalid patch action_id:', actionId);
+      logger.warn('OpenAI', 'Invalid patch action_id: ' + actionId);
       continue;
     }
 
@@ -388,7 +359,7 @@ export function applyPatches(plan, patches) {
     const currentValue = action[field];
 
     if (oldValue !== null && currentValue !== oldValue) {
-      console.warn(`[OpenAIReviewer] Patch mismatch for action ${actionId}.${field}: expected ${oldValue}, found ${currentValue}`);
+      logger.warn('OpenAI', `Patch mismatch for action ${actionId}.${field}: expected ${oldValue}, found ${currentValue}`);
       continue;
     }
 
@@ -507,20 +478,14 @@ export async function saveTelemetry(db, telemetry, options = {}) {
       detail: error?.detail,
       hint: error?.hint
     };
-    console.error('[OpenAIReviewer] Failed to save telemetry:', error.message, extra);
+    logger.error('OpenAI', 'Failed to save telemetry: ' + error.message + ' ' + JSON.stringify(extra));
     if (swallowErrors) return null;
     throw error;
   }
 }
 
 export function getCircuitBreakerStatus() {
-  return {
-    isOpen: circuitBreaker.isOpen,
-    failures: circuitBreaker.failures,
-    threshold: circuitBreaker.threshold,
-    lastFailure: circuitBreaker.lastFailure,
-    resetTimeMs: circuitBreaker.resetTimeMs
-  };
+  return getCircuitStatus(CB_SOURCE);
 }
 
 // ============================================================================
@@ -563,7 +528,7 @@ export async function reviewCellarAdvice(advice, context, options = {}) {
     return { skipped: true, reason: 'OPENAI_REVIEW_CELLAR_ANALYSIS not enabled', originalAdvice: advice };
   }
 
-  if (!circuitBreaker.canAttempt()) {
+  if (isCircuitOpen(CB_SOURCE)) {
     return { skipped: true, reason: 'Circuit breaker open', originalAdvice: advice };
   }
 
@@ -624,7 +589,7 @@ Review the advice and flag any issues.`;
       throw new Error('No parsed output from model');
     }
 
-    circuitBreaker.recordSuccess();
+    recordSuccess(CB_SOURCE);
 
     return {
       reviewed: true,
@@ -637,8 +602,8 @@ Review the advice and flag any issues.`;
       originalAdvice: advice
     };
   } catch (error) {
-    circuitBreaker.recordFailure();
-    console.error('[OpenAIReviewer] Cellar advice review failed:', error.message);
+    recordFailure(CB_SOURCE);
+    logger.error('OpenAI', 'Cellar advice review failed: ' + error.message);
     return {
       skipped: true,
       reason: error.message,
@@ -689,7 +654,7 @@ export async function reviewZoneCapacityAdvice(advice, context, options = {}) {
     return { skipped: true, reason: 'OPENAI_REVIEW_ZONE_CAPACITY not enabled', originalAdvice: advice };
   }
 
-  if (!circuitBreaker.canAttempt()) {
+  if (isCircuitOpen(CB_SOURCE)) {
     return { skipped: true, reason: 'Circuit breaker open', originalAdvice: advice };
   }
 
@@ -752,7 +717,7 @@ Review and flag issues.`;
       throw new Error('No parsed output from model');
     }
 
-    circuitBreaker.recordSuccess();
+    recordSuccess(CB_SOURCE);
 
     return {
       reviewed: true,
@@ -765,8 +730,8 @@ Review and flag issues.`;
       originalAdvice: advice
     };
   } catch (error) {
-    circuitBreaker.recordFailure();
-    console.error('[OpenAIReviewer] Zone capacity review failed:', error.message);
+    recordFailure(CB_SOURCE);
+    logger.error('OpenAI', 'Zone capacity review failed: ' + error.message);
     return {
       skipped: true,
       reason: error.message,

@@ -10,6 +10,7 @@ import db from '../db/index.js';
 import { stringAgg, nullsLast } from '../db/helpers.js';
 import { getModelForTask } from '../config/aiModels.js';
 // Note: sanitize functions available from inputSanitizer.js if needed for user inputs
+import logger from '../utils/logger.js';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY
@@ -294,7 +295,7 @@ export async function generateDrinkRecommendations(options = {}) {
     return result;
 
   } catch (error) {
-    console.error('AI recommendation error:', error.message);
+    logger.error('DrinkNow', 'AI recommendation error: ' + error.message);
 
     // Return fallback recommendations
     return {

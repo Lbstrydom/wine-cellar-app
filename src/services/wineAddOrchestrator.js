@@ -9,6 +9,7 @@ import FEATURE_FLAGS from '../config/featureFlags.js';
 import { WineFingerprint, findAliases } from './wineFingerprint.js';
 import { searchVivinoWines } from './vivinoSearch.js';
 import { lookupWineSearchCache, storeWineSearchCache } from './searchCache.js';
+import logger from '../utils/logger.js';
 
 export const PIPELINE_VERSION = 1;
 
@@ -162,7 +163,7 @@ async function recordSearchMetrics(cellarId, fingerprint, data) {
     );
   } catch (error) {
     // Metrics should never block the pipeline
-    console.warn('[WineAdd] Metrics insert failed:', error.message);
+    logger.warn('WineAdd', 'Metrics insert failed: ' + error.message);
   }
 }
 

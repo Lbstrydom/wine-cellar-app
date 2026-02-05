@@ -233,7 +233,7 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
   }
 
   if (!cellarId) {
-    console.error(`[Ratings] Cannot save ratings: no cellar_id for wine ${wineId}`);
+    logger.error('Ratings', `Cannot save ratings: no cellar_id for wine ${wineId}`);
     return 0;
   }
 
@@ -242,13 +242,13 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
   for (const rating of ratings) {
     const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
     if (!sourceConfig) {
-      console.warn(`[Ratings] Unknown source: ${rating.source}, skipping`);
+      logger.warn('Ratings', `Unknown source: ${rating.source}, skipping`);
       continue;
     }
 
     // Skip ratings without valid scores
     if (!rating.raw_score || rating.raw_score === 'null' || rating.raw_score === '') {
-      console.warn(`[Ratings] No score found for ${rating.source}, skipping`);
+      logger.warn('Ratings', `No score found for ${rating.source}, skipping`);
       continue;
     }
 
@@ -257,7 +257,7 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
 
       // Validate normalized values
       if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
-        console.warn(`[Ratings] Invalid normalized score for ${rating.source}: ${rating.raw_score}, skipping`);
+        logger.warn('Ratings', `Invalid normalized score for ${rating.source}: ${rating.raw_score}, skipping`);
         continue;
       }
 
@@ -297,7 +297,7 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
       );
       insertedCount++;
     } catch (err) {
-      console.error(`[Ratings] Failed to insert rating from ${rating.source}: ${err.message}`);
+      logger.error('Ratings', `Failed to insert rating from ${rating.source}: ${err.message}`);
     }
   }
 

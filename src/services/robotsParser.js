@@ -7,6 +7,7 @@
 import db from '../db/index.js';
 import { semaphoredFetch } from '../utils/fetchSemaphore.js';
 import { PRODUCER_CRAWL } from '../config/scraperConfig.js';
+import logger from '../utils/logger.js';
 
 // RFC 9309 constants
 const ROBOTS_TXT_CACHE_TTL_HOURS = 24;
@@ -130,7 +131,7 @@ async function fetchRobotsTxt(domain, cached) {
         if (response.ok) {
           const contentLength = parseInt(response.headers.get('Content-Length') || '0');
           if (contentLength > MAX_ROBOTS_TXT_SIZE) {
-            console.warn(`[Robots] robots.txt too large for ${domain}: ${contentLength} bytes`);
+            logger.warn('Robots', `robots.txt too large for ${domain}: ${contentLength} bytes`);
             return { status: 'parse_error', rules: ALLOW_ALL, crawlDelay: null, content: null };
           }
 
@@ -162,7 +163,7 @@ async function fetchRobotsTxt(domain, cached) {
 
         // 5xx: Server error, use cached if available (RFC 9309 section 2.4)
         if (response.status >= 500) {
-          console.warn(`[Robots] Server error fetching robots.txt for ${domain} (${response.status})`);
+          logger.warn('Robots', `Server error fetching robots.txt for ${domain} (${response.status})`);
           if (cached?.parsed_rules) {
             return {
               status: 'server_error',
@@ -190,7 +191,7 @@ async function fetchRobotsTxt(domain, cached) {
     }
 
     // Max redirects exceeded
-    console.warn(`[Robots] Max redirects exceeded for ${domain}`);
+    logger.warn('Robots', `Max redirects exceeded for ${domain}`);
     return {
       status: 'unreachable',
       rules: cached?.parsed_rules || DISALLOW_ALL,
@@ -200,7 +201,7 @@ async function fetchRobotsTxt(domain, cached) {
 
   } catch (err) {
     // Network error or timeout (RFC 9309 section 2.4)
-    console.warn(`[Robots] Failed to fetch robots.txt for ${domain}: ${err.message}`);
+    logger.warn('Robots', `Failed to fetch robots.txt for ${domain}: ${err.message}`);
 
     if (cached?.parsed_rules) {
       console.log(`[Robots] Using stale cache for ${domain}`);
@@ -405,7 +406,7 @@ async function cacheRobotsTxt(domain, result) {
       result.error || null
     );
   } catch (err) {
-    console.warn(`[Robots] Failed to cache robots.txt for ${domain}: ${err.message}`);
+    logger.warn('Robots', `Failed to cache robots.txt for ${domain}: ${err.message}`);
   }
 }
 

@@ -5,6 +5,7 @@
 
 import express from 'express';
 import db from '../db/index.js';
+import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = express.Router();
 
@@ -16,19 +17,19 @@ const startTime = Date.now();
  * Basic health check - returns 200 if server is responding.
  * Used by load balancers for quick health probes.
  */
-router.get('/', async (_req, res) => {
+router.get('/', asyncHandler(async (_req, res) => {
   res.json({
     status: 'healthy',
     timestamp: new Date().toISOString()
   });
-});
+}));
 
 /**
  * GET /health/ready
  * Readiness check - verifies database connectivity.
  * Returns 503 if database is unavailable.
  */
-router.get('/ready', async (_req, res) => {
+router.get('/ready', asyncHandler(async (_req, res) => {
   try {
     // Test database connectivity
     await db.prepare('SELECT 1').get();
@@ -50,14 +51,14 @@ router.get('/ready', async (_req, res) => {
       error: err.message
     });
   }
-});
+}));
 
 /**
  * GET /health/live
  * Liveness check - detailed health with metrics.
  * Used for monitoring dashboards.
  */
-router.get('/live', async (_req, res) => {
+router.get('/live', asyncHandler(async (_req, res) => {
   const uptimeMs = Date.now() - startTime;
   const uptimeSeconds = Math.floor(uptimeMs / 1000);
 
@@ -100,7 +101,7 @@ router.get('/live', async (_req, res) => {
       unit: 'MB'
     }
   });
-});
+}));
 
 /**
  * Format uptime in human-readable format.

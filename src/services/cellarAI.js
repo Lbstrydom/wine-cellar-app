@@ -7,6 +7,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { getModelForTask } from '../config/aiModels.js';
 import { reviewCellarAdvice, isCellarAnalysisReviewEnabled } from './openaiReviewer.js';
+import logger from '../utils/logger.js';
 
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
@@ -77,7 +78,7 @@ export async function getCellarOrganisationAdvice(analysisReport) {
     } catch (err) {
       attempts++;
       if (attempts >= maxAttempts) {
-        console.error('[CellarAI] Failed to get valid response:', err.message);
+        logger.error('CellarAI', 'Failed to get valid response: ' + err.message);
         return {
           success: false,
           error: `Failed to get valid AI response: ${err.message}`,

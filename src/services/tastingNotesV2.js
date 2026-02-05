@@ -13,6 +13,7 @@ import {
   toDisplayFormat
 } from './vocabularyNormaliser.js';
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 /**
  * Schema version for structured tasting notes.
@@ -569,7 +570,7 @@ export async function saveWineTastingNotes(wineId, notes) {
         );
       } catch (err) {
         // Ignore duplicate source errors
-        console.warn(`[TastingNotes] Could not save source: ${err.message}`);
+        logger.warn('TastingNotes', 'Could not save source: ' + err.message);
       }
     }
   }

@@ -21,6 +21,7 @@ import healthRoutes from './routes/health.js';
 import { errorHandler, notFoundHandler } from './utils/errorResponse.js';
 import { metricsMiddleware, metricsHandler } from './middleware/metrics.js';
 import { logServiceStatus } from './config/serviceAvailability.js';
+import logger from './utils/logger.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -94,7 +95,7 @@ setInterval(() => {
     const result = purgeExpiredCache();
     console.log('[Cache] Cleanup complete:', result);
   } catch (err) {
-    console.error('[Cache] Cleanup failed:', err.message);
+    logger.error('Cache', 'Cleanup failed: ' + err.message);
   }
 }, CACHE_CLEANUP_INTERVAL);
 
@@ -128,7 +129,7 @@ async function gracefulShutdown(signal) {
     console.log('[Server] Graceful shutdown complete');
     process.exit(0);
   } catch (err) {
-    console.error('[Server] Error during shutdown:', err);
+    logger.error('Server', 'Error during shutdown: ' + err.message);
     process.exit(1);
   }
 }

@@ -8,6 +8,7 @@
 import jwt from 'jsonwebtoken';
 import { createPublicKey } from 'crypto';
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 // Cache JWKS keys to avoid repeated fetches
 let cachedJwks = null;
@@ -35,7 +36,7 @@ async function getSupabaseJwks() {
 
     return cachedJwks;
   } catch (err) {
-    console.error('Failed to fetch JWKS:', err);
+    logger.error('Auth', 'Failed to fetch JWKS: ' + err.message);
     throw err;
   }
 }
@@ -175,7 +176,7 @@ export async function requireAuth(req, res, next) {
     req.user = profile;
     next();
   } catch (err) {
-    console.error('Auth middleware error:', err);
+    logger.error('Auth', 'Auth middleware error: ' + err.message);
     res.status(401).json({ error: 'Authentication failed' });
   }
 }
@@ -202,85 +203,66 @@ async function createFirstTimeUser(authUser, inviteCode) {
   }
 
   try {
-    // Atomic transaction (includes invite validation)
-    await db.prepare('BEGIN').run();
-
-    try {
+    const result = await db.transaction(async (client) => {
       // CRITICAL: Use FOR UPDATE to lock invite row, preventing race condition
       // This prevents two concurrent signups from both passing the use_count check
-      const invite = await db.prepare(`
+      const { rows: [invite] } = await client.query(`
         SELECT code, max_uses, use_count, expires_at
         FROM invites
         WHERE code = $1
         FOR UPDATE
-      `).get(inviteCode);
+      `, [inviteCode]);
 
-      if (!invite) {
-        await db.prepare('ROLLBACK').run();
-        return null;
-      }
+      if (!invite) return null;
 
       // Validate expiry and use count within transaction
-      if (invite.expires_at && invite.expires_at <= new Date()) {
-        await db.prepare('ROLLBACK').run();
-        return null;  // Expired
-      }
-
-      if (invite.max_uses !== null && invite.use_count >= invite.max_uses) {
-        await db.prepare('ROLLBACK').run();
-        return null;  // Maxed out
-      }
+      if (invite.expires_at && invite.expires_at <= new Date()) return null;
+      if (invite.max_uses !== null && invite.use_count >= invite.max_uses) return null;
 
       // 1. Create profile
-      const profile = await db.prepare(`
+      const { rows: [profile] } = await client.query(`
         INSERT INTO profiles (id, email, display_name, avatar_url)
         VALUES ($1, $2, $3, $4)
         RETURNING id, email, display_name, avatar_url, active_cellar_id, cellar_quota, bottle_quota, tier
-      `).get(
+      `, [
         authUser.sub,  // sub = user ID in JWT
         authUser.email,
         authUser.name || authUser.email.split('@')[0],
         authUser.picture || null
-      );
+      ]);
 
       // 2. Create default cellar
-      const cellar = await db.prepare(`
+      const { rows: [cellar] } = await client.query(`
         INSERT INTO cellars (name, created_by)
         VALUES ($1, $2)
         RETURNING id
-      `).get('My Cellar', profile.id);
+      `, ['My Cellar', profile.id]);
 
       // 3. Create membership (owner)
-      await db.prepare(`
+      await client.query(`
         INSERT INTO cellar_memberships (cellar_id, user_id, role)
         VALUES ($1, $2, 'owner')
-      `).run(cellar.id, profile.id);
+      `, [cellar.id, profile.id]);
 
       // 4. Set active cellar
-      await db.prepare(`
+      await client.query(`
         UPDATE profiles SET active_cellar_id = $1 WHERE id = $2
-      `).run(cellar.id, profile.id);
+      `, [cellar.id, profile.id]);
 
       // 5. Increment invite use_count
-      await db.prepare(`
+      await client.query(`
         UPDATE invites
         SET use_count = use_count + 1, used_by = $1, used_at = NOW()
         WHERE code = $2
-      `).run(profile.id, inviteCode);
-
-      await db.prepare('COMMIT').run();
+      `, [profile.id, inviteCode]);
 
       // Return profile with active_cellar_id
       return { ...profile, active_cellar_id: cellar.id };
+    });
 
-    } catch (err) {
-      await db.prepare('ROLLBACK').run();
-      console.error('First-time user setup failed:', err);
-      return null;
-    }
+    return result;
   } catch (err) {
-    // Outer catch for any unexpected errors (JWKS fetch, etc.)
-    console.error('Invite validation error:', err);
+    logger.error('Auth', 'First-time user setup failed: ' + err.message);
     return null;
   }
 }

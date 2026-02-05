@@ -6,6 +6,8 @@
 
 import { Router } from 'express';
 import { searchVivinoWines, getVivinoWineDetails } from '../services/vivinoSearch.js';
+import { asyncHandler } from '../utils/errorResponse.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -84,81 +86,75 @@ function extractProducer(wineName) {
  * Search for wines (returns candidates for confirmation).
  * @route POST /api/wine-search
  */
-router.post('/', async (req, res) => {
-  try {
-    const { wineName, producer, vintage, country, colour } = req.body;
+router.post('/', asyncHandler(async (req, res) => {
+  const { wineName, producer, vintage, country, colour } = req.body;
 
-    if (!wineName && !producer) {
-      return res.status(400).json({ error: 'Wine name or producer required' });
-    }
-
-    // Build search query - prefer explicit producer, fall back to extraction
-    const effectiveProducer = producer || extractProducer(wineName);
-
-    // Search Vivino
-    const vivinoResults = await searchVivinoWines({
-      query: wineName,
-      producer: effectiveProducer,
-      vintage: vintage ? parseInt(vintage) : null,
-      country: countryToCode(country),
-      colour: colour?.toLowerCase()
-    });
-
-    if (vivinoResults.error) {
-      console.warn('Wine search warning:', vivinoResults.error);
-    }
-
-    // Filter by colour if specified
-    let filteredMatches = vivinoResults.matches;
-    if (colour) {
-      const colourLower = colour.toLowerCase();
-      filteredMatches = vivinoResults.matches.filter(wine => {
-        const wineName = (wine.name || '').toLowerCase();
-        const grape = (wine.grapeVariety || '').toLowerCase();
-
-        // White wine indicators
-        const isWhite = wineName.includes('blanc') ||
-          wineName.includes('white') ||
-          grape.includes('chardonnay') ||
-          grape.includes('sauvignon blanc') ||
-          grape.includes('riesling') ||
-          grape.includes('roussanne') ||
-          grape.includes('viognier') ||
-          grape.includes('chenin');
-
-        // Rosé wine indicators
-        const isRose = wineName.includes('rosé') ||
-          wineName.includes('rose') ||
-          grape.includes('rosé');
-
-        // Match logic
-        if (colourLower === 'white') return isWhite;
-        if (colourLower === 'rosé' || colourLower === 'rose') return isRose;
-        if (colourLower === 'red') return !isWhite && !isRose;
-
-        return true; // Unknown colour, include all
-      });
-
-      // If filtering removed all results, fall back to unfiltered
-      if (filteredMatches.length === 0) {
-        console.warn(`Colour filter (${colour}) removed all results, falling back to unfiltered`);
-        filteredMatches = vivinoResults.matches;
-      }
-    }
-
-    // Format response
-    res.json({
-      query: { wineName, producer: effectiveProducer, vintage, country, colour },
-      matches: filteredMatches.slice(0, 8),
-      searchedAt: new Date().toISOString(),
-      error: vivinoResults.error
-    });
-
-  } catch (error) {
-    console.error('Wine search error:', error);
-    res.status(500).json({ error: 'Failed to search for wines' });
+  if (!wineName && !producer) {
+    return res.status(400).json({ error: 'Wine name or producer required' });
   }
-});
+
+  // Build search query - prefer explicit producer, fall back to extraction
+  const effectiveProducer = producer || extractProducer(wineName);
+
+  // Search Vivino
+  const vivinoResults = await searchVivinoWines({
+    query: wineName,
+    producer: effectiveProducer,
+    vintage: vintage ? parseInt(vintage) : null,
+    country: countryToCode(country),
+    colour: colour?.toLowerCase()
+  });
+
+  if (vivinoResults.error) {
+    logger.warn('WineSearch', 'Wine search warning: ' + vivinoResults.error);
+  }
+
+  // Filter by colour if specified
+  let filteredMatches = vivinoResults.matches;
+  if (colour) {
+    const colourLower = colour.toLowerCase();
+    filteredMatches = vivinoResults.matches.filter(wine => {
+      const wineName = (wine.name || '').toLowerCase();
+      const grape = (wine.grapeVariety || '').toLowerCase();
+
+      // White wine indicators
+      const isWhite = wineName.includes('blanc') ||
+        wineName.includes('white') ||
+        grape.includes('chardonnay') ||
+        grape.includes('sauvignon blanc') ||
+        grape.includes('riesling') ||
+        grape.includes('roussanne') ||
+        grape.includes('viognier') ||
+        grape.includes('chenin');
+
+      // Rosé wine indicators
+      const isRose = wineName.includes('rosé') ||
+        wineName.includes('rose') ||
+        grape.includes('rosé');
+
+      // Match logic
+      if (colourLower === 'white') return isWhite;
+      if (colourLower === 'rosé' || colourLower === 'rose') return isRose;
+      if (colourLower === 'red') return !isWhite && !isRose;
+
+      return true; // Unknown colour, include all
+    });
+
+    // If filtering removed all results, fall back to unfiltered
+    if (filteredMatches.length === 0) {
+      logger.warn('WineSearch', `Colour filter (${colour}) removed all results, falling back to unfiltered`);
+      filteredMatches = vivinoResults.matches;
+    }
+  }
+
+  // Format response
+  res.json({
+    query: { wineName, producer: effectiveProducer, vintage, country, colour },
+    matches: filteredMatches.slice(0, 8),
+    searchedAt: new Date().toISOString(),
+    error: vivinoResults.error
+  });
+}));
 
 /**
  * Check if wine search feature is available.
@@ -176,26 +172,20 @@ router.get('/status', (req, res) => {
  * Get detailed wine info by Vivino ID.
  * @route GET /api/wine-search/vivino/:id
  */
-router.get('/vivino/:id', async (req, res) => {
-  try {
-    const wineId = parseInt(req.params.id);
+router.get('/vivino/:id', asyncHandler(async (req, res) => {
+  const wineId = parseInt(req.params.id);
 
-    if (!wineId || isNaN(wineId)) {
-      return res.status(400).json({ error: 'Invalid wine ID' });
-    }
-
-    const details = await getVivinoWineDetails(wineId);
-
-    if (!details) {
-      return res.status(404).json({ error: 'Wine not found' });
-    }
-
-    res.json(details);
-
-  } catch (error) {
-    console.error('Wine details error:', error);
-    res.status(500).json({ error: 'Failed to fetch wine details' });
+  if (!wineId || isNaN(wineId)) {
+    return res.status(400).json({ error: 'Invalid wine ID' });
   }
-});
+
+  const details = await getVivinoWineDetails(wineId);
+
+  if (!details) {
+    return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  res.json(details);
+}));
 
 export default router;

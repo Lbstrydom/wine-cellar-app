@@ -3,6 +3,8 @@
  * @module utils/errorResponse
  */
 
+import logger from './logger.js';
+
 /**
  * Standard error codes.
  * @readonly
@@ -142,7 +144,7 @@ export function errorHandler(err, req, res, next) {
   }
 
   // Log unexpected errors
-  console.error('[Error]', err);
+  logger.error('Error', err.message || String(err));
 
   // Generic error response
   const statusCode = err.statusCode || err.status || 500;

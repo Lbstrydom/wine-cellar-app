@@ -14,6 +14,9 @@ import {
   CONFIDENCE_LEVELS_EXPORT as CONFIDENCE_LEVELS
 } from '../services/acquisitionWorkflow.js';
 import logger from '../utils/logger.js';
+import { asyncHandler } from '../utils/errorResponse.js';
+import { validateBody } from '../middleware/validate.js';
+import { parseImageSchema, suggestPlacementSchema, enrichSchema, workflowSchema, saveAcquiredSchema } from '../schemas/acquisition.js';
 
 const router = Router();
 
@@ -24,27 +27,18 @@ const router = Router();
  * @body {string} mediaType - MIME type (image/jpeg, image/png, etc.)
  * @returns {Object} Parsed wines with confidence data
  */
-router.post('/parse-image', async (req, res) => {
+router.post('/parse-image', validateBody(parseImageSchema), asyncHandler(async (req, res) => {
   const { image, mediaType } = req.body;
 
-  if (!image || !mediaType) {
-    return res.status(400).json({ error: 'image and mediaType are required' });
-  }
+  const result = await parseWineWithConfidence(image, mediaType);
 
-  try {
-    const result = await parseWineWithConfidence(image, mediaType);
-
-    res.json({
-      wines: result.wines,
-      confidence: result.confidence,
-      parse_notes: result.parse_notes,
-      confidence_levels: CONFIDENCE_LEVELS
-    });
-  } catch (error) {
-    logger.error('Acquisition', `Parse image error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.json({
+    wines: result.wines,
+    confidence: result.confidence,
+    parse_notes: result.parse_notes,
+    confidence_levels: CONFIDENCE_LEVELS
+  });
+}));
 
 /**
  * Get placement suggestion for a wine (zone + fridge eligibility).
@@ -52,21 +46,12 @@ router.post('/parse-image', async (req, res) => {
  * @body {Object} wine - Wine data
  * @returns {Object} Placement suggestions
  */
-router.post('/suggest-placement', async (req, res) => {
+router.post('/suggest-placement', validateBody(suggestPlacementSchema), asyncHandler(async (req, res) => {
   const { wine } = req.body;
 
-  if (!wine) {
-    return res.status(400).json({ error: 'wine object is required' });
-  }
-
-  try {
-    const placement = await suggestPlacement(wine);
-    res.json(placement);
-  } catch (error) {
-    logger.error('Acquisition', `Placement suggestion error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const placement = await suggestPlacement(wine);
+  res.json(placement);
+}));
 
 /**
  * Enrich wine with ratings and drinking windows.
@@ -75,21 +60,12 @@ router.post('/suggest-placement', async (req, res) => {
  * @body {Object} wine - Wine data (with optional id for DB wine)
  * @returns {Object} Enrichment data
  */
-router.post('/enrich', async (req, res) => {
+router.post('/enrich', validateBody(enrichSchema), asyncHandler(async (req, res) => {
   const { wine } = req.body;
 
-  if (!wine || !wine.wine_name) {
-    return res.status(400).json({ error: 'wine object with wine_name is required' });
-  }
-
-  try {
-    const enrichment = await enrichWineData(wine);
-    res.json(enrichment);
-  } catch (error) {
-    logger.error('Acquisition', `Enrichment error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
+  const enrichment = await enrichWineData(wine);
+  res.json(enrichment);
+}));
 
 /**
  * Run complete acquisition workflow.
@@ -102,7 +78,7 @@ router.post('/enrich', async (req, res) => {
  * @body {boolean} [skipEnrichment] - Skip ratings/windows fetch
  * @returns {Object} Workflow result with wines, placement, enrichment
  */
-router.post('/workflow', async (req, res) => {
+router.post('/workflow', validateBody(workflowSchema), asyncHandler(async (req, res) => {
   const {
     image,
     mediaType,
@@ -111,27 +87,16 @@ router.post('/workflow', async (req, res) => {
     skipEnrichment
   } = req.body;
 
-  if (!image && !text && !confirmedData) {
-    return res.status(400).json({
-      error: 'One of image, text, or confirmedData is required'
-    });
-  }
+  const result = await runAcquisitionWorkflow({
+    base64Image: image,
+    mediaType,
+    text,
+    confirmedData,
+    skipEnrichment
+  });
 
-  try {
-    const result = await runAcquisitionWorkflow({
-      base64Image: image,
-      mediaType,
-      text,
-      confirmedData,
-      skipEnrichment
-    });
-
-    res.json(result);
-  } catch (error) {
-    logger.error('Acquisition', `Workflow error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.json(result);
+}));
 
 /**
  * Save wine from acquisition workflow.
@@ -143,26 +108,17 @@ router.post('/workflow', async (req, res) => {
  * @body {boolean} [addToFridge] - Add to fridge if eligible
  * @returns {Object} Save result with wineId and slots
  */
-router.post('/save', async (req, res) => {
+router.post('/save', validateBody(saveAcquiredSchema), asyncHandler(async (req, res) => {
   const { wine, slot, quantity, addToFridge } = req.body;
 
-  if (!wine || !wine.wine_name) {
-    return res.status(400).json({ error: 'wine object with wine_name is required' });
-  }
+  const result = await saveAcquiredWine(wine, {
+    slot,
+    quantity,
+    addToFridge
+  });
 
-  try {
-    const result = await saveAcquiredWine(wine, {
-      slot,
-      quantity,
-      addToFridge
-    });
-
-    res.status(201).json(result);
-  } catch (error) {
-    logger.error('Acquisition', `Save error: ${error.message}`);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.status(201).json(result);
+}));
 
 /**
  * Get confidence level definitions.

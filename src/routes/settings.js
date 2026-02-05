@@ -7,6 +7,9 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { encrypt, decrypt, isConfigured } from '../services/encryption.js';
 import logger from '../utils/logger.js';
+import { asyncHandler } from '../utils/errorResponse.js';
+import { validateBody, validateParams } from '../middleware/validate.js';
+import { settingsKeySchema, updateSettingSchema, sourceParamSchema, saveCredentialSchema } from '../schemas/settings.js';
 
 const router = Router();
 
@@ -14,41 +17,31 @@ const router = Router();
  * Get all settings for this cellar.
  * @route GET /api/settings
  */
-router.get('/', async (req, res) => {
-  try {
-    const settings = await db.prepare('SELECT key, value FROM user_settings WHERE cellar_id = $1').all(req.cellarId);
-    const result = {};
-    for (const s of settings) {
-      result[s.key] = s.value;
-    }
-    res.json(result);
-  } catch (error) {
-    console.error('Get settings error:', error);
-    res.status(500).json({ error: error.message });
+router.get('/', asyncHandler(async (req, res) => {
+  const settings = await db.prepare('SELECT key, value FROM user_settings WHERE cellar_id = $1').all(req.cellarId);
+  const result = {};
+  for (const s of settings) {
+    result[s.key] = s.value;
   }
-});
+  res.json(result);
+}));
 
 /**
  * Update a setting for this cellar.
  * @route PUT /api/settings/:key
  */
-router.put('/:key', async (req, res) => {
-  try {
-    const { key } = req.params;
-    const { value } = req.body;
+router.put('/:key', validateParams(settingsKeySchema), validateBody(updateSettingSchema), asyncHandler(async (req, res) => {
+  const { key } = req.params;
+  const { value } = req.body;
 
-    await db.prepare(`
-      INSERT INTO user_settings (cellar_id, key, value, updated_at)
-      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-      ON CONFLICT(cellar_id, key) DO UPDATE SET value = $3, updated_at = CURRENT_TIMESTAMP
-    `).run(req.cellarId, key, value);
+  await db.prepare(`
+    INSERT INTO user_settings (cellar_id, key, value, updated_at)
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    ON CONFLICT(cellar_id, key) DO UPDATE SET value = $3, updated_at = CURRENT_TIMESTAMP
+  `).run(req.cellarId, key, value);
 
-    res.json({ message: 'Setting updated' });
-  } catch (error) {
-    console.error('Update setting error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  res.json({ message: 'Setting updated' });
+}));
 
 // ============================================
 // Credential Management Endpoints
@@ -58,120 +51,95 @@ router.put('/:key', async (req, res) => {
  * Get configured credential sources for this cellar (no sensitive data).
  * @route GET /api/settings/credentials
  */
-router.get('/credentials', async (req, res) => {
-  try {
-    const credentials = await db.prepare(`
-      SELECT source_id, auth_status, last_used_at, created_at, updated_at,
-             CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
-      FROM source_credentials
-      WHERE cellar_id = $1
-    `).all(req.cellarId);
+router.get('/credentials', asyncHandler(async (req, res) => {
+  const credentials = await db.prepare(`
+    SELECT source_id, auth_status, last_used_at, created_at, updated_at,
+           CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
+    FROM source_credentials
+    WHERE cellar_id = $1
+  `).all(req.cellarId);
 
-    // Decrypt usernames for display (masked)
-    const result = [];
-    for (const cred of credentials) {
-      let maskedUsername = null;
-      if (cred.has_username) {
-        const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE cellar_id = $1 AND source_id = $2')
-          .get(req.cellarId, cred.source_id);
-        const username = decrypt(row?.username_encrypted);
-        if (username) {
-          // Mask email: show first 2 chars + ... + domain
-          const atIndex = username.indexOf('@');
-          if (atIndex > 2) {
-            maskedUsername = username.substring(0, 2) + '***' + username.substring(atIndex);
-          } else {
-            maskedUsername = username.substring(0, 2) + '***';
-          }
+  // Decrypt usernames for display (masked)
+  const result = [];
+  for (const cred of credentials) {
+    let maskedUsername = null;
+    if (cred.has_username) {
+      const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE cellar_id = $1 AND source_id = $2')
+        .get(req.cellarId, cred.source_id);
+      const username = decrypt(row?.username_encrypted);
+      if (username) {
+        // Mask email: show first 2 chars + ... + domain
+        const atIndex = username.indexOf('@');
+        if (atIndex > 2) {
+          maskedUsername = username.substring(0, 2) + '***' + username.substring(atIndex);
+        } else {
+          maskedUsername = username.substring(0, 2) + '***';
         }
       }
-
-      result.push({
-        source_id: cred.source_id,
-        auth_status: cred.auth_status,
-        last_used_at: cred.last_used_at,
-        has_credentials: cred.has_username === 1,
-        masked_username: maskedUsername
-      });
     }
 
-    res.json({
-      encryption_configured: isConfigured(),
-      credentials: result
+    result.push({
+      source_id: cred.source_id,
+      auth_status: cred.auth_status,
+      last_used_at: cred.last_used_at,
+      has_credentials: cred.has_username === 1,
+      masked_username: maskedUsername
     });
-  } catch (error) {
-    console.error('Get credentials error:', error);
-    res.status(500).json({ error: error.message });
   }
-});
+
+  res.json({
+    encryption_configured: isConfigured(),
+    credentials: result
+  });
+}));
 
 /**
  * Save credentials for a source.
  * @route PUT /api/settings/credentials/:source
  */
-router.put('/credentials/:source', async (req, res) => {
-  try {
-    const { source } = req.params;
-    const { username, password } = req.body;
+router.put('/credentials/:source', validateParams(sourceParamSchema), validateBody(saveCredentialSchema), asyncHandler(async (req, res) => {
+  const { source } = req.params;
+  const { username, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ error: 'Username and password required' });
-    }
+  const usernameEncrypted = encrypt(username);
+  const passwordEncrypted = encrypt(password);
 
-    // CellarTracker removed - their API only searches user's personal cellar, not useful for ratings
-    const validSources = ['vivino', 'decanter'];
-    if (!validSources.includes(source)) {
-      return res.status(400).json({ error: `Invalid source. Must be one of: ${validSources.join(', ')}` });
-    }
+  await db.prepare(`
+    INSERT INTO source_credentials (cellar_id, source_id, username_encrypted, password_encrypted, auth_status, updated_at)
+    VALUES ($1, $2, $3, $4, 'none', CURRENT_TIMESTAMP)
+    ON CONFLICT(cellar_id, source_id) DO UPDATE SET
+      username_encrypted = $3,
+      password_encrypted = $4,
+      auth_status = 'none',
+      updated_at = CURRENT_TIMESTAMP
+  `).run(req.cellarId, source, usernameEncrypted, passwordEncrypted);
 
-    const usernameEncrypted = encrypt(username);
-    const passwordEncrypted = encrypt(password);
-
-    await db.prepare(`
-      INSERT INTO source_credentials (cellar_id, source_id, username_encrypted, password_encrypted, auth_status, updated_at)
-      VALUES ($1, $2, $3, $4, 'none', CURRENT_TIMESTAMP)
-      ON CONFLICT(cellar_id, source_id) DO UPDATE SET
-        username_encrypted = $3,
-        password_encrypted = $4,
-        auth_status = 'none',
-        updated_at = CURRENT_TIMESTAMP
-    `).run(req.cellarId, source, usernameEncrypted, passwordEncrypted);
-
-    logger.info('Settings', `Credentials saved for ${source}`);
-    res.json({ message: 'Credentials saved', source_id: source });
-  } catch (error) {
-    console.error('Save credentials error:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+  logger.info('Settings', `Credentials saved for ${source}`);
+  res.json({ message: 'Credentials saved', source_id: source });
+}));
 
 /**
  * Delete credentials for a source.
  * @route DELETE /api/settings/credentials/:source
  */
-router.delete('/credentials/:source', async (req, res) => {
-  try {
-    const { source } = req.params;
+router.delete('/credentials/:source', validateParams(sourceParamSchema), asyncHandler(async (req, res) => {
+  const { source } = req.params;
 
-    const result = await db.prepare('DELETE FROM source_credentials WHERE cellar_id = $1 AND source_id = $2').run(req.cellarId, source);
+  const result = await db.prepare('DELETE FROM source_credentials WHERE cellar_id = $1 AND source_id = $2').run(req.cellarId, source);
 
-    if (result.changes === 0) {
-      return res.status(404).json({ error: 'Credentials not found' });
-    }
-
-    logger.info('Settings', `Credentials deleted for ${source}`);
-    res.json({ message: 'Credentials deleted' });
-  } catch (error) {
-    console.error('Delete credentials error:', error);
-    res.status(500).json({ error: error.message });
+  if (result.changes === 0) {
+    return res.status(404).json({ error: 'Credentials not found' });
   }
-});
+
+  logger.info('Settings', `Credentials deleted for ${source}`);
+  res.json({ message: 'Credentials deleted' });
+}));
 
 /**
  * Test credentials for a source.
  * @route POST /api/settings/credentials/:source/test
  */
-router.post('/credentials/:source/test', async (req, res) => {
+router.post('/credentials/:source/test', validateParams(sourceParamSchema), asyncHandler(async (req, res) => {
   const { source } = req.params;
 
   try {
@@ -220,7 +188,7 @@ router.post('/credentials/:source/test', async (req, res) => {
     `).run('failed', req.cellarId, source);
     res.status(500).json({ error: error.message });
   }
-});
+}));
 
 /**
  * Test Vivino credentials.

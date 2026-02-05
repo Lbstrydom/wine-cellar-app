@@ -39,3 +39,79 @@ export {
   addToSlotSchema,
   drinkBottleSchema
 } from './slot.js';
+
+// Cellar schemas
+export {
+  createCellarSchema,
+  updateCellarSchema
+} from './cellar.js';
+
+// Pairing schemas
+export {
+  suggestPairingSchema,
+  naturalPairingSchema,
+  chatMessageSchema,
+  extractSignalsSchema,
+  shortlistSchema,
+  hybridPairingSchema,
+  sessionChooseSchema,
+  sessionFeedbackSchema,
+  sessionIdSchema
+} from './pairing.js';
+
+// Settings schemas
+export {
+  settingsKeySchema,
+  updateSettingSchema,
+  sourceParamSchema,
+  saveCredentialSchema
+} from './settings.js';
+
+// Awards schemas
+export {
+  addCompetitionSchema,
+  importWebpageSchema,
+  importTextSchema,
+  linkAwardSchema,
+  searchAwardsQuerySchema,
+  awardIdSchema,
+  sourceIdSchema,
+  awardWineIdSchema
+} from './awards.js';
+
+// Acquisition schemas
+export {
+  parseImageSchema as acquisitionParseImageSchema,
+  suggestPlacementSchema,
+  enrichSchema,
+  workflowSchema,
+  saveAcquiredSchema
+} from './acquisition.js';
+
+// Palate profile schemas
+export {
+  feedbackSchema,
+  palateWineIdSchema,
+  recommendationsQuerySchema
+} from './palateProfile.js';
+
+// Storage area schemas
+export {
+  createStorageAreaSchema,
+  updateStorageAreaSchema,
+  updateLayoutSchema,
+  fromTemplateSchema,
+  storageAreaIdSchema
+} from './storageArea.js';
+
+// Rating schemas
+export {
+  ratingWineIdSchema,
+  ratingParamsSchema,
+  ratingsQuerySchema,
+  addRatingSchema,
+  overrideRatingSchema,
+  fetchAsyncSchema,
+  batchFetchSchema,
+  jobIdSchema
+} from './rating.js';

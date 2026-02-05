@@ -7,6 +7,7 @@
 import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../config/fridgeParLevels.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 /**
  * Categorise a wine into a fridge par-level category.
@@ -444,11 +445,11 @@ export function suggestFridgeOrganization(fridgeWines) {
 
     // Safety checks to prevent duplicate allocations
     if (allocatedTargets.has(targetSlot)) {
-      console.warn(`[FridgeOrganize] Target ${targetSlot} already allocated, skipping wine ${wine.id}`);
+      logger.warn('FridgeOrganize', `Target ${targetSlot} already allocated, skipping wine ${wine.id}`);
       return;
     }
     if (movedWines.has(wine.id)) {
-      console.warn(`[FridgeOrganize] Wine ${wine.id} already has a move, skipping`);
+      logger.warn('FridgeOrganize', `Wine ${wine.id} already has a move, skipping`);
       return;
     }
 
