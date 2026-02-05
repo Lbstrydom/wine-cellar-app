@@ -178,19 +178,37 @@
       font-weight: 500;  /* Increase weight for readability */
     }
 
+    /* CRITICAL: Override empty slot opacity suppression in light mode */
+    .slot.empty {
+      opacity: 0.75;  /* Lighter suppression vs dark mode 0.4 */
+    }
+
+    .slot.empty:hover {
+      opacity: 0.9;  /* More visible on hover */
+    }
+
     /* Phase 3.5.2: Strengthen primary CTA (WCAG + 60-30-10 accent layer) */
     .btn-primary,
     .confirm-dialog-confirm {
-      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-      border: 1px solid rgba(0, 0, 0, 0.1);
+      box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
+      border: 1px solid rgba(0, 0, 0, 0.15);
       font-weight: 600;
+      background: var(--accent);
+      /* Darken accent slightly for more pop */
+      filter: brightness(0.95);
+    }
+
+    .btn-primary:hover,
+    .confirm-dialog-confirm:hover {
+      filter: brightness(0.9);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
     }
 
     /* Phase 3.5.3: Figure-ground separation (60-30-10 card layer) */
     .slot,
     .wine-card,
-    .modal-content,
-    .settings-panel {
+    .modal,  /* Fixed: was .modal-content */
+    .settings-section {  /* Fixed: was .settings-panel */
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
     }
 
@@ -242,19 +260,36 @@
     font-weight: 500;
   }
 
+  /* CRITICAL: Override empty slot opacity suppression */
+  .slot.empty {
+    opacity: 0.75;
+  }
+
+  .slot.empty:hover {
+    opacity: 0.9;
+  }
+
   /* Phase 3.5.2: Strengthen primary CTA */
   .btn-primary,
   .confirm-dialog-confirm {
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.15);
-    border: 1px solid rgba(0, 0, 0, 0.1);
+    box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
+    border: 1px solid rgba(0, 0, 0, 0.15);
     font-weight: 600;
+    background: var(--accent);
+    filter: brightness(0.95);
+  }
+
+  .btn-primary:hover,
+  .confirm-dialog-confirm:hover {
+    filter: brightness(0.9);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25), 0 2px 4px rgba(0, 0, 0, 0.15);
   }
 
   /* Phase 3.5.3: Figure-ground separation */
   .slot,
   .wine-card,
-  .modal-content,
-  .settings-panel {
+  .modal,  /* Fixed: was .modal-content */
+  .settings-section {  /* Fixed: was .settings-panel */
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
   }
 

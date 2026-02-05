@@ -659,13 +659,15 @@ else if (slot.windowStatus) slotEl.classList.add('has-window');
 **Impact**: Slots now show max 2 color signals (wine-type + one status), reducing cognitive load and improving scannability.
 
 > **Implementation notes (2026-02-05):**
-> - **3.5.1-3.5.3**: CSS fixes applied to `themes.css` - slot text contrast (#3E352D, 9.8:1), CTA emphasis (shadow + border + font-weight), figure-ground shadows for cards/slots.
+> - **3.5.1**: Slot text contrast fix applied - #3E352D (9.8:1 ratio), removed opacity: 0.6, added font-weight: 500. CRITICAL FIX: Overrode .slot.empty opacity to 0.75 in light mode (vs dark mode 0.4) to prevent parent opacity from suppressing child text readability.
+> - **3.5.2**: CTA emphasis strengthened - double-layer shadow (0 3px 8px + 0 1px 3px), 1px border, font-weight: 600, filter: brightness(0.95) for darker accent background, hover state with brightness(0.9) and stronger shadow for clear visual hierarchy.
+> - **3.5.3**: Figure-ground separation applied - 0 1px 3px shadow on base, 0 2px 6px on hover. CRITICAL FIX: Corrected selector mismatches (.modal-content → .modal, .settings-panel → .settings-section) to target actual DOM elements.
 > - **3.5.4**: Verified wine-type uses LEFT border, priority badge positioned TOP-RIGHT (spatial separation already correct in implementation).
-> - **3.5.5**: Color signal hierarchy implemented - slots now limit to 2 simultaneous signals (wine-type + highest priority status).
-> - Cache bumped: `sw.js` `CACHE_VERSION` → `v75`, CSS version strings → `?v=20260205g`.
+> - **3.5.5**: **NOT IMPLEMENTED** - Documented strategy only. Requires JS changes in grid.js to add has-urgency/has-window classes and corresponding CSS selectors. Deferred to future phase.
+> - Cache bumped: `sw.js` `CACHE_VERSION` → `v75`, CSS version strings → `?v=20260205g` (subsequent fix: v75 → v76, 20260205g → 20260205h).
 > - All 942 unit tests pass.
 >
-> **Phase 3.5 status: DONE. Light mode WCAG AA compliance restored. Phase 3 fully complete and ready for final acceptance signoff.**
+> **Phase 3.5 status: CODE COMPLETE (with critical audit fixes). 3.5.1-3.5.4 implemented, 3.5.5 pending. Light mode WCAG AA compliance restored. Ready for visual QA.**
 
 ---
 
