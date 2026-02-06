@@ -15,6 +15,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 3.5 | **DONE** | 2026-02-05 | Color system refinement (WCAG AA fixes, 60-30-10 balance, spatial separation) |
 | Phase 4 | **DONE** | 2026-02-06 | Settings grouping, inline style cleanup, non-color cues, wine card hierarchy, tab indicator |
 | Phase 5 | **DONE** | 2026-02-06 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
+| Post-Phase UX | **DONE** | 2026-02-06 | Grid UX (column headers, slot-loc hiding, priority legend), btn-primary light mode contrast fix |
 | Phase 6 | Pending | | |
 | Phase 7 | Pending | | |
 
@@ -22,10 +23,11 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 - `public/css/variables.css` — :root custom properties, theme palettes, color migration map comment block
 - `public/css/components.css` — wine cards, modals, toasts, badges, grid slots (6,531 lines)
 - `public/css/layout.css` — grid, responsive breakpoints, settings page structure (858 lines)
-- `public/css/themes.css` — high-contrast / forced-colors overrides (16 lines)
+- `public/css/themes.css` — light mode palette + component overrides, high-contrast / forced-colors (327 lines)
 - `public/css/accessibility.css` — focus rings, touch targets, reduced-motion, skip link (167 lines)
 - `public/css/styles.css` — retained as @import aggregator (imports above files in cascade order)
 - `public/index.html` — Phase 4 (inline styles, settings grouping), Phase 3 (theme toggle + FOUC script)
+- `public/js/grid.js` — Post-Phase UX (column headers, priority legend, slot-loc hiding in both render paths)
 - `public/js/settings.js` — Phase 3 (theme toggle logic)
 - `public/js/utils.js` — Phase 7 (toast container + aria-live)
 - `public/manifest.json` — Phase 3 (fix background_color mismatch)
@@ -790,6 +792,48 @@ h4 { font-size: var(--font-md); }
 > - Cache bumped: `sw.js` → `v79`, CSS → `20260205k`.
 >
 > **Phase 5 status: DONE. Type scale defined, multiplier inheritance fixed, headings standardized. Tab visibility improved.**
+
+---
+
+## Post-Phase UX Fixes (Grid Affordances + Light Mode Contrast)
+
+### Grid Location Signifiers (Gestalt Continuity)
+
+**Problem**: R1C1/R13C2 location codes printed inside every 90x60px grid slot bled into wine names, creating visual noise. Per Norman's affordances principle, the location info was "knowledge in the head" rather than "knowledge in the world" — row labels already existed on the left, but no column headers existed.
+
+**Fix** (Gestalt continuity — spreadsheet model):
+1. **Column headers** (`C1`, `C2`, ...) added above the grid, aligned to slot widths at all 4 breakpoints (90/80/75/70px)
+2. **Slot-loc hidden in filled slots** — CSS `opacity: 0` on `.slot:not(.empty) .slot-loc`, with hover reveal at `opacity: 0.6`
+3. **Slot-loc retained in empty slots** — location codes still visible for empty cells (users need to know which slot to fill)
+4. **Both render paths updated** — `renderCellar()` and `renderStorageAreas()` both received column headers
+
+### Priority Badge Legend (Norman's Affordances)
+
+**Problem**: N/S/H colored priority badges on grid slots had no explanation — cryptic without a key. Users had to memorize what each letter means ("knowledge in the head").
+
+**Fix** (Norman's "knowledge in the world"):
+1. **Conditional legend key** rendered above the grid: `[N] Now  [S] Soon  [H] Hold`
+2. **Only renders when badges exist** — `cellarRows.some(r => r.slots.some(s => s.wine_id && s.reduce_priority))` prevents clutter on empty/no-priority grids
+3. **Title tooltips** on priority slots: `Drink now`, `Drink soon`, `Hold — not urgent`
+4. Compact single-letter badges (N/S/H) preserved per user preference — expanded labels (NOW/SOON/HOLD) were too crowded in 90x60px slots
+
+### Light Mode btn-primary Contrast Fix (WCAG AA)
+
+**Problem**: "Get Recommendations" button had dark text (#2C2420) on medium-tone accent background (#7A6240 at brightness 0.95), yielding ~2:1 contrast ratio — severe WCAG AA failure.
+
+**Fix**: Changed light mode `.btn-primary` to use darker background + white text:
+- `background: var(--accent-hover)` (#634F33) instead of `var(--accent)` (#7A6240)
+- `color: var(--text-on-accent)` (white) — 6.8:1 contrast on #634F33, passes WCAG AA
+- Removed `filter: brightness(0.95)` base modifier (no longer needed with darker bg)
+- Applied to both `@media (prefers-color-scheme: light)` and `[data-theme="light"]` paths
+
+> **Implementation notes (2026-02-06):**
+> - **Grid column headers**: Added to both `renderCellar()` and `renderStorageAreas()` in `grid.js`. CSS in `layout.css` (`.col-headers`, `.col-header`) with responsive widths at 768/480/360px breakpoints. Legend CSS in `components.css` (`.grid-legend`, `.legend-item`, `.legend-badge`).
+> - **Slot-loc hiding**: CSS in `components.css` (`.slot:not(.empty) .slot-loc { opacity: 0 }` with hover reveal). Fixed themes.css specificity conflict — scoped light-mode `.slot-loc` opacity override to `.slot.empty .slot-loc` only (was overriding the hide rule on filled slots).
+> - **Dual render path fix**: Initial implementation only added features to `renderCellar()`. User's cellar uses areas-based layout (`renderStorageAreas()`). Both paths now have feature parity for column headers and legend.
+> - **btn-primary contrast**: Updated both light mode paths in `themes.css` (lines 197-210 and 283-297).
+> - **Commits**: `fab552c` (grid UX), `880a3c5` (revert to compact N/S/H + legend), `741481a` (renderStorageAreas path fix), `ade4241` (btn-primary contrast).
+> - Cache bumped: `sw.js` `CACHE_VERSION` v82→v86, CSS version strings 20260206c→20260206g.
 
 ---
 

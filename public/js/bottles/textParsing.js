@@ -200,28 +200,45 @@ export function renderParsedWines(result) {
 
   // Add handler for "Add This Wine" button - directly submit
   document.getElementById('use-parsed-btn')?.addEventListener('click', async () => {
-    // Get country value (handle "Other" option)
-    let countryValue = document.getElementById('parsed-country')?.value || '';
-    if (countryValue === 'Other') {
-      countryValue = document.getElementById('parsed-country-other')?.value.trim() || '';
+    const btn = document.getElementById('use-parsed-btn');
+
+    // Immediate feedback — disable button and show busy state
+    if (btn) {
+      btn.disabled = true;
+      btn.dataset.originalText = btn.textContent;
+      btn.textContent = 'Adding\u2026';
     }
 
-    // Get values from editable fields
-    const editedWine = {
-      wine_name: document.getElementById('parsed-name')?.value || '',
-      vintage: document.getElementById('parsed-vintage')?.value || null,
-      colour: document.getElementById('parsed-colour')?.value || 'white',
-      style: document.getElementById('parsed-style')?.value || '',
-      price_eur: document.getElementById('parsed-price')?.value || null,
-      vivino_rating: document.getElementById('parsed-rating')?.value || null,
-      country: countryValue || null
-    };
+    try {
+      // Get country value (handle "Other" option)
+      let countryValue = document.getElementById('parsed-country')?.value || '';
+      if (countryValue === 'Other') {
+        countryValue = document.getElementById('parsed-country-other')?.value.trim() || '';
+      }
 
-    // Get quantity from form
-    const quantity = Number.parseInt(document.getElementById('bottle-quantity')?.value, 10) || 1;
+      // Get values from editable fields
+      const editedWine = {
+        wine_name: document.getElementById('parsed-name')?.value || '',
+        vintage: document.getElementById('parsed-vintage')?.value || null,
+        colour: document.getElementById('parsed-colour')?.value || 'white',
+        style: document.getElementById('parsed-style')?.value || '',
+        price_eur: document.getElementById('parsed-price')?.value || null,
+        vivino_rating: document.getElementById('parsed-rating')?.value || null,
+        country: countryValue || null
+      };
 
-    // Directly submit the wine
-    await submitParsedWine(editedWine, quantity);
+      // Get quantity from form
+      const quantity = Number.parseInt(document.getElementById('bottle-quantity')?.value, 10) || 1;
+
+      // Submit the wine (shows disambiguation or confirmation modal)
+      await submitParsedWine(editedWine, quantity);
+    } finally {
+      // Restore button state (modal may have replaced the view, but safe to restore)
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = btn.dataset.originalText || 'Add This Wine';
+      }
+    }
   });
 
   // Add handler for "Suggest Placement" button
