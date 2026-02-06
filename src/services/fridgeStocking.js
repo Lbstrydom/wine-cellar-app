@@ -502,10 +502,10 @@ function formatCategoryName(category) {
   const names = {
     sparkling: 'Sparkling',
     crispWhite: 'Crisp White',
-    aromatic: 'Aromatic White',
-    richWhite: 'Rich White',
+    aromaticWhite: 'Aromatic White',
+    textureWhite: 'Oaked White',
     rose: 'Rosé',
-    lightRed: 'Light Red',
+    chillableRed: 'Light Red',
     flex: 'Other'
   };
   return names[category] || category;
