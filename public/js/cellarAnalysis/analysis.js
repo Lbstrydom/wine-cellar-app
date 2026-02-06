@@ -10,6 +10,9 @@ import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
 import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js';
+import { deriveState, AnalysisState } from './analysisState.js';
+import { startZoneSetup } from './zones.js';
+import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 
 /**
  * Load analysis when tab is opened.
@@ -91,6 +94,33 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
+  updateActionButton(analysis, onRenderAnalysis);
+}
+
+/**
+ * Update the single primary CTA button based on analysis state.
+ * @param {Object} analysis - Analysis report
+ * @param {Function} onRenderAnalysis - Re-render callback
+ */
+function updateActionButton(analysis, onRenderAnalysis) {
+  const btn = document.getElementById('cellar-action-btn');
+  if (!btn) return;
+
+  const state = deriveState(analysis);
+  const config = {
+    [AnalysisState.NO_ZONES]:          { label: 'Setup Zones',    handler: () => startZoneSetup() },
+    [AnalysisState.ZONES_DEGRADED]:    { label: 'Reconfigure Zones', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:     { label: 'Optimize Cellar',   handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.JUST_RECONFIGURED]: { label: 'Review Moves',      handler: () => document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' }) },
+  };
+
+  const { label, handler } = config[state];
+  btn.textContent = label;
+
+  // Replace handler (clone to remove old listener)
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.addEventListener('click', handler);
 }
 
 /**
@@ -163,10 +193,13 @@ function renderAlerts(alerts, { append = false } = {}) {
 
   const html = alerts.map(alert => {
     const icon = alert.severity === 'warning' ? '⚠️' : 'ℹ️';
+    const inlineCta = alert.type === 'zones_not_configured'
+      ? ' <button class="btn btn-primary btn-small" data-action="inline-setup-zones">Setup Zones</button>'
+      : '';
     return `
       <div class="alert-item ${alert.severity}">
         <span class="alert-icon">${icon}</span>
-        <span>${alert.message}</span>
+        <span>${alert.message}</span>${inlineCta}
       </div>
     `;
   }).join('');
@@ -175,5 +208,11 @@ function renderAlerts(alerts, { append = false } = {}) {
     el.insertAdjacentHTML('beforeend', html);
   } else {
     el.innerHTML = html;
+  }
+
+  // Wire inline Setup Zones CTA
+  const inlineSetupBtn = el.querySelector('[data-action="inline-setup-zones"]');
+  if (inlineSetupBtn) {
+    inlineSetupBtn.addEventListener('click', () => startZoneSetup());
   }
 }

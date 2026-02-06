@@ -168,6 +168,8 @@ async function handleApply(onRenderAnalysis) {
         __reconfigResult: result.applied
       };
       onRenderAnalysis(reportWithFlag);
+      // Scroll to the success banner so user sees the result
+      document.getElementById('analysis-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
   } finally {
     if (applyBtn) applyBtn.disabled = false;

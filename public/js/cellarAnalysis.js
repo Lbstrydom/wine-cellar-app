@@ -31,9 +31,8 @@ export {
 import { refreshAnalysis } from './cellarAnalysis/analysis.js';
 import { handleExecuteAllMoves } from './cellarAnalysis/moves.js';
 import { handleGetAIAdvice } from './cellarAnalysis/aiAdvice.js';
-import { startZoneSetup, handleConfirmLayout, cancelZoneSetup } from './cellarAnalysis/zones.js';
+import { handleConfirmLayout, cancelZoneSetup } from './cellarAnalysis/zones.js';
 import { toggleZoneChat, sendZoneChatMessage } from './cellarAnalysis/zoneChat.js';
-import { openReconfigurationModal } from './cellarAnalysis/zoneReconfigurationModal.js';
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -42,8 +41,6 @@ export function initCellarAnalysis() {
   const refreshBtn = document.getElementById('refresh-analysis-btn');
   const executeAllBtn = document.getElementById('execute-all-moves-btn');
   const getAIAdviceBtn = document.getElementById('get-ai-advice-btn');
-  const setupZonesBtn = document.getElementById('setup-zones-btn');
-  const reconfigureZonesBtn = document.getElementById('reconfigure-zones-btn');
   const confirmLayoutBtn = document.getElementById('confirm-layout-btn');
   const cancelSetupBtn = document.getElementById('cancel-setup-btn');
   const toggleZoneChatBtn = document.getElementById('toggle-zone-chat-btn');
@@ -61,18 +58,6 @@ export function initCellarAnalysis() {
 
   if (getAIAdviceBtn) {
     getAIAdviceBtn.addEventListener('click', handleGetAIAdvice);
-  }
-
-  if (setupZonesBtn) {
-    setupZonesBtn.addEventListener('click', startZoneSetup);
-  }
-
-  if (reconfigureZonesBtn) {
-    reconfigureZonesBtn.addEventListener('click', async () => {
-      await openReconfigurationModal({
-        onRenderAnalysis: () => refreshAnalysis()
-      });
-    });
   }
 
   if (confirmLayoutBtn) {

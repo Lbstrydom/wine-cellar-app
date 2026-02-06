@@ -146,6 +146,9 @@ function renderPostReconfigBanner(analysis) {
       <div class="zone-reconfig-banner-header">Zone Reconfiguration Complete</div>
       <div class="zone-reconfig-banner-body">
         ${contentHtml}
+        <div class="zone-reconfig-banner-actions">
+          <button class="btn btn-primary" data-action="scroll-to-moves">Review Moves Below</button>
+        </div>
         <div class="zone-reconfig-banner-details">
           <div>• Zones changed: ${zonesChanged}</div>
           ${skipped > 0 ? `<div>• Actions skipped (stale data): ${skipped}</div>` : ''}
@@ -171,6 +174,13 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
   // Just applied a reconfiguration - show success banner instead of issues
   if (analysis?.__justReconfigured) {
     el.innerHTML = renderPostReconfigBanner(analysis);
+    // Wire "Review Moves Below" button
+    const scrollBtn = el.querySelector('[data-action="scroll-to-moves"]');
+    if (scrollBtn) {
+      scrollBtn.addEventListener('click', () => {
+        document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
     // Filter out capacity alerts from remaining since we're handling them
     const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
     const remainingAlerts = alerts.filter(a => a.type !== 'zone_capacity_issue');

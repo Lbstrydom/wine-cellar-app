@@ -1,3 +1,4 @@
+
 # UI/UX Audit Plan
 
 ## Goal
@@ -19,7 +20,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 6 | **DONE** | 2026-02-06 | Mobile responsive refinements, touch targets, PWA safe areas (manual QA pending) |
 | Phase 7 | **DONE** | 2026-02-06 | Focus rings, skeleton loading, toast stacking + screen reader announcements |
 | Phase 8 | **DONE** | 2026-02-06 | Cellar Analysis: theme hardening, text overflow, messages, loading UX |
-| Phase 9 | Pending | | Cellar Analysis: state machine, single CTA, post-reconfig flow |
+| Phase 9 | **DONE** | 2026-02-06 | Cellar Analysis: state machine, single CTA, post-reconfig flow |
 | Phase 10 | Pending | | Cellar Analysis: fridge swap-out suggestions when full |
 | Phase 11 | Pending | | Cellar Analysis: visual grid move guide |
 
@@ -1588,7 +1589,7 @@ The grid re-renders naturally (fresh data from API), then annotations are re-app
 | 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | **DONE** |
 | 7 | Phase 7 | Navigation + motion accessibility + toast aria-live | Medium — JS changes | **DONE** |
 | 8 | Phase 8 | Cellar Analysis: theme hardening, text overflow, messages, loading UX | Low — CSS + JS fixes | **DONE** |
-| 9 | Phase 9 | Cellar Analysis: state machine, single CTA, post-reconfig flow | Medium — JS + HTML restructure | Pending |
+| 9 | Phase 9 | Cellar Analysis: state machine, single CTA, post-reconfig flow | Medium — JS + HTML restructure | **DONE** |
 | 10 | Phase 10 | Cellar Analysis: fridge swap-out suggestions | Medium — JS + backend enhancement | Pending |
 | 11 | Phase 11 | Cellar Analysis: visual grid move guide | High — new module, grid annotation | Pending |
 
@@ -1724,7 +1725,7 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | **CODE COMPLETE** (breakpoint consolidation + touch target fixes + safe areas implemented; manual tap testing and mobile QA pending) |
 | Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | **CODE COMPLETE** (double-ring focus, skeleton shimmer, toast stacking + announce(); manual keyboard/SR/reduced-motion QA pending) |
 | Phase 8 | Clear localStorage + mobile reload → correct theme. Text overflow check at 375px. AI advice inline spinner. | **CODE COMPLETE** (explicit data-theme for WebView compat, word-break overflow fix, inline button spinner + ARIA status; manual mobile QA pending) |
-| Phase 9 | State machine unit tests pass (5 cases). Single CTA label correct per state. Post-reconfig scrolls to banner. | Pending |
+| Phase 9 | State machine unit tests pass (9 cases). Single CTA label correct per state. Post-reconfig scrolls to banner. Inline Setup Zones CTA in alerts. | **CODE COMPLETE** (state machine + 9 unit tests, single primary CTA, post-reconfig scroll + Review Moves button, inline alert CTA; manual flow QA pending) |
 | Phase 10 | `identifySwapTarget()` unit tests pass. Integration test: atomic fridge swap (no bottle loss). Full fridge shows swap suggestions. | Pending |
 | Phase 11 | `annotateGrid()` unit tests pass. Move guide: execute 2 → recalculate → complete. Grid annotations visible at 375px. | Pending |
 
