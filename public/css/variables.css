@@ -161,6 +161,17 @@
   --bg-primary: var(--bg-card);
   --hc-border: #666;
   --hc-text-muted: #aaa;
+
+  /* Phase 5: Type scale — practical 11px floor, 1.125 minor third ratio */
+  --font-2xs: 0.6875rem;  /* 11px — absolute floor for mobile readability */
+  --font-xs: 0.75rem;     /* 12px */
+  --font-sm: 0.85rem;     /* 13.6px */
+  --font-base: 1rem;      /* 16px */
+  --font-md: 1.1rem;      /* 17.6px */
+  --font-lg: 1.2rem;      /* 19.2px */
+  --font-xl: 1.4rem;      /* 22.4px */
+  --font-2xl: 1.5rem;     /* 24px */
+  --font-3xl: 2rem;       /* 32px */
 }
 
 /* ============================================================

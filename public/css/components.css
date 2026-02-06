@@ -6071,7 +6071,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 
 .text-size-preview {
   color: var(--text-muted);
-  font-size: calc(0.9rem * var(--text-size-multiplier));
+  font-size: 0.9rem;  /* Phase 5.2: multiplier now on html root, calc removed */
   font-style: italic;
   padding: 0.75rem;
   background: var(--bg-slot);
