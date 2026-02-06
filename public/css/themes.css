@@ -178,7 +178,7 @@
   /* Phase 3.5.1: Slot text contrast fix (WCAG AA — 9.8:1 ratio) */
   :root:not([data-theme="dark"]) .slot-name,
   :root:not([data-theme="dark"]) .slot-vintage,
-  :root:not([data-theme="dark"]) .slot-loc {
+  :root:not([data-theme="dark"]) .slot.empty .slot-loc {
     color: var(--slot-text-primary);
     opacity: 1;
     font-weight: 500;
@@ -265,7 +265,7 @@
 /* Phase 3.5.1: Slot text contrast fix */
 :root[data-theme="light"] .slot-name,
 :root[data-theme="light"] .slot-vintage,
-:root[data-theme="light"] .slot-loc {
+:root[data-theme="light"] .slot.empty .slot-loc {
   color: var(--slot-text-primary);
   opacity: 1;
   font-weight: 500;

@@ -113,6 +113,26 @@ export async function renderCellar() {
   const cellarRows = getCellarRows(state.layout);
   if (!cellarRows || cellarRows.length === 0) return;
 
+  // Column headers — spreadsheet-style (C1, C2, ...) so row/col position
+  // replaces the per-cell location code as the primary location signifier.
+  const maxCols = Math.max(...cellarRows.map(r => (r.slots || []).length));
+  if (maxCols > 0) {
+    const headerRow = document.createElement('div');
+    headerRow.className = 'cellar-row col-headers';
+
+    const spacer = document.createElement('div');
+    spacer.className = 'row-label';
+    headerRow.appendChild(spacer);
+
+    for (let c = 1; c <= maxCols; c++) {
+      const colHeader = document.createElement('div');
+      colHeader.className = 'col-header';
+      colHeader.textContent = `C${c}`;
+      headerRow.appendChild(colHeader);
+    }
+    grid.appendChild(headerRow);
+  }
+
   // Calculate row heights for zone labels alignment
   const rowHeight = 55; // slot height (52px) + gap (3px)
 
@@ -340,8 +360,11 @@ export function createSlotElement(slot) {
     el.dataset.wineId = slot.wine_id;
 
     if (slot.reduce_priority) {
-      el.classList.add(`priority-${Math.min(slot.reduce_priority, 3)}`);
+      const p = Math.min(slot.reduce_priority, 3);
+      el.classList.add(`priority-${p}`);
       el.classList.add('has-urgency');  // Phase 3.5.5: Mark for color noise reduction
+      const priorityLabels = { 1: 'Drink now', 2: 'Drink soon', 3: 'Hold — not urgent' };
+      el.title = priorityLabels[p] || '';
     }
 
     const drinkClass = getDrinkWindowClass(slot);
