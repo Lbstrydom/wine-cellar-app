@@ -89,7 +89,12 @@ header .search-trigger {
 }
 
 .tab:hover { background: var(--bg-slot-hover); }
-.tab.active { background: var(--accent); border-color: var(--accent); color: var(--text-on-light); }
+.tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-light);
+  border-bottom: 3px solid var(--gold);  /* Phase 4.5: gold continuity indicator */
+}
 
 /* Views */
 .view { display: none; }
@@ -385,6 +390,11 @@ header .search-trigger {
     text-align: center;
     padding: 0.9rem;
     font-size: 1rem;
+  }
+
+  .tab.active {
+    border-bottom: 1px solid var(--accent);  /* Phase 4.5: reset bottom in vertical dropdown */
+    border-left: 3px solid var(--gold);      /* Phase 4.5: left indicator for vertical layout */
   }
 
   /* Grid wrapper for horizontal scroll */
@@ -812,6 +822,29 @@ header .search-trigger {
     display: none !important;
   }
 }
+
+/* ============================================================
+   Phase 4.2: Utility classes (replacing inline styles)
+   ============================================================ */
+.view-title { margin-bottom: 1rem; }
+.view-subtitle { margin-bottom: 1rem; }
+.section-divider { margin: 2rem 0; border-color: var(--border); opacity: 0.3; }
+.section-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.5rem;
+}
+.text-muted { color: var(--text-muted); }
+.settings-about-muted { margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted); }
+.modal-sm { max-width: 400px; }
+.modal-md { max-width: 500px; }
+.mt-half { margin-top: 0.5rem; }
+.mt-1 { margin-top: 1rem; }
+.mt-1-5 { margin-top: 1.5rem; }
+.mt-2 { margin-top: 2rem; }
+.ml-auto { margin-left: auto; }
 
 html[data-text-size="small"] {
   --text-size-multiplier: 0.875;

@@ -920,14 +920,17 @@
 
 .zone-health-item.good {
   border-left-color: var(--sparkling);
+  border-left-style: solid;   /* Phase 4.3: solid = healthy */
 }
 
 .zone-health-item.warning {
   border-left-color: var(--color-caution);
+  border-left-style: dashed;  /* Phase 4.3: dashed = fragmented */
 }
 
 .zone-health-item.bad {
   border-left-color: var(--color-error);
+  border-left-style: dotted;  /* Phase 4.3: dotted = critical */
 }
 
 .zone-health-item .zone-name {
@@ -1784,12 +1787,24 @@
 .wine-card:hover {
   background: var(--bg-slot-hover);
   transform: translateX(2px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);  /* Phase 4.4: hover elevation */
 }
 
 .wine-card.red { border-left-color: var(--red-wine); }
 .wine-card.white { border-left-color: var(--white-wine); }
 .wine-card.rose { border-left-color: var(--rose-wine); }
 .wine-card.sparkling { border-left-color: var(--sparkling); }
+
+/* Phase 4.3: Non-color text labels on wine cards */
+.wine-card .wine-meta::before {
+  font-size: 0.75rem;
+  font-weight: 500;
+  margin-right: 0.15em;
+}
+.wine-card.red .wine-meta::before { content: 'Red'; color: var(--red-wine); }
+.wine-card.white .wine-meta::before { content: 'White'; color: var(--white-wine); }
+.wine-card.rose .wine-meta::before { content: 'Rosé'; color: var(--rose-wine); }
+.wine-card.sparkling .wine-meta::before { content: 'Sparkling'; color: var(--sparkling); }
 
 .wine-count {
   font-size: 1.5rem;
@@ -1803,7 +1818,7 @@
 }
 
 .wine-name {
-  font-weight: 500;
+  font-weight: 600;  /* Phase 4.4: stronger hierarchy */
   margin-bottom: 0.2rem;
 }
 
@@ -3443,6 +3458,23 @@ body.slot-picker-mode .slot.picker-placed::after {
   margin-bottom: 1.25rem;
 }
 
+/* Phase 4.1: Settings group wrappers (Proximity / Common Region) */
+.settings-group {
+  margin-bottom: 2.5rem;
+}
+
+.settings-group-title {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--text-muted);
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1rem;
+}
+
 /* Rating Preference Slider - Settings Page */
 .preference-slider-container {
   max-width: 400px;
@@ -4168,8 +4200,9 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 .wine-rating {
-  color: var(--accent);
+  color: var(--color-caution);  /* Phase 4.4: gold differentiates rating from metadata */
   font-size: 0.8rem;
+  font-weight: 600;
   margin-top: 0.2rem;
 }
 

@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260206a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260206b">
 </head>
 <body>
   <header>
@@ -291,7 +291,7 @@
 
   <!-- History View -->
   <div class="view" id="view-history" role="tabpanel" aria-labelledby="tab-history" hidden>
-    <h2 style="margin-bottom: 1rem;">Consumption History</h2>
+    <h2 class="view-title">Consumption History</h2>
     <div class="history-list" id="history-list"></div>
   </div>
 
@@ -299,7 +299,7 @@
   <div class="view" id="view-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
     <!-- Sommelier section -->
     <div class="natural-pairing">
-      <h2 style="margin-bottom: 1rem;">Ask the Sommelier</h2>
+      <h2 class="view-title">Ask the Sommelier</h2>
       <input type="text" id="dish-input" placeholder="Describe your dish... e.g., 'grilled salmon with lemon butter'" />
       <div class="pairing-filters">
         <div class="filter-group">
@@ -320,12 +320,12 @@
 
     <div id="sommelier-results"></div>
 
-    <hr style="margin: 2rem 0; border-color: var(--border); opacity: 0.3;">
+    <hr class="section-divider">
 
     <!-- Manual pairing section -->
     <div class="pairing-form">
-      <h3 style="margin-bottom: 1rem;">Or select manually</h3>
-      <h4 style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem;">PROTEIN</h4>
+      <h3 class="view-subtitle">Or select manually</h3>
+      <h4 class="section-label">PROTEIN</h4>
       <div class="signal-grid">
         <button class="signal-btn" data-signal="chicken">Chicken</button>
         <button class="signal-btn" data-signal="pork">Pork</button>
@@ -334,7 +334,7 @@
         <button class="signal-btn" data-signal="fish">Fish</button>
         <button class="signal-btn" data-signal="cheese">Cheese</button>
       </div>
-      <h4 style="font-size: 0.8rem; color: var(--text-muted); margin: 1rem 0 0.5rem;">FLAVOURS</h4>
+      <h4 class="section-label mt-1">FLAVOURS</h4>
       <div class="signal-grid">
         <button class="signal-btn" data-signal="garlic_onion">Garlic/Onion</button>
         <button class="signal-btn" data-signal="herbal">Herbal</button>
@@ -344,18 +344,18 @@
         <button class="signal-btn" data-signal="umami">Umami</button>
         <button class="signal-btn" data-signal="creamy">Creamy</button>
       </div>
-      <button class="btn btn-primary" style="margin-top: 1.5rem;" id="get-pairing">Find Pairing</button>
-      <button class="btn btn-secondary" style="margin-top: 1.5rem;" id="clear-signals">Clear</button>
+      <button class="btn btn-primary mt-1-5" id="get-pairing">Find Pairing</button>
+      <button class="btn btn-secondary mt-1-5" id="clear-signals">Clear</button>
     </div>
 
-    <h3 style="margin: 1.5rem 0 1rem;">Suggestions</h3>
+    <h3 class="view-subtitle mt-1-5">Suggestions</h3>
     <div class="pairing-results" id="pairing-results">
-      <p style="color: var(--text-muted);">Select dish characteristics above</p>
+      <p class="text-muted">Select dish characteristics above</p>
     </div>
 
     <!-- Pairing Feedback Modal -->
     <div class="modal-overlay" id="pairing-feedback-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="pairing-feedback-title">
-      <div class="modal" style="max-width: 400px;">
+      <div class="modal modal-sm">
         <h2 id="pairing-feedback-title">Pairing Feedback</h2>
         <form id="pairing-feedback-form">
           <div class="form-group">
@@ -386,7 +386,11 @@
 
   <!-- Settings View -->
   <div class="view" id="view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-    <h2 style="margin-bottom: 1.5rem;">Settings</h2>
+    <h2 class="view-title">Settings</h2>
+
+    <!-- Group: Preferences -->
+    <div class="settings-group">
+      <h3 class="settings-group-title">Preferences</h3>
 
     <!-- Rating Preferences Section -->
     <div class="settings-section">
@@ -521,26 +525,13 @@
 
       <!-- Evaluation Results -->
       <div id="reduce-candidates-container" style="display: none;">
-        <h4 style="margin: 1rem 0 0.5rem;">Matching Wines</h4>
+        <h4 class="section-label mt-1">Matching Wines</h4>
         <div id="reduce-candidates-list"></div>
         <div class="reduce-candidates-actions">
           <button class="btn btn-primary btn-small" id="add-all-candidates-btn">Add All to Reduce-Now</button>
           <button class="btn btn-secondary btn-small" id="clear-candidates-btn">Dismiss</button>
         </div>
       </div>
-    </div>
-
-    <!-- Storage Areas Configuration Section -->
-    <div class="settings-section">
-      <h3 class="settings-section-title">Storage Areas</h3>
-      <p class="settings-section-desc">Configure your wine storage layout: cellar, fridge, racks, or custom areas.</p>
-
-      <div class="settings-actions">
-        <button class="btn btn-primary" id="configure-storage-areas-btn">Configure Storage Areas</button>
-      </div>
-
-      <!-- Onboarding wizard container (hidden by default) -->
-      <div id="storage-areas-wizard" class="onboarding-wizard" style="display: none; margin-top: 2rem;"></div>
     </div>
 
     <!-- Storage Conditions Section -->
@@ -582,6 +573,11 @@
         </div>
       </div>
     </div>
+    </div><!-- /settings-group: Preferences -->
+
+    <!-- Group: Integrations -->
+    <div class="settings-group">
+      <h3 class="settings-group-title">Integrations</h3>
 
     <!-- Account Credentials Section -->
     <div class="settings-section">
@@ -721,6 +717,24 @@
         </div>
       </div>
     </div>
+    </div><!-- /settings-group: Integrations -->
+
+    <!-- Group: Data & App -->
+    <div class="settings-group">
+      <h3 class="settings-group-title">Data & App</h3>
+
+    <!-- Storage Areas Configuration Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Storage Areas</h3>
+      <p class="settings-section-desc">Configure your wine storage layout: cellar, fridge, racks, or custom areas.</p>
+
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="configure-storage-areas-btn">Configure Storage Areas</button>
+      </div>
+
+      <!-- Onboarding wizard container (hidden by default) -->
+      <div id="storage-areas-wizard" class="onboarding-wizard mt-2" style="display: none;"></div>
+    </div>
 
     <!-- Backup & Export Section -->
     <div class="settings-section">
@@ -793,12 +807,13 @@
       <h3 class="settings-section-title">About</h3>
       <p class="settings-about">
         Wine Cellar App v1.0<br>
-        <span style="color: var(--text-muted);">Manage your wine collection with AI-powered features</span>
+        <span class="text-muted">Manage your wine collection with AI-powered features</span>
       </p>
-      <p class="settings-about" style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+      <p class="settings-about settings-about-muted">
         <span id="pwa-status">Web App</span>
       </p>
     </div>
+    </div><!-- /settings-group: Data & App -->
   </div>
 
   <!-- Scripts -->
@@ -896,7 +911,7 @@
 
   <!-- Add Another Quantity Modal -->
   <div class="modal-overlay" id="add-quantity-modal-overlay">
-    <div class="modal" id="add-quantity-modal" style="max-width: 380px;">
+    <div class="modal modal-sm" id="add-quantity-modal">
       <h2 id="add-quantity-title">Add More Bottles</h2>
       <div class="modal-subtitle" id="add-quantity-wine-name">Wine Name</div>
       <div class="form-section">
@@ -939,7 +954,7 @@
 
   <!-- Add/Edit Bottle Modal -->
   <div class="modal-overlay" id="bottle-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="bottle-modal-title">
-    <div class="modal" id="bottle-modal" style="max-width: 500px;">
+    <div class="modal modal-md" id="bottle-modal">
       <h2 id="bottle-modal-title">Add New Bottle</h2>
       <div class="modal-subtitle" id="bottle-modal-subtitle">Adding to slot: R1C1</div>
 
@@ -990,11 +1005,11 @@
           <textarea id="wine-text-input" rows="3" placeholder="Paste wine description, order confirmation, or any text containing wine info..."></textarea>
 
           <!-- Single unified analyze button -->
-          <button type="button" class="btn btn-primary" id="analyze-wine-btn" style="margin-top: 1rem;">
+          <button type="button" class="btn btn-primary mt-1" id="analyze-wine-btn">
             Analyze Wine
           </button>
 
-          <div id="parse-results" style="margin-top: 1rem;"></div>
+          <div id="parse-results" class="mt-1"></div>
         </div>
 
         <!-- New wine form -->
@@ -1061,7 +1076,7 @@
                 <option value="USA">USA</option>
                 <option value="Other">Other</option>
               </select>
-              <input type="text" id="wine-country-other" placeholder="Enter country name..." style="display: none; margin-top: 0.5rem;" />
+              <input type="text" id="wine-country-other" class="mt-half" placeholder="Enter country name..." style="display: none;" />
             </div>
           </div>
 
@@ -1095,7 +1110,7 @@
         <div class="modal-actions">
           <button type="submit" class="btn btn-primary" id="bottle-save-btn">Add Bottle</button>
           <button type="button" class="btn btn-secondary" id="bottle-cancel-btn">Cancel</button>
-          <button type="button" class="btn btn-danger" id="bottle-delete-btn" style="display: none; margin-left: auto;">Remove</button>
+          <button type="button" class="btn btn-danger ml-auto" id="bottle-delete-btn" style="display: none;">Remove</button>
         </div>
       </form>
     </div>

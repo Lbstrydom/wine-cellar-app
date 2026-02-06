@@ -13,7 +13,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 2 | **DONE** | 2026-02-05 | Semantic tokens + non-color cues |
 | Phase 3 | **DONE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + Phase 3.5 refinements (manual QA pending) |
 | Phase 3.5 | **DONE** | 2026-02-05 | Color system refinement (WCAG AA fixes, 60-30-10 balance, spatial separation) |
-| Phase 4 | Pending | | |
+| Phase 4 | **DONE** | 2026-02-06 | Settings grouping, inline style cleanup, non-color cues, wine card hierarchy, tab indicator |
 | Phase 5 | **DONE** | 2026-02-06 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
 | Phase 6 | Pending | | |
 | Phase 7 | Pending | | |
@@ -731,6 +731,16 @@ Add a gold bottom border on active tab for reinforced selection state:
 }
 ```
 
+> **Implementation notes (2026-02-06):**
+> - **4.1**: Wrapped 10 settings sections into 3 groups: **Preferences** (Rating, Display, Reduce-Now, Storage Conditions), **Integrations** (Credentials, Awards), **Data & App** (Storage Areas, Backup, Install, About). New `.settings-group` / `.settings-group-title` CSS. Storage Areas moved from Preferences to Data & App group.
+> - **4.2**: Replaced 17 cosmetic inline `style=` attributes with utility classes: `.view-title`, `.view-subtitle`, `.section-divider`, `.section-label`, `.text-muted`, `.settings-about-muted`, `.modal-sm`, `.modal-md`, `.mt-half`, `.mt-1`, `.mt-1-5`, `.mt-2`, `.ml-auto`. All remaining `style=` attributes are purely `display: none` (JS-toggled visibility).
+> - **4.3**: Added wine colour text labels via `::before` on `.wine-meta` (Red/White/Rosé/Sparkling — pairs text with border colour). Zone health items: solid=healthy, dashed=fragmented, dotted=critical border styles. Priority badges + medal badges already had text labels from Phase 2 (N/S/H, NOW/SOON/HOLD, G/S/B/T/DG).
+> - **4.4**: Wine name `font-weight: 500→600`. Rating color `var(--accent)→var(--color-caution)` (gold) + `font-weight: 600`. Hover elevation `box-shadow: 0 2px 8px rgba(0,0,0,0.15)`.
+> - **4.5**: Active tab gold border: `border-bottom: 3px solid var(--gold)` on desktop, `border-left: 3px solid var(--gold)` in 768px vertical dropdown.
+> - Cache bumped: `sw.js` → `v81`, CSS → `20260206b`.
+>
+> **Phase 4 status: DONE.**
+
 ---
 
 ## Phase 5: Typography System
@@ -921,7 +931,7 @@ This avoids duplication and keeps all aria-live management in one place.
 | 1 | Phase 1 | Contrast & readability fixes (11px floor + collision check) | Low — CSS only | **DONE** |
 | 2 | Phase 2 | Color system + non-color status cues | Low — CSS + pseudo-elements | **DONE** |
 | 3 | Phase 5 | Typography scale (11px minimum) | Low — CSS only | **DONE** |
-| 4 | Phase 4 | Gestalt layout + non-color cue integration | Low — HTML+CSS | Pending |
+| 4 | Phase 4 | Gestalt layout + non-color cue integration | Low — HTML+CSS | **DONE** |
 | 5 | Phase 3 | Light mode + FOUC fix + theme parity + SVG audit | Medium — needs extended QA | **DONE** |
 | 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | Pending |
 | 7 | Phase 7 | Navigation + motion accessibility + toast aria-live | Medium — JS changes | Pending |
@@ -1016,7 +1026,7 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 1 | Contrast report (DevTools computed contrast on --accent, --text-muted) + grid collision check screenshots | **DONE** (audit pass; grid collision check pending manual visual QA at 0.8x–1.5x zoom) |
 | Phase 2 | `grep` returns 0 hardcoded hex in component CSS + color-blind sim screenshot | **DONE** (grep passes, 27/27 non-color cues verified; color-blind sim pending manual DevTools validation) |
 | Phase 5 | `grep` confirms no font-size below 0.6875rem + visual check at all breakpoints | **DONE** (2 accepted exceptions: 0.5rem/0.45rem on priority badge ::after icon-labels) |
-| Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | Pending |
+| Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | **DONE** (keyboard walkthrough + grouped screenshot pending manual QA) |
 | Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **CODE COMPLETE** (implementation + all review fixes done; parity matrix validation + SVG audit + color-blind simulation + offline boot test require manual QA) |
 | Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | Pending |
 | Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | Pending |
