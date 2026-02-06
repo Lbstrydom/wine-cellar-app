@@ -1042,21 +1042,61 @@ function showUpdateNotification(registration) {
  */
 let deferredPrompt = null;
 
+/**
+ * Update install section status message.
+ */
+function updateInstallStatus() {
+  const installBtn = document.getElementById('install-app-btn');
+  const statusMessage = document.getElementById('install-status-message');
+
+  if (!installBtn || !statusMessage) return;
+
+  // Check if running in standalone mode (already installed)
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
+                       window.navigator.standalone === true;
+
+  if (isStandalone) {
+    installBtn.style.display = 'none';
+    statusMessage.textContent = '✅ App is installed and running in standalone mode.';
+    statusMessage.className = 'text-success';
+    return;
+  }
+
+  if (deferredPrompt) {
+    // Browser supports install and app is installable
+    installBtn.style.display = 'block';
+    statusMessage.textContent = 'Click the button above to install.';
+    statusMessage.className = 'text-muted';
+  } else {
+    // No install prompt available - show manual instructions
+    installBtn.style.display = 'none';
+    
+    // Detect browser/platform
+    const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    
+    if (isIOS || isSafari) {
+      statusMessage.innerHTML = '📱 <strong>iOS/Safari:</strong> Tap the Share button <span style="font-size: 1.2em;">⎙</span>, then select "Add to Home Screen".';
+    } else {
+      statusMessage.innerHTML = '📱 <strong>Manual Install:</strong> Tap your browser\'s menu (⋮) and select "Install app" or "Add to Home screen".';
+    }
+    statusMessage.className = 'text-muted';
+  }
+}
+
 window.addEventListener('beforeinstallprompt', (e) => {
   // Prevent Chrome's default install prompt
   e.preventDefault();
   deferredPrompt = e;
 
-  // Show install section in settings
-  const installSection = document.getElementById('pwa-install-section');
   const installBtn = document.getElementById('install-app-btn');
 
-  if (installSection) {
-    installSection.style.display = 'block';
-  }
-
   if (installBtn) {
-    installBtn.addEventListener('click', async () => {
+    // Remove any existing listeners by cloning
+    const newBtn = installBtn.cloneNode(true);
+    installBtn.parentNode.replaceChild(newBtn, installBtn);
+    
+    newBtn.addEventListener('click', async () => {
       if (deferredPrompt) {
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
@@ -1064,28 +1104,30 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
         if (outcome === 'accepted') {
           deferredPrompt = null;
-          if (installSection) {
-            installSection.style.display = 'none';
-          }
+          updateInstallStatus();
         }
       }
     });
   }
+
+  updateInstallStatus();
 });
 
 window.addEventListener('appinstalled', () => {
   console.log('[App] PWA was installed');
   deferredPrompt = null;
-
-  // Hide install section
-  const installSection = document.getElementById('pwa-install-section');
-  if (installSection) {
-    installSection.style.display = 'none';
-  }
+  updateInstallStatus();
 
   // Update PWA status
   updatePwaStatus();
 });
+
+// Initial status check on page load
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', updateInstallStatus);
+} else {
+  updateInstallStatus();
+}
 
 /**
  * Update PWA status display in settings.

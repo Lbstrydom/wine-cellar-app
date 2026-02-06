@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260206i">
+  <link rel="stylesheet" href="/css/styles.css?v=20260206j">
 </head>
 <body>
   <header>
@@ -794,12 +794,20 @@
     </div>
 
     <!-- App Installation Section -->
-    <div class="settings-section" id="pwa-install-section" style="display: none;">
+    <!-- Install App Section -->
+    <div class="settings-section" id="pwa-install-section">
       <h3 class="settings-section-title">Install App</h3>
       <p class="settings-section-desc">Install Wine Cellar as an app on your device for quick access and offline support.</p>
-      <button class="btn btn-primary" id="install-app-btn">
+      
+      <!-- Install button (shown when installable) -->
+      <button class="btn btn-primary" id="install-app-btn" style="display: none;">
         <span>📲</span> Install Wine Cellar
       </button>
+      
+      <!-- Status messages -->
+      <div id="install-status" class="install-status">
+        <p id="install-status-message" class="text-muted">Checking installation status...</p>
+      </div>
     </div>
 
     <!-- About Section -->

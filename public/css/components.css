@@ -3501,6 +3501,28 @@ body.slot-picker-mode .slot.picker-placed::after {
   margin-bottom: 1.25rem;
 }
 
+/* Install App Status */
+.install-status {
+  margin-top: 1rem;
+}
+
+.install-status p {
+  margin: 0;
+  padding: 0.75rem 1rem;
+  background: var(--bg-dark);
+  border-radius: 6px;
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.text-success {
+  color: var(--success-color, #22c55e);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
 /* Phase 4.1: Settings group wrappers (Proximity / Common Region) */
 .settings-group {
   margin-bottom: 2.5rem;
