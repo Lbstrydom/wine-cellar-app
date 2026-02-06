@@ -916,7 +916,7 @@ This avoids duplication and keeps all aria-live management in one place.
 | 0b | Phase 0 | CSS split + hex-to-token audit | Low — mechanical, no visual changes | **DONE** |
 | 1 | Phase 1 | Contrast & readability fixes (11px floor + collision check) | Low — CSS only | **DONE** |
 | 2 | Phase 2 | Color system + non-color status cues | Low — CSS + pseudo-elements | **DONE** |
-| 3 | Phase 5 | Typography scale (11px minimum) | Low — CSS only | Pending |
+| 3 | Phase 5 | Typography scale (11px minimum) | Low — CSS only | **DONE** |
 | 4 | Phase 4 | Gestalt layout + non-color cue integration | Low — HTML+CSS | Pending |
 | 5 | Phase 3 | Light mode + FOUC fix + theme parity + SVG audit | Medium — needs extended QA | **DONE** |
 | 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | Pending |
@@ -1011,7 +1011,7 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 0 | Zero visual diff at 1200/768/480/360px (mechanical split only) + offline boot works | **DONE** (unit tests pass; visual diff + offline boot pending manual verification) |
 | Phase 1 | Contrast report (DevTools computed contrast on --accent, --text-muted) + grid collision check screenshots | **DONE** (audit pass; grid collision check pending manual visual QA at 0.8x–1.5x zoom) |
 | Phase 2 | `grep` returns 0 hardcoded hex in component CSS + color-blind sim screenshot | **DONE** (grep passes, 27/27 non-color cues verified; color-blind sim pending manual DevTools validation) |
-| Phase 5 | `grep` confirms no font-size below 0.6875rem + visual check at all breakpoints | Pending |
+| Phase 5 | `grep` confirms no font-size below 0.6875rem + visual check at all breakpoints | **DONE** (2 accepted exceptions: 0.5rem/0.45rem on priority badge ::after icon-labels) |
 | Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | Pending |
 | Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **CODE COMPLETE** (implementation + all review fixes done; parity matrix validation + SVG audit + color-blind simulation + offline boot test require manual QA) |
 | Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | Pending |
