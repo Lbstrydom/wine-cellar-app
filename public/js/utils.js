@@ -24,17 +24,48 @@ export const WINE_COUNTRIES = [
 ];
 
 /**
- * Show a toast notification.
+ * Show a toast notification with stacking support.
  * @param {string} message - Message to display
+ * @param {string} [type='info'] - Toast type: 'info', 'error', or 'success'
  * @param {number} [duration=3000] - Duration in milliseconds
  */
-export function showToast(message, duration = 3000) {
-  const toast = document.getElementById('toast');
-  toast.textContent = message;
-  toast.classList.add('show');
+export function showToast(message, type = 'info', duration = 3000) {
+  // Support legacy callers: showToast(msg, number)
+  if (typeof type === 'number') {
+    duration = type;
+    type = 'info';
+  }
 
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  // Create toast element
+  const toast = document.createElement('div');
+  toast.className = `toast${type !== 'info' ? ` toast-${type}` : ''}`;
+  toast.textContent = message;
+  container.appendChild(toast);
+
+  // Trigger show animation on next frame
+  requestAnimationFrame(() => {
+    toast.classList.add('show');
+  });
+
+  // Screen reader announcement via centralized announcer
+  try {
+    import('./accessibility.js').then(({ announce }) => {
+      const priority = (type === 'error') ? 'assertive' : 'polite';
+      announce(message, priority);
+    });
+  } catch (_e) {
+    // accessibility.js not available — visual toast still works
+  }
+
+  // Auto-dismiss
   setTimeout(() => {
     toast.classList.remove('show');
+    toast.addEventListener('transitionend', () => toast.remove(), { once: true });
+    // Fallback removal if transitionend doesn't fire (e.g. reduced-motion)
+    setTimeout(() => { if (toast.parentNode) toast.remove(); }, 400);
   }, duration);
 }
 

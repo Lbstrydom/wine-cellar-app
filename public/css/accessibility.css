@@ -36,10 +36,11 @@
   outline-offset: 2px;
 }
 
-/* Focus visible styles for keyboard navigation */
+/* Focus visible styles for keyboard navigation — Phase 7.1 double-ring pattern */
 :focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
 }
 
 button:focus-visible,
@@ -49,6 +50,7 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
 }
 
 /* Remove default focus for mouse users */
@@ -154,6 +156,12 @@ textarea:focus-visible {
   .wine-card {
     transition: none !important;
   }
+
+  /* Phase 7.2: Static placeholder instead of shimmer */
+  .skeleton {
+    animation: none !important;
+    background: var(--bg-slot) !important;
+  }
 }
 
 /* ============================================================
@@ -168,6 +176,7 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
 }
 
 /* Remove default focus ring on mouse click */

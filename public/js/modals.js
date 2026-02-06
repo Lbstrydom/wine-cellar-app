@@ -92,7 +92,7 @@ export async function showWineModal(slot) {
   // Load and display ratings
   const ratingsContainer = document.getElementById('modal-ratings-container');
   if (ratingsContainer && slot.wine_id) {
-    ratingsContainer.innerHTML = '<div class="ratings-loading">Loading ratings...</div>';
+    ratingsContainer.innerHTML = '<div class="ratings-loading"><div class="skeleton skeleton-text" style="width:80%"></div><div class="skeleton skeleton-text" style="width:60%"></div><div class="skeleton skeleton-text" style="width:70%"></div></div>';
     try {
       const ratingsData = await getWineRatings(slot.wine_id);
       ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
@@ -106,7 +106,7 @@ export async function showWineModal(slot) {
       `;
       // Add retry handler
       document.getElementById('retry-ratings-btn')?.addEventListener('click', async () => {
-        ratingsContainer.innerHTML = '<div class="ratings-loading">Loading ratings...</div>';
+        ratingsContainer.innerHTML = '<div class="ratings-loading"><div class="skeleton skeleton-text" style="width:80%"></div><div class="skeleton skeleton-text" style="width:60%"></div><div class="skeleton skeleton-text" style="width:70%"></div></div>';
         try {
           const ratingsData = await getWineRatings(slot.wine_id);
           ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;

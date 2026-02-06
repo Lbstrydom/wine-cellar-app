@@ -405,6 +405,38 @@
   to { transform: rotate(360deg); }
 }
 
+/* Phase 7.2: Skeleton shimmer loading placeholders */
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-slot) 25%, var(--bg-slot-hover) 50%, var(--bg-slot) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s infinite;
+  border-radius: 4px;
+}
+
+.skeleton-text {
+  height: 0.875rem;
+  margin-bottom: 0.5rem;
+}
+
+.skeleton-text:last-child {
+  width: 60%;
+}
+
+.skeleton-heading {
+  height: 1.25rem;
+  width: 40%;
+  margin-bottom: 0.75rem;
+}
+
+.skeleton-card {
+  height: 120px;
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
 .recommendation-error {
   grid-column: 1 / -1;
   text-align: center;
@@ -1939,23 +1971,41 @@
   text-align: center;
 }
 
-.toast {
+/* Phase 7.3: Toast container for stacking */
+#toast-container {
   position: fixed;
   bottom: 2rem;
-  left: 50%;
-  transform: translateX(-50%) translateY(100px);
+  right: 1.5rem;
+  display: flex;
+  flex-direction: column-reverse;
+  gap: 0.5rem;
+  z-index: 10000;
+  pointer-events: none;
+}
+
+.toast {
   background: var(--bg-card);
   border: 1px solid var(--accent);
   padding: 1rem 1.5rem;
   border-radius: 8px;
   opacity: 0;
-  transition: all 0.3s;
-  z-index: 200;
+  transform: translateY(20px);
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: auto;
+  max-width: 360px;
 }
 
 .toast.show {
-  transform: translateX(-50%) translateY(0);
   opacity: 1;
+  transform: translateY(0);
+}
+
+.toast.toast-error {
+  border-color: var(--red, #c0392b);
+}
+
+.toast.toast-success {
+  border-color: var(--green, #27ae60);
 }
 
 /* Confirm Dialog */
@@ -6021,6 +6071,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 .theme-option input[type="radio"]:focus-visible + .theme-btn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
 }
 
 .text-size-selector legend.settings-label {
@@ -6093,6 +6144,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 .text-size-option input[type="radio"]:focus-visible + .text-size-btn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
 }
 
 .text-size-preview {

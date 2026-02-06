@@ -120,11 +120,12 @@ async function loadRecommendations() {
 
   recState.isLoading = true;
 
-  // Show loading state
+  // Show skeleton loading state
   cardsContainer.innerHTML = `
     <div class="recommendation-loading">
-      <span class="loading-spinner"></span>
-      <span>Getting AI recommendations...</span>
+      <div class="skeleton skeleton-card" style="width:100%"></div>
+      <div class="skeleton skeleton-card" style="width:100%"></div>
+      <div class="skeleton skeleton-card" style="width:100%"></div>
     </div>
   `;
 

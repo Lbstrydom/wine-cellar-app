@@ -17,7 +17,11 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 5 | **DONE** | 2026-02-06 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
 | Post-Phase UX | **DONE** | 2026-02-06 | Grid UX (column headers, slot-loc hiding, priority legend), btn-primary light mode contrast fix |
 | Phase 6 | **DONE** | 2026-02-06 | Mobile responsive refinements, touch targets, PWA safe areas (manual QA pending) |
-| Phase 7 | Pending | | |
+| Phase 7 | **DONE** | 2026-02-06 | Focus rings, skeleton loading, toast stacking + screen reader announcements |
+| Phase 8 | Pending | | Cellar Analysis: theme hardening, text overflow, messages, loading UX |
+| Phase 9 | Pending | | Cellar Analysis: state machine, single CTA, post-reconfig flow |
+| Phase 10 | Pending | | Cellar Analysis: fridge swap-out suggestions when full |
+| Phase 11 | Pending | | Cellar Analysis: visual grid move guide |
 
 ## Files Modified
 - `public/css/variables.css` — :root custom properties, theme palettes, color migration map comment block
@@ -32,6 +36,17 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 - `public/js/utils.js` — Phase 7 (toast container + aria-live)
 - `public/manifest.json` — Phase 3 (fix background_color mismatch)
 - `public/sw.js` — cache version bump per phase
+- `public/js/theme-init.js` — Phase 8 (explicit data-theme for WebView compatibility)
+- `public/js/cellarAnalysis/aiAdvice.js` — Phase 8 (inline spinner, no forced scroll)
+- `public/js/cellarAnalysis/moves.js` — Phase 8 (fix misleading message), Phase 11 (Visual Guide button)
+- `public/js/cellarAnalysis/analysisState.js` — Phase 9 (**NEW** — state machine module)
+- `public/js/cellarAnalysis/analysis.js` — Phase 9 (updateActionButton using state machine)
+- `public/js/cellarAnalysis.js` — Phase 9 (remove old button wiring)
+- `public/js/cellarAnalysis/zoneReconfigurationModal.js` — Phase 9 (post-apply scroll)
+- `public/js/cellarAnalysis/zoneReconfigurationBanner.js` — Phase 9 (Review Moves button), Phase 11 (Guide Me button)
+- `public/js/cellarAnalysis/fridge.js` — Phase 10 (swap logic, user-goal language)
+- `src/routes/cellarReconfiguration.js` — Phase 10 (invariant count check)
+- `public/js/cellarAnalysis/moveGuide.js` — Phase 11 (**NEW** — visual grid move guide)
 
 ---
 
@@ -988,6 +1003,577 @@ This avoids duplication and keeps all aria-live management in one place.
 
 ---
 
+## Phase 8: Cellar Analysis — Quick Fixes (Theme, Text, Messages, Loading)
+
+> **Context**: Mobile testing revealed 7 UX issues in the cellar analysis flow. Phases 8–11 address these as a review-hardened overhaul. This phase covers low-risk CSS/JS fixes.
+
+### 8.1 Theme detection hardening
+**Problem**: App stays dark on mobile even when device is in light mode. User never set a theme. CSS relies on `@media (prefers-color-scheme: light)` which may not fire reliably in Android PWA standalone WebViews.
+
+**Root cause**: `theme-init.js` only sets `data-theme` when localStorage has an explicit value. On fresh install, no attribute is set — the app depends entirely on CSS media queries, which can fail in PWA standalone mode.
+
+**Fix** in `public/js/theme-init.js`:
+```javascript
+if (savedTheme === 'light' || savedTheme === 'dark') {
+  document.documentElement.setAttribute('data-theme', savedTheme);
+} else {
+  // No saved preference — detect OS and set explicitly
+  // This makes theme work independently of CSS media query support
+  const prefersDark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+  document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+}
+```
+
+**Fix** in `public/js/settings.js` — `applyThemePreference()`:
+- When theme is `'system'`, detect OS preference and set explicit `data-theme` (instead of removing the attribute)
+- Update the OS change listener to re-apply `data-theme` when system theme changes in real time:
+```javascript
+function applyThemePreference(theme) {
+  if (theme === 'light' || theme === 'dark') {
+    document.documentElement.setAttribute('data-theme', theme);
+  } else {
+    // 'system' — detect and set explicitly for WebView compatibility
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  }
+  updateThemeMeta();
+}
+```
+- In the `systemThemeQuery.addEventListener('change', ...)` handler, call `applyThemePreference('system')` (not just `updateThemeMeta()`) so `data-theme` updates when OS switches.
+
+**Manifest splash**: `manifest.json` `background_color: "#1a1a1a"` can't be changed dynamically. Add a `<meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF6F1">` and `<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#722F37">` pair in `index.html` to cover browser chrome color during load.
+
+**Files**: `public/js/theme-init.js`, `public/js/settings.js`, `public/index.html` (meta tags)
+
+### 8.2 Fix misleading "zones not configured" message
+**Problem**: `moves.js` line 27 says "Click **Get AI Advice**" — but that only shows text advice, doesn't configure zones.
+
+**Fix** in `public/js/cellarAnalysis/moves.js`:
+```html
+<p>Zone allocations haven't been configured yet.</p>
+<p>Tap <strong>"Setup Zones"</strong> above to have AI propose a zone layout and guide you through organising your bottles.</p>
+```
+
+**Files**: `public/js/cellarAnalysis/moves.js`
+
+### 8.3 AI advice loading: inline spinner, no forced scroll
+**Problem**: `#analysis-ai-advice` is at page bottom — user can't see loading indicator. `scrollIntoView` on loading state is disorienting on mobile — breaks reading continuity.
+
+**Fix** in `public/js/cellarAnalysis/aiAdvice.js`:
+- Show inline spinner on the "Get AI Advice" button itself (disable + "Getting advice..." text)
+- Show a non-jumping ARIA live status region (`role="status"`) near the button: "AI analysis in progress..."
+- When response arrives, THEN populate `#analysis-ai-advice` and scroll it into view (content scroll, not loading scroll)
+- Restore button state in `finally` block
+
+```javascript
+export async function handleGetAIAdvice() {
+  const btn = document.getElementById('get-ai-advice-btn');
+  const adviceEl = document.getElementById('analysis-ai-advice');
+  const statusEl = document.getElementById('ai-advice-status'); // ARIA live region
+  if (!adviceEl) return;
+
+  // Inline button spinner — no page jump
+  if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Getting advice…'; }
+  if (statusEl) statusEl.textContent = 'AI analysis in progress (may take up to 2 minutes)...';
+
+  try {
+    const result = await analyseCellarAI();
+    adviceEl.style.display = 'block';
+    adviceEl.innerHTML = formatAIAdvice(result.aiAdvice);
+    adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' }); // scroll to RESULT, not loading
+    if (statusEl) statusEl.textContent = '';
+  } catch (err) {
+    adviceEl.style.display = 'block';
+    adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+    if (statusEl) statusEl.textContent = '';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.originalText || 'Get AI Advice'; }
+  }
+}
+```
+
+**HTML addition** in `index.html` (near the analysis actions bar):
+```html
+<span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
+```
+
+**Files**: `public/js/cellarAnalysis/aiAdvice.js`, `public/index.html`
+
+### 8.4 Fix text overflow at screen edge
+**Problem**: Zone cards, reconfig modal, and AI advice text truncated on mobile.
+
+**Fix** in `public/css/components.css`:
+```css
+.reconfig-action-title,
+.reconfig-action-reason,
+.reconfig-summary,
+.zone-card,
+.zone-card-purpose,
+.zone-card-composition,
+.zone-card-pairing,
+.ai-advice-content,
+.ai-advice-structured,
+.zone-reconfig-banner-message,
+.zone-reconfig-banner-list {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+```
+
+Add mobile override in `@media (max-width: 480px)`:
+```css
+.reconfig-modal-body { padding: 0.75rem; }
+.reconfig-action { padding: 0.75rem; }
+```
+
+**Files**: `public/css/components.css`
+
+### 8.5 Cache bump
+**Files**: `public/sw.js`, `public/index.html`
+
+---
+
+## Phase 9: Cellar Analysis — Flow Simplification (State Machine, Single CTA)
+
+### 9.1 Formal analysis state machine
+
+**Problem**: "Systemic issues detected" is vague. CTA behavior must be deterministic and testable. Multiple competing buttons (Setup Zones, Reconfigure Zones, Refresh, AI Advice) confuse users.
+
+**State model** (`public/js/cellarAnalysis/analysisState.js` — new module, ~40 lines):
+
+| State | Condition | CTA Label | CTA Action |
+|-------|-----------|-----------|------------|
+| `NO_ZONES` | `needsZoneSetup === true` | "Setup Zones" | `startZoneSetup()` |
+| `ZONES_DEGRADED` | `needsZoneSetup === false` AND (capacityAlerts >= 3 OR misplacementRate >= 10%) | "Reconfigure Zones" | `openReconfigurationModal()` |
+| `ZONES_HEALTHY` | `needsZoneSetup === false` AND not degraded | "Optimize Cellar" | `openReconfigurationModal()` |
+| `JUST_RECONFIGURED` | `analysis.__justReconfigured === true` | "Guide Me Through Moves" | `openMoveGuide()` (Phase 11) / scroll to moves (Phase 9) |
+
+```javascript
+// public/js/cellarAnalysis/analysisState.js
+export const AnalysisState = { NO_ZONES: 'NO_ZONES', ZONES_DEGRADED: 'ZONES_DEGRADED', ZONES_HEALTHY: 'ZONES_HEALTHY', JUST_RECONFIGURED: 'JUST_RECONFIGURED' };
+
+export function deriveState(analysis) {
+  if (analysis?.__justReconfigured) return AnalysisState.JUST_RECONFIGURED;
+  if (analysis?.needsZoneSetup) return AnalysisState.NO_ZONES;
+
+  const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
+  const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue').length;
+  const total = analysis?.summary?.totalBottles ?? 0;
+  const misplaced = analysis?.summary?.misplacedBottles ?? 0;
+  const misplacementRate = total > 0 ? misplaced / total : 0;
+
+  if (capacityAlerts >= 3 || misplacementRate >= 0.10) return AnalysisState.ZONES_DEGRADED;
+  return AnalysisState.ZONES_HEALTHY;
+}
+```
+
+**Test table** (unit test in `tests/unit/cellarAnalysis/analysisState.test.js`):
+
+| Input | Expected State |
+|-------|---------------|
+| `{ needsZoneSetup: true }` | `NO_ZONES` |
+| `{ needsZoneSetup: false, alerts: [cap, cap, cap], summary: { totalBottles: 100, misplacedBottles: 5 } }` | `ZONES_DEGRADED` |
+| `{ needsZoneSetup: false, summary: { totalBottles: 100, misplacedBottles: 15 } }` | `ZONES_DEGRADED` |
+| `{ needsZoneSetup: false, alerts: [], summary: { totalBottles: 100, misplacedBottles: 2 } }` | `ZONES_HEALTHY` |
+| `{ __justReconfigured: true }` | `JUST_RECONFIGURED` |
+
+**Files**: New `public/js/cellarAnalysis/analysisState.js`, new `tests/unit/cellarAnalysis/analysisState.test.js`
+
+### 9.2 Single primary CTA with correct hierarchy
+
+**Problem**: Two `btn-primary` buttons ("Refresh Analysis" + "Configure Cellar") weakens Gestalt figure-ground focus.
+
+**Fix** in `public/index.html`:
+```html
+<div class="analysis-view-header">
+  <h2>Cellar Analysis</h2>
+  <div class="analysis-actions">
+    <!-- Single primary CTA — text/action driven by state machine -->
+    <button class="btn btn-primary" id="cellar-action-btn">Setup Zones</button>
+    <!-- Secondary actions -->
+    <button class="btn btn-secondary" id="get-ai-advice-btn">AI Advice</button>
+    <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn" title="Refresh analysis">↻</button>
+    <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
+    <span class="analysis-cache-status" id="analysis-cache-status"></span>
+  </div>
+</div>
+```
+
+- "Refresh Analysis" demoted to icon-only secondary button (↻) — utility, not primary flow action
+- Single primary CTA: `#cellar-action-btn` — label and handler set by `updateActionButton(analysis)` using `deriveState()`
+- "Get AI Advice" stays as labeled secondary button (informational, not flow-critical)
+- Remove `#setup-zones-btn` and `#reconfigure-zones-btn` (replaced by `#cellar-action-btn`)
+
+**Implementation** in `public/js/cellarAnalysis/analysis.js`:
+```javascript
+import { deriveState, AnalysisState } from './analysisState.js';
+import { startZoneSetup } from './zones.js';
+import { openReconfigurationModal } from './zoneReconfigurationModal.js';
+
+function updateActionButton(analysis, onRenderAnalysis) {
+  const btn = document.getElementById('cellar-action-btn');
+  if (!btn) return;
+
+  const state = deriveState(analysis);
+  const config = {
+    [AnalysisState.NO_ZONES]:            { label: 'Setup Zones',            handler: () => startZoneSetup() },
+    [AnalysisState.ZONES_DEGRADED]:      { label: 'Reconfigure Zones',      handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:       { label: 'Optimize Cellar',        handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.JUST_RECONFIGURED]:   { label: 'Review Moves',           handler: () => document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' }) },
+  };
+
+  const { label, handler } = config[state];
+  btn.textContent = label;
+
+  // Replace handler (clone to remove old listener)
+  const newBtn = btn.cloneNode(true);
+  btn.parentNode.replaceChild(newBtn, btn);
+  newBtn.addEventListener('click', handler);
+}
+```
+
+Call `updateActionButton(analysis, onRenderAnalysis)` at the end of `renderAnalysis()`.
+
+**Files**: `public/index.html`, `public/js/cellarAnalysis/analysis.js`, `public/js/cellarAnalysis.js` (remove old button wiring for setup-zones-btn, reconfigure-zones-btn)
+
+### 9.3 Post-reconfiguration feedback with scroll
+**Problem**: After "Apply all changes", user doesn't see the result. Success banner + suggested moves are below the fold.
+
+**Fix** in `public/js/cellarAnalysis/zoneReconfigurationModal.js` — `handleApply()`:
+- After re-analysis + `onRenderAnalysis()`, scroll to `#analysis-alerts` (where the success banner renders)
+```javascript
+// After onRenderAnalysis(reportWithFlag):
+document.getElementById('analysis-alerts')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+```
+
+**Fix** in `public/js/cellarAnalysis/zoneReconfigurationBanner.js` — `renderPostReconfigBanner()`:
+- Add prominent "Review Moves Below" button that scrolls to `#analysis-moves`
+- In Phase 11, this button becomes "Guide Me Through Moves" → opens move guide
+```html
+<button class="btn btn-primary" data-action="scroll-to-moves">Review Moves Below</button>
+```
+
+**Files**: `public/js/cellarAnalysis/zoneReconfigurationModal.js`, `public/js/cellarAnalysis/zoneReconfigurationBanner.js`
+
+### 9.4 "Zones not configured" alert with inline CTA
+**Problem**: The warning says "Click 'Get AI Advice'" — wrong and confusing.
+
+**Fix**: In the `#analysis-alerts` area (rendered when `needsZoneSetup === true`), show:
+```html
+<div class="alert-item warning">
+  <span class="alert-icon">⚠️</span>
+  <span>Cellar zones not configured.</span>
+  <button class="btn btn-primary btn-small" id="alert-setup-zones-btn">Setup Zones</button>
+</div>
+```
+Wire this button to `startZoneSetup()` in `analysis.js`.
+
+**Files**: `public/js/cellarAnalysis/analysis.js`
+
+### 9.5 Cache bump
+**Files**: `public/sw.js`, `public/index.html`
+
+---
+
+## Phase 10: Cellar Analysis — Fridge Swap Suggestions
+
+### 10.1 Transactional swap safety
+
+**Verified**: The existing `POST /api/cellar/execute-moves` endpoint already supports atomic A→B + B→A swaps:
+- `validateMovePlan()` in `src/services/movePlanner.js` (lines 399-490) tracks `vacatedSlots` — if move A vacates slot X, move B is allowed to target X
+- `db.transaction()` in `src/db/postgres.js` uses explicit BEGIN/COMMIT/ROLLBACK
+- 5-rule pre-validation catches duplicates, occupied targets, source mismatches
+
+**Enhancement**: Add invariant count check in `execute-moves` handler as defense-in-depth:
+```javascript
+// Inside the transaction, after all moves:
+const beforeCount = existingCounts; // captured before loop
+const afterCount = await client.query('SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1', [cellarId]);
+if (Number(afterCount.rows[0].count) !== beforeCount) {
+  throw new Error(`Invariant violation: bottle count changed from ${beforeCount} to ${afterCount.rows[0].count}`);
+}
+```
+
+**Alternative**: For simple 2-way fridge swaps, can also use `POST /api/slots/direct-swap` (already exists in `src/routes/slots.js` lines 110-143) which takes `{ slot_a, slot_b }` and handles atomically.
+
+**Files**: `src/routes/cellarReconfiguration.js` (invariant check addition)
+
+### 10.2 User-goal fridge language
+
+**Problem**: Replacement heuristic uses technical terms. Wine users think in "what to chill for tonight/this weekend."
+
+**Fix** in `public/js/cellarAnalysis/fridge.js` — candidate rendering:
+- Swap reason uses user-goal language: "Perfect for tonight's dinner", "Ready for the weekend", "Fills your crisp white gap"
+- Explain WHY this swap: "This [Sauvignon Blanc] replaces [Chardonnay 2020] which has been chilling for 3 weeks and is best enjoyed from cellar"
+
+**Candidate rendering when fridge is full:**
+```html
+<div class="fridge-candidate">
+  <div class="fridge-candidate-info">
+    <div class="fridge-candidate-name">Sauvignon Blanc 2023</div>
+    <div class="fridge-candidate-reason">Ready to drink — fills your crisp white gap</div>
+    <div class="fridge-swap-detail">
+      Swap with <strong>Chardonnay 2020</strong> (F3) — move back to R5C2
+      <span class="fridge-swap-why">In fridge 3 weeks, better stored in cellar now</span>
+    </div>
+  </div>
+  <button class="btn btn-secondary btn-small fridge-swap-btn" data-candidate-index="0">Swap</button>
+</div>
+```
+
+**When fridge has empty slots** (existing flow, enhanced):
+```html
+<div class="fridge-candidate">
+  <div class="fridge-candidate-info">
+    <div class="fridge-candidate-name">Riesling 2022</div>
+    <div class="fridge-candidate-reason">Ready to drink — fills your aromatic gap</div>
+    <div class="fridge-target-slot">Add to F7</div>
+  </div>
+  <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="1">Add to F7</button>
+</div>
+```
+
+### 10.3 Swap execution logic
+
+In `public/js/cellarAnalysis/fridge.js`:
+
+```javascript
+async function swapFridgeCandidate(candidateIndex) {
+  const analysis = getCurrentAnalysis();
+  const candidate = analysis?.fridgeStatus?.candidates?.[candidateIndex];
+  if (!candidate) return;
+
+  // Identify lowest-priority fridge wine to swap out
+  const swapOut = identifySwapTarget(analysis.fridgeStatus, candidate);
+  if (!swapOut) { showToast('No suitable swap found'); return; }
+
+  try {
+    await executeCellarMoves([
+      { wineId: swapOut.wineId, from: swapOut.slot, to: candidate.fromSlot },
+      { wineId: candidate.wineId, from: candidate.fromSlot, to: swapOut.slot }
+    ]);
+    showToast(`Swapped: ${candidate.wineName} → ${swapOut.slot}, ${swapOut.wineName} → ${candidate.fromSlot}`);
+    await loadAnalysis();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+function identifySwapTarget(fridgeStatus, candidate) {
+  // Priority: wine that doesn't match any par-level gap category > longest in fridge > lowest urgency
+  const fridgeWines = fridgeStatus.wines || [];
+  if (fridgeWines.length === 0) return null;
+
+  return fridgeWines
+    .filter(w => w.wineId !== candidate.wineId) // don't swap with self
+    .sort((a, b) => {
+      // 1. Prefer swapping out wines that DON'T match any gap category
+      const aMatchesGap = fridgeStatus.parLevelGaps?.[a.category] ? 0 : 1;
+      const bMatchesGap = fridgeStatus.parLevelGaps?.[b.category] ? 0 : 1;
+      if (aMatchesGap !== bMatchesGap) return bMatchesGap - aMatchesGap;
+      // 2. Longest time in fridge (if available)
+      // 3. Lowest drinking urgency
+      return (a.urgencyScore ?? 99) - (b.urgencyScore ?? 99);
+    })[0] || null;
+}
+```
+
+**Backend data check**: Verify `fridgeStatus.wines` includes `wineId`, `wineName`, `slot`, `category`, and ideally `urgencyScore`. If not, enhance `src/services/cellarAnalysis.js` fridge analysis to include these fields.
+
+**Files**: `public/js/cellarAnalysis/fridge.js`, possibly `src/services/cellarAnalysis.js` (fridge wine enrichment)
+
+### 10.4 Cache bump
+**Files**: `public/sw.js`, `public/index.html`
+
+---
+
+## Phase 11: Cellar Analysis — Visual Grid Move Guide
+
+### 11.1 Grid reuse — NO FORK
+
+**Confirmed**: Grid.js uses DOM-based slot elements with `data-location` attributes. The `dragdrop.js` module already annotates slots post-render by querying `document.querySelectorAll('.slot')` and adding CSS classes (`drag-target`, `drag-over`, `drag-over-swap`). The move guide will use the same pattern.
+
+**Approach**: Post-render DOM annotation (same pattern as `dragdrop.js`):
+1. Call existing `renderCellar()` / `renderStorageAreas()` to render the grid normally
+2. Query slots by `[data-location="R1C1"]` and add annotation classes
+3. CSS handles all visual differentiation
+
+**NO new renderer. NO grid fork.**
+
+### 11.2 Move Guide Component (`public/js/cellarAnalysis/moveGuide.js`)
+
+**Features:**
+1. **Overlay panel** that sits above the main cellar grid view (not a separate grid copy)
+   - Instruction bar: "Step 1 of 12: Move Kanonkop Pinotage 2019"
+   - Source/target display: "From R5C3 → To R8C1 (Bordeaux & Blends zone)"
+   - Progress bar
+   - Action buttons: "Execute Move", "Recalculate" (not Skip — see 11.3)
+   - The cellar grid below is annotated with move highlighting
+
+2. **Grid annotation** (post-render, DRY):
+```javascript
+function annotateGrid(moves, currentIndex) {
+  // Clear previous annotations
+  document.querySelectorAll('.slot').forEach(s => {
+    s.classList.remove('move-source', 'move-target', 'move-active-source', 'move-active-target', 'move-completed', 'move-pending');
+  });
+
+  moves.forEach((move, idx) => {
+    const source = document.querySelector(`[data-location="${move.from}"]`);
+    const target = document.querySelector(`[data-location="${move.to}"]`);
+
+    if (idx < currentIndex) {
+      source?.classList.add('move-completed');
+      target?.classList.add('move-completed');
+    } else if (idx === currentIndex) {
+      source?.classList.add('move-active-source');
+      target?.classList.add('move-active-target');
+    } else {
+      source?.classList.add('move-pending', 'move-source');
+      target?.classList.add('move-pending', 'move-target');
+    }
+  });
+}
+```
+
+3. **Zone grouping**: Moves sorted by target zone for logical batching
+
+### 11.3 Dependency-safe "Recalculate" (not Skip)
+
+**Problem**: Naive "Skip" can invalidate later moves. If move 3 targets R8C1 and move 5 depends on R8C1 being vacated by move 3, skipping move 3 breaks move 5.
+
+**Solution**: Replace "Skip" with "Recalculate from here":
+- When user doesn't want to do the current move, call `analyseCellar(true)` to get a fresh analysis
+- Filter out already-completed moves (by checking which source slots no longer contain the expected wine)
+- Re-render the move guide with the fresh move list
+- The backend recalculates optimal moves based on current state
+
+```javascript
+async function handleRecalculate(completedMoves) {
+  const statusEl = document.getElementById('move-guide-status');
+  if (statusEl) statusEl.textContent = 'Recalculating moves...';
+
+  // Get fresh analysis — backend generates new moves based on current slot state
+  const response = await analyseCellar(true);
+  const freshMoves = response.report.suggestedMoves?.filter(m => m.type === 'move') || [];
+
+  // Filter out moves already completed in this session
+  const completedFromTo = new Set(completedMoves.map(m => `${m.from}→${m.to}`));
+  const remainingMoves = freshMoves.filter(m => !completedFromTo.has(`${m.from}→${m.to}`));
+
+  // Reset guide with new moves, starting from index 0
+  resetMoveGuide(remainingMoves);
+}
+```
+
+This is safe because:
+- Backend always calculates moves against current slot state (not stale data)
+- Already-completed moves won't appear (wines have moved)
+- Dependencies are recalculated based on actual slot occupancy
+
+### 11.4 CSS for move annotations
+
+In `public/css/components.css`:
+```css
+/* Move guide annotations — same pattern as dragdrop highlighting */
+.slot.move-active-source {
+  border: 2px solid var(--color-warning) !important;
+  background: var(--color-warning-bg) !important;
+  animation: move-pulse 1.5s ease-in-out infinite;
+}
+.slot.move-active-target {
+  border: 2px solid var(--color-success) !important;
+  background: var(--color-success-bg) !important;
+  animation: move-pulse 1.5s ease-in-out infinite;
+}
+.slot.move-source, .slot.move-target { opacity: 0.7; }
+.slot.move-completed { opacity: 0.4; }
+.slot.move-pending { /* default styling, dimmed */ }
+
+@keyframes move-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-success-rgb), 0.4); }
+  50% { box-shadow: 0 0 0 6px rgba(var(--color-success-rgb), 0); }
+}
+
+/* Respect reduced-motion */
+@media (prefers-reduced-motion: reduce) {
+  .slot.move-active-source, .slot.move-active-target { animation: none; }
+}
+```
+
+### 11.5 HTML container
+
+In `public/index.html` (inside `#view-analysis`, above `#analysis-moves`):
+```html
+<div class="move-guide-panel" id="move-guide-panel" style="display: none;">
+  <div class="move-guide-header">
+    <h3>Move Guide</h3>
+    <div class="move-guide-progress" id="move-guide-progress"></div>
+    <button class="btn-icon" id="move-guide-close" title="Close guide">✕</button>
+  </div>
+  <div class="move-guide-instruction" id="move-guide-instruction"></div>
+  <span id="move-guide-status" role="status" aria-live="polite"></span>
+  <div class="move-guide-actions">
+    <button class="btn btn-primary" id="move-guide-execute">Execute Move</button>
+    <button class="btn btn-secondary" id="move-guide-recalculate">Recalculate</button>
+  </div>
+</div>
+```
+
+This is a panel ABOVE the existing cellar grid, not a separate grid. The cellar grid itself gets annotated via CSS classes (11.2).
+
+### 11.6 Entry points
+
+- Post-reconfig banner → "Guide Me Through Moves" button → `openMoveGuide(moves)`
+- Suggested Moves section → "Visual Guide" button → `openMoveGuide(moves)`
+- State machine `JUST_RECONFIGURED` → primary CTA "Guide Me Through Moves" → `openMoveGuide(moves)`
+
+### 11.7 Integration with existing grid
+
+After each executed move:
+1. Call `executeCellarMoves([currentMove])` (existing API)
+2. Call `refreshLayout()` (existing function — re-renders grid from API data)
+3. Re-annotate grid with `annotateGrid(moves, newIndex)` (post-render annotation)
+
+The grid re-renders naturally (fresh data from API), then annotations are re-applied. No manual DOM surgery needed.
+
+**Files**: New `public/js/cellarAnalysis/moveGuide.js`, `public/index.html`, `public/css/components.css`, `public/js/cellarAnalysis/zoneReconfigurationBanner.js`, `public/js/cellarAnalysis/moves.js`
+
+### Cellar Analysis — Critical Files Summary
+
+| File | Phases | Changes |
+|------|--------|---------|
+| `public/js/theme-init.js` | 8 | Always set `data-theme` explicitly |
+| `public/js/settings.js` | 8 | `applyThemePreference('system')` sets explicit attribute |
+| `public/index.html` | 8,9,11 | Meta tags, button hierarchy, move guide panel, ARIA live region |
+| `public/js/cellarAnalysis/moves.js` | 8,11 | Fix message, add "Visual Guide" button |
+| `public/js/cellarAnalysis/aiAdvice.js` | 8 | Inline spinner, no forced scroll |
+| `public/css/components.css` | 8,11 | Overflow fix, move guide CSS |
+| `public/js/cellarAnalysis/analysisState.js` | 9 | **NEW** — state machine module |
+| `public/js/cellarAnalysis/analysis.js` | 9 | `updateActionButton()` using state machine |
+| `public/js/cellarAnalysis.js` | 9 | Remove old button wiring |
+| `public/js/cellarAnalysis/zoneReconfigurationModal.js` | 9 | Post-apply scroll |
+| `public/js/cellarAnalysis/zoneReconfigurationBanner.js` | 9,11 | "Review Moves" / "Guide Me" button |
+| `public/js/cellarAnalysis/fridge.js` | 10 | Swap logic, user-goal language, slot display |
+| `src/routes/cellarReconfiguration.js` | 10 | Invariant count check |
+| `public/js/cellarAnalysis/moveGuide.js` | 11 | **NEW** — move guide module |
+| `public/sw.js` | 8,9,10,11 | Cache version bumps |
+
+### Cellar Analysis — Existing Code to Reuse
+
+| What | Where | How |
+|------|-------|-----|
+| Grid slot annotation pattern | `public/js/dragdrop.js` | Query `[data-location]`, add CSS classes |
+| Atomic swap support | `POST /api/cellar/execute-moves` | Send 2-move batch, `vacatedSlots` tracking handles A↔B |
+| Direct swap endpoint | `POST /api/slots/direct-swap` | Alternative for simple 2-way fridge swaps |
+| Transaction wrapper | `src/db/postgres.js` `transaction()` | BEGIN/COMMIT/ROLLBACK with auto-release |
+| Move validation | `src/services/movePlanner.js` `validateMovePlan()` | 5-rule pre-execution validation |
+| `refreshLayout()` | `public/js/app.js` | Re-renders grid from API after move execution |
+| `escapeHtml()` / `showToast()` | `public/js/utils.js` | Safe HTML rendering, user feedback |
+
+---
+
 ## Execution Order
 
 | Order | Phase | Description | Risk | Status |
@@ -1000,13 +1586,19 @@ This avoids duplication and keeps all aria-live management in one place.
 | 4 | Phase 4 | Gestalt layout + non-color cue integration | Low — HTML+CSS | **DONE** |
 | 5 | Phase 3 | Light mode + FOUC fix + theme parity + SVG audit | Medium — needs extended QA | **DONE** |
 | 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | **DONE** |
-| 7 | Phase 7 | Navigation + motion accessibility + toast aria-live | Medium — JS changes | Pending |
+| 7 | Phase 7 | Navigation + motion accessibility + toast aria-live | Medium — JS changes | **DONE** |
+| 8 | Phase 8 | Cellar Analysis: theme hardening, text overflow, messages, loading UX | Low — CSS + JS fixes | Pending |
+| 9 | Phase 9 | Cellar Analysis: state machine, single CTA, post-reconfig flow | Medium — JS + HTML restructure | Pending |
+| 10 | Phase 10 | Cellar Analysis: fridge swap-out suggestions | Medium — JS + backend enhancement | Pending |
+| 11 | Phase 11 | Cellar Analysis: visual grid move guide | High — new module, grid annotation | Pending |
 
 **Rationale**:
 - Phase 0 first: splitting the CSS de-risks every subsequent phase by isolating changes to their own file
 - Phase 5 before Phase 4: type scale variables are used in layout fixes
 - Phase 3 after Phase 4: inline style cleanup should be done before duplicating for a second theme
 - Extended QA matrix runs after Phases 3, 6, and 7 (keyboard, screen reader, forced-colors, color-blind, reduced-motion)
+- Phase 8 before 9: quick fixes (theme, text overflow) must land before flow restructuring
+- Phases 8–11 are independent of Phase 7 and can proceed in parallel or after it
 
 ---
 
@@ -1076,6 +1668,41 @@ Before starting Phase 1, confirm these requirements are understood and will be v
 9. **Light mode**: Emulate `prefers-color-scheme: light` in DevTools. Walk through all 6 views. Validate Phase 3.1b parity matrix.
 10. **Touch target audit**: Use Chrome DevTools mobile emulation (iPhone SE, 375px). Tap every interactive control. Verify no mis-taps from undersized targets.
 
+### Phase 8 — Manual + Unit
+- Clear localStorage, reload on mobile → app follows device theme (light/dark)
+- Test text overflow: zone cards, reconfig modal, AI advice at 375px viewport
+- Verify "zones not configured" message references "Setup Zones"
+- AI advice button shows inline spinner, no page jump during loading
+- `npm run test:unit` passes
+
+### Phase 9 — Unit + State Machine Tests
+- **New**: `tests/unit/cellarAnalysis/analysisState.test.js` — 5 state derivation tests (see 9.1 test table)
+- Test single CTA: shows "Setup Zones" when no zones, "Reconfigure Zones" when degraded, "Optimize Cellar" when healthy
+- Test post-reconfig: apply → success banner visible → "Review Moves" scrolls to moves
+- Verify `#refresh-analysis-btn` is icon-only secondary, not competing for primary focus
+- `npm run test:unit` passes (942+ existing + 5 new)
+
+### Phase 10 — Unit + Integration
+- **New**: `tests/unit/cellarAnalysis/fridgeSwap.test.js` — test `identifySwapTarget()` heuristic (gap category > time > urgency)
+- **New**: `tests/integration/cellarSwap.test.js` — integration test:
+  1. Set up fridge with 9 occupied slots
+  2. POST execute-moves with A→B + B→A swap
+  3. Verify both bottles moved correctly (no loss, no duplication)
+  4. Verify invariant count check passes
+- Test with full fridge (9/9): candidates show swap suggestions with user-goal language
+- `npm run test:all` passes
+
+### Phase 11 — Unit + Integration + Mobile E2E
+- **New**: `tests/unit/cellarAnalysis/moveGuide.test.js` — test `annotateGrid()` applies correct classes, test `handleRecalculate()` filters completed moves
+- **Integration**: Open move guide → execute 2 moves → recalculate → verify fresh moves returned → complete remaining
+- **Mobile E2E (manual, 375px)**: Full flow: analysis tab → setup zones → reconfigure → guided moves → verify grid annotations visible and touch targets usable
+- `npm run test:all` passes
+
+### All Phases (8–11)
+- `npm run test:unit` after each phase (regression gate)
+- Cache bump: `sw.js` CACHE_VERSION + `index.html` version strings
+- Manual mobile QA at 375px (iPhone SE emulation) for each phase
+
 ### Final:
 11. Bump cache version in `index.html` and `sw.js`
 12. Verify offline boot (disable network in DevTools > Application > Service Workers)
@@ -1095,6 +1722,10 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | **DONE** (keyboard walkthrough + grouped screenshot pending manual QA) |
 | Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **CODE COMPLETE** (implementation + all review fixes done; parity matrix validation + SVG audit + color-blind simulation + offline boot test require manual QA) |
 | Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | **CODE COMPLETE** (breakpoint consolidation + touch target fixes + safe areas implemented; manual tap testing and mobile QA pending) |
-| Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | Pending |
+| Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | **CODE COMPLETE** (double-ring focus, skeleton shimmer, toast stacking + announce(); manual keyboard/SR/reduced-motion QA pending) |
+| Phase 8 | Clear localStorage + mobile reload → correct theme. Text overflow check at 375px. AI advice inline spinner. | Pending |
+| Phase 9 | State machine unit tests pass (5 cases). Single CTA label correct per state. Post-reconfig scrolls to banner. | Pending |
+| Phase 10 | `identifySwapTarget()` unit tests pass. Integration test: atomic fridge swap (no bottle loss). Full fridge shows swap suggestions. | Pending |
+| Phase 11 | `annotateGrid()` unit tests pass. Move guide: execute 2 → recalculate → complete. Grid annotations visible at 375px. | Pending |
 
 This prevents cascading regressions and provides clear rollback points if a phase introduces issues.

@@ -731,17 +731,16 @@ header .search-trigger {
     padding: 0.7rem 0.9rem;
   }
 
-  /* Toast */
-  .toast {
+  /* Toast container — full-width on mobile */
+  #toast-container {
     left: 1rem;
     right: 1rem;
-    transform: translateY(100px);
-    width: auto;
-    font-size: 1rem;
+    bottom: 1rem;
   }
 
-  .toast.show {
-    transform: translateY(0);
+  .toast {
+    max-width: none;
+    font-size: 1rem;
   }
 
   /* Form layout (consolidated from 500px) */
@@ -849,8 +848,8 @@ header .search-trigger {
     padding-top: max(0.75rem, env(safe-area-inset-top));
   }
 
-  /* Toast positioning to avoid home indicator on iOS */
-  .toast {
+  /* Toast container positioning to avoid home indicator on iOS */
+  #toast-container {
     bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1rem));
   }
 
