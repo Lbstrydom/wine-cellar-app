@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v91';
+const CACHE_VERSION = 'v92';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -20,7 +20,7 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260206L',
+  '/css/styles.css?v=20260206m',
   '/css/variables.css?v=20260205i',
   '/css/layout.css?v=20260205i',
   '/css/components.css?v=20260205i',
