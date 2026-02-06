@@ -82,7 +82,7 @@ textarea:focus-visible {
 }
 
 .btn-small {
-  min-height: 36px;
+  min-height: 44px;  /* Phase 6.3: increased from 36px to meet product standard */
   padding: 0.5rem 0.75rem;
 }
 
@@ -108,6 +108,18 @@ textarea:focus-visible {
   /* Ensure select dropdowns are tappable */
   .form-field select {
     padding: 0.75rem;
+  }
+
+  /* Icon buttons also need 44px minimum on mobile */
+  .btn-icon {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  /* Zoom controls need adequate touch targets */
+  .zoom-controls .btn {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 

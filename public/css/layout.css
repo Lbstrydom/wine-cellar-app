@@ -290,16 +290,7 @@ header .search-trigger {
 /* Responsive */
 /* 768px block 1 merged into block 2 below (Phase 5 cleanup) */
 
-@media (max-width: 500px) {
-  .form-row {
-    flex-direction: column;
-    gap: 0;
-  }
 
-  .form-field {
-    margin-bottom: 1rem;
-  }
-}
 
 /* ============================================================
    MOBILE MENU
@@ -752,6 +743,45 @@ header .search-trigger {
   .toast.show {
     transform: translateY(0);
   }
+
+  /* Form layout (consolidated from 500px) */
+  .form-row {
+    flex-direction: column;
+    gap: 0;
+  }
+
+  .form-field {
+    margin-bottom: 1rem;
+  }
+
+  /* Settings page (consolidated from 600px) */
+  .settings-rule {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+  }
+
+  .credential-inputs {
+    flex-direction: column;
+  }
+
+  .preference-labels span:nth-child(2) {
+    display: none;
+  }
+
+  .manual-window-entry {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .window-entry {
+    flex-wrap: wrap;
+  }
+
+  .window-status {
+    margin-left: 0;
+    margin-top: 0.25rem;
+  }
 }
 
 /* Very small screens (360px and below) */
@@ -802,37 +832,9 @@ header .search-trigger {
 }
 
 /* Responsive Settings */
-@media (max-width: 600px) {
-  .settings-rule {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.5rem;
-  }
 
-  .credential-inputs {
-    flex-direction: column;
-  }
 
-  .preference-labels span:nth-child(2) {
-    display: none;
-  }
-
-  .manual-window-entry {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .window-entry {
-    flex-wrap: wrap;
-  }
-
-  .window-status {
-    margin-left: 0;
-    margin-top: 0.25rem;
-  }
-}
-
-/* PWA standalone mode adjustments */
+/* PWA standalone mode adjustments (Phase 6.4) */
 @media (display-mode: standalone) {
   /* Add padding for notch/safe areas on mobile */
   body {
@@ -840,6 +842,16 @@ header .search-trigger {
     padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+  }
+
+  /* Header safe area handling */
+  header {
+    padding-top: max(0.75rem, env(safe-area-inset-top));
+  }
+
+  /* Toast positioning to avoid home indicator on iOS */
+  .toast {
+    bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1rem));
   }
 
   /* Hide install button when already installed */

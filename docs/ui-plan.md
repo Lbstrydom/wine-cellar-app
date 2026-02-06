@@ -16,7 +16,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 4 | **DONE** | 2026-02-06 | Settings grouping, inline style cleanup, non-color cues, wine card hierarchy, tab indicator |
 | Phase 5 | **DONE** | 2026-02-06 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
 | Post-Phase UX | **DONE** | 2026-02-06 | Grid UX (column headers, slot-loc hiding, priority legend), btn-primary light mode contrast fix |
-| Phase 6 | Pending | | |
+| Phase 6 | **DONE** | 2026-02-06 | Mobile responsive refinements, touch targets, PWA safe areas (manual QA pending) |
 | Phase 7 | Pending | | |
 
 ## Files Modified
@@ -901,6 +901,28 @@ Where 44px would break dense layouts (e.g., adjacent action icons on a wine card
 }
 ```
 
+> **Implementation notes (2026-02-06):**
+> - **6.1 & 6.2**: Consolidated media query breakpoints from 6 to 4 standard breakpoints:
+>   - Removed 500px breakpoint (1 occurrence in layout.css) → merged into 480px
+>   - Removed 600px breakpoint (7 occurrences: 1 in layout.css, 6 in components.css) → merged into 480px
+>   - Removed 900px breakpoint (1 occurrence in components.css) → merged into 768px
+>   - Final breakpoints: default (desktop), 768px (tablet), 480px (mobile), 360px (small mobile)
+>   - Total rules consolidated: 9 breakpoint blocks merged into 3 target breakpoints
+> - **6.3**: Fixed touch targets to meet 44px product standard:
+>   - `.btn-icon`: Changed from fixed 32x32px to min 44x44px with flex centering
+>   - `.btn-small`: Increased min-height from 36px to 44px (WCAG AA baseline is 24px, product standard is 44px)
+>   - Added mobile-specific overrides in accessibility.css for `.btn-icon` and `.zoom-controls .btn`
+>   - Added `-webkit-tap-highlight-color: transparent` and `touch-action: manipulation` to `.btn-icon` for better mobile UX
+> - **6.4**: Enhanced PWA safe area handling in standalone mode:
+>   - Added `header { padding-top: max(0.75rem, env(safe-area-inset-top)); }` for notch/Dynamic Island avoidance
+>   - Added `.toast { bottom: max(2rem, calc(env(safe-area-inset-bottom) + 1rem)); }` for home indicator clearance
+>   - Existing body safe-area padding retained for comprehensive edge-to-edge support
+> - Cache bumped: `sw.js` `CACHE_VERSION` v87 → v88, CSS version strings 20260205i → 20260206i
+> - All 942 unit tests pass. Zero regressions.
+>
+> **Acceptance gate (Phase 6):**
+> Touch target audit at iPhone SE (375px) in DevTools mobile emulation required. All interactive controls should meet 24px minimum (AA baseline) with 44px product standard where feasible. Manual tap testing recommended: zoom buttons, icon buttons, tabs, form elements.
+
 ---
 
 ## Phase 7: Navigation & Micro-interactions
@@ -977,7 +999,7 @@ This avoids duplication and keeps all aria-live management in one place.
 | 3 | Phase 5 | Typography scale (11px minimum) | Low — CSS only | **DONE** |
 | 4 | Phase 4 | Gestalt layout + non-color cue integration | Low — HTML+CSS | **DONE** |
 | 5 | Phase 3 | Light mode + FOUC fix + theme parity + SVG audit | Medium — needs extended QA | **DONE** |
-| 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | Pending |
+| 6 | Phase 6 | Mobile + touch targets (24px AA floor, 44px product std) | Medium — layout changes | **DONE** |
 | 7 | Phase 7 | Navigation + motion accessibility + toast aria-live | Medium — JS changes | Pending |
 
 **Rationale**:
@@ -1072,7 +1094,7 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 5 | `grep` confirms no font-size below 0.6875rem + visual check at all breakpoints | **DONE** (2 accepted exceptions: 0.5rem/0.45rem on priority badge ::after icon-labels) |
 | Phase 4 | Keyboard walkthrough of settings page + screenshot of grouped sections | **DONE** (keyboard walkthrough + grouped screenshot pending manual QA) |
 | Phase 3 | Theme parity matrix signed off (all 16 rows) + SVG audit complete + FOUC test (reload in light mode) | **CODE COMPLETE** (implementation + all review fixes done; parity matrix validation + SVG audit + color-blind simulation + offline boot test require manual QA) |
-| Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | Pending |
+| Phase 6 | Touch target audit at iPhone SE (375px) + 24px floor verified + 44px product standard where feasible | **CODE COMPLETE** (breakpoint consolidation + touch target fixes + safe areas implemented; manual tap testing and mobile QA pending) |
 | Phase 7 | Keyboard-only full walkthrough + screen reader smoke test + reduced-motion verification | Pending |
 
 This prevents cascading regressions and provides clear rollback points if a phase introduces issues.

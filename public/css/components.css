@@ -190,8 +190,8 @@
 }
 
 .btn-icon {
-  width: 32px;
-  height: 32px;
+  min-width: 44px;
+  min-height: 44px;
   padding: 0;
   display: flex;
   align-items: center;
@@ -201,6 +201,8 @@
   border: 1px solid var(--border);
   cursor: pointer;
   transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .btn-icon:hover {
@@ -4656,49 +4658,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* Mobile adjustments for awards */
-@media (max-width: 600px) {
-  .import-row {
-    flex-direction: column;
-  }
 
-  .import-row .form-field:last-child {
-    flex: 1;
-  }
-
-  .import-type-tabs {
-    flex-wrap: wrap;
-  }
-
-  .import-tab {
-    flex: 1 1 calc(33% - 0.5rem);
-    text-align: center;
-  }
-
-  .source-stats {
-    flex-direction: column;
-    gap: 0.25rem;
-    align-items: flex-end;
-  }
-
-  .awards-source-item {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .source-actions {
-    width: 100%;
-    justify-content: flex-end;
-  }
-
-  .local-awards-list {
-    flex-direction: column;
-  }
-}
-
-/* ============================================
-   BACKUP & EXPORT
-   ============================================ */
 
 .backup-stats {
   display: flex;
@@ -4767,27 +4727,8 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* Mobile adjustments for backup */
-@media (max-width: 600px) {
-  .backup-stats {
-    gap: 1rem;
-  }
-
-  .backup-stat-value {
-    font-size: 1.25rem;
-  }
-
-  .backup-buttons {
-    flex-direction: column;
-  }
-
-  .backup-buttons .btn {
-    width: 100%;
-    justify-content: center;
-  }
-}
-
 /* ============================================
-   GLOBAL SEARCH
+   BACKUP & EXPORT
    ============================================ */
 
 .global-search-overlay {
@@ -5016,25 +4957,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* Mobile adjustments */
-@media (max-width: 600px) {
-  .global-search-overlay {
-    padding-top: 5vh;
-    padding-left: 1rem;
-    padding-right: 1rem;
-  }
 
-  .global-search-modal {
-    max-width: none;
-  }
-
-  .search-shortcut {
-    display: none;
-  }
-
-  .search-trigger kbd {
-    display: none;
-  }
-}
 
 /* ============================================
    PWA Update Notification & Install Button
@@ -5081,26 +5004,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 
 
 /* Mobile-first PWA improvements */
-@media (max-width: 600px) {
-  .update-notification {
-    left: 1rem;
-    right: 1rem;
-    transform: none;
-    flex-direction: column;
-    text-align: center;
-  }
 
-  @keyframes slideUp {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-}
 
 /* ============================================
    WINE CONFIRMATION MODAL
@@ -5494,47 +5398,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* Mobile adjustments for confirmation modal */
-@media (max-width: 600px) {
-  #wine-confirmation-modal .modal,
-  #wine-disambiguation-modal .modal {
-    max-height: 90vh;
-    margin: 1rem;
-    border-radius: 12px;
-  }
 
-  .wine-confirmation-modal .modal-content {
-    padding: 1rem;
-  }
-
-  .match-card {
-    flex-direction: column;
-    text-align: center;
-    padding: 0.75rem;
-  }
-
-  .match-image {
-    width: 50px;
-    min-height: 60px;
-    margin: 0 auto;
-  }
-
-  .match-details h5 {
-    font-size: 0.95rem;
-  }
-
-  .match-meta {
-    white-space: normal;
-  }
-
-  .match-action {
-    justify-content: center;
-    margin-top: 0.5rem;
-  }
-
-  .btn-confirm {
-    width: 100%;
-  }
-}
 
 /* ============================================================
    ZONE SETUP WIZARD
@@ -5775,29 +5639,7 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* Mobile responsive for zone chat */
-@media (max-width: 600px) {
-  .zone-chat-messages {
-    max-height: 300px;
-  }
 
-  .zone-chat-panel .chat-content {
-    max-width: 95%;
-  }
-
-  .reclassification-item {
-    flex-wrap: wrap;
-  }
-
-  .reclassification-item .reclassification-info {
-    width: 100%;
-    margin-bottom: 0.5rem;
-  }
-
-  .reclassification-item .wine-info {
-    width: 100%;
-    margin-bottom: 0.5rem;
-  }
-}
 
 .wizard-step h4 {
   margin-bottom: 0.5rem;
@@ -6555,6 +6397,166 @@ body.slot-picker-mode .slot.picker-placed::after {
   .evidence-indicator {
     flex-wrap: wrap;
   }
+
+  /* Import wizard (consolidated from 600px) */
+  .import-row {
+    flex-direction: column;
+  }
+
+  .import-row .form-field:last-child {
+    flex: 1;
+  }
+
+  .import-type-tabs {
+    flex-wrap: wrap;
+  }
+
+  .import-tab {
+    flex: 1 1 calc(33% - 0.5rem);
+    text-align: center;
+  }
+
+  .source-stats {
+    flex-direction: column;
+    gap: 0.25rem;
+    align-items: flex-end;
+  }
+
+  .awards-source-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .source-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .local-awards-list {
+    flex-direction: column;
+  }
+
+  /* Backup & export (consolidated from 600px) */
+  .backup-stats {
+    gap: 1rem;
+  }
+
+  .backup-stat-value {
+    font-size: 1.25rem;
+  }
+
+  .backup-buttons {
+    flex-direction: column;
+  }
+
+  .backup-buttons .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* Global search (consolidated from 600px) */
+  .global-search-overlay {
+    padding-top: 5vh;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .global-search-modal {
+    max-width: none;
+  }
+
+  .search-shortcut {
+    display: none;
+  }
+
+  .search-trigger kbd {
+    display: none;
+  }
+
+  /* PWA update notification (consolidated from 600px) */
+  .update-notification {
+    left: 1rem;
+    right: 1rem;
+    transform: none;
+    flex-direction: column;
+    text-align: center;
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /* Wine confirmation modal (consolidated from 600px) */
+  #wine-confirmation-modal .modal,
+  #wine-disambiguation-modal .modal {
+    max-height: 90vh;
+    margin: 1rem;
+    border-radius: 12px;
+  }
+
+  .wine-confirmation-modal .modal-content {
+    padding: 1rem;
+  }
+
+  .match-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 0.75rem;
+  }
+
+  .match-image {
+    width: 50px;
+    min-height: 60px;
+    margin: 0 auto;
+  }
+
+  .match-details h5 {
+    font-size: 0.95rem;
+  }
+
+  .match-meta {
+    white-space: normal;
+  }
+
+  .match-action {
+    justify-content: center;
+    margin-top: 0.5rem;
+  }
+
+  .btn-confirm {
+    width: 100%;
+  }
+
+  /* Zone chat (consolidated from 600px) */
+  .zone-chat-messages {
+    max-height: 300px;
+  }
+
+  .zone-chat-panel .chat-content {
+    max-width: 95%;
+  }
+
+  .reclassification-item {
+    flex-wrap: wrap;
+  }
+
+  .reclassification-item .reclassification-info {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+
+  .reclassification-item .wine-info {
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
 }
 .user-controls {
   display: flex;
@@ -6738,7 +6740,12 @@ body.slot-picker-mode .slot.picker-placed::after {
   width: 100%;
 }
 
-@media (max-width: 900px) {
+/* ============================================================
+   RESPONSIVE MOBILE ADJUSTMENTS (consolidated to 4 standard breakpoints)
+   ============================================================ */
+
+@media (max-width: 768px) {
+  /* User controls (consolidated from 900px) */
   .user-controls {
     flex-direction: column;
     align-items: flex-end;
