@@ -446,6 +446,7 @@ header .search-trigger {
   }
 
   .col-header { width: 80px; }
+  .grid-legend { margin-left: 60px; }
 
   .row-label .zone-name {
     font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
@@ -604,6 +605,7 @@ header .search-trigger {
   }
 
   .col-header { width: 75px; }
+  .grid-legend { margin-left: 50px; }
 
   .row-label .zone-name {
     font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
@@ -767,6 +769,7 @@ header .search-trigger {
   }
 
   .col-header { width: 70px; font-size: var(--font-2xs); }
+  .grid-legend { margin-left: 40px; font-size: var(--font-2xs); }
 
   .row-label .zone-name {
     display: none;

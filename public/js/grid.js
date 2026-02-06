@@ -133,6 +133,20 @@ export async function renderCellar() {
     grid.appendChild(headerRow);
   }
 
+  // Priority badge legend — explain N/S/H codes once, above the grid
+  const hasPriority = cellarRows.some(r =>
+    (r.slots || []).some(s => s.wine_id && s.reduce_priority)
+  );
+  if (hasPriority) {
+    const legend = document.createElement('div');
+    legend.className = 'grid-legend';
+    legend.innerHTML =
+      '<span class="legend-item"><span class="legend-badge p1">N</span>Now</span>' +
+      '<span class="legend-item"><span class="legend-badge p2">S</span>Soon</span>' +
+      '<span class="legend-item"><span class="legend-badge p3">H</span>Hold</span>';
+    grid.appendChild(legend);
+  }
+
   // Calculate row heights for zone labels alignment
   const rowHeight = 55; // slot height (52px) + gap (3px)
 

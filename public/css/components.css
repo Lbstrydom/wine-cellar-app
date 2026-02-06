@@ -1244,26 +1244,54 @@
 .slot.rose { border-left: 3px solid var(--rose-wine); }
 .slot.sparkling { border-left: 3px solid var(--sparkling); }
 
-/* Reduce-now priority badges — self-describing labels (no legend needed) */
+/* Reduce-now priority badges (non-color cue: text label + color) */
 .slot.priority-1::after,
 .slot.priority-2::after,
 .slot.priority-3::after {
   position: absolute;
   top: 1px;
   right: 1px;
+  font-size: 0.5rem;             /* icon-equivalent label, not body text */
+  font-weight: 700;
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 2px;
+  color: var(--color-white);
+}
+
+.slot.priority-1::after { content: 'N'; background: var(--priority-1); }
+.slot.priority-2::after { content: 'S'; background: var(--priority-2); }
+.slot.priority-3::after { content: 'H'; background: var(--priority-3); }
+
+/* Priority badge legend — compact key above grid */
+.grid-legend {
+  display: flex;
+  gap: 0.75rem;
+  padding: 2px 0 4px;
+  margin-left: 80px;              /* align with slots (past row-label) */
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.legend-badge {
+  display: inline-block;
   font-size: 0.5rem;
   font-weight: 700;
   line-height: 1;
-  padding: 1px 3px;
+  padding: 1px 2px;
   border-radius: 2px;
   color: var(--color-white);
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
 }
 
-.slot.priority-1::after { content: 'NOW'; background: var(--priority-1); }
-.slot.priority-2::after { content: 'SOON'; background: var(--priority-2); }
-.slot.priority-3::after { content: 'HOLD'; background: var(--priority-3); }
+.legend-badge.p1 { background: var(--priority-1); }
+.legend-badge.p2 { background: var(--priority-2); }
+.legend-badge.p3 { background: var(--priority-3); }
 
 /* Phase 3.5.5: Color noise reduction - limit to 2 simultaneous signals */
 /* Hide lower-priority indicators when higher-priority ones exist */
