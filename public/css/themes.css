@@ -199,8 +199,8 @@
     box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
     border: 1px solid rgba(0, 0, 0, 0.15);
     font-weight: 600;
-    background: var(--accent);
-    filter: brightness(0.95);
+    background: var(--accent-hover);    /* #634F33 — darker shade */
+    color: var(--text-on-accent);       /* white — 6.8:1 on #634F33, passes AA */
   }
 
   :root:not([data-theme="dark"]) .btn-primary:hover,
@@ -286,8 +286,8 @@
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.2), 0 1px 3px rgba(0, 0, 0, 0.1);
   border: 1px solid rgba(0, 0, 0, 0.15);
   font-weight: 600;
-  background: var(--accent);
-  filter: brightness(0.95);
+  background: var(--accent-hover);    /* #634F33 — darker shade */
+  color: var(--text-on-accent);       /* white — 6.8:1 on #634F33, passes AA */
 }
 
 :root[data-theme="light"] .btn-primary:hover,
