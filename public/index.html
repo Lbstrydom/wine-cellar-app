@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260206j">
+  <link rel="stylesheet" href="/css/styles.css?v=20260206k">
 </head>
 <body>
   <header>
@@ -703,6 +703,18 @@
       <!-- Award Sources List -->
       <div class="awards-sources-section">
         <h4 class="settings-subsection-title">Imported Sources</h4>
+        
+        <!-- Batch actions (hidden when no sources or no selection) -->
+        <div id="awards-batch-actions" class="awards-batch-actions" style="display: none;">
+          <button class="btn btn-small btn-secondary" id="awards-rematch-selected-btn" disabled>
+            <span>🔄</span> Re-match Selected
+          </button>
+          <button class="btn btn-small btn-danger" id="awards-delete-selected-btn" disabled>
+            <span>🗑️</span> Delete Selected
+          </button>
+          <span class="selection-count" id="awards-selection-count">0 selected</span>
+        </div>
+
         <div id="awards-sources-list" class="awards-sources-list">
           <p class="no-data">No awards imported yet</p>
         </div>

@@ -1100,70 +1100,145 @@ async function loadAwardsSources() {
   try {
     const result = await getAwardsSources();
     const container = document.getElementById('awards-sources-list');
+    const batchActions = document.getElementById('awards-batch-actions');
     if (!container) return;
 
     if (!result.data || result.data.length === 0) {
       container.innerHTML = '<p class="no-data">No awards imported yet</p>';
+      if (batchActions) batchActions.style.display = 'none';
       return;
     }
 
+    // Show batch actions
+    if (batchActions) batchActions.style.display = 'flex';
+
+    // Render compact list with checkboxes
     container.innerHTML = result.data.map(source => {
+      const importDate = new Date(source.imported_at).toLocaleDateString('en-GB', { 
+        day: '2-digit', 
+        month: '2-digit', 
+        year: 'numeric' 
+      });
+      
       return `
-        <div class="awards-source-item" data-source-id="${escapeHtml(source.id)}">
-          <div class="source-info-main">
-            <div class="source-name">${escapeHtml(source.competition_name)} ${source.year}</div>
-            <div class="source-meta">
-              ${escapeHtml(source.source_type)} • Imported ${new Date(source.imported_at).toLocaleDateString()}
+        <div class="awards-source-item-compact" data-source-id="${escapeHtml(source.id)}">
+          <input type="checkbox" class="source-checkbox" id="source-${source.id}" data-source-id="${source.id}">
+          <label for="source-${source.id}" class="source-label">
+            <div class="source-info">
+              <span class="source-name">${escapeHtml(source.competition_name)} ${source.year}</span>
+              <span class="source-meta">${escapeHtml(source.source_type)} • ${source.award_count} awards • ${importDate}</span>
             </div>
-          </div>
-          <div class="source-stats">
-            <span class="stat-matched">${source.award_count} awards</span>
-          </div>
-          <div class="source-actions">
-            <button class="btn btn-small btn-secondary source-rematch-btn">Re-match</button>
-            <button class="btn btn-small btn-danger source-delete-btn">Delete</button>
-          </div>
+          </label>
         </div>
       `;
     }).join('');
 
-    // Add event listeners
-    container.querySelectorAll('.source-delete-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const sourceId = e.target.closest('.awards-source-item').dataset.sourceId;
-        if (confirm('Delete this award source and all its awards?')) {
-          try {
-            await deleteAwardsSource(sourceId);
-            showToast('Source deleted');
-            await loadAwardsSources();
-          } catch (err) {
-            showToast('Error: ' + err.message);
-          }
-        }
-      });
+    // Add event listeners to checkboxes
+    updateBatchActionState();
+    container.querySelectorAll('.source-checkbox').forEach(checkbox => {
+      checkbox.addEventListener('change', updateBatchActionState);
     });
 
-    container.querySelectorAll('.source-rematch-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
-        const sourceId = e.target.closest('.awards-source-item').dataset.sourceId;
-        btn.disabled = true;
-        btn.textContent = 'Matching...';
-        try {
-          const result = await rematchAwardsSource(sourceId);
-          showToast(`Matched ${result.exactMatches} wines exactly, ${result.fuzzyMatches} fuzzy`);
-          await loadAwardsSources();
-        } catch (err) {
-          showToast('Error: ' + err.message);
-        } finally {
-          btn.disabled = false;
-          btn.textContent = 'Re-match';
-        }
-      });
-    });
+    // Initialize batch action buttons (only once)
+    initBatchActions();
 
   } catch (err) {
     console.error('Failed to load award sources:', err);
   }
+}
+
+/**
+ * Update batch action button states based on selection.
+ */
+function updateBatchActionState() {
+  const checkboxes = document.querySelectorAll('.source-checkbox');
+  const checkedBoxes = Array.from(checkboxes).filter(cb => cb.checked);
+  const count = checkedBoxes.length;
+
+  const rematchBtn = document.getElementById('awards-rematch-selected-btn');
+  const deleteBtn = document.getElementById('awards-delete-selected-btn');
+  const countSpan = document.getElementById('awards-selection-count');
+
+  if (rematchBtn) rematchBtn.disabled = count === 0;
+  if (deleteBtn) deleteBtn.disabled = count === 0;
+  if (countSpan) countSpan.textContent = `${count} selected`;
+}
+
+/**
+ * Initialize batch action buttons (only once).
+ */
+let batchActionsInitialized = false;
+function initBatchActions() {
+  if (batchActionsInitialized) return;
+  batchActionsInitialized = true;
+
+  const rematchBtn = document.getElementById('awards-rematch-selected-btn');
+  const deleteBtn = document.getElementById('awards-delete-selected-btn');
+
+  if (rematchBtn) {
+    rematchBtn.addEventListener('click', async () => {
+      const selected = getSelectedSourceIds();
+      if (selected.length === 0) return;
+
+      rematchBtn.disabled = true;
+      rematchBtn.innerHTML = '<span>⏳</span> Matching...';
+
+      try {
+        let totalExact = 0;
+        let totalFuzzy = 0;
+
+        for (const sourceId of selected) {
+          const result = await rematchAwardsSource(sourceId);
+          totalExact += result.exactMatches || 0;
+          totalFuzzy += result.fuzzyMatches || 0;
+        }
+
+        showToast(`Matched ${totalExact} wines exactly, ${totalFuzzy} fuzzy`);
+        await loadAwardsSources();
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      } finally {
+        rematchBtn.disabled = false;
+        rematchBtn.innerHTML = '<span>🔄</span> Re-match Selected';
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      const selected = getSelectedSourceIds();
+      if (selected.length === 0) return;
+
+      const plural = selected.length > 1 ? 's' : '';
+      if (!confirm(`Delete ${selected.length} award source${plural} and all their awards?`)) {
+        return;
+      }
+
+      deleteBtn.disabled = true;
+      deleteBtn.innerHTML = '<span>⏳</span> Deleting...';
+
+      try {
+        for (const sourceId of selected) {
+          await deleteAwardsSource(sourceId);
+        }
+        showToast(`${selected.length} source${plural} deleted`);
+        await loadAwardsSources();
+      } catch (err) {
+        showToast('Error: ' + err.message);
+      } finally {
+        deleteBtn.disabled = false;
+        deleteBtn.innerHTML = '<span>🗑️</span> Delete Selected';
+      }
+    });
+  }
+}
+
+/**
+ * Get selected source IDs from checkboxes.
+ */
+function getSelectedSourceIds() {
+  const checkboxes = document.querySelectorAll('.source-checkbox:checked');
+  return Array.from(checkboxes).map(cb => cb.dataset.sourceId);
 }
 
 // ============================================
