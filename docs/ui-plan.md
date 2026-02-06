@@ -14,7 +14,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 3 | **DONE** | 2026-02-05 | Light mode + theme toggle + FOUC fix + Phase 3.5 refinements (manual QA pending) |
 | Phase 3.5 | **DONE** | 2026-02-05 | Color system refinement (WCAG AA fixes, 60-30-10 balance, spatial separation) |
 | Phase 4 | Pending | | |
-| Phase 5 | **DONE** | 2026-02-05 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
+| Phase 5 | **DONE** | 2026-02-06 | Type scale variables, html-level multiplier, base heading sizes, tab visibility fix |
 | Phase 6 | Pending | | |
 | Phase 7 | Pending | | |
 
@@ -766,10 +766,14 @@ h3 { font-size: var(--font-lg); }
 h4 { font-size: var(--font-md); }
 ```
 
-> **Implementation notes (2026-02-05):**
+> **Implementation notes (2026-02-06):**
 > - **5.1**: Added 9 type scale variables to `:root` in `variables.css`: `--font-2xs` (11px) through `--font-3xl` (32px). Minor third ratio (1.125).
-> - **5.2**: Moved `--text-size-multiplier` from `body` to `html` element: `font-size: calc(16px * var(--text-size-multiplier, 1))`. This makes ALL rem values scale automatically via the setting. Removed 3 individual `calc()` overrides on `.slot-name`, `.slot-vintage` (layout.css), and `.text-size-preview` (components.css). Note: "small" setting (0.875) can push 0.6875rem below 11px — accepted as explicit user choice.
+> - **5.2**: Moved `--text-size-multiplier` from `body` to `html` element: `font-size: calc(16px * var(--text-size-multiplier, 1))`. This makes ALL rem values scale automatically via the setting. Removed 3 individual `calc()` overrides on `.slot-name`, `.slot-vintage` (layout.css), and `.text-size-preview` (components.css).
 > - **5.3**: Added base heading sizes using type scale variables: `h1: --font-3xl`, `h2: --font-xl`, `h3: --font-lg`, `h4: --font-md`. Extended `h4` into the Cormorant Garamond family rule. Contextual component overrides (`.modal h2`, etc.) remain and take precedence via specificity.
+> - **Post-review fixes (2026-02-06):**
+>   - **11px floor clamp**: Changed `--font-2xs` from `0.6875rem` to `max(0.6875rem, 11px)` — guarantees 11px even at small multiplier (0.875×). Replaced all 25 raw `0.6875rem` occurrences across layout.css (10) and components.css (15) with `var(--font-2xs)` so the clamp is honored everywhere.
+>   - **header h1**: Changed hardcoded `2rem` to `var(--font-3xl)` for full type-scale consistency.
+>   - **Date correction**: Fixed implementation date from 2026-02-05 to 2026-02-06 (matches commit d249128).
 > - **Sub-11px audit**: Only 2 values below 0.6875rem: `0.5rem` and `0.45rem` on priority badge `::after` pseudo-elements (N/S/H icon-equivalent labels). Accepted exception — not body text.
 > - **Tab visibility fix**: Changed inactive tab `background` from `var(--bg-card)` (#252525) to `var(--bg-slot)` (#2d2d2d) for better contrast against `--bg-dark` (#1a1a1a). Added explicit `color: var(--text)` to prevent inheritance issues.
 > - **Duplicate merge**: Merged two `@media (max-width: 768px)` blocks in `layout.css` into one (the second was overriding the first's `.slot`, `header`, and `.stats` rules — dead code removed, 4 unique rules preserved).

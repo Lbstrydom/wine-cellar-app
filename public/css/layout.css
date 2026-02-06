@@ -38,7 +38,7 @@ header {
 }
 
 header h1 {
-  font-size: 2rem;
+  font-size: var(--font-3xl);  /* Phase 5.3: use type scale variable (2rem/32px) */
   letter-spacing: 0.05em;
 }
 
@@ -175,7 +175,7 @@ header .search-trigger {
 }
 
 .row-label .zone-name {
-  font-size: 0.6875rem;            /* Phase 1.3: was 0.65rem — 11px floor */
+  font-size: var(--font-2xs);       /* Phase 1.3→5: 11px floor via clamped variable */
   font-weight: 500;
   color: var(--accent);
   white-space: nowrap;
@@ -408,19 +408,19 @@ header .search-trigger {
   }
 
   .slot-vintage {
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.65rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
   }
 
   .row-label {
     width: 60px;
     min-width: 60px;
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.65rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
     padding-right: 4px;
     flex-shrink: 0;
   }
 
   .row-label .zone-name {
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.55rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
     max-width: 55px;
   }
 
@@ -561,22 +561,22 @@ header .search-trigger {
   }
 
   .slot-vintage {
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.6rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
   }
 
   .slot-loc {
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.55rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
   }
 
   .row-label {
     width: 50px;
     min-width: 50px;
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.6rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
     flex-shrink: 0;
   }
 
   .row-label .zone-name {
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.5rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
     max-width: 45px;
   }
 
@@ -733,7 +733,7 @@ header .search-trigger {
   .row-label {
     width: 40px;
     min-width: 40px;
-    font-size: 0.6875rem;          /* Phase 1.3: was 0.55rem — 11px floor */
+    font-size: var(--font-2xs);    /* Phase 1.3→5: 11px floor via clamped variable */
   }
 
   .row-label .zone-name {
