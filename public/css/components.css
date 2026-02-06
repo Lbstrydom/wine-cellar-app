@@ -1152,6 +1152,26 @@
   margin-left: 0.5rem;
 }
 
+.fridge-swap-detail {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.fridge-swap-why {
+  display: block;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.8;
+  margin-top: 0.15rem;
+}
+
+.fridge-target-slot {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
 /* Zone Narratives Section */
 .analysis-zones {
   margin-bottom: 1.5rem;

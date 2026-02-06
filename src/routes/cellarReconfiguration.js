@@ -512,6 +512,13 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   const results = [];
 
   await db.transaction(async (client) => {
+    // Capture bottle count before moves for invariant check
+    const beforeResult = await client.query(
+      'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
+      [req.cellarId]
+    );
+    const beforeCount = Number(beforeResult.rows[0].count);
+
     for (const move of moves) {
       // Clear source slot
       await client.query(
@@ -539,6 +546,16 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
         to: move.to,
         success: true
       });
+    }
+
+    // Invariant check: bottle count must not change after moves
+    const afterResult = await client.query(
+      'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
+      [req.cellarId]
+    );
+    const afterCount = Number(afterResult.rows[0].count);
+    if (afterCount !== beforeCount) {
+      throw new Error(`Invariant violation: bottle count changed from ${beforeCount} to ${afterCount}`);
     }
   });
 

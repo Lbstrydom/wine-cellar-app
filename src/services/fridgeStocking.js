@@ -355,8 +355,10 @@ function buildFillReason(wine, category, drinkByYear) {
  */
 export async function analyseFridge(fridgeWines, cellarWines) {
   const status = getFridgeStatus(fridgeWines);
-  const candidates = status.hasGaps && status.emptySlots > 0
-    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, status.emptySlots)
+  // Generate candidates when gaps exist — even when fridge is full (for swap suggestions)
+  const maxCandidates = status.emptySlots > 0 ? status.emptySlots : 3;
+  const candidates = status.hasGaps
+    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates)
     : [];
 
   return {
@@ -364,6 +366,7 @@ export async function analyseFridge(fridgeWines, cellarWines) {
     candidates,
     wines: fridgeWines.map(w => ({
       wineId: w.id,
+      wineName: w.wine_name,
       name: w.wine_name,
       vintage: w.vintage,
       slot: w.slot_id || w.location_code,

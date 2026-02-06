@@ -68,24 +68,51 @@ export function renderFridgeStatus(fridgeStatus) {
     `;
   }
 
-  // Build candidates display
+  // Build candidates display — "Add" when empty slots, "Swap" when fridge is full
   let candidatesHtml = '';
+  const isFridgeFull = fridgeStatus.emptySlots <= 0;
   if (fridgeStatus.candidates && fridgeStatus.candidates.length > 0) {
-    const candidateItems = fridgeStatus.candidates.slice(0, 5).map((c, i) => `
-      <div class="fridge-candidate">
-        <div class="fridge-candidate-info">
-          <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}</div>
-          <div class="fridge-candidate-reason">${escapeHtml(c.reason)}</div>
+    const candidateItems = fridgeStatus.candidates.slice(0, 5).map((c, i) => {
+      if (isFridgeFull) {
+        const swapTarget = identifySwapTarget(fridgeStatus, c);
+        const swapDetail = swapTarget
+          ? `<div class="fridge-swap-detail">
+              Swap with <strong>${escapeHtml(swapTarget.wineName || swapTarget.name)}</strong> (${escapeHtml(swapTarget.slot)}) — move back to ${escapeHtml(c.fromSlot)}
+              <span class="fridge-swap-why">${escapeHtml(buildSwapOutReason(swapTarget))}</span>
+            </div>`
+          : '';
+        return `
+          <div class="fridge-candidate">
+            <div class="fridge-candidate-info">
+              <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}</div>
+              <div class="fridge-candidate-reason">${escapeHtml(c.reason)}</div>
+              ${swapDetail}
+            </div>
+            <button class="btn btn-secondary btn-small fridge-swap-btn" data-candidate-index="${i}" ${!swapTarget ? 'disabled' : ''}>
+              Swap
+            </button>
+          </div>
+        `;
+      }
+      // Empty slot available — simple "Add" button with target slot
+      const targetSlot = findEmptyFridgeSlot(fridgeStatus);
+      return `
+        <div class="fridge-candidate">
+          <div class="fridge-candidate-info">
+            <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}</div>
+            <div class="fridge-candidate-reason">${escapeHtml(c.reason)}</div>
+            ${targetSlot ? `<div class="fridge-target-slot">Add to ${escapeHtml(targetSlot)}</div>` : ''}
+          </div>
+          <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="${i}">
+            ${targetSlot ? `Add to ${escapeHtml(targetSlot)}` : 'Add'}
+          </button>
         </div>
-        <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="${i}">
-          Add
-        </button>
-      </div>
-    `).join('');
+      `;
+    }).join('');
 
     candidatesHtml = `
       <div class="fridge-candidates">
-        <h5>Suggested Additions</h5>
+        <h5>${isFridgeFull ? 'Suggested Swaps' : 'Suggested Additions'}</h5>
         ${candidateItems}
       </div>
     `;
@@ -109,11 +136,17 @@ export function renderFridgeStatus(fridgeStatus) {
     <div id="fridge-organize-panel" style="display: none;"></div>
   `;
 
-  // Attach event listeners for fridge candidate add buttons (CSP-compliant)
+  // Attach event listeners for fridge candidate buttons (CSP-compliant)
   contentEl.querySelectorAll('.fridge-add-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       const index = Number.parseInt(btn.dataset.candidateIndex, 10);
       moveFridgeCandidate(index);
+    });
+  });
+  contentEl.querySelectorAll('.fridge-swap-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const index = Number.parseInt(btn.dataset.candidateIndex, 10);
+      swapFridgeCandidate(index);
     });
   });
 
@@ -343,4 +376,93 @@ async function executeAllFridgeOrganizeMoves() {
   } catch (err) {
     showToast(`Error: ${err.message}`);
   }
+}
+
+/**
+ * Find the best fridge wine to swap out for a given candidate.
+ * Priority: doesn't fill a gap category > lowest drinking urgency.
+ * @param {Object} fridgeStatus - Current fridge status
+ * @param {Object} candidate - The candidate wine to swap in
+ * @returns {Object|null} Fridge wine to swap out
+ */
+function identifySwapTarget(fridgeStatus, candidate) {
+  const fridgeWines = fridgeStatus.wines || [];
+  if (fridgeWines.length === 0) return null;
+
+  return fridgeWines
+    .filter(w => w.wineId !== candidate.wineId)
+    .sort((a, b) => {
+      // 1. Prefer swapping out wines that DON'T fill any gap category
+      const aMatchesGap = fridgeStatus.parLevelGaps?.[a.category] ? 0 : 1;
+      const bMatchesGap = fridgeStatus.parLevelGaps?.[b.category] ? 0 : 1;
+      if (aMatchesGap !== bMatchesGap) return bMatchesGap - aMatchesGap;
+      // 2. Lowest drinking urgency first (can wait longest in cellar)
+      return computeUrgency(a.drinkByYear) - computeUrgency(b.drinkByYear);
+    })[0] || null;
+}
+
+/**
+ * Compute drinking urgency from drinkByYear.
+ * Higher = more urgent (should stay in fridge). Lower = can wait (good swap-out).
+ * @param {number|null} drinkByYear
+ * @returns {number}
+ */
+function computeUrgency(drinkByYear) {
+  if (!drinkByYear) return 2;
+  const yearsLeft = drinkByYear - new Date().getFullYear();
+  if (yearsLeft <= 0) return 10;
+  if (yearsLeft <= 2) return 7;
+  if (yearsLeft <= 5) return 4;
+  return 1;
+}
+
+/**
+ * Build a human-readable reason for why a fridge wine should be swapped out.
+ * @param {Object} fridgeWine - Wine currently in fridge
+ * @returns {string}
+ */
+function buildSwapOutReason(fridgeWine) {
+  const drinkBy = fridgeWine.drinkByYear;
+  if (!drinkBy) return 'No rush to chill \u2014 stores well in cellar';
+  const yearsLeft = drinkBy - new Date().getFullYear();
+  if (yearsLeft > 5) return `Drink by ${drinkBy} \u2014 plenty of time, better stored in cellar`;
+  if (yearsLeft > 2) return `Drink by ${drinkBy} \u2014 can wait in cellar for now`;
+  return `Drink by ${drinkBy} \u2014 approaching window but OK in cellar short-term`;
+}
+
+/**
+ * Execute a swap: candidate wine goes into fridge, fridge wine goes to candidate's cellar slot.
+ * @param {number} candidateIndex - Index into fridgeStatus.candidates
+ */
+async function swapFridgeCandidate(candidateIndex) {
+  const analysis = getCurrentAnalysis();
+  const candidate = analysis?.fridgeStatus?.candidates?.[candidateIndex];
+  if (!candidate) { showToast('Error: Candidate not found'); return; }
+
+  const swapOut = identifySwapTarget(analysis.fridgeStatus, candidate);
+  if (!swapOut) { showToast('No suitable swap found'); return; }
+
+  try {
+    await executeCellarMoves([
+      { wineId: swapOut.wineId, from: swapOut.slot, to: candidate.fromSlot },
+      { wineId: candidate.wineId, from: candidate.fromSlot, to: swapOut.slot }
+    ]);
+    const swapOutName = swapOut.wineName || swapOut.name;
+    showToast(`Swapped: ${candidate.wineName} \u2192 ${swapOut.slot}, ${swapOutName} \u2192 ${candidate.fromSlot}`);
+    await loadAnalysis();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Find an empty fridge slot.
+ * @param {Object} fridgeStatus
+ * @returns {string|null}
+ */
+function findEmptyFridgeSlot(fridgeStatus) {
+  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+  const occupiedSlots = new Set(fridgeStatus.wines?.map(w => w.slot) || []);
+  return fridgeSlots.find(s => !occupiedSlots.has(s)) || null;
 }
