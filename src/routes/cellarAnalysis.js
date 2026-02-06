@@ -24,9 +24,10 @@ const router = express.Router();
 /**
  * Run analysis and generate report (shared logic).
  * @param {Array} wines - Wine data
+ * @param {string} [cellarId] - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Analysis report
  */
-export async function runAnalysis(wines) {
+export async function runAnalysis(wines, cellarId) {
   const report = await analyseCellar(wines);
 
   // Add fridge candidates (legacy)
@@ -41,7 +42,7 @@ export async function runAnalysis(wines) {
     const slot = w.slot_id || w.location_code;
     return slot && slot.startsWith('R');
   });
-  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines);
+  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, cellarId);
 
   return report;
 }
@@ -86,7 +87,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
     const slot = w.slot_id || w.location_code;
     return slot && slot.startsWith('R');
   });
-  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines);
+  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, req.cellarId);
 
   // Cache the result
   const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
@@ -141,7 +142,7 @@ router.get('/fridge-status', asyncHandler(async (req, res) => {
     return slot && slot.startsWith('R');
   });
 
-  const status = await analyseFridge(fridgeWines, cellarWines);
+  const status = await analyseFridge(fridgeWines, cellarWines, req.cellarId);
 
   res.json({
     success: true,
@@ -194,7 +195,7 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
     fromCache = true;
   } else {
     const wines = await getAllWinesWithSlots(req.cellarId);
-    report = await runAnalysis(wines);
+    report = await runAnalysis(wines, req.cellarId);
 
     // Cache the result
     const wineCount = wines.filter(w => w.slot_id || w.location_code).length;

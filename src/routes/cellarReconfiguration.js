@@ -30,7 +30,7 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
   } = req.body || {};
 
   const wines = await getAllWinesWithSlots(req.cellarId);
-  const report = await runAnalysis(wines);
+  const report = await runAnalysis(wines, req.cellarId);
 
   const plan = await generateReconfigurationPlan(report, {
     includeRetirements,
@@ -497,7 +497,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   }
 
   // Validate move plan before execution
-  const validation = await validateMovePlan(moves);
+  const validation = await validateMovePlan(moves, req.cellarId);
 
   if (!validation.valid) {
     return res.status(400).json({

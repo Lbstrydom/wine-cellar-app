@@ -174,11 +174,14 @@ export function getFridgeStatus(fridgeWines) {
 
 /**
  * Get wine IDs that are in the reduce-now list.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Set<number>>} Set of wine IDs
  */
-async function getReduceNowWineIds() {
+async function getReduceNowWineIds(cellarId) {
   try {
-    const rows = await db.prepare('SELECT wine_id FROM reduce_now').all();
+    const rows = await db.prepare(
+      'SELECT wine_id FROM reduce_now WHERE cellar_id = ?'
+    ).all(cellarId);
     return new Set(rows.map(r => r.wine_id));
   } catch {
     return new Set();
@@ -264,14 +267,15 @@ export async function findSuitableWines(cellarWines, category, count, reduceNowI
  * @param {Array} cellarWines - Available wines in cellar
  * @param {Object} gaps - Par level gaps from calculateParLevelGaps
  * @param {number} emptySlots - Available fridge slots
+ * @param {string} [cellarId] - Cellar ID for tenant isolation
  * @returns {Promise<Array>} Wines to move to fridge with reasons
  */
-export async function selectFridgeFillCandidates(cellarWines, gaps, emptySlots) {
+export async function selectFridgeFillCandidates(cellarWines, gaps, emptySlots, cellarId) {
   const candidates = [];
   let slotsRemaining = emptySlots;
 
   // Pre-fetch reduce-now IDs once for all categories
-  const reduceNowIds = await getReduceNowWineIds();
+  const reduceNowIds = await getReduceNowWineIds(cellarId);
 
   // Sort gaps by priority
   const sortedGaps = Object.entries(gaps)
@@ -351,14 +355,15 @@ function buildFillReason(wine, category, drinkByYear) {
  * Get complete fridge analysis with candidates.
  * @param {Array} fridgeWines - Current fridge contents
  * @param {Array} cellarWines - All cellar wines
+ * @param {string} [cellarId] - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Complete fridge analysis
  */
-export async function analyseFridge(fridgeWines, cellarWines) {
+export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
   const status = getFridgeStatus(fridgeWines);
   // Generate candidates when gaps exist — even when fridge is full (for swap suggestions)
   const maxCandidates = status.emptySlots > 0 ? status.emptySlots : 3;
   const candidates = status.hasGaps
-    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates)
+    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
     : [];
 
   return {
@@ -381,13 +386,13 @@ export async function analyseFridge(fridgeWines, cellarWines) {
  * Organizes by temperature preference: coldest at top, warmer at bottom.
  */
 const FRIDGE_CATEGORY_ORDER = [
-  'sparkling',    // Coldest (top shelf)
-  'crispWhite',   // Cold
-  'aromatic',     // Cool
-  'richWhite',    // Slightly warmer
-  'rose',         // Cool to room
-  'lightRed',     // Warmer (bottom shelf)
-  'flex'          // Any remaining slots
+  'sparkling',      // Coldest (top shelf)
+  'crispWhite',     // Cold
+  'aromaticWhite',  // Cool
+  'textureWhite',   // Slightly warmer
+  'rose',           // Cool to room
+  'chillableRed',   // Warmer (bottom shelf)
+  'flex'            // Any remaining slots
 ];
 
 /**

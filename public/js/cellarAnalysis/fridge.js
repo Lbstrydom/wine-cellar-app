@@ -466,3 +466,6 @@ function findEmptyFridgeSlot(fridgeStatus) {
   const occupiedSlots = new Set(fridgeStatus.wines?.map(w => w.slot) || []);
   return fridgeSlots.find(s => !occupiedSlots.has(s)) || null;
 }
+
+// Exported for unit testing
+export { identifySwapTarget, computeUrgency, buildSwapOutReason, findEmptyFridgeSlot };

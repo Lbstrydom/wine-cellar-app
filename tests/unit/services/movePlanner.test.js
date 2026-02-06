@@ -32,7 +32,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C2', to: 'R2C2' } // Duplicate wine ID
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.duplicateWines).toBe(1);
@@ -56,7 +56,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R1C2', to: 'R2C2' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.summary.duplicateWines).toBe(0);
     });
@@ -76,7 +76,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R1C2', to: 'R2C1' } // Duplicate target
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.duplicateTargets).toBe(1);
@@ -98,7 +98,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R1C2', to: 'R2C2' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.summary.duplicateTargets).toBe(0);
     });
@@ -119,7 +119,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.occupiedTargets).toBe(1);
@@ -139,7 +139,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.summary.occupiedTargets).toBe(0);
@@ -158,7 +158,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R1C2', to: 'R1C1' }  // Targets vacated slot
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.summary.occupiedTargets).toBe(0);
@@ -175,7 +175,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.sourceMismatches).toBe(1);
@@ -195,7 +195,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.sourceMismatches).toBe(1);
@@ -215,7 +215,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.summary.sourceMismatches).toBe(0);
@@ -234,7 +234,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R1C1' } // No-op
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.noopMoves).toBe(1);
@@ -259,7 +259,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R3C1', to: 'R2C2' }   // Duplicate target & source mismatch
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
       expect(result.summary.errorCount).toBeGreaterThan(0);
@@ -279,7 +279,7 @@ describe('validateMovePlan', () => {
         { wineId: 2, wineName: 'Barolo', from: 'R1C2', to: 'R1C1' } // Valid swap
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -300,7 +300,7 @@ describe('validateMovePlan', () => {
         { wineId: 3, wineName: 'Brunello', from: 'R1C3', to: 'R1C2' }    // Uses vacated slot
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -317,7 +317,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.summary).toHaveProperty('totalMoves', 1);
       expect(result.summary).toHaveProperty('errorCount');
@@ -331,7 +331,7 @@ describe('validateMovePlan', () => {
 
   describe('Edge cases', () => {
     it('should handle empty move array', async () => {
-      const result = await validateMovePlan([]);
+      const result = await validateMovePlan([], 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);
@@ -349,7 +349,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.summary.totalMoves).toBe(1);
@@ -366,7 +366,7 @@ describe('validateMovePlan', () => {
         { wineId: 1, from: 'R1C1', to: 'R2C1' } // No wineName
       ];
 
-      const result = await validateMovePlan(moves);
+      const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(true);
       expect(result.errors).toHaveLength(0);

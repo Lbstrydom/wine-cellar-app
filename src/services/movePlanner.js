@@ -394,17 +394,18 @@ export function validatePlan(plan) {
  * Validate a move plan against current occupancy state.
  * Ensures no bottle collisions, overwrites, or data loss.
  * @param {Array} moves - Array of {wineId, from, to, wineName} objects
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} {valid: boolean, errors: Array, summary: Object}
  */
-export async function validateMovePlan(moves) {
+export async function validateMovePlan(moves, cellarId) {
   const errors = [];
   const targetSlots = new Set();
   const movedWineIds = new Set();
 
   // Fetch current occupancy from DB (canonical source of truth)
   const slots = await db.prepare(
-    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL'
-  ).all();
+    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL AND cellar_id = ?'
+  ).all(cellarId);
   const occupiedSlots = new Map(slots.map(s => [s.location_code, s.wine_id]));
 
   // Build set of slots that will be vacated by this plan
@@ -437,13 +438,13 @@ export async function validateMovePlan(moves) {
     // Rule 3: Target must be empty OR will be vacated by another move in this plan
     const occupant = occupiedSlots.get(move.to);
     if (occupant && !vacatedSlots.has(move.to)) {
-      // Get wine name for better error message
+      // Get wine name for better error message (scoped to cellar)
       const occupantWine = await db.prepare(
-        'SELECT wine_name FROM wines WHERE id = ?'
-      ).get(occupant);
+        'SELECT wine_name FROM wines WHERE id = ? AND cellar_id = ?'
+      ).get(occupant, cellarId);
       errors.push({
         type: 'target_occupied',
-        message: `Slot ${move.to} is occupied by ${occupantWine?.wine_name || 'another wine'} (ID: ${occupant})`,
+        message: `Slot ${move.to} is occupied by ${occupantWine?.wine_name || 'another wine'}`,
         move,
         targetSlot: move.to,
         occupantWineId: occupant,
