@@ -28,7 +28,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260206k">
+  <link rel="stylesheet" href="/css/styles.css?v=20260206L">
 </head>
 <body>
   <header>
@@ -423,7 +423,7 @@
             <input type="radio" name="theme" value="system" checked />
             <span class="theme-btn">
               <span class="theme-name">System</span>
-              <span class="theme-desc">Match device</span>
+              <span class="theme-desc" id="system-theme-indicator">Match device</span>
             </span>
           </label>
           <label class="theme-option">
@@ -441,6 +441,7 @@
             </span>
           </label>
         </div>
+        <p class="form-hint" id="theme-status-hint"></p>
       </fieldset>
 
       <fieldset class="text-size-selector">

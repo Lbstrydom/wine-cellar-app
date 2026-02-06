@@ -254,13 +254,18 @@ function initThemeSelector() {
   });
 
   applyThemePreference(savedTheme);
+  updateSystemThemeIndicator();
+  updateThemeStatusHint();
 
   // Listen for OS theme changes when in "system" mode
-  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  const systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+  systemThemeQuery.addEventListener('change', () => {
     const currentSetting = localStorage.getItem(THEME_KEY) || 'system';
     if (currentSetting === 'system') {
       updateThemeMeta();
     }
+    updateSystemThemeIndicator();
+    updateThemeStatusHint();
   });
 
   radios.forEach((radio) => {
@@ -268,9 +273,44 @@ function initThemeSelector() {
       const newTheme = e.target.value;
       localStorage.setItem(THEME_KEY, newTheme);
       applyThemePreference(newTheme);
+      updateThemeStatusHint();
       showToast(`Theme set to ${newTheme}`);
     });
   });
+}
+
+/**
+ * Update the system theme indicator to show current OS preference.
+ */
+function updateSystemThemeIndicator() {
+  const indicator = document.getElementById('system-theme-indicator');
+  if (!indicator) return;
+
+  const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  indicator.textContent = systemIsDark ? 'Device: Dark' : 'Device: Light';
+}
+
+/**
+ * Update hint text to show if user's choice differs from system preference.
+ */
+function updateThemeStatusHint() {
+  const hint = document.getElementById('theme-status-hint');
+  if (!hint) return;
+
+  const savedTheme = localStorage.getItem(THEME_KEY) || 'system';
+  const systemIsDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const systemThemeName = systemIsDark ? 'dark' : 'light';
+
+  if (savedTheme === 'system') {
+    hint.textContent = `App follows your device theme (currently ${systemThemeName}).`;
+    hint.className = 'form-hint';
+  } else if (savedTheme !== systemThemeName) {
+    hint.textContent = `💡 Your device is in ${systemThemeName} mode. Select "System" above to follow device theme changes automatically.`;
+    hint.className = 'form-hint theme-mismatch-hint';
+  } else {
+    hint.textContent = `App uses ${savedTheme} theme (matches device preference).`;
+    hint.className = 'form-hint';
+  }
 }
 
 /**

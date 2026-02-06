@@ -2476,6 +2476,16 @@
   margin-top: 0.3rem;
 }
 
+.theme-mismatch-hint {
+  background: rgba(var(--color-warning-rgb), 0.1);
+  border-left: 3px solid var(--color-warning);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-top: 0.75rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
 /* Placement options for multi-bottle add */
 .placement-options {
   margin-top: 1rem;
