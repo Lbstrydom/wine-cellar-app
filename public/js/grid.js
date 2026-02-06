@@ -276,8 +276,43 @@ export function renderStorageAreas() {
     const grid = document.createElement('div');
     grid.className = 'cellar-grid';
 
+    const areaRows = area.rows || [];
+
+    // Column headers
+    const maxCols = Math.max(0, ...areaRows.map(r =>
+      Array.isArray(r.slots) ? r.slots.length : (r.col_count || 0)
+    ));
+    if (maxCols > 0) {
+      const headerRow = document.createElement('div');
+      headerRow.className = 'cellar-row col-headers';
+      const spacer = document.createElement('div');
+      spacer.className = 'row-label';
+      headerRow.appendChild(spacer);
+      for (let c = 1; c <= maxCols; c++) {
+        const colHeader = document.createElement('div');
+        colHeader.className = 'col-header';
+        colHeader.textContent = `C${c}`;
+        headerRow.appendChild(colHeader);
+      }
+      grid.appendChild(headerRow);
+    }
+
+    // Priority badge legend
+    const hasPriority = areaRows.some(r =>
+      (r.slots || []).some(s => s.wine_id && s.reduce_priority)
+    );
+    if (hasPriority) {
+      const legend = document.createElement('div');
+      legend.className = 'grid-legend';
+      legend.innerHTML =
+        '<span class="legend-item"><span class="legend-badge p1">N</span>Now</span>' +
+        '<span class="legend-item"><span class="legend-badge p2">S</span>Soon</span>' +
+        '<span class="legend-item"><span class="legend-badge p3">H</span>Hold</span>';
+      grid.appendChild(legend);
+    }
+
     // Render rows using col_count; use slots if provided
-    for (const row of area.rows || []) {
+    for (const row of areaRows) {
       const rowEl = document.createElement('div');
       rowEl.className = 'cellar-row';
 
