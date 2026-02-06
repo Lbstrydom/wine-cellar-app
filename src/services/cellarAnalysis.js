@@ -146,7 +146,7 @@ function buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount) {
   report.alerts.push({
     type: 'zones_not_configured',
     severity: 'warning',
-    message: `Cellar zones not configured. Click "Get AI Advice" to have AI propose a zone structure for your ${cellarBottleCount} bottles.`
+    message: `Cellar zones not configured. Tap "Setup Zones" to have AI propose a zone layout for your ${cellarBottleCount} bottles.`
   });
 
   const cellarWines = wines.filter(w => {

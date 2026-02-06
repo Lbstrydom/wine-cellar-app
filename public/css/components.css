@@ -6774,7 +6774,7 @@ body.slot-picker-mode .slot.picker-placed::after {
   }
 
   /* Phase 8.4: Tighter padding on reconfig modal at narrow screens */
-  .reconfig-modal-body { padding: 0.75rem; }
+  #reconfig-modal-body { padding: 0.75rem; }
   .reconfig-action { padding: 0.75rem; }
 }
 .user-controls {
