@@ -8,6 +8,8 @@
   <!-- PWA Meta Tags -->
   <meta name="description" content="Manage your wine collection with AI-powered recommendations and multi-source ratings">
   <meta name="theme-color" content="#722F37">
+  <meta name="theme-color" media="(prefers-color-scheme: light)" content="#FAF6F1">
+  <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#722F37">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Wine Cellar">
@@ -28,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260206n">
+  <link rel="stylesheet" href="/css/styles.css?v=20260206o">
 </head>
 <body>
   <header>
@@ -159,6 +161,7 @@
         <button class="btn btn-secondary" id="setup-zones-btn">Setup Zones</button>
         <button class="btn btn-secondary" id="reconfigure-zones-btn">Reconfigure Zones</button>
         <span class="analysis-cache-status" id="analysis-cache-status"></span>
+        <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
       </div>
     </div>
 

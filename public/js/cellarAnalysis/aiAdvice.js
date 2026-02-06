@@ -9,17 +9,27 @@ import { analyseCellarAI } from '../api.js';
  * Get AI advice for cellar organisation.
  */
 export async function handleGetAIAdvice() {
+  const btn = document.getElementById('get-ai-advice-btn');
   const adviceEl = document.getElementById('analysis-ai-advice');
+  const statusEl = document.getElementById('ai-advice-status');
   if (!adviceEl) return;
 
-  adviceEl.style.display = 'block';
-  adviceEl.innerHTML = '<div class="analysis-loading">Getting AI advice... (this may take up to 2 minutes)</div>';
+  // Inline button spinner — no page jump
+  if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Getting advice\u2026'; }
+  if (statusEl) statusEl.textContent = 'AI analysis in progress (may take up to 2 minutes)...';
 
   try {
     const result = await analyseCellarAI();
+    adviceEl.style.display = 'block';
     adviceEl.innerHTML = formatAIAdvice(result.aiAdvice);
+    adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    if (statusEl) statusEl.textContent = '';
   } catch (err) {
+    adviceEl.style.display = 'block';
     adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+    if (statusEl) statusEl.textContent = '';
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.originalText || 'Get AI Advice'; }
   }
 }
 

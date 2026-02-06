@@ -217,11 +217,11 @@ function applyThemePreference(theme) {
   if (theme === 'light' || theme === 'dark') {
     document.documentElement.setAttribute('data-theme', theme);
   } else {
-    // For 'system' mode, REMOVE the attribute (don't set it to 'system')
-    // This allows CSS @media (prefers-color-scheme) to control the theme.
-    // Setting data-theme="system" would incorrectly match :root:not([data-theme="dark"])
-    // and force light mode even on dark OS.
-    document.documentElement.removeAttribute('data-theme');
+    // 'system' — detect and set explicitly for WebView compatibility
+    // CSS @media (prefers-color-scheme) can fail in Android PWA standalone mode,
+    // so we always set an explicit data-theme attribute.
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
   }
 
   updateThemeMeta();
@@ -262,7 +262,7 @@ function initThemeSelector() {
   systemThemeQuery.addEventListener('change', () => {
     const currentSetting = localStorage.getItem(THEME_KEY) || 'system';
     if (currentSetting === 'system') {
-      updateThemeMeta();
+      applyThemePreference('system');
     }
     updateSystemThemeIndicator();
     updateThemeStatusHint();

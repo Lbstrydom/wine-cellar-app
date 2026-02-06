@@ -24,7 +24,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     listEl.innerHTML = `
       <div class="no-moves">
         <p>Zone allocations haven't been configured yet.</p>
-        <p>Click <strong>"Get AI Advice"</strong> to have AI propose a zone structure based on your collection.</p>
+        <p>Tap <strong>"Setup Zones"</strong> above to have AI propose a zone layout and guide you through organising your bottles.</p>
       </div>
     `;
     actionsEl.style.display = 'none';

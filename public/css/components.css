@@ -512,6 +512,16 @@
   padding-left: 0.5rem;
 }
 
+/* Phase 8.3: Inline AI advice status */
+.analysis-status {
+  font-size: 0.8125rem;
+  color: var(--text-muted);
+  font-style: italic;
+  display: block;
+  width: 100%;
+  margin-top: 0.25rem;
+}
+
 #view-analysis h3 {
   font-size: 1.1rem;
   margin-bottom: 0.75rem;
@@ -1173,6 +1183,22 @@
 .zone-card.fragmented {
   border-left-color: var(--color-fragmented);
   border-left-style: dashed;
+}
+
+/* Phase 8.4: Prevent text overflow at screen edge */
+.reconfig-action-title,
+.reconfig-action-reason,
+.reconfig-summary,
+.zone-card,
+.zone-card-purpose,
+.zone-card-composition,
+.zone-card-pairing,
+.ai-advice-content,
+.ai-advice-structured,
+.zone-reconfig-banner-message,
+.zone-reconfig-banner-list {
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .zone-card-header {
@@ -6746,6 +6772,10 @@ body.slot-picker-mode .slot.picker-placed::after {
     width: 100%;
     margin-bottom: 0.5rem;
   }
+
+  /* Phase 8.4: Tighter padding on reconfig modal at narrow screens */
+  .reconfig-modal-body { padding: 0.75rem; }
+  .reconfig-action { padding: 0.75rem; }
 }
 .user-controls {
   display: flex;

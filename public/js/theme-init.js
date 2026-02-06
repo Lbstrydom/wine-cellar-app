@@ -7,6 +7,11 @@
 
   if (savedTheme === 'light' || savedTheme === 'dark') {
     document.documentElement.setAttribute('data-theme', savedTheme);
+  } else {
+    // No saved preference — detect OS and set explicitly
+    // This makes theme work independently of CSS media query support (WebView compat)
+    const prefersDark = !window.matchMedia('(prefers-color-scheme: light)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
   }
 
   // Detect actual theme: explicit attribute or OS preference
