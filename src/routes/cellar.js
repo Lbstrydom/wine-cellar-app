@@ -93,8 +93,8 @@ router.get('/zones', (_req, res) => {
  * GET /api/cellar/zone-map
  * Get current zone -> row mapping.
  */
-router.get('/zone-map', asyncHandler(async (_req, res) => {
-  const zoneMap = await getActiveZoneMap();
+router.get('/zone-map', asyncHandler(async (req, res) => {
+  const zoneMap = await getActiveZoneMap(req.cellarId);
   res.json(zoneMap);
 }));
 
@@ -102,8 +102,8 @@ router.get('/zone-map', asyncHandler(async (_req, res) => {
  * GET /api/cellar/zone-statuses
  * Get all zones with their allocation status.
  */
-router.get('/zone-statuses', asyncHandler(async (_req, res) => {
-  const statuses = await getZoneStatuses();
+router.get('/zone-statuses', asyncHandler(async (req, res) => {
+  const statuses = await getZoneStatuses(req.cellarId);
   res.json(statuses);
 }));
 
@@ -111,8 +111,8 @@ router.get('/zone-statuses', asyncHandler(async (_req, res) => {
  * GET /api/cellar/allocations
  * Get all current zone allocations.
  */
-router.get('/allocations', asyncHandler(async (_req, res) => {
-  const allocations = await getAllZoneAllocations();
+router.get('/allocations', asyncHandler(async (req, res) => {
+  const allocations = await getAllZoneAllocations(req.cellarId);
   res.json(allocations);
 }));
 
@@ -132,7 +132,7 @@ router.post('/suggest-placement', asyncHandler(async (req, res) => {
 
   const occupiedSlots = await getOccupiedSlots(req.cellarId);
   const zoneMatch = findBestZone(wine);
-  const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+  const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine, { cellarId: req.cellarId });
 
   res.json({
     success: true,
@@ -157,7 +157,7 @@ router.get('/suggest-placement/:wineId', asyncHandler(async (req, res) => {
 
   const occupiedSlots = await getOccupiedSlots(req.cellarId);
   const zoneMatch = findBestZone(wine);
-  const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+  const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine, { cellarId: req.cellarId });
 
   res.json({
     success: true,
@@ -187,8 +187,8 @@ router.post('/zones/allocate-row', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'zoneId required' });
   }
 
-  const row = await allocateRowToZone(zoneId, { incrementWineCount: false });
-  await invalidateAnalysisCache();
+  const row = await allocateRowToZone(zoneId, req.cellarId, { incrementWineCount: false });
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     success: true,
@@ -264,7 +264,7 @@ router.post('/zones/merge', asyncHandler(async (req, res) => {
     );
   });
 
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     success: true,
@@ -303,10 +303,10 @@ router.post('/assign-zone', asyncHandler(async (req, res) => {
 
   // Update zone counts
   if (oldZoneId && oldZoneId !== zoneId) {
-    await updateZoneWineCount(oldZoneId, -1);
+    await updateZoneWineCount(oldZoneId, req.cellarId, -1);
   }
   if (zoneId !== oldZoneId) {
-    await updateZoneWineCount(zoneId, 1);
+    await updateZoneWineCount(zoneId, req.cellarId, 1);
   }
 
   res.json({
@@ -377,7 +377,7 @@ router.post('/zone-reassign', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'wineId and newZoneId required' });
   }
 
-  const result = await reassignWineZone(wineId, newZoneId, reason);
+  const result = await reassignWineZone(wineId, newZoneId, reason, req.cellarId);
 
   res.json({
     success: true,

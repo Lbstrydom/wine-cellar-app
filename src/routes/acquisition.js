@@ -49,7 +49,7 @@ router.post('/parse-image', validateBody(parseImageSchema), asyncHandler(async (
 router.post('/suggest-placement', validateBody(suggestPlacementSchema), asyncHandler(async (req, res) => {
   const { wine } = req.body;
 
-  const placement = await suggestPlacement(wine);
+  const placement = await suggestPlacement(wine, req.cellarId);
   res.json(placement);
 }));
 
@@ -92,7 +92,8 @@ router.post('/workflow', validateBody(workflowSchema), asyncHandler(async (req, 
     mediaType,
     text,
     confirmedData,
-    skipEnrichment
+    skipEnrichment,
+    cellarId: req.cellarId
   });
 
   res.json(result);
@@ -114,7 +115,8 @@ router.post('/save', validateBody(saveAcquiredSchema), asyncHandler(async (req, 
   const result = await saveAcquiredWine(wine, {
     slot,
     quantity,
-    addToFridge
+    addToFridge,
+    cellarId: req.cellarId
   });
 
   res.status(201).json(result);

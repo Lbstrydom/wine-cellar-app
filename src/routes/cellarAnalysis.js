@@ -28,7 +28,7 @@ const router = express.Router();
  * @returns {Promise<Object>} Analysis report
  */
 export async function runAnalysis(wines, cellarId) {
-  const report = await analyseCellar(wines);
+  const report = await analyseCellar(wines, { cellarId });
 
   // Add fridge candidates (legacy)
   report.fridgeCandidates = getFridgeCandidates(wines);
@@ -59,7 +59,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
 
   // Check cache first (unless force refresh)
   if (!forceRefresh) {
-    const cached = await getCachedAnalysis(cacheKey);
+    const cached = await getCachedAnalysis(cacheKey, req.cellarId);
     if (cached) {
       return res.json({
         success: true,
@@ -73,7 +73,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
 
   // No valid cache, run analysis
   const wines = await getAllWinesWithSlots(req.cellarId);
-  const report = await analyseCellar(wines, { allowFallback });
+  const report = await analyseCellar(wines, { allowFallback, cellarId: req.cellarId });
 
   // Add fridge candidates (legacy)
   report.fridgeCandidates = getFridgeCandidates(wines);
@@ -91,7 +91,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
 
   // Cache the result
   const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
-  await cacheAnalysis(cacheKey, report, wineCount);
+  await cacheAnalysis(cacheKey, report, wineCount, req.cellarId);
 
   res.json({
     success: true,
@@ -105,8 +105,8 @@ router.get('/analyse', asyncHandler(async (req, res) => {
  * GET /api/cellar/analyse/cache-info
  * Get cache status without running analysis.
  */
-router.get('/analyse/cache-info', asyncHandler(async (_req, res) => {
-  const info = await getAnalysisCacheInfo('full');
+router.get('/analyse/cache-info', asyncHandler(async (req, res) => {
+  const info = await getAnalysisCacheInfo('full', req.cellarId);
   res.json({
     success: true,
     cached: info !== null,
@@ -118,8 +118,8 @@ router.get('/analyse/cache-info', asyncHandler(async (_req, res) => {
  * DELETE /api/cellar/analyse/cache
  * Invalidate the analysis cache.
  */
-router.delete('/analyse/cache', asyncHandler(async (_req, res) => {
-  await invalidateAnalysisCache();
+router.delete('/analyse/cache', asyncHandler(async (req, res) => {
+  await invalidateAnalysisCache(null, req.cellarId);
   res.json({
     success: true,
     message: 'Analysis cache invalidated'
@@ -189,7 +189,7 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
   let fromCache = false;
 
   // Check cache first
-  const cached = await getCachedAnalysis('full');
+  const cached = await getCachedAnalysis('full', req.cellarId);
   if (cached) {
     report = cached.data;
     fromCache = true;
@@ -199,7 +199,7 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
 
     // Cache the result
     const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
-    await cacheAnalysis('full', report, wineCount);
+    await cacheAnalysis('full', report, wineCount, req.cellarId);
   }
 
   const aiResult = await getCellarOrganisationAdvice(report);
@@ -278,7 +278,8 @@ router.post('/zone-capacity-advice', asyncHandler(async (req, res) => {
 
       const slotResult = await findAvailableSlot(toZoneId, occupiedSlots, wine, {
         allowFallback: false,
-        enforceAffinity: false
+        enforceAffinity: false,
+        cellarId: req.cellarId
       });
 
       if (!slotResult?.slotId) {

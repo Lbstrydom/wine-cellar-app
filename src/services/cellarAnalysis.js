@@ -34,7 +34,7 @@ import { getEffectiveDrinkByYear, getFridgeCandidates } from './drinkingStrategy
 export async function analyseCellar(wines) {
   let options = arguments.length > 1 ? arguments[1] : undefined;
   if (!options) options = {};
-  const { allowFallback = false } = options;
+  const { allowFallback = false, cellarId } = options;
 
   const report = {
     timestamp: new Date().toISOString(),
@@ -58,7 +58,7 @@ export async function analyseCellar(wines) {
     needsZoneSetup: false
   };
 
-  const zoneMap = await getActiveZoneMap();
+  const zoneMap = await getActiveZoneMap(cellarId);
   const slotToWine = new Map();
 
   // Build slot -> wine mapping
@@ -101,7 +101,7 @@ export async function analyseCellar(wines) {
   }
 
   // Generate move suggestions
-  const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine, { allowFallback });
+  const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine, { allowFallback, cellarId });
   report.suggestedMoves = suggestedMoves;
   report.movesHaveSwaps = suggestedMoves._hasSwaps || false;
 
@@ -109,7 +109,7 @@ export async function analyseCellar(wines) {
   const zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
   report.zoneCapacityIssues = zoneCapacityIssues;
 
-  const capacityAlerts = await buildZoneCapacityAlerts(zoneCapacityIssues, report.needsZoneSetup, allowFallback);
+  const capacityAlerts = await buildZoneCapacityAlerts(zoneCapacityIssues, report.needsZoneSetup, allowFallback, cellarId);
   report.alerts.unshift(...capacityAlerts);
 
   // Check if reorganisation is recommended

@@ -114,8 +114,8 @@ router.get('/zones-needing-review', asyncHandler(async (_req, res) => {
  * GET /api/cellar/zone-layout/propose
  * Get AI-proposed zone layout based on current collection.
  */
-router.get('/zone-layout/propose', asyncHandler(async (_req, res) => {
-  const proposal = await proposeZoneLayout();
+router.get('/zone-layout/propose', asyncHandler(async (req, res) => {
+  const proposal = await proposeZoneLayout(req.cellarId);
   res.json({ success: true, ...proposal });
 }));
 
@@ -123,8 +123,8 @@ router.get('/zone-layout/propose', asyncHandler(async (_req, res) => {
  * GET /api/cellar/zone-layout
  * Get current saved zone layout.
  */
-router.get('/zone-layout', asyncHandler(async (_req, res) => {
-  const layout = await getSavedZoneLayout();
+router.get('/zone-layout', asyncHandler(async (req, res) => {
+  const layout = await getSavedZoneLayout(req.cellarId);
   res.json({
     success: true,
     configured: layout.length > 0,
@@ -143,7 +143,7 @@ router.post('/zone-layout/confirm', asyncHandler(async (req, res) => {
     return res.status(400).json({ error: 'Assignments array required' });
   }
 
-  await saveZoneLayout(assignments);
+  await saveZoneLayout(assignments, req.cellarId);
 
   res.json({
     success: true,
@@ -155,8 +155,8 @@ router.post('/zone-layout/confirm', asyncHandler(async (req, res) => {
  * GET /api/cellar/zone-layout/moves
  * Generate moves needed to consolidate wines into assigned zones.
  */
-router.get('/zone-layout/moves', asyncHandler(async (_req, res) => {
-  const result = await generateConsolidationMoves();
+router.get('/zone-layout/moves', asyncHandler(async (req, res) => {
+  const result = await generateConsolidationMoves(req.cellarId);
 
   if (result.error) {
     return res.status(400).json({ error: result.error });

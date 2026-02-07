@@ -9,9 +9,10 @@ import { analyseFridge } from './fridgeStocking.js';
 
 /**
  * Get comprehensive cellar health report.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Health report with metrics and recommendations
  */
-export async function getCellarHealth() {
+export async function getCellarHealth(cellarId) {
   const report = {
     timestamp: new Date().toISOString(),
     metrics: {},
@@ -29,20 +30,21 @@ export async function getCellarHealth() {
     '       ' + locationAgg + ' as locations,',
     "       MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge",
     'FROM wines w',
-    'JOIN slots s ON s.wine_id = w.id',
+    'JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?',
+    'WHERE w.cellar_id = ?',
     'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,',
     '         w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,',
     '         w.drink_from, w.drink_peak, w.drink_until, w.created_at',
     'HAVING COUNT(s.id) > 0'
   ].join('\n');
-  const wines = await db.prepare(winesSql).all();
+  const wines = await db.prepare(winesSql).all(cellarId, cellarId);
 
   // Get drinking windows
   const drinkingWindows = await db.prepare(`
     SELECT wine_id, drink_from_year, drink_by_year, peak_year
     FROM drinking_windows
-    WHERE drink_by_year IS NOT NULL
-  `).all();
+    WHERE cellar_id = ? AND drink_by_year IS NOT NULL
+  `).all(cellarId);
 
   const windowMap = new Map();
   for (const dw of drinkingWindows) {
@@ -528,10 +530,11 @@ function calculateOverallHealth(metrics) {
 /**
  * Execute Fill Fridge action.
  * @param {number} maxMoves - Maximum wines to move
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Execution result
  */
-export async function executeFillFridge(maxMoves = 5) {
-  const health = await getCellarHealth();
+export async function executeFillFridge(maxMoves = 5, cellarId) {
+  const health = await getCellarHealth(cellarId);
   const candidates = health.metrics.fridgeGaps.candidates.slice(0, maxMoves);
 
   if (candidates.length === 0) {
@@ -541,9 +544,9 @@ export async function executeFillFridge(maxMoves = 5) {
   // Find empty fridge slots
   const emptyFridge = await db.prepare(`
     SELECT location_code FROM slots
-    WHERE location_code LIKE 'F%' AND wine_id IS NULL
+    WHERE cellar_id = ? AND location_code LIKE 'F%' AND wine_id IS NULL
     ORDER BY location_code
-  `).all();
+  `).all(cellarId);
 
   const moved = [];
   for (let i = 0; i < Math.min(candidates.length, emptyFridge.length); i++) {
@@ -552,12 +555,12 @@ export async function executeFillFridge(maxMoves = 5) {
 
     // Move wine
     await db.prepare(`
-      UPDATE slots SET wine_id = NULL WHERE wine_id = ? AND location_code = ?
-    `).run(candidate.wineId, candidate.fromSlot);
+      UPDATE slots SET wine_id = NULL WHERE cellar_id = ? AND wine_id = ? AND location_code = ?
+    `).run(cellarId, candidate.wineId, candidate.fromSlot);
 
     await db.prepare(`
-      UPDATE slots SET wine_id = ? WHERE location_code = ?
-    `).run(candidate.wineId, targetSlot);
+      UPDATE slots SET wine_id = ? WHERE cellar_id = ? AND location_code = ?
+    `).run(candidate.wineId, cellarId, targetSlot);
 
     moved.push({
       wineId: candidate.wineId,
@@ -577,10 +580,11 @@ export async function executeFillFridge(maxMoves = 5) {
 /**
  * Get at-risk wines for review.
  * @param {number} limit - Max wines to return
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Array>} At-risk wines
  */
-export async function getAtRiskWines(limit = 20) {
-  const health = await getCellarHealth();
+export async function getAtRiskWines(limit = 20, cellarId) {
+  const health = await getCellarHealth(cellarId);
   const atRisk = [
     ...health.metrics.drinkingWindowRisk.pastDrinkBy,
     ...health.metrics.drinkingWindowRisk.atRisk
@@ -591,10 +595,11 @@ export async function getAtRiskWines(limit = 20) {
 
 /**
  * Generate shopping list from style gaps.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Shopping list
  */
-export async function generateShoppingList() {
-  const health = await getCellarHealth();
+export async function generateShoppingList(cellarId) {
+  const health = await getCellarHealth(cellarId);
   const gaps = health.metrics.styleCoverage.gaps;
 
   const suggestions = gaps.map(gap => ({

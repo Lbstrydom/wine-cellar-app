@@ -10,9 +10,10 @@ import { CELLAR_ZONES, getZoneById } from '../config/cellarZones.js';
 /**
  * Get currently allocated rows for a zone.
  * @param {string} zoneId
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string[]>} Array of row IDs (e.g., ['R5', 'R6'])
  */
-export async function getZoneRows(zoneId) {
+export async function getZoneRows(zoneId, cellarId) {
   const zone = getZoneById(zoneId);
   if (!zone) return [];
 
@@ -22,8 +23,8 @@ export async function getZoneRows(zoneId) {
   }
 
   const allocation = await db.prepare(
-    'SELECT assigned_rows FROM zone_allocations WHERE zone_id = ?'
-  ).get(zoneId);
+    'SELECT assigned_rows FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?'
+  ).get(cellarId, zoneId);
 
   return allocation ? JSON.parse(allocation.assigned_rows) : [];
 }
@@ -34,13 +35,13 @@ export async function getZoneRows(zoneId) {
  * @returns {Promise<string>} Assigned row ID
  * @throws {Error} If no rows available
  */
-export async function allocateRowToZone(zoneId, options = {}) {
+export async function allocateRowToZone(zoneId, cellarId, options = {}) {
   const { incrementWineCount = true } = options;
   const zone = getZoneById(zoneId);
   if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
 
-  // Get all currently allocated rows
-  const allocations = await db.prepare('SELECT assigned_rows FROM zone_allocations').all();
+  // Get all currently allocated rows for this cellar
+  const allocations = await db.prepare('SELECT assigned_rows FROM zone_allocations WHERE cellar_id = ?').all(cellarId);
   const usedRows = new Set();
   allocations.forEach(a => {
     JSON.parse(a.assigned_rows).forEach(r => usedRows.add(r));
@@ -75,8 +76,8 @@ export async function allocateRowToZone(zoneId, options = {}) {
 
   // Check if zone already has an allocation
   const existing = await db.prepare(
-    'SELECT assigned_rows FROM zone_allocations WHERE zone_id = ?'
-  ).get(zoneId);
+    'SELECT assigned_rows FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?'
+  ).get(cellarId, zoneId);
 
   if (existing) {
     // Add to existing allocation
@@ -86,21 +87,21 @@ export async function allocateRowToZone(zoneId, options = {}) {
       await db.prepare(
         `UPDATE zone_allocations
          SET assigned_rows = ?, wine_count = wine_count + 1, updated_at = CURRENT_TIMESTAMP
-         WHERE zone_id = ?`
-      ).run(JSON.stringify(rows), zoneId);
+         WHERE cellar_id = ? AND zone_id = ?`
+      ).run(JSON.stringify(rows), cellarId, zoneId);
     } else {
       await db.prepare(
         `UPDATE zone_allocations
          SET assigned_rows = ?, updated_at = CURRENT_TIMESTAMP
-         WHERE zone_id = ?`
-      ).run(JSON.stringify(rows), zoneId);
+         WHERE cellar_id = ? AND zone_id = ?`
+      ).run(JSON.stringify(rows), cellarId, zoneId);
     }
   } else {
     // Create new allocation
     await db.prepare(
-      `INSERT INTO zone_allocations (zone_id, assigned_rows, first_wine_date, wine_count)
-       VALUES (?, ?, CURRENT_TIMESTAMP, ?)`
-    ).run(zoneId, JSON.stringify([assignedRow]), incrementWineCount ? 1 : 0);
+      `INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count)
+       VALUES (?, ?, ?, CURRENT_TIMESTAMP, ?)`
+    ).run(cellarId, zoneId, JSON.stringify([assignedRow]), incrementWineCount ? 1 : 0);
   }
 
   return assignedRow;
@@ -109,9 +110,10 @@ export async function allocateRowToZone(zoneId, options = {}) {
 /**
  * Update wine count for a zone.
  * @param {string} zoneId
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @param {number} delta - +1 or -1
  */
-export async function updateZoneWineCount(zoneId, delta) {
+export async function updateZoneWineCount(zoneId, cellarId, delta) {
   const zone = getZoneById(zoneId);
 
   // Buffer/fallback zones don't track counts
@@ -122,28 +124,29 @@ export async function updateZoneWineCount(zoneId, delta) {
   await db.prepare(
     `UPDATE zone_allocations
      SET wine_count = wine_count + ?, updated_at = CURRENT_TIMESTAMP
-     WHERE zone_id = ?`
-  ).run(delta, zoneId);
+     WHERE cellar_id = ? AND zone_id = ?`
+  ).run(delta, cellarId, zoneId);
 
   // Deallocate if empty
   if (delta < 0) {
     const allocation = await db.prepare(
-      'SELECT wine_count FROM zone_allocations WHERE zone_id = ?'
-    ).get(zoneId);
+      'SELECT wine_count FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?'
+    ).get(cellarId, zoneId);
     if (allocation && allocation.wine_count <= 0) {
-      await db.prepare('DELETE FROM zone_allocations WHERE zone_id = ?').run(zoneId);
+      await db.prepare('DELETE FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?').run(cellarId, zoneId);
     }
   }
 }
 
 /**
  * Get current zone → row mapping for UI display.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Map of rowId -> zone info
  */
-export async function getActiveZoneMap() {
+export async function getActiveZoneMap(cellarId) {
   const allocations = await db.prepare(
-    `SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE wine_count > 0`
-  ).all();
+    `SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = ? AND wine_count > 0`
+  ).all(cellarId);
 
   const zoneMap = {};
   for (const alloc of allocations) {
@@ -166,14 +169,16 @@ export async function getActiveZoneMap() {
 
 /**
  * Get all zone allocations with their details.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Array>} Array of zone allocation objects
  */
-export async function getAllZoneAllocations() {
+export async function getAllZoneAllocations(cellarId) {
   const allocations = await db.prepare(
     `SELECT zone_id, assigned_rows, wine_count, first_wine_date, updated_at
      FROM zone_allocations
+     WHERE cellar_id = ?
      ORDER BY first_wine_date`
-  ).all();
+  ).all(cellarId);
 
   return allocations.map(alloc => {
     const zone = getZoneById(alloc.zone_id);
@@ -189,10 +194,11 @@ export async function getAllZoneAllocations() {
 /**
  * Check if a specific row is allocated to any zone.
  * @param {string} rowId - Row ID (e.g., 'R5')
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object|null>} Zone info if allocated, null otherwise
  */
-export async function getRowAllocation(rowId) {
-  const allocations = await db.prepare('SELECT zone_id, assigned_rows FROM zone_allocations').all();
+export async function getRowAllocation(rowId, cellarId) {
+  const allocations = await db.prepare('SELECT zone_id, assigned_rows FROM zone_allocations WHERE cellar_id = ?').all(cellarId);
 
   for (const alloc of allocations) {
     const rows = JSON.parse(alloc.assigned_rows);
@@ -210,12 +216,13 @@ export async function getRowAllocation(rowId) {
 
 /**
  * Get all zones with their current allocation status.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Array>} Array of zone status objects
  */
-export async function getZoneStatuses() {
+export async function getZoneStatuses(cellarId) {
   const allocations = await db.prepare(
-    'SELECT zone_id, assigned_rows, wine_count FROM zone_allocations'
-  ).all();
+    'SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = ?'
+  ).all(cellarId);
 
   const allocMap = new Map(allocations.map(a => [a.zone_id, a]));
 

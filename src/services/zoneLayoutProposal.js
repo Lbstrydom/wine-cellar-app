@@ -16,9 +16,10 @@ const CELLAR_LAYOUT = {
 
 /**
  * Get current bottle counts by zone (based on matching rules, not location).
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Map<string, Object>>} Zone ID → { count, wines }
  */
-async function getBottlesByZone() {
+async function getBottlesByZone(cellarId) {
   const wines = await db.prepare(`
     SELECT
       w.id, w.wine_name, w.vintage, w.colour, w.country, w.grapes,
@@ -26,10 +27,11 @@ async function getBottlesByZone() {
       w.zone_id,
       s.location_code
     FROM wines w
-    LEFT JOIN slots s ON s.wine_id = w.id
-    WHERE s.location_code IS NOT NULL
+    LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+    WHERE w.cellar_id = ?
+      AND s.location_code IS NOT NULL
       AND s.location_code LIKE 'R%'
-  `).all();
+  `).all(cellarId, cellarId);
 
   const zoneMap = new Map();
 
@@ -157,10 +159,11 @@ function classifyWine(wine) {
 
 /**
  * Propose optimal zone layout based on collection.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Proposed layout with zone assignments
  */
-export async function proposeZoneLayout() {
-  const bottlesByZone = await getBottlesByZone();
+export async function proposeZoneLayout(cellarId) {
+  const bottlesByZone = await getBottlesByZone(cellarId);
 
   // Sort zones by preferred row order (whites first, then reds)
   const zoneOrder = [
@@ -234,34 +237,33 @@ export async function proposeZoneLayout() {
 /**
  * Save confirmed zone layout to database.
  * @param {Array} assignments - Array of { zoneId, assignedRows }
+ * @param {string} cellarId - Cellar ID for tenant isolation
  */
-export async function saveZoneLayout(assignments) {
-  // Clear existing allocations
-  await db.prepare('DELETE FROM zone_allocations').run();
+export async function saveZoneLayout(assignments, cellarId) {
+  // Clear existing allocations for this cellar
+  await db.prepare('DELETE FROM zone_allocations WHERE cellar_id = ?').run(cellarId);
 
   // Insert new allocations
   for (const { zoneId, assignedRows, bottleCount } of assignments) {
     await db.prepare(`
-      INSERT INTO zone_allocations (zone_id, assigned_rows, wine_count, updated_at)
-      VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-      ON CONFLICT(zone_id) DO UPDATE SET
-        assigned_rows = excluded.assigned_rows,
-        wine_count = excluded.wine_count,
-        updated_at = CURRENT_TIMESTAMP
-    `).run(zoneId, JSON.stringify(assignedRows), bottleCount || 0);
+      INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, wine_count, first_wine_date, updated_at)
+      VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    `).run(cellarId, zoneId, JSON.stringify(assignedRows), bottleCount || 0);
   }
 }
 
 /**
  * Get current saved zone layout.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Array>} Zone allocations
  */
-export async function getSavedZoneLayout() {
+export async function getSavedZoneLayout(cellarId) {
   const rows = await db.prepare(`
     SELECT zone_id, assigned_rows, wine_count, updated_at
     FROM zone_allocations
+    WHERE cellar_id = ?
     ORDER BY zone_id
-  `).all();
+  `).all(cellarId);
 
   return rows.map(row => ({
     zoneId: row.zone_id,
@@ -273,10 +275,11 @@ export async function getSavedZoneLayout() {
 
 /**
  * Generate specific moves to consolidate wines into their assigned zones.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Move instructions
  */
-export async function generateConsolidationMoves() {
-  const layout = await getSavedZoneLayout();
+export async function generateConsolidationMoves(cellarId) {
+  const layout = await getSavedZoneLayout(cellarId);
   if (layout.length === 0) {
     return { error: 'No zone layout configured. Please confirm a zone layout first.' };
   }
@@ -293,17 +296,18 @@ export async function generateConsolidationMoves() {
       w.id, w.wine_name, w.vintage, w.zone_id,
       s.location_code as current_slot
     FROM wines w
-    JOIN slots s ON s.wine_id = w.id
-    WHERE s.location_code LIKE 'R%'
-  `).all();
+    JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+    WHERE w.cellar_id = ?
+      AND s.location_code LIKE 'R%'
+  `).all(cellarId, cellarId);
 
   // Get all empty slots
   const emptySlotsResult = await db.prepare(`
     SELECT location_code
     FROM slots
-    WHERE wine_id IS NULL AND location_code LIKE 'R%'
+    WHERE cellar_id = ? AND wine_id IS NULL AND location_code LIKE 'R%'
     ORDER BY location_code
-  `).all();
+  `).all(cellarId);
   const emptySlots = emptySlotsResult.map(s => s.location_code);
 
   const moves = [];

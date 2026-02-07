@@ -116,17 +116,18 @@ For reclassification suggestions, include a JSON block:
  * @param {number} wineId - Wine ID
  * @param {string} newZoneId - New zone ID
  * @param {string} reason - Reason for reassignment
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Result
  */
-export async function reassignWineZone(wineId, newZoneId, reason = '') {
+export async function reassignWineZone(wineId, newZoneId, reason = '', cellarId) {
   // Validate zone exists
   const zone = getZoneById(newZoneId);
   if (!zone && !['white_buffer', 'red_buffer', 'unclassified'].includes(newZoneId)) {
     throw new Error(`Invalid zone: ${newZoneId}`);
   }
 
-  // Get current wine
-  const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
+  // Get current wine scoped to cellar
+  const wine = await db.prepare('SELECT * FROM wines WHERE id = ? AND cellar_id = ?').get(wineId, cellarId);
   if (!wine) {
     throw new Error(`Wine not found: ${wineId}`);
   }
@@ -137,8 +138,8 @@ export async function reassignWineZone(wineId, newZoneId, reason = '') {
   await db.prepare(`
     UPDATE wines
     SET zone_id = ?, zone_confidence = 'high', zone_override_reason = ?
-    WHERE id = ?
-  `).run(newZoneId, reason || 'User override', wineId);
+    WHERE id = ? AND cellar_id = ?
+  `).run(newZoneId, reason || 'User override', wineId, cellarId);
 
   return {
     wineId,

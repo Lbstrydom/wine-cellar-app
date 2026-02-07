@@ -35,7 +35,8 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
   const plan = await generateReconfigurationPlan(report, {
     includeRetirements,
     includeNewZones,
-    stabilityBias
+    stabilityBias,
+    cellarId: req.cellarId
   });
 
   const planId = putPlan({
@@ -408,7 +409,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
   });
 
   deletePlan(planId);
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     success: true,
@@ -481,7 +482,7 @@ router.post('/reconfiguration/:id/undo', asyncHandler(async (req, res) => {
     await client.query('UPDATE zone_reconfigurations SET undone_at = NOW() WHERE id = $1', [reconfigurationId]);
   });
 
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({ success: true, undone: true });
 }));
@@ -560,7 +561,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   });
 
   // Invalidate analysis cache after successful moves
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     success: true,

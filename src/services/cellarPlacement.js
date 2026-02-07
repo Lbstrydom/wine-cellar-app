@@ -261,6 +261,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
     allowFallback = true,
     enforceAffinity = false,
     rootZoneId = zoneId,
+    cellarId,
     _visited = new Set()
   } = options;
 
@@ -274,12 +275,12 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
 
   // Standard zones - get or allocate rows
   if (!zone.isBufferZone && !zone.isFallbackZone && !zone.isCuratedZone) {
-    let rows = await getZoneRows(zoneId);
+    let rows = await getZoneRows(zoneId, cellarId);
 
     // If zone has no rows yet, allocate one
     if (rows.length === 0) {
       try {
-        const newRow = await allocateRowToZone(zoneId);
+        const newRow = await allocateRowToZone(zoneId, cellarId);
         rows = [newRow];
       } catch (_err) {
         // No rows available - fall through to overflow
@@ -297,7 +298,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   // Buffer zones - find gaps in preferred row range
   // When enforceAffinity is true, only use rows not allocated to other zones
   if (zone.isBufferZone && zone.preferredRowRange) {
-    const zoneMap = enforceAffinity ? await getActiveZoneMap() : null;
+    const zoneMap = enforceAffinity ? await getActiveZoneMap(cellarId) : null;
     const allocatedRows = zoneMap ? new Set(Object.keys(zoneMap)) : new Set();
 
     for (const rowNum of zone.preferredRowRange) {

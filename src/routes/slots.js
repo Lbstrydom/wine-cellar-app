@@ -48,7 +48,7 @@ router.post('/move', validateBody(moveBottleSchema), asyncHandler(async (req, re
   });
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({ message: 'Bottle moved' });
 }));
@@ -91,7 +91,7 @@ router.post('/swap', validateBody(swapBottleSchema), asyncHandler(async (req, re
   });
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     message: 'Bottles swapped',
@@ -134,7 +134,7 @@ router.post('/direct-swap', validateBody(directSwapSchema), asyncHandler(async (
   });
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     message: 'Bottles swapped',
@@ -182,7 +182,7 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
   });
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     message: 'Bottle consumed and logged',
@@ -209,7 +209,7 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
   await db.prepare('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3').run(wine_id, req.cellarId, location);
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({ message: 'Bottle added to slot' });
 }));
@@ -232,7 +232,7 @@ router.delete('/:location/remove', validateParams(locationParamSchema), asyncHan
   await db.prepare('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2').run(req.cellarId, location);
 
   // Invalidate analysis cache since slot assignments changed
-  await invalidateAnalysisCache();
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({ message: `Bottle removed from ${location}` });
 }));

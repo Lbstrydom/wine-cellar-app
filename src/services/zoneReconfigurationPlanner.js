@@ -225,9 +225,9 @@ function computeSummary(report, actions) {
  * Build list of all zones with their ACTUAL current row allocations from the database.
  * This is critical for the AI to know which rows each zone actually owns.
  */
-async function buildZoneListWithAllocations() {
+async function buildZoneListWithAllocations(cellarId) {
   const zones = CELLAR_ZONES.zones || [];
-  const allocations = await getAllZoneAllocations();
+  const allocations = await getAllZoneAllocations(cellarId);
 
   // Create a map of zoneId -> assigned_rows from database
   const allocMap = new Map();
@@ -253,11 +253,12 @@ async function buildZoneListWithAllocations() {
 export async function generateReconfigurationPlan(report, options = {}) {
   const {
     includeRetirements = true,
-    stabilityBias = 'moderate'
+    stabilityBias = 'moderate',
+    cellarId
   } = options;
 
   const stability = clampStabilityBias(stabilityBias);
-  const neverMerge = await getNeverMergeZones();
+  const neverMerge = await getNeverMergeZones(cellarId);
 
   const capacityIssues = summarizeCapacityIssues(report);
   const totalBottles = report?.summary?.totalBottles ?? 0;
@@ -270,7 +271,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const underutilizedZones = findUnderutilizedZones(utilization, 40);
   const mergeCandidates = findMergeCandidates(overflowingZones, allZones);
 
-  const zonesWithAllocations = await buildZoneListWithAllocations();
+  const zonesWithAllocations = await buildZoneListWithAllocations(cellarId);
 
   let planResult = null;
 

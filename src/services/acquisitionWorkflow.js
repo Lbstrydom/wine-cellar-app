@@ -170,20 +170,21 @@ export async function enrichWineData(wine) {
 /**
  * Get placement suggestion for a wine (zone + fridge eligibility).
  * @param {Object} wine - Wine object
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Placement suggestion
  */
-export async function suggestPlacement(wine) {
+export async function suggestPlacement(wine, cellarId) {
   // Get zone suggestion
   const zoneMatch = await findBestZone(wine);
 
   // Get occupied slots for slot finding
-  const occupiedSlotsResult = await db.prepare('SELECT location_code FROM slots WHERE wine_id IS NOT NULL').all();
+  const occupiedSlotsResult = await db.prepare('SELECT location_code FROM slots WHERE cellar_id = ? AND wine_id IS NOT NULL').all(cellarId);
   const occupiedSlots = new Set(occupiedSlotsResult.map(s => s.location_code));
 
   // Find available slot in suggested zone
   let suggestedSlot = null;
   if (zoneMatch.zoneId !== 'unclassified') {
-    const slotResult = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine);
+    const slotResult = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine, { cellarId });
     if (slotResult) {
       suggestedSlot = slotResult.slotId;
     }
@@ -199,9 +200,9 @@ export async function suggestPlacement(wine) {
     const fridgeWines = await db.prepare(`
       SELECT w.*, s.location_code as slot_id
       FROM wines w
-      JOIN slots s ON s.wine_id = w.id
-      WHERE s.location_code LIKE 'F%'
-    `).all();
+      JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+      WHERE w.cellar_id = ? AND s.location_code LIKE 'F%'
+    `).all(cellarId, cellarId);
 
     const fridgeStatus = getFridgeStatus(fridgeWines);
     const gaps = fridgeStatus.parLevelGaps;
@@ -272,7 +273,7 @@ export function checkZoneReview(zoneMatch) {
  * @param {string} [options.targetSlot] - Specific slot to place in
  * @returns {Promise<Object>} Complete workflow result
  */
-export async function runAcquisitionWorkflow(options) {
+export async function runAcquisitionWorkflow(options = {}) {
   const result = {
     step: 'parse',
     wines: [],
@@ -326,7 +327,7 @@ export async function runAcquisitionWorkflow(options) {
     // If we have a selected wine, continue with placement suggestion
     if (result.selectedWine) {
       // Step 2: Get placement suggestion
-      result.placement = await suggestPlacement(result.selectedWine);
+      result.placement = await suggestPlacement(result.selectedWine, options.cellarId);
 
       // Step 3: Check if zone review is needed
       result.zoneReview = checkZoneReview(result.placement.zone);
@@ -357,16 +358,17 @@ export async function runAcquisitionWorkflow(options) {
  * @returns {Promise<Object>} Save result
  */
 export async function saveAcquiredWine(wineData, options = {}) {
-  const quantity = options.quantity || 1;
+  const { quantity = 1, cellarId } = options;
 
   // Create wine in database
   const insertResult = await db.prepare(`
     INSERT INTO wines (
-      wine_name, vintage, colour, style, vivino_rating, price_eur,
+      cellar_id, wine_name, vintage, colour, style, vivino_rating, price_eur,
       country, region, alcohol_pct, drink_from, drink_until,
       vivino_id, vivino_url, vivino_confirmed
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
+    cellarId,
     wineData.wine_name,
     wineData.vintage || null,
     wineData.colour || 'white',
@@ -390,14 +392,14 @@ export async function saveAcquiredWine(wineData, options = {}) {
 
   if (!targetSlot) {
     // Get placement suggestion
-    const placement = await suggestPlacement({ ...wineData, id: wineId });
+    const placement = await suggestPlacement({ ...wineData, id: wineId }, cellarId);
     targetSlot = placement.suggestedSlot;
 
     // If fridge eligible and user wants fridge, find fridge slot
     if (options.addToFridge && placement.fridge.eligible) {
       const fridgeSlots = await db.prepare(
-        "SELECT location_code FROM slots WHERE location_code LIKE 'F%' AND wine_id IS NULL ORDER BY location_code"
-      ).all();
+        "SELECT location_code FROM slots WHERE cellar_id = ? AND location_code LIKE 'F%' AND wine_id IS NULL ORDER BY location_code"
+      ).all(cellarId);
       if (fridgeSlots.length > 0) {
         targetSlot = fridgeSlots[0].location_code;
       }
@@ -423,13 +425,13 @@ export async function saveAcquiredWine(wineData, options = {}) {
       }
 
       // Check if slot is available
-      const existing = await db.prepare('SELECT id FROM slots WHERE location_code = ? AND wine_id IS NOT NULL').get(slotToUse);
+      const existing = await db.prepare('SELECT id FROM slots WHERE cellar_id = ? AND location_code = ? AND wine_id IS NOT NULL').get(cellarId, slotToUse);
       if (!existing) {
         await db.prepare(`
-          INSERT INTO slots (location_code, wine_id)
-          VALUES (?, ?)
-          ON CONFLICT(location_code) DO UPDATE SET wine_id = excluded.wine_id
-        `).run(slotToUse, wineId);
+          INSERT INTO slots (cellar_id, location_code, wine_id)
+          VALUES (?, ?, ?)
+          ON CONFLICT(cellar_id, location_code) DO UPDATE SET wine_id = excluded.wine_id
+        `).run(cellarId, slotToUse, wineId);
         addedSlots.push(slotToUse);
       }
     }

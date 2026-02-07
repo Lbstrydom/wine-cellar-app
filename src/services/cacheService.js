@@ -589,16 +589,17 @@ export async function cachePublicExtraction(
 /**
  * Generate slot hash for cache invalidation.
  * Hash of all wine_id assignments to detect changes.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string>} MD5 hash of slot assignments
  */
-export async function generateSlotHash() {
+export async function generateSlotHash(cellarId) {
   try {
     const slots = await db.prepare(`
       SELECT location_code, wine_id
       FROM slots
-      WHERE wine_id IS NOT NULL
+      WHERE cellar_id = ? AND wine_id IS NOT NULL
       ORDER BY location_code
-    `).all();
+    `).all(cellarId);
 
     const slotData = slots.map(s => `${s.location_code}:${s.wine_id}`).join('|');
     return crypto.createHash('md5').update(slotData).digest('hex');
@@ -611,19 +612,20 @@ export async function generateSlotHash() {
 /**
  * Get cached cellar analysis.
  * @param {string} analysisType - Type of analysis ('full', 'fridge', 'zones')
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object|null>} Cached analysis or null
  */
-export async function getCachedAnalysis(analysisType) {
+export async function getCachedAnalysis(analysisType, cellarId) {
   try {
     const cached = await db.prepare(`
       SELECT analysis_data, wine_count, slot_hash, created_at
       FROM cellar_analysis_cache
-      WHERE analysis_type = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
-    `).get(analysisType);
+      WHERE cellar_id = ? AND analysis_type = ? AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)
+    `).get(cellarId, analysisType);
 
     if (cached) {
       // Verify slot hash matches current state
-      const currentHash = await generateSlotHash();
+      const currentHash = await generateSlotHash(cellarId);
       if (cached.slot_hash === currentHash) {
         logger.info('Cache', `Analysis HIT: ${analysisType}`);
         return {
@@ -635,7 +637,7 @@ export async function getCachedAnalysis(analysisType) {
       } else {
         logger.info('Cache', `Analysis STALE: ${analysisType} (slot hash mismatch)`);
         // Invalidate stale cache
-        await invalidateAnalysisCache(analysisType);
+        await invalidateAnalysisCache(analysisType, cellarId);
       }
     }
   } catch (err) {
@@ -650,23 +652,25 @@ export async function getCachedAnalysis(analysisType) {
  * @param {string} analysisType - Type of analysis ('full', 'fridge', 'zones')
  * @param {Object} analysisData - The analysis result
  * @param {number} wineCount - Current wine count
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @param {number} [ttlHours=24] - Cache TTL in hours
  */
-export async function cacheAnalysis(analysisType, analysisData, wineCount, ttlHours = 24) {
+export async function cacheAnalysis(analysisType, analysisData, wineCount, cellarId, ttlHours = 24) {
   try {
-    const slotHash = await generateSlotHash();
+    const slotHash = await generateSlotHash(cellarId);
     const expiresAt = getExpiryTimestamp(ttlHours);
 
     await db.prepare(`
-      INSERT INTO cellar_analysis_cache (analysis_type, analysis_data, wine_count, slot_hash, expires_at)
-      VALUES (?, ?, ?, ?, ?)
-      ON CONFLICT(analysis_type) DO UPDATE SET
+      INSERT INTO cellar_analysis_cache (cellar_id, analysis_type, analysis_data, wine_count, slot_hash, expires_at)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(cellar_id, analysis_type) DO UPDATE SET
         analysis_data = excluded.analysis_data,
         wine_count = excluded.wine_count,
         slot_hash = excluded.slot_hash,
         created_at = CURRENT_TIMESTAMP,
         expires_at = excluded.expires_at
     `).run(
+      cellarId,
       analysisType,
       JSON.stringify(analysisData),
       wineCount,
@@ -683,15 +687,19 @@ export async function cacheAnalysis(analysisType, analysisData, wineCount, ttlHo
 /**
  * Invalidate analysis cache.
  * @param {string} [analysisType] - Specific type to invalidate, or all if omitted
+ * @param {string} cellarId - Cellar ID for tenant isolation
  */
-export async function invalidateAnalysisCache(analysisType = null) {
+export async function invalidateAnalysisCache(analysisType = null, cellarId) {
   try {
-    if (analysisType) {
-      await db.prepare('DELETE FROM cellar_analysis_cache WHERE analysis_type = ?').run(analysisType);
+    if (analysisType && cellarId) {
+      await db.prepare('DELETE FROM cellar_analysis_cache WHERE cellar_id = ? AND analysis_type = ?').run(cellarId, analysisType);
       logger.info('Cache', `Invalidated analysis cache: ${analysisType}`);
+    } else if (cellarId) {
+      await db.prepare('DELETE FROM cellar_analysis_cache WHERE cellar_id = ?').run(cellarId);
+      logger.info('Cache', `Invalidated all analysis cache for cellar`);
     } else {
       await db.prepare('DELETE FROM cellar_analysis_cache').run();
-      logger.info('Cache', 'Invalidated all analysis cache');
+      logger.info('Cache', 'Invalidated all analysis cache (global)');
     }
   } catch (err) {
     logger.warn('Cache', `Analysis cache invalidation failed: ${err.message}`);
@@ -701,18 +709,19 @@ export async function invalidateAnalysisCache(analysisType = null) {
 /**
  * Get analysis cache info (without full data).
  * @param {string} analysisType - Type of analysis
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object|null>} Cache info or null
  */
-export async function getAnalysisCacheInfo(analysisType) {
+export async function getAnalysisCacheInfo(analysisType, cellarId) {
   try {
     const info = await db.prepare(`
       SELECT wine_count, slot_hash, created_at, expires_at
       FROM cellar_analysis_cache
-      WHERE analysis_type = ?
-    `).get(analysisType);
+      WHERE cellar_id = ? AND analysis_type = ?
+    `).get(cellarId, analysisType);
 
     if (info) {
-      const currentHash = await generateSlotHash();
+      const currentHash = await generateSlotHash(cellarId);
       return {
         wineCount: info.wine_count,
         createdAt: info.created_at,

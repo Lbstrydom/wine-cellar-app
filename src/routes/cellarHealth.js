@@ -19,8 +19,8 @@ const router = Router();
  * Get cellar health report.
  * @route GET /api/health
  */
-router.get('/', asyncHandler(async (_req, res) => {
-  const health = await getCellarHealth();
+router.get('/', asyncHandler(async (req, res) => {
+  const health = await getCellarHealth(req.cellarId);
   res.json(health);
 }));
 
@@ -32,7 +32,7 @@ router.get('/', asyncHandler(async (_req, res) => {
 router.post('/fill-fridge', asyncHandler(async (req, res) => {
   const { maxMoves = 5 } = req.body;
 
-  const result = await executeFillFridge(maxMoves);
+  const result = await executeFillFridge(maxMoves, req.cellarId);
   res.json(result);
 }));
 
@@ -44,7 +44,7 @@ router.post('/fill-fridge', asyncHandler(async (req, res) => {
 router.get('/at-risk', asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
 
-  const wines = await getAtRiskWines(limit);
+  const wines = await getAtRiskWines(limit, req.cellarId);
   res.json({ wines, count: wines.length });
 }));
 
@@ -52,8 +52,8 @@ router.get('/at-risk', asyncHandler(async (req, res) => {
  * Generate shopping list.
  * @route GET /api/health/shopping-list
  */
-router.get('/shopping-list', asyncHandler(async (_req, res) => {
-  const list = await generateShoppingList();
+router.get('/shopping-list', asyncHandler(async (req, res) => {
+  const list = await generateShoppingList(req.cellarId);
   res.json(list);
 }));
 
@@ -61,8 +61,8 @@ router.get('/shopping-list', asyncHandler(async (_req, res) => {
  * Get health score only.
  * @route GET /api/health/score
  */
-router.get('/score', asyncHandler(async (_req, res) => {
-  const health = await getCellarHealth();
+router.get('/score', asyncHandler(async (req, res) => {
+  const health = await getCellarHealth(req.cellarId);
   res.json({
     score: health.healthScore,
     breakdown: {
@@ -79,8 +79,8 @@ router.get('/score', asyncHandler(async (_req, res) => {
  * Get alerts only.
  * @route GET /api/health/alerts
  */
-router.get('/alerts', asyncHandler(async (_req, res) => {
-  const health = await getCellarHealth();
+router.get('/alerts', asyncHandler(async (req, res) => {
+  const health = await getCellarHealth(req.cellarId);
   res.json({ alerts: health.alerts });
 }));
 

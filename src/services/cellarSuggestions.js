@@ -15,10 +15,11 @@ import { getActiveZoneMap } from './cellarAllocation.js';
 /**
  * Get the rows allocated to a specific zone.
  * @param {string} zoneId - Zone ID
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string[]>} Sorted row IDs (e.g. ["R3", "R4"])
  */
-export async function getActiveZoneRowsForZone(zoneId) {
-  const zoneMap = await getActiveZoneMap();
+export async function getActiveZoneRowsForZone(zoneId, cellarId) {
+  const zoneMap = await getActiveZoneMap(cellarId);
   const rows = [];
   for (const [rowId, info] of Object.entries(zoneMap)) {
     if (info.zoneId === zoneId) rows.push(rowId);
@@ -28,10 +29,11 @@ export async function getActiveZoneRowsForZone(zoneId) {
 
 /**
  * Get the full zone-to-rows and row-to-zone allocation.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<{zoneToRows: Object, rowToZoneId: Object}>}
  */
-export async function getCurrentZoneAllocation() {
-  const zoneMap = await getActiveZoneMap();
+export async function getCurrentZoneAllocation(cellarId) {
+  const zoneMap = await getActiveZoneMap(cellarId);
   const zoneToRows = {};
   const rowToZoneId = {};
 
@@ -50,10 +52,11 @@ export async function getCurrentZoneAllocation() {
 
 /**
  * Get cellar rows not currently allocated to any zone.
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string[]>} Available row IDs
  */
-export async function getAvailableCellarRows() {
-  const zoneMap = await getActiveZoneMap();
+export async function getAvailableCellarRows(cellarId) {
+  const zoneMap = await getActiveZoneMap(cellarId);
   const used = new Set(Object.keys(zoneMap));
   const available = [];
   for (let rowNum = 1; rowNum <= 19; rowNum++) {
@@ -93,9 +96,10 @@ export function getAdjacentZonesFromAllocation(zoneRows, rowToZoneId) {
  * @param {Array} zoneCapacityIssues - Issues from generateMoveSuggestions
  * @param {boolean} needsZoneSetup - Whether zones are not configured
  * @param {boolean} allowFallback - Whether fallback placement is allowed
+ * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Array>} Alert objects for the report
  */
-export async function buildZoneCapacityAlerts(zoneCapacityIssues, needsZoneSetup, allowFallback) {
+export async function buildZoneCapacityAlerts(zoneCapacityIssues, needsZoneSetup, allowFallback, cellarId) {
   const alerts = [];
 
   if (zoneCapacityIssues.length === 0 || needsZoneSetup || allowFallback) {
@@ -112,9 +116,9 @@ export async function buildZoneCapacityAlerts(zoneCapacityIssues, needsZoneSetup
 
   for (const [overflowingZoneId, winesNeedingPlacement] of issuesByZone) {
     const zone = getZoneById(overflowingZoneId);
-    const zoneRows = await getActiveZoneRowsForZone(overflowingZoneId);
-    const currentZoneAllocation = await getCurrentZoneAllocation();
-    const availableRows = await getAvailableCellarRows();
+    const zoneRows = await getActiveZoneRowsForZone(overflowingZoneId, cellarId);
+    const currentZoneAllocation = await getCurrentZoneAllocation(cellarId);
+    const availableRows = await getAvailableCellarRows(cellarId);
     const adjacentZones = getAdjacentZonesFromAllocation(zoneRows, currentZoneAllocation.rowToZoneId)
       .filter(z => z !== overflowingZoneId);
 
@@ -152,7 +156,7 @@ export async function buildZoneCapacityAlerts(zoneCapacityIssues, needsZoneSetup
  * @returns {Promise<Array>} Move suggestions (with _hasSwaps and _zoneCapacityIssues attached)
  */
 export async function generateMoveSuggestions(misplacedWines, allWines, _slotToWine, options = {}) {
-  const { allowFallback = false } = options;
+  const { allowFallback = false, cellarId } = options;
   const occupiedSlots = new Set();
   allWines.forEach(w => {
     const slotId = w.slot_id || w.location_code;
@@ -188,7 +192,8 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
 
     const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine, {
       allowFallback,
-      enforceAffinity: true
+      enforceAffinity: true,
+      cellarId
     });
 
     if (slot) {
