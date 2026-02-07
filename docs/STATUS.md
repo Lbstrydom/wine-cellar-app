@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 5 February 2026
+## 7 February 2026
 
 ---
 
@@ -9,7 +9,36 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 5 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 7 Feb 2026**:
+- **Wine Data Consistency Checker - COMPLETE** ✅:
+  - **Grape-colour validation**: Standalone `grapeColourMap.js` with 40+ grapes, synonym resolution (Shiraz→Syrah, Pinot Grigio→Pinot Gris), and known exception patterns (Blanc de Noirs, orange wine, vin gris)
+  - **Central normalization**: `wineNormalization.js` with `normalizeColour()`, `normalizeGrape()`, `parseGrapesField()` (robust tokenizer: JSON, comma, slash, &, percentage formats)
+  - **Consistency checker service**: `consistencyChecker.js` — advisory-only, never blocking. Method-type bypass (sparkling/dessert/fortified), rosé exempt, orange allows white grapes. Severity levels: error (all grapes mismatch), warning (partial blend), info (all unknown grapes)
+  - **API endpoints**: `GET /api/consistency/audit` (paginated cellar audit), `GET /api/consistency/check/:id` (single wine), `POST /api/consistency/validate` (pre-save validation). All with Zod schema validation.
+  - **Write-path advisory hooks**: POST/PUT `/api/wines` return `warnings` array alongside success response. Fail-open pattern: checker errors never cause 500s after committed data.
+  - **Orange colour support**: Added to WINE_COLOURS enum, Zod schemas, DB migration (049), base schema parity (postgres + sqlite CHECK constraints)
+  - **Acquisition workflow fix**: Pre-existing PostgreSQL bug fixed — `RETURNING id` added to INSERT, switched to `.get()`
+  - **Route-level tests with supertest**: Both `consistency.test.js` (22 tests) and `winesAdvisory.test.js` (16 tests) exercise real Express middleware chains — real Zod validation, real `req.validated` fallback, real `captureGrapes` ordering, real fail-open behavior
+  - **Test Coverage**: 1113 unit tests passing across 41 files. Zero regressions.
+  - Files: `grapeColourMap.js`, `wineNormalization.js`, `consistencyChecker.js`, `consistency.js` (route), migration 049, updated `wines.js`, `acquisitionWorkflow.js`, `wine.js` (schema), `index.js` (route registration)
+  - Plan document: `docs/colour-plan.md` (13 steps, 17 reviewer findings addressed)
+
+- **UI/UX Audit (11 Phases) - COMPLETE** ✅:
+  - **Phase 0**: CSS architecture split (7,595-line monolith → 5 modules: variables, components, layout, themes, accessibility)
+  - **Phase 1**: WCAG AA contrast fixes (`--accent`, `--text-muted`), sub-minimum font size floors (11-12px), undefined CSS variable aliases
+  - **Phase 2**: 42 semantic color tokens, hardcoded hex elimination, WCAG 1.4.1 non-color cues (27 elements verified with icons/borders/text)
+  - **Phase 3**: Light mode palette, theme toggle, FOUC prevention, Phase 3.5 refinements
+  - **Phase 4**: Settings grouping, inline style cleanup, wine card hierarchy, tab indicator
+  - **Phase 5**: Type scale variables, heading sizes, tab visibility fix
+  - **Phase 6**: Mobile responsive refinements, touch targets, PWA safe areas
+  - **Phase 7**: Focus rings, skeleton loading, toast stacking + screen reader announcements
+  - **Phase 8**: Cellar Analysis theme hardening, text overflow, loading UX
+  - **Phase 9**: Cellar Analysis state machine, single CTA, post-reconfig flow
+  - **Phase 10**: Fridge swap-out suggestions when full, invariant count check
+  - **Phase 11**: Visual grid move guide
+  - Plan document: `docs/ui-plan.md`
+
+**Previous Enhancements** (5 Feb 2026):
 - **Comprehensive Codebase Refactoring (7 Phases) - COMPLETE** ✅:
   - **Phase 1 (CRITICAL — Broken Transactions)**: Fixed 3 broken PostgreSQL transaction sites where `BEGIN`/`INSERT`/`COMMIT` ran on different pool connections. Converted to `db.transaction(async (client) => { ... })` in `cellar.js` (zone merge, zone operation) and `cellars.js` (create cellar + membership).
   - **Phase 2 (Async Error Handler)**: Created `asyncHandler()` wrapper in `src/utils/errorResponse.js`. Eliminated ~150 redundant try/catch blocks across all 25 route files. Central error middleware in `server.js` handles unhandled errors.
@@ -26,7 +55,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Phase 6 (Logger)**: Replaced all 102 `console.error`/`console.warn` calls across 20 backend files with Winston `logger` from `src/utils/logger.js`. Zero console calls remaining.
   - **Phase 7 (Encapsulation)**: `openaiReviewer.js` now imports shared `CircuitBreaker` service instead of using mutable module-level state.
   - **Guideline Update**: Relaxed file size constraint from hard 300-line limit to ~500 lines with focus on SRP, DRY, and modularity.
-  - **Test Coverage**: All 942 unit tests passing across 34 test files. Zero regressions.
+  - **Test Coverage**: All 942 unit tests passing across 34 test files at time of refactoring. Now 1113 across 41 files. Zero regressions.
   - Files: 40+ new/split modules, all 25 route files updated, `asyncHandler`, `logger`, `validate` middleware, 8 new Zod schemas
   - Audit document: `docs/refact.md` (comprehensive reference with all findings, fixes, and code examples)
 
@@ -169,7 +198,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (942+ tests, 85% coverage)
+- Comprehensive testing infrastructure (1113+ tests, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
@@ -251,7 +280,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **900+ tests passing** (817 unit + 53 integration + 30 benchmark)
+- **1100+ tests passing** (1113 unit + 53 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -260,7 +289,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 817 unit tests (~0.9s) | ❌ No |
+| `npm run test:unit` | Runs 1113 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 53 integration tests (~6s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |

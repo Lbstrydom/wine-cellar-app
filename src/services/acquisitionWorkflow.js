@@ -9,6 +9,7 @@ import { findBestZone, findAvailableSlot } from './cellarPlacement.js';
 import { categoriseWine, getFridgeStatus } from './fridgeStocking.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
+import { checkWineConsistency } from './consistencyChecker.js';
 
 /**
  * Field confidence levels.
@@ -360,14 +361,15 @@ export async function runAcquisitionWorkflow(options = {}) {
 export async function saveAcquiredWine(wineData, options = {}) {
   const { quantity = 1, cellarId } = options;
 
-  // Create wine in database
+  // Create wine in database (R2-#12: use RETURNING id + .get() for PostgreSQL compatibility)
   const insertResult = await db.prepare(`
     INSERT INTO wines (
       cellar_id, wine_name, vintage, colour, style, vivino_rating, price_eur,
       country, region, alcohol_pct, drink_from, drink_until,
       vivino_id, vivino_url, vivino_confirmed
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  `).run(
+    RETURNING id
+  `).get(
     cellarId,
     wineData.wine_name,
     wineData.vintage || null,
@@ -385,7 +387,7 @@ export async function saveAcquiredWine(wineData, options = {}) {
     wineData.vivino_confirmed ? 1 : 0
   );
 
-  const wineId = insertResult.lastInsertRowid;
+  const wineId = insertResult?.id || insertResult?.lastInsertRowid;
 
   // Determine slot(s) for bottles
   let targetSlot = options.slot;
@@ -446,9 +448,20 @@ export async function saveAcquiredWine(wineData, options = {}) {
     logger.error('AcquisitionWorkflow', `Background enrichment failed: ${err.message}`);
   });
 
+  // Advisory consistency warnings (fail-open)
+  let warnings = [];
+  try {
+    const finding = checkWineConsistency({
+      id: wineId, wine_name: wineData.wine_name, colour: wineData.colour,
+      grapes: wineData.grapes, style: wineData.style
+    });
+    if (finding) warnings = [finding];
+  } catch { /* fail-open: never crash after successful write */ }
+
   return {
     wineId,
     slots: addedSlots,
+    warnings,
     message: addedSlots.length > 0
       ? `Added ${addedSlots.length} bottle(s) to ${addedSlots.join(', ')}`
       : `Wine created (ID: ${wineId}), no slot assigned`

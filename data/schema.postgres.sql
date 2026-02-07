@@ -6,7 +6,7 @@
 CREATE TABLE IF NOT EXISTS wines (
     id SERIAL PRIMARY KEY,
     style TEXT NOT NULL,
-    colour TEXT NOT NULL CHECK (colour IN ('red', 'white', 'rose', 'sparkling')),
+    colour TEXT NOT NULL CHECK (colour IN ('red', 'white', 'rose', 'orange', 'sparkling', 'dessert', 'fortified')),
     wine_name TEXT NOT NULL,
     vintage INTEGER, -- NULL for NV wines
     vivino_rating REAL,

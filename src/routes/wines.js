@@ -20,8 +20,20 @@ import { paginationSchema } from '../schemas/common.js';
 import { WineFingerprint } from '../services/wineFingerprint.js';
 import { evaluateWineAdd } from '../services/wineAddOrchestrator.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { checkWineConsistency } from '../services/consistencyChecker.js';
 
 const router = Router();
+
+/**
+ * Capture grapes from raw body before schema validation strips it.
+ * Grapes is not in createWineSchema/updateWineSchema but is needed for advisory checks.
+ */
+function captureGrapes(req, res, next) {
+  if (req.body?.grapes !== undefined) {
+    req._rawGrapes = req.body.grapes;
+  }
+  next();
+}
 
 const RETRY_CONFIG = {
   maxAttempts: 5,
@@ -331,7 +343,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
  * Create new wine.
  * @route POST /api/wines
  */
-router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) => {
+router.post('/', captureGrapes, validateBody(createWineSchema), asyncHandler(async (req, res) => {
   const {
     style, colour, wine_name, vintage, vivino_rating, price_eur, country,
     producer, region, vivino_id, vivino_url, vivino_confirmed, external_match
@@ -429,14 +441,20 @@ router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) =
     }
   }
 
-  res.status(201).json({ id: result?.id || result?.lastInsertRowid, message: 'Wine added' });
+  const wineId = result?.id || result?.lastInsertRowid;
+  let warnings = [];
+  try {
+    const finding = checkWineConsistency({ id: wineId, wine_name, colour, grapes: req._rawGrapes, style });
+    if (finding) warnings = [finding];
+  } catch { /* fail-open: never crash after successful write */ }
+  res.status(201).json({ id: wineId, message: 'Wine added', warnings });
 }));
 
 /**
  * Update wine including drink window and Vivino reference.
  * @route PUT /api/wines/:id
  */
-router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema), asyncHandler(async (req, res) => {
+router.put('/:id', captureGrapes, validateParams(wineIdSchema), validateBody(updateWineSchema), asyncHandler(async (req, res) => {
   const {
     style, colour, wine_name, vintage, vivino_rating, price_eur, country,
     producer, region,
@@ -445,7 +463,7 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
   } = req.body;
 
   const existing = await db.prepare(`
-    SELECT wine_name, producer, vintage, country, region, style, colour
+    SELECT wine_name, producer, vintage, country, region, style, colour, grapes
     FROM wines
     WHERE cellar_id = $1 AND id = $2
   `).get(req.cellarId, req.params.id);
@@ -516,7 +534,13 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
   const updateSql = 'UPDATE wines SET ' + setSql + ' WHERE cellar_id = $' + cellarIdParam + ' AND id = $' + idParam;
   await db.prepare(updateSql).run(...values);
 
-  res.json({ message: 'Wine updated' });
+  let warnings = [];
+  try {
+    const grapes = req._rawGrapes ?? existing.grapes;
+    const finding = checkWineConsistency({ id: req.params.id, wine_name, colour, grapes, style });
+    if (finding) warnings = [finding];
+  } catch { /* fail-open */ }
+  res.json({ message: 'Wine updated', warnings });
 }));
 
 /**

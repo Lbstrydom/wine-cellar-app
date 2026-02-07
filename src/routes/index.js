@@ -39,6 +39,7 @@ import adminRoutes from './admin.js';
 import tastingNotesRoutes from './tastingNotes.js';
 import searchMetricsRoutes from './searchMetrics.js';
 import searchRoutes from './search.js';
+import consistencyRoutes from './consistency.js';
 
 const router = Router();
 
@@ -104,5 +105,6 @@ router.use('/health', requireAuth, requireCellarContext, cellarHealthRoutes);   
 router.use('/admin', adminRoutes);
 router.use('/wines', requireAuth, requireCellarContext, tastingNotesRoutes);     // /wines/:id/tasting-notes, /wines/:id/tasting-notes/regenerate, etc.
 router.use('/metrics', requireAuth, requireCellarContext, searchMetricsRoutes);  // /metrics/search/summary, /metrics/search/history, /metrics/search/stats
+router.use('/consistency', requireAuth, requireCellarContext, consistencyRoutes);  // /consistency/audit, /consistency/check/:id, /consistency/validate
 
 export default router;

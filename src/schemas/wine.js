@@ -8,7 +8,7 @@ import { z } from 'zod';
 /**
  * Valid wine colours.
  */
-export const WINE_COLOURS = ['red', 'white', 'rose', 'sparkling', 'dessert', 'fortified'];
+export const WINE_COLOURS = ['red', 'white', 'rose', 'orange', 'sparkling', 'dessert', 'fortified'];
 
 /**
  * Wine ID parameter schema.
