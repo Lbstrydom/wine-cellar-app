@@ -4,7 +4,7 @@
  */
 
 import { analyseCellar } from '../api.js';
-import { setCurrentAnalysis, setAnalysisLoaded } from './state.js';
+import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis } from './state.js';
 import { renderMoves } from './moves.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
@@ -13,6 +13,7 @@ import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js'
 import { deriveState, AnalysisState } from './analysisState.js';
 import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
+import { openMoveGuide } from './moveGuide.js';
 
 /**
  * Load analysis when tab is opened.
@@ -111,7 +112,17 @@ function updateActionButton(analysis, onRenderAnalysis) {
     [AnalysisState.NO_ZONES]:          { label: 'Setup Zones',    handler: () => startZoneSetup() },
     [AnalysisState.ZONES_DEGRADED]:    { label: 'Reconfigure Zones', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.ZONES_HEALTHY]:     { label: 'Optimize Cellar',   handler: () => openReconfigurationModal({ onRenderAnalysis }) },
-    [AnalysisState.JUST_RECONFIGURED]: { label: 'Review Moves',      handler: () => document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' }) },
+    [AnalysisState.JUST_RECONFIGURED]: {
+      label: 'Guide Me Through Moves',
+      handler: () => {
+        const currentAnalysis = getCurrentAnalysis();
+        if (currentAnalysis?.suggestedMoves?.some(m => m.type === 'move')) {
+          openMoveGuide(currentAnalysis.suggestedMoves);
+        } else {
+          document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
+        }
+      }
+    },
   };
 
   const { label, handler } = config[state];

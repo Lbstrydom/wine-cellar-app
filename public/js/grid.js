@@ -64,6 +64,9 @@ export function renderFridge() {
   });
 
   setupInteractions();
+  if (typeof window.__moveGuideAnnotate === 'function') {
+    window.__moveGuideAnnotate();
+  }
 }
 
 /**
@@ -228,6 +231,9 @@ export async function renderCellar() {
   }
 
   setupInteractions();
+  if (typeof window.__moveGuideAnnotate === 'function') {
+    window.__moveGuideAnnotate();
+  }
 }
 
 /**
@@ -344,6 +350,9 @@ export function renderStorageAreas() {
   }
 
   setupInteractions();
+  if (typeof window.__moveGuideAnnotate === 'function') {
+    window.__moveGuideAnnotate();
+  }
 }
 
 /**

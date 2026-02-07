@@ -8,6 +8,7 @@ import { showToast, escapeHtml } from '../utils.js';
 import { refreshLayout } from '../app.js';
 import { getCurrentAnalysis } from './state.js';
 import { loadAnalysis } from './analysis.js';
+import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
 
 /**
  * Render suggested moves.
@@ -37,26 +38,11 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     return;
   }
 
-  const getSwapPartnerIndex = (allMoves, moveIndex) => {
-    const move = allMoves[moveIndex];
-    if (!move || move.type !== 'move') return -1;
-    return allMoves.findIndex((m, idx) => {
-      if (idx === moveIndex) return false;
-      if (!m || m.type !== 'move') return false;
-      return m.from === move.to && m.to === move.from;
-    });
-  };
-
   const actionableMoves = moves.filter(m => m.type === 'move');
   const sources = new Set(actionableMoves.map(m => m.from));
 
-  const swapPartnerByIndex = new Map();
-  for (let i = 0; i < moves.length; i++) {
-    const partnerIdx = getSwapPartnerIndex(moves, i);
-    if (partnerIdx !== -1) {
-      swapPartnerByIndex.set(i, partnerIdx);
-    }
-  }
+  // Use shared swap detection (typeFilter skips non-move entries)
+  const swapPartnerByIndex = detectSwapPairs(moves, { typeFilter: 'move' });
 
   const swapIndices = new Set();
   let swapPairs = 0;
@@ -176,6 +162,16 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       dismissMove(index);
     });
   });
+
+  // Add "Visual Guide" button (idempotent — remove existing first)
+  actionsEl.querySelector('.move-guide-btn')?.remove();
+  if (actionableMoves.length > 0) {
+    const guideBtn = document.createElement('button');
+    guideBtn.className = 'btn btn-secondary btn-small move-guide-btn';
+    guideBtn.textContent = 'Visual Guide';
+    actionsEl.appendChild(guideBtn);
+    guideBtn.addEventListener('click', () => openMoveGuide(moves));
+  }
 
   actionsEl.style.display = actionableMoves.length > 0 ? 'flex' : 'none';
 }

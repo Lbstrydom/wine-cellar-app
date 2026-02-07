@@ -5,6 +5,8 @@
 
 import { escapeHtml, showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
+import { openMoveGuide } from './moveGuide.js';
+import { getCurrentAnalysis } from './state.js';
 
 function shouldShowHolisticBanner(analysis) {
   const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
@@ -148,6 +150,7 @@ function renderPostReconfigBanner(analysis) {
         ${contentHtml}
         <div class="zone-reconfig-banner-actions">
           <button class="btn btn-primary" data-action="scroll-to-moves">Review Moves Below</button>
+          <button class="btn btn-secondary" data-action="open-move-guide">Visual Guide</button>
         </div>
         <div class="zone-reconfig-banner-details">
           <div>• Zones changed: ${zonesChanged}</div>
@@ -179,6 +182,16 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
     if (scrollBtn) {
       scrollBtn.addEventListener('click', () => {
         document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+    // Wire "Visual Guide" button
+    const guideBtn = el.querySelector('[data-action="open-move-guide"]');
+    if (guideBtn) {
+      guideBtn.addEventListener('click', () => {
+        const currentAnalysis = getCurrentAnalysis();
+        if (currentAnalysis?.suggestedMoves) {
+          openMoveGuide(currentAnalysis.suggestedMoves);
+        }
       });
     }
     // Filter out capacity alerts from remaining since we're handling them

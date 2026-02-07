@@ -6980,6 +6980,201 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 /* ============================================================
+   MOVE GUIDE (Phase 11) — fixed panel + grid slot annotations
+   ============================================================ */
+
+/* Fixed panel at top of viewport */
+.move-guide-panel {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 999;
+  background: var(--bg-card);
+  border-bottom: 2px solid var(--accent);
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.move-guide-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.move-guide-title {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.move-guide-step {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  flex: 1;
+}
+
+.move-guide-close {
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  line-height: 1;
+  color: var(--text-muted);
+  cursor: pointer;
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.move-guide-close:hover {
+  color: var(--text);
+}
+
+/* Progress bar */
+.move-guide-progress {
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+
+.move-guide-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: 0;
+}
+
+/* Instruction content */
+.move-guide-instruction {
+  margin-bottom: 0.75rem;
+}
+
+.move-guide-wine {
+  font-weight: 600;
+  font-size: 0.95rem;
+  margin-bottom: 0.25rem;
+}
+
+.move-guide-path {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+}
+
+.move-guide-from {
+  color: var(--color-warning);
+  font-weight: 600;
+}
+
+.move-guide-arrow {
+  color: var(--text-muted);
+}
+
+.move-guide-to {
+  color: var(--color-success);
+  font-weight: 600;
+}
+
+.move-guide-reason {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.move-guide-swap-badge {
+  display: inline-block;
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(var(--color-warning-rgb), 0.2);
+  color: var(--color-warning);
+  vertical-align: middle;
+  margin-left: 0.4rem;
+  text-transform: uppercase;
+}
+
+.move-guide-complete {
+  text-align: center;
+  font-weight: 600;
+  color: var(--color-success);
+  padding: 0.5rem 0;
+}
+
+/* Action buttons */
+.move-guide-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+/* SR-only live region for step announcements */
+.move-guide-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Body offset — CSS fallback; JS measures actual panel height via applyDynamicOffset() */
+body.move-guide-active #view-grid {
+  padding-top: 140px;
+}
+
+/* Grid slot annotations */
+.slot.move-guide-source {
+  box-shadow: 0 0 0 3px var(--color-warning);
+  animation: move-guide-pulse 1.5s ease-in-out infinite;
+  z-index: 2;
+  position: relative;
+}
+
+.slot.move-guide-target {
+  box-shadow: 0 0 0 3px var(--color-success);
+  animation: move-guide-pulse 1.5s ease-in-out infinite;
+  z-index: 2;
+  position: relative;
+}
+
+.slot.move-guide-pending-source {
+  box-shadow: 0 0 0 2px rgba(var(--color-warning-rgb), 0.3);
+  opacity: 0.7;
+}
+
+.slot.move-guide-pending-target {
+  box-shadow: 0 0 0 2px rgba(var(--color-success-rgb), 0.3);
+  opacity: 0.7;
+}
+
+.slot.move-guide-completed {
+  opacity: 0.4;
+  filter: grayscale(0.5);
+}
+
+@keyframes move-guide-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slot.move-guide-source,
+  .slot.move-guide-target {
+    animation: none;
+  }
+}
+
+/* ============================================================
    RESPONSIVE MOBILE ADJUSTMENTS (consolidated to 4 standard breakpoints)
    ============================================================ */
 
@@ -6995,5 +7190,18 @@ body.slot-picker-mode .slot.picker-placed::after {
     flex-direction: column;
     align-items: flex-start;
     border-radius: 12px;
+  }
+
+  /* Move guide panel — compact on mobile */
+  .move-guide-panel {
+    padding: 0.5rem 0.75rem;
+  }
+
+  .move-guide-actions {
+    flex-wrap: wrap;
+  }
+
+  body.move-guide-active #view-grid {
+    padding-top: 160px;
   }
 }

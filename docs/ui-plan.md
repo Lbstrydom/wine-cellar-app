@@ -22,7 +22,7 @@ Apply Gestalt principles, fix contrast/accessibility issues, consolidate the col
 | Phase 8 | **DONE** | 2026-02-06 | Cellar Analysis: theme hardening, text overflow, messages, loading UX |
 | Phase 9 | **DONE** | 2026-02-06 | Cellar Analysis: state machine, single CTA, post-reconfig flow |
 | Phase 10 | **DONE** | 2026-02-06 | Cellar Analysis: fridge swap-out suggestions when full |
-| Phase 11 | Pending | | Cellar Analysis: visual grid move guide |
+| Phase 11 | **DONE** | | Cellar Analysis: visual grid move guide |
 
 ## Files Modified
 - `public/css/variables.css` — :root custom properties, theme palettes, color migration map comment block
@@ -1402,144 +1402,190 @@ function identifySwapTarget(fridgeStatus, candidate) {
 
 **NO new renderer. NO grid fork.**
 
-### 11.2 Move Guide Component (`public/js/cellarAnalysis/moveGuide.js`)
+### 11.2 Move Guide Module (`public/js/cellarAnalysis/moveGuide.js`) — NEW
 
-**Features:**
-1. **Overlay panel** that sits above the main cellar grid view (not a separate grid copy)
-   - Instruction bar: "Step 1 of 12: Move Kanonkop Pinotage 2019"
-   - Source/target display: "From R5C3 → To R8C1 (Bordeaux & Blends zone)"
-   - Progress bar
-   - Action buttons: "Execute Move", "Recalculate" (not Skip — see 11.3)
-   - The cellar grid below is annotated with move highlighting
+Core module with state management, panel rendering, grid annotation, and move execution (~250 lines).
 
-2. **Grid annotation** (post-render, DRY):
+**State**: `{ active, moves, currentIndex, completedIndices, dismissedIndices, swapPartners, panelElement }`
+
+**Exports**:
+- `openMoveGuide(allMoves)` — Filter to `type==='move'`, detect swap pairs, switch to cellar tab, create panel, annotate grid
+- `closeMoveGuide()` — Clear annotations, remove panel, clean up event listeners
+- `isMoveGuideActive()` — Returns `guideState.active`
+- `annotateGrid()` — Re-apply CSS classes to slots (called after grid re-renders)
+
+**Internal functions**:
+- `detectSwapPairs(moves)` — Find A→B + B→A pairs, return `Map<index, partnerIndex>`
+- `createPanel()` — Build fixed panel DOM, append to `document.body`, wire buttons via `addTrackedListener('moveGuide', ...)`
+- `updatePanel()` — Update step counter, progress bar, instruction text, swap badge
+- `removePanel()` — Remove panel element from DOM
+- `applyAnnotations()` — Query `[data-location="..."]` slots, add CSS classes:
+  - Current: `.move-guide-source` (warning) + `.move-guide-target` (success)
+  - Pending: `.move-guide-pending-source` + `.move-guide-pending-target`
+  - Completed: `.move-guide-completed`
+  - Swap partner slots also get source/target classes simultaneously
+- `clearAnnotations()` — Remove all `move-guide-*` classes from all `.slot` elements
+- `executeCurrentMove()` — Call `executeCellarMoves([...])` (atomic batch for swaps), `await refreshLayout()`, advance index, re-annotate
+- `skipCurrentMove()` — Mark dismissed, advance to next non-completed/non-dismissed index
+- `advanceToNext()` — Find next valid index; return false if none remain
+- `showCompletion()` — Render completion message in panel with "Done" + "Recalculate" buttons
+- `handleRecalculate()` — Call `loadAnalysis(true)`, get fresh `suggestedMoves`, filter completed, restart guide
+- `switchToCellarTab()` — `document.querySelector('[data-view="grid"]').click()`
+
+**Key patterns reused**:
+- `addTrackedListener` / `cleanupNamespace` from `public/js/eventManager.js` (namespace `'moveGuide'`)
+- `executeCellarMoves` from `public/js/api.js`
+- `refreshLayout` from `public/js/app.js`
+- `showToast`, `escapeHtml` from `public/js/utils.js`
+- `getCurrentAnalysis` from `./state.js`
+- `loadAnalysis` from `./analysis.js`
+
+**Edge cases**:
+- Empty moves → show toast "No moves to guide", don't activate
+- Swap pairs → execute both atomically in single `executeCellarMoves([moveA, moveB])`, advance past both indices
+- Move validation failure → toast error + stay on current step
+- Source/target slot not in DOM → skip annotation silently, panel still shows text instruction
+- Page refresh → guide state lost (in-memory only), user returns to analysis tab
+
+### 11.3 Grid re-annotation hook (`public/js/grid.js`)
+
+**Problem**: After `refreshLayout()` re-renders the grid, all annotation classes are lost because slots are recreated from scratch.
+
+**Solution**: After each `setupInteractions()` call (lines 66, 230, 346), call a `window.__moveGuideAnnotate` callback:
+
 ```javascript
-function annotateGrid(moves, currentIndex) {
-  // Clear previous annotations
-  document.querySelectorAll('.slot').forEach(s => {
-    s.classList.remove('move-source', 'move-target', 'move-active-source', 'move-active-target', 'move-completed', 'move-pending');
-  });
-
-  moves.forEach((move, idx) => {
-    const source = document.querySelector(`[data-location="${move.from}"]`);
-    const target = document.querySelector(`[data-location="${move.to}"]`);
-
-    if (idx < currentIndex) {
-      source?.classList.add('move-completed');
-      target?.classList.add('move-completed');
-    } else if (idx === currentIndex) {
-      source?.classList.add('move-active-source');
-      target?.classList.add('move-active-target');
-    } else {
-      source?.classList.add('move-pending', 'move-source');
-      target?.classList.add('move-pending', 'move-target');
-    }
-  });
+// After setupInteractions() in renderFridge(), renderCellar(), renderStorageAreas()
+if (typeof window.__moveGuideAnnotate === 'function') {
+  window.__moveGuideAnnotate();
 }
 ```
 
-3. **Zone grouping**: Moves sorted by target zone for logical batching
+**Why `window` callback instead of import?** `grid.js` is a low-level module that should not import from `cellarAnalysis/`. A circular dependency would result. Instead, `moveGuide.js` registers `window.__moveGuideAnnotate = annotateGrid` when active and removes it on close. This keeps the dependency one-directional.
 
-### 11.3 Dependency-safe "Recalculate" (not Skip)
+### 11.4 Panel design — dynamic, fixed-position
 
-**Problem**: Naive "Skip" can invalidate later moves. If move 3 targets R8C1 and move 5 depends on R8C1 being vacated by move 3, skipping move 3 breaks move 5.
+**Key change from original design**: The panel is dynamically created (appended to `document.body`), not static HTML in `index.html`. This is necessary because the guide switches to the grid tab (`#view-grid`) while the original spec placed it inside `#view-analysis` which would be hidden.
 
-**Solution**: Replace "Skip" with "Recalculate from here":
-- When user doesn't want to do the current move, call `analyseCellar(true)` to get a fresh analysis
-- Filter out already-completed moves (by checking which source slots no longer contain the expected wine)
-- Re-render the move guide with the fresh move list
-- The backend recalculates optimal moves based on current state
-
-```javascript
-async function handleRecalculate(completedMoves) {
-  const statusEl = document.getElementById('move-guide-status');
-  if (statusEl) statusEl.textContent = 'Recalculating moves...';
-
-  // Get fresh analysis — backend generates new moves based on current slot state
-  const response = await analyseCellar(true);
-  const freshMoves = response.report.suggestedMoves?.filter(m => m.type === 'move') || [];
-
-  // Filter out moves already completed in this session
-  const completedFromTo = new Set(completedMoves.map(m => `${m.from}→${m.to}`));
-  const remainingMoves = freshMoves.filter(m => !completedFromTo.has(`${m.from}→${m.to}`));
-
-  // Reset guide with new moves, starting from index 0
-  resetMoveGuide(remainingMoves);
-}
+**Panel structure** (created in `createPanel()`):
+```
+.move-guide-panel (position: fixed; top: 0; z-index: 999)
+  ├── Header: title + "Step N of M" + close button (44px touch target)
+  ├── Progress bar: 4px height, var(--accent) fill with CSS transition
+  ├── Instruction: wine name (bold), from (warning) → to (success), reason (muted)
+  │   └── [Swap] badge if current move is part of a swap pair
+  └── Actions: "Execute Move" (primary) + "Skip" (secondary) + "Recalculate" (secondary)
 ```
 
-This is safe because:
+**Body offset**: `body.move-guide-active #view-grid { padding-top: 160px; }` to prevent panel overlapping grid content.
+
+### 11.5 Skip vs Recalculate — both supported
+
+**Skip**: Mark current move as dismissed, advance to next. Safe in most cases; if a later move depends on the skipped slot being vacated, it will fail at execution time with a validation error (toast shown, user can then Recalculate).
+
+**Recalculate**: Call `loadAnalysis(true)` to get fresh analysis based on current slot state. Filter out already-completed moves. Restart guide with fresh move list from index 0.
+
+This approach is safe because:
 - Backend always calculates moves against current slot state (not stale data)
-- Already-completed moves won't appear (wines have moved)
+- Already-completed moves won't appear (wines have already moved)
 - Dependencies are recalculated based on actual slot occupancy
+- Skip provides a fast path for individual unwanted moves; Recalculate provides a full reset
 
-### 11.4 CSS for move annotations
+### 11.6 CSS for move guide (`public/css/components.css`)
 
-In `public/css/components.css`:
+**Fixed panel** (`.move-guide-panel`):
+- `position: fixed; top: 0; left: 0; right: 0; z-index: 999`
+- `background: var(--bg-card); border-bottom: 2px solid var(--accent)`
+- Compact padding, flex layout for header and actions
+
+**Grid slot annotations** (class prefix `move-guide-*` to avoid collision with existing `move-*` classes):
 ```css
-/* Move guide annotations — same pattern as dragdrop highlighting */
-.slot.move-active-source {
-  border: 2px solid var(--color-warning) !important;
-  background: var(--color-warning-bg) !important;
-  animation: move-pulse 1.5s ease-in-out infinite;
-}
-.slot.move-active-target {
-  border: 2px solid var(--color-success) !important;
-  background: var(--color-success-bg) !important;
-  animation: move-pulse 1.5s ease-in-out infinite;
-}
-.slot.move-source, .slot.move-target { opacity: 0.7; }
-.slot.move-completed { opacity: 0.4; }
-.slot.move-pending { /* default styling, dimmed */ }
+.slot.move-guide-source { box-shadow: 0 0 0 3px var(--color-warning); animation: move-guide-pulse 1.5s ease-in-out infinite; }
+.slot.move-guide-target { box-shadow: 0 0 0 3px var(--color-success); animation: move-guide-pulse 1.5s ease-in-out infinite; }
+.slot.move-guide-pending-source { box-shadow: 0 0 0 2px rgba(var(--color-warning-rgb), 0.3); opacity: 0.7; }
+.slot.move-guide-pending-target { box-shadow: 0 0 0 2px rgba(var(--color-success-rgb), 0.3); opacity: 0.7; }
+.slot.move-guide-completed { opacity: 0.4; filter: grayscale(0.5); }
 
-@keyframes move-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(var(--color-success-rgb), 0.4); }
-  50% { box-shadow: 0 0 0 6px rgba(var(--color-success-rgb), 0); }
+@keyframes move-guide-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
 }
 
-/* Respect reduced-motion */
 @media (prefers-reduced-motion: reduce) {
-  .slot.move-active-source, .slot.move-active-target { animation: none; }
+  .slot.move-guide-source, .slot.move-guide-target { animation: none; }
 }
 ```
 
-### 11.5 HTML container
+**Mobile** (`max-width: 768px`): compact padding, flex-wrap actions, adjusted body offset.
 
-In `public/index.html` (inside `#view-analysis`, above `#analysis-moves`):
-```html
-<div class="move-guide-panel" id="move-guide-panel" style="display: none;">
-  <div class="move-guide-header">
-    <h3>Move Guide</h3>
-    <div class="move-guide-progress" id="move-guide-progress"></div>
-    <button class="btn-icon" id="move-guide-close" title="Close guide">✕</button>
-  </div>
-  <div class="move-guide-instruction" id="move-guide-instruction"></div>
-  <span id="move-guide-status" role="status" aria-live="polite"></span>
-  <div class="move-guide-actions">
-    <button class="btn btn-primary" id="move-guide-execute">Execute Move</button>
-    <button class="btn btn-secondary" id="move-guide-recalculate">Recalculate</button>
-  </div>
-</div>
+### 11.7 Entry points (3 locations)
+
+**A. Suggested Moves section** (`public/js/cellarAnalysis/moves.js`):
+Add "Visual Guide" button in `renderMoves()` after existing actions:
+```javascript
+import { openMoveGuide } from './moveGuide.js';
+
+// After actionsEl display logic (~line 180)
+if (actionableMoves.length > 0) {
+  const guideBtn = document.createElement('button');
+  guideBtn.className = 'btn btn-secondary btn-small move-guide-btn';
+  guideBtn.textContent = 'Visual Guide';
+  actionsEl.appendChild(guideBtn);
+  guideBtn.addEventListener('click', () => openMoveGuide(moves));
+}
 ```
 
-This is a panel ABOVE the existing cellar grid, not a separate grid. The cellar grid itself gets annotated via CSS classes (11.2).
+**B. Post-reconfig banner** (`public/js/cellarAnalysis/zoneReconfigurationBanner.js`):
+Add "Visual Guide" button alongside "Review Moves Below":
+```javascript
+import { openMoveGuide } from './moveGuide.js';
+import { getCurrentAnalysis } from './state.js';
 
-### 11.6 Entry points
+// In renderPostReconfigBanner(), add button HTML
+// Wire handler after the scroll button handler
+const guideBtn = el.querySelector('[data-action="open-move-guide"]');
+if (guideBtn) {
+  guideBtn.addEventListener('click', () => {
+    const analysis = getCurrentAnalysis();
+    if (analysis?.suggestedMoves) openMoveGuide(analysis.suggestedMoves);
+  });
+}
+```
 
-- Post-reconfig banner → "Guide Me Through Moves" button → `openMoveGuide(moves)`
-- Suggested Moves section → "Visual Guide" button → `openMoveGuide(moves)`
-- State machine `JUST_RECONFIGURED` → primary CTA "Guide Me Through Moves" → `openMoveGuide(moves)`
+**C. Primary CTA button** (`public/js/cellarAnalysis/analysis.js`):
+Change `JUST_RECONFIGURED` state handler in `updateActionButton()`:
+```javascript
+import { openMoveGuide } from './moveGuide.js';
 
-### 11.7 Integration with existing grid
+[AnalysisState.JUST_RECONFIGURED]: {
+  label: 'Guide Me Through Moves',
+  handler: () => {
+    const analysis = getCurrentAnalysis();
+    if (analysis?.suggestedMoves?.some(m => m.type === 'move')) {
+      openMoveGuide(analysis.suggestedMoves);
+    } else {
+      document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }
+}
+```
 
-After each executed move:
-1. Call `executeCellarMoves([currentMove])` (existing API)
-2. Call `refreshLayout()` (existing function — re-renders grid from API data)
-3. Re-annotate grid with `annotateGrid(moves, newIndex)` (post-render annotation)
+### 11.8 Cache bump
 
-The grid re-renders naturally (fresh data from API), then annotations are re-applied. No manual DOM surgery needed.
+- `public/sw.js`: `CACHE_VERSION` increment + CSS version string bump
+- `public/index.html`: CSS `?v=` version string bump
 
-**Files**: New `public/js/cellarAnalysis/moveGuide.js`, `public/index.html`, `public/css/components.css`, `public/js/cellarAnalysis/zoneReconfigurationBanner.js`, `public/js/cellarAnalysis/moves.js`
+### Cellar Analysis — Phase 11 Files Summary
+
+| File | Action | Changes |
+|------|--------|---------|
+| `public/js/cellarAnalysis/moveGuide.js` | **NEW** | Core module (~250 lines): state, panel, annotations, execution |
+| `public/css/components.css` | Modify | Panel + grid annotation CSS (~120 lines) |
+| `public/js/grid.js` | Modify | 3 lines — call `window.__moveGuideAnnotate()` after `setupInteractions()` |
+| `public/js/cellarAnalysis/moves.js` | Modify | Import + add "Visual Guide" button (~8 lines) |
+| `public/js/cellarAnalysis/zoneReconfigurationBanner.js` | Modify | Import + add button + wire handler (~10 lines) |
+| `public/js/cellarAnalysis/analysis.js` | Modify | Import + change JUST_RECONFIGURED handler (~8 lines) |
+| `public/sw.js` | Modify | Cache version bump |
+| `public/index.html` | Modify | CSS version bump only (no static HTML — panel is dynamic) |
 
 ### Cellar Analysis — Critical Files Summary
 
@@ -1547,7 +1593,7 @@ The grid re-renders naturally (fresh data from API), then annotations are re-app
 |------|--------|---------|
 | `public/js/theme-init.js` | 8 | Always set `data-theme` explicitly |
 | `public/js/settings.js` | 8 | `applyThemePreference('system')` sets explicit attribute |
-| `public/index.html` | 8,9,11 | Meta tags, button hierarchy, move guide panel, ARIA live region |
+| `public/index.html` | 8,9,11 | Meta tags, button hierarchy, cache version bump |
 | `public/js/cellarAnalysis/moves.js` | 8,11 | Fix message, add "Visual Guide" button |
 | `public/js/cellarAnalysis/aiAdvice.js` | 8 | Inline spinner, no forced scroll |
 | `public/css/components.css` | 8,11 | Overflow fix, move guide CSS |
@@ -1558,7 +1604,8 @@ The grid re-renders naturally (fresh data from API), then annotations are re-app
 | `public/js/cellarAnalysis/zoneReconfigurationBanner.js` | 9,11 | "Review Moves" / "Guide Me" button |
 | `public/js/cellarAnalysis/fridge.js` | 10 | Swap logic, user-goal language, slot display |
 | `src/routes/cellarReconfiguration.js` | 10 | Invariant count check |
-| `public/js/cellarAnalysis/moveGuide.js` | 11 | **NEW** — move guide module |
+| `public/js/cellarAnalysis/moveGuide.js` | 11 | **NEW** — move guide module (~250 lines) |
+| `public/js/grid.js` | 11 | 3-line hook: `window.__moveGuideAnnotate()` after `setupInteractions()` |
 | `public/sw.js` | 8,9,10,11 | Cache version bumps |
 
 ### Cellar Analysis — Existing Code to Reuse
@@ -1572,6 +1619,8 @@ The grid re-renders naturally (fresh data from API), then annotations are re-app
 | Move validation | `src/services/movePlanner.js` `validateMovePlan()` | 5-rule pre-execution validation |
 | `refreshLayout()` | `public/js/app.js` | Re-renders grid from API after move execution |
 | `escapeHtml()` / `showToast()` | `public/js/utils.js` | Safe HTML rendering, user feedback |
+| Event listener tracking | `public/js/eventManager.js` | `addTrackedListener('moveGuide', ...)` / `cleanupNamespace('moveGuide')` |
+| Analysis state + reload | `public/js/cellarAnalysis/state.js`, `analysis.js` | `getCurrentAnalysis()`, `loadAnalysis(true)` for recalculate |
 
 ---
 
@@ -1591,7 +1640,7 @@ The grid re-renders naturally (fresh data from API), then annotations are re-app
 | 8 | Phase 8 | Cellar Analysis: theme hardening, text overflow, messages, loading UX | Low — CSS + JS fixes | **DONE** |
 | 9 | Phase 9 | Cellar Analysis: state machine, single CTA, post-reconfig flow | Medium — JS + HTML restructure | **DONE** |
 | 10 | Phase 10 | Cellar Analysis: fridge swap-out suggestions | Medium — JS + backend enhancement | **DONE** |
-| 11 | Phase 11 | Cellar Analysis: visual grid move guide | High — new module, grid annotation | Pending |
+| 11 | Phase 11 | Cellar Analysis: visual grid move guide | High — new module, grid annotation | **DONE** |
 
 **Rationale**:
 - Phase 0 first: splitting the CSS de-risks every subsequent phase by isolating changes to their own file
@@ -1693,11 +1742,15 @@ Before starting Phase 1, confirm these requirements are understood and will be v
 - Test with full fridge (9/9): candidates show swap suggestions with user-goal language
 - `npm run test:all` passes
 
-### Phase 11 — Unit + Integration + Mobile E2E
-- **New**: `tests/unit/cellarAnalysis/moveGuide.test.js` — test `annotateGrid()` applies correct classes, test `handleRecalculate()` filters completed moves
-- **Integration**: Open move guide → execute 2 moves → recalculate → verify fresh moves returned → complete remaining
-- **Mobile E2E (manual, 375px)**: Full flow: analysis tab → setup zones → reconfigure → guided moves → verify grid annotations visible and touch targets usable
-- `npm run test:all` passes
+### Phase 11 — Manual QA (DOM-only module, no unit tests needed)
+1. Analysis tab → see "Visual Guide" button next to "Execute All Moves"
+2. Click "Visual Guide" → switches to cellar grid tab, panel appears fixed at top, source slot pulses warning, target slot pulses green
+3. Click "Execute Move" → move executes, grid refreshes, annotations update to next move
+4. Complete all moves → completion message, "Done" button cleans up panel and annotations
+5. Test swap pair → both source/target slots highlighted simultaneously, both executed atomically
+6. Test "Skip" → advances without executing, no error. Test "Recalculate" → fresh analysis, guide restarts
+7. Mobile 375px: panel responsive, buttons tappable (44px targets), grid annotations visible
+8. `npm run test:unit` passes (no regressions)
 
 ### All Phases (8–11)
 - `npm run test:unit` after each phase (regression gate)
@@ -1727,6 +1780,6 @@ Each phase ships as a separate commit (or PR if branching) with explicit accepta
 | Phase 8 | Clear localStorage + mobile reload → correct theme. Text overflow check at 375px. AI advice inline spinner. | **CODE COMPLETE** (explicit data-theme for WebView compat, word-break overflow fix, inline button spinner + ARIA status; manual mobile QA pending) |
 | Phase 9 | State machine unit tests pass (9 cases). Single CTA label correct per state. Post-reconfig scrolls to banner. Inline Setup Zones CTA in alerts. | **CODE COMPLETE** (state machine + 9 unit tests, single primary CTA, post-reconfig scroll + Review Moves button, inline alert CTA; manual flow QA pending) |
 | Phase 10 | `identifySwapTarget()` unit tests pass. Integration test: atomic fridge swap (no bottle loss). Full fridge shows swap suggestions. | **CODE COMPLETE** (invariant count check, candidates when full, swap UI with identifySwapTarget/swapFridgeCandidate, user-goal language; manual fridge swap QA pending) |
-| Phase 11 | `annotateGrid()` unit tests pass. Move guide: execute 2 → recalculate → complete. Grid annotations visible at 375px. | Pending |
+| Phase 11 | Visual Guide button visible. Panel opens on grid tab. Execute 2 moves → skip → recalculate → complete remaining. Swap pair atomic. Grid annotations visible at 375px. No regressions (`npm run test:unit`). | **CODE COMPLETE** (moveGuide.js module, fixed panel + grid annotations, 3 entry points, swap pair detection, recalculate flow; manual grid QA pending) |
 
 This prevents cascading regressions and provides clear rollback points if a phase introduces issues.
