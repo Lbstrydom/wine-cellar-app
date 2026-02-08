@@ -445,6 +445,17 @@ Safe together: Both are selectable-card modules with the same render-from-state 
 Run: `npm run test:unit` — all prior tests pass + ~20 new tests.
 Audit focus: Filter ≠ selection invariant (filters are visual aids, payload unchanged), counter semantics ("N selected (M visible)"), `invalidateResults()` called on all mutations, accessibility (`role="checkbox"`, `aria-checked`, `aria-live`). dishReview owns entire Step 3 (capture + review cards).
 
+**Cluster 2 Done** ✅ (1577 tests passing):
+- D.2: `wineReview.js` — selectable wine cards with colour/price/BTG filters, triage banner, "N selected (M visible)" counter, select-all-visible toggle, manual add wine form, remove wine. 38 tests in wineReview.test.js.
+- D.3: `dishReview.js` — owns entire Step 3 (Section A: dish capture via `createImageCapture`, Section B: dish review cards). Triage banner, "N of M dishes selected" counter, manual add dish, remove dish. 24 tests in dishReview.test.js.
+- Audit round 1 — all 6 findings addressed:
+  1. **High**: XSS — all user/model text now escaped via `escapeHtml()` in innerHTML (wine.name, dish.name, dish.description, wine.colour, etc.).
+  2. **High**: Rosé filter — COLOURS changed to `{value, label}` objects; `data-colour` uses backend canonical `rose`; filter comparison uses lowercase. Chip displays `Rosé` but matches `rose`.
+  3. **Medium**: Dish categories — changed `Shared` to `Sharing` matching backend `DISH_CATEGORIES`; dropdown values now title-case (matching schema exactly).
+  4. **Medium**: Keyboard operability — added `keydown` handlers for Space/Enter on all `role="checkbox"` cards in both modules; inline price input excluded from toggle.
+  5. **Medium**: Low-confidence inline price edit — low-confidence wine cards render `<input type="number" inputmode="decimal">` instead of read-only price text; change handler updates wine object in-memory.
+  6. **Low**: Listener cleanup — separated `chipListeners` from `cardListeners` in wineReview (chips live independently of card re-renders); `cardListeners` cleaned before each re-render in both modules; all cleaned on destroy.
+
 **Cluster 3: results (D.4)** — High risk, implement alone
 
 | Step | Task | Files |
@@ -455,6 +466,14 @@ Alone because: Pre-flight cap validation (wines ≤ 80, dishes ≤ 20), API inte
 Run: `npm run test:unit` — all prior tests pass + ~14 new tests.
 Audit focus: Pre-flight caps block oversized payloads, chat gated on `chatId !== null` (fallback = explanatory line, no chat UI), `requestRecommendations()` callable standalone, invalidated state → fresh "Get Pairings", `maxlength="2000"` on chat input.
 
+**Cluster 3 Done** ✅ (1598 tests passing):
+- D.4: `results.js` — Step 4 results module. Summary bar with wine/dish counts and over-cap warnings. Optional inputs (party size, max bottles, prefer BTG). Pre-flight validation blocks payloads exceeding MAX_WINES=80 / MAX_DISHES=20. "Get Pairings" button calls `getRecommendations()` API with loading state (button disabled + spinner). Result cards render per-dish pairings with flat fields matching backend contract (`wine_name`, `wine_colour`, `wine_price`, `by_the_glass`). Table wine suggestion rendered from object `{ wine_name, wine_price, why }`. Fallback banner (`role="alert"`) when `fallback: true`. Chat interface gated on `chatId !== null` — renders full chat UI (messages, input `maxlength="2000"` + char counter, send button, 3 suggestion buttons) when chatId exists; shows "Follow-up chat is not available for basic suggestions." when null. `requestRecommendations()` exported for Quick Pair direct invocation. Invalidated state renders fresh "Get Pairings" UI with no stale cards. 21 tests in results.test.js covering: summary counts (3), pre-flight caps (2), API call + payload (3), result cards (2), fallback banner (2), chat rendering/hiding (5), loading state (1), direct invocation (1), invalidated state (1), destroy (1).
+- Audit round 1 — all 4 findings addressed:
+  1. **High**: API shape mismatch — result cards now read flat fields (`p.wine_name`, `p.wine_colour`, `p.wine_price`, `p.by_the_glass`) matching `pairingItemSchema`; `table_wine` rendered as object `{ wine_name, wine_price, why }` matching `tableWineSchema`.
+  2. **High**: chatId never cleared — `setChatId(data.chatId ?? null)` now always called, clearing stale chat context on fallback responses.
+  3. **Medium**: Test fixture contract mismatch — `mockPairingsResponse` updated to include `rank`, `wine_id`, flat `wine_name`/`wine_colour`/`wine_price`/`by_the_glass` fields, `table_summary`, and object `table_wine` matching `recommendResponseSchema`. Added test verifying `setChatId(null)` called on fallback.
+  4. **Low**: Double-escaping — assistant chat messages now pass raw text to `appendChatMessage()` which uses `textContent` (safe, no escaping needed). Error messages still use `isHtml=true` path with `escapeHtml` for the error string.
+
 **Cluster 4: main controller (D.5)** — High risk, implement alone
 
 | Step | Task | Files |
@@ -464,6 +483,16 @@ Audit focus: Pre-flight caps block oversized payloads, chat gated on `chatId !==
 Alone because: Orchestrator — wires all 4 modules, manages lifecycle (`destroyCurrentStep` before each render), navigation guards, Quick Pair flow, state restoration. If lifecycle contract is wrong, all steps leak listeners.
 Run: `npm run test:unit` — all prior tests pass + ~12 new tests. Full Phase D: ~55 new tests total.
 Audit focus: Destroy-before-render lifecycle (no leaked listeners), nav guards (Step 1→2 always allowed, Step 2→3 needs ≥1 wine, Step 3→4 needs ≥1 dish), Quick Pair direct invocation (`runQuickPairFlow` → `requestRecommendations`), parse budget reset on Start Over, mode toggle preserves state.
+
+**Cluster 4 Done** ✅ (1630 tests passing):
+- D.5: `restaurantPairing.js` — Main controller orchestrating 4-step wizard. Exports `initRestaurantPairing()`, `destroyRestaurantPairing()`, and `runQuickPairFlow(wineItems, dishItems)`. Internal state: `currentStepDestroy`, `parseBudget = { used: 0 }`, `listeners[]`, `wizardContainer`. `renderStep(n)` lifecycle: `destroyCurrentStep()` → `setStep(n)` → clear container → call step module → set destroy fn → `updateStepIndicator(n)` + `updateNavButtons(n)`. Navigation guards: Step 1→2 always allowed, Step 2→3 blocked if no wines (toast), Step 3→4 blocked if no dishes (toast). `handleStartOver()` with confirm dialog → `clearState()` → reset `parseBudget.used` → `renderStep(1)`. Quick Pair: `mergeWines` + `mergeDishes` + `renderStep(4)` + `requestRecommendations()` with try/catch error handling. Mode toggle: `setMode('cellar'|'restaurant')` shows/hides cellar sections vs wizard, updates toggle button `aria-selected`. State restoration: if `getStep() > 1 && hasData()` → `renderStep(savedStep)`, else `renderStep(1)`. Step indicator: clickable completed steps, active/completed CSS classes, `aria-current="step"`. `destroyRestaurantPairing()` exported for cleanup — calls `destroyCurrentStep()`, drains `listeners[]`, nullifies `wizardContainer`. Re-init safe: init calls destroy first to prevent listener leaks. 27 tests in restaurantPairing.test.js covering: init (2), state restoration (2), mode toggle (2), step rendering lifecycle (2), navigation guards (5), quick pair (1), start over (4), step indicator (4), Step 1 onAnalyze callback (1), cleanup/re-init (3).
+- Audit round 1 — all 5 findings addressed:
+  1. **Medium**: Listener leak on re-init — `initRestaurantPairing()` now calls `destroyRestaurantPairing()` at start to clean up previous listeners before re-binding.
+  2. **Medium**: No cleanup export — `destroyRestaurantPairing()` exported and implemented. Calls `destroyCurrentStep()`, drains event listeners, nullifies container.
+  3. **Low**: `handleStartOver` async without catch — wrapped in `.catch()` with console.error + toast on error.
+  4. **Low**: Quick Pair error not surfaced — `runQuickPairFlow()` now has try/catch with toast, re-throws for caller handling.
+  5. **Info**: Test coverage gap — added test for Start Over when `hasData()=false` (skips confirm), plus 3 re-init/cleanup tests. Total: 27 tests (up from 23).
+- Phase D complete: 145 new frontend tests across 5 files (imageCapture 34, wineReview 39, dishReview 24, results 21, controller 27). Ready for Phase E integration.
 
 | Cluster | Steps | ~Tests | Risk | Gate |
 |---------|-------|--------|------|------|
