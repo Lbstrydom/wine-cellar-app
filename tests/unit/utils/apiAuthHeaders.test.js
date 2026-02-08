@@ -164,6 +164,43 @@ describe('API Authentication Headers', () => {
     }
   });
 
+  it('should not use raw fetch() for API calls in restaurantPairing/ modules', () => {
+    const pairingDir = path.join(PUBLIC_JS_DIR, 'restaurantPairing');
+    if (!fs.existsSync(pairingDir)) {
+      return; // Skip if directory doesn't exist (Phase C not yet started)
+    }
+
+    const jsFiles = fs.readdirSync(pairingDir).filter(f => f.endsWith('.js'));
+    const violations = [];
+
+    for (const file of jsFiles) {
+      const filePath = path.join(pairingDir, file);
+      const content = fs.readFileSync(filePath, 'utf8');
+
+      for (const pattern of RAW_FETCH_PATTERNS) {
+        const matches = content.match(new RegExp(pattern.source, 'gm'));
+        if (matches) {
+          violations.push({
+            file: `restaurantPairing/${file}`,
+            pattern: pattern.source,
+            matches: matches.length
+          });
+        }
+      }
+    }
+
+    if (violations.length > 0) {
+      const details = violations.map(v =>
+        `  ${v.file}: ${v.matches} raw fetch() call(s)`
+      ).join('\n');
+
+      expect.fail(
+        `Found raw fetch() calls in restaurantPairing/ modules:\n${details}\n\n` +
+        `Use api.js functions instead.`
+      );
+    }
+  });
+
   it('should document legacy files count for tracking migration progress', () => {
     // This test tracks the number of legacy files that need migration
     // As files are migrated, remove them from LEGACY_FILES and this count should decrease

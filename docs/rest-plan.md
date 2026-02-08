@@ -363,9 +363,9 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 
 7. ~~**Schema tests** — `tests/unit/schemas/restaurantPairing.test.js`~~ ✅ Done. 127 tests covering exported constants, parseMenuSchema (mutual exclusion refinements, image boundary), recommendSchema (strict numeric typing — no string coercion), restaurantChatSchema (trim-before-min ordering fix), all response schemas. Reviewed: tightened response chatId to `.uuid()`, added boundary/tolerance/numeric rejection tests.
 8. ~~**Service tests** — `tests/unit/services/menuParsing.test.js` + `tests/unit/services/restaurantPairing.test.js`~~ ✅ Done. 95 tests (37 + 58). menuParsing: prompt building for wine_list/dish_menu, Claude API integration (model, signal, timeout), JSON extraction (code fences, raw, invalid), schema validation + best-effort fallback, sanitization integration, type discriminator injection, cleanup-always. restaurantPairing: CHAT_ERRORS constants, getChatContext ownership (NOT_FOUND, FORBIDDEN), getRecommendations AI path (prompt building with constraints, response validation, best-effort), deterministic fallback (colour matching for 6 dish types, budget/colour/glass constraint filtering, constraintsOverridden path, table wine selection), continueChat (explanation vs recommendations types, wine_id filtering, chat history accumulation, TTL refresh, prior history in messages).
-9. **Route tests** — `tests/unit/routes/restaurantPairing.test.js` (supertest: happy paths, 413, rate limiting, chat ownership 403. Auth tests: two test app variants — mock auth for logic, real middleware for 401/403 rejection.)
-10. **Auth scan** — Update `tests/unit/utils/apiAuthHeaders.test.js` to scan `restaurantPairing/` folder
-11. **Run `npm run test:unit`** — All existing + new tests pass before touching frontend
+9. ~~**Route tests** — `tests/unit/routes/restaurantPairing.test.js`~~ ✅ Done. 39 tests via supertest. Three endpoint suites: /parse-menu (text+image happy paths, dish_menu type, 5 Zod validations including mutual-exclusion refinements, rejectOversizedImage 413, service error 500), /recommend (happy path with arg forwarding, Zod defaults verification, 5 validation rejections, service error), /chat (happy path, 503 API-key guard, CHAT_ERRORS.NOT_FOUND→404 and FORBIDDEN→403, non-chat error re-throw, 3 Zod validations). Rate limiter wiring: strictRateLimiter×3, createRateLimiter config (10/15min, user+cellar key, anon fallback). Middleware integration: real requireAuth→401 without Bearer, real requireCellarContext→400 no active cellar + 403 non-member, server-mount body-parser 413 normalizer contract.
+10. ~~**Auth scan** — Update `tests/unit/utils/apiAuthHeaders.test.js` to scan `restaurantPairing/` folder~~ ✅ Done. Added scan test following `cellarAnalysis/` pattern. Directory guard (`fs.existsSync`) skips gracefully until Phase C creates the folder.
+11. ~~**Run `npm run test:unit`** — All existing + new tests pass before touching frontend~~ ✅ Done. 1406 tests passing (46 test files). Phase B complete.
 
 **Phase C: Frontend Foundation**
 
@@ -396,7 +396,7 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 1. `npm run test:unit` — all existing + new tests pass
 2. Schema tests: valid/invalid inputs, payload size limits, discriminated type validation
 3. Service tests: prompt building (wine_list/dish_menu), per-call timeout (30s), JSON extraction + schema validation + best-effort fallback, deterministic colour-matching fallback, chat context ownership. (Note: bounded concurrency and composite dedup are frontend responsibilities — tested in Phase D.)
-4. Route tests (supertest): happy paths, 413 payload >5mb, chat ownership 403. Auth tests use real `requireAuth` + `requireCellarContext` middleware in test app (not bypassed by direct mount) — verify 401 without token, 403 without cellar context
+4. Route tests (supertest): happy paths for all 3 endpoints, 413 rejectOversizedImage, chat ownership 404/403 via CHAT_ERRORS, 503 API-key guard, Zod validation rejections (mutual exclusion, UUID, max-length), rate limiter wiring verification (strict×3, parse config), real requireAuth→401 without Bearer token
 5. Auth scan: `apiAuthHeaders.test.js` scans `restaurantPairing/` folder — no raw `fetch('/api/...')` calls
 
 ### Manual
