@@ -373,12 +373,17 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 13. ~~**Frontend API client** — `public/js/api/restaurantPairing.js` + update `public/js/api/index.js` barrel~~ ✅ Done. Three functions: `parseMenu(payload, signal)` with AbortSignal support for cancel-on-remove, `getRecommendations(payload)`, `restaurantChat(chatId, message)`. All use `apiFetch` from `base.js` (automatic auth headers). Barrel re-export added to `api/index.js`.
 14. ~~**Frontend state** — `public/js/restaurantPairing/state.js` (sessionStorage persistence)~~ ✅ Done. Full sessionStorage persistence with `wineapp.restaurant.*` namespaced keys. Features: step tracking (1-4), wine/dish merge with dedup (composite key: `normalize(name)+vintage+by_the_glass`), secondary fuzzy match (Jaccard > 0.7 + same vintage), price divergence guard (>20% keeps both entries), selection state (per-item checked/unchecked), results + chatId persistence, `clearState()` for Start Over, `hasData()` for confirm guard. Stable incrementing IDs assigned client-side during merge.
 
-**Phase C Audit** ✅ All 5 findings addressed (1460 tests passing):
+**Phase C Audit Round 1** ✅ All 5 findings addressed:
 - *Medium*: Corrupted sessionStorage shape guard — `load()` validates arrays via `Array.isArray()` check before returning parsed value.
 - *Medium*: 54 unit tests added (`tests/unit/restaurantPairing/state.test.js`) — covers dedup/merge, fuzzy match, persistence, corrupted storage recovery, selection state, input immutability.
 - *Low-Medium*: `setStep()` now clamps to 1-4 via `Math.max(1, Math.min(4, Number(step) || 1))`.
 - *Low-Medium*: `mergeWines()`, `mergeDishes()`, `addWine()`, `addDish()` now shallow-clone input objects before mutation (`{ ...raw }`).
 - *Low*: `clearState()` storage loop wrapped in try/catch consistent with other storage helpers.
+
+**Phase C Audit Round 2** ✅ All 3 findings addressed (1468 tests passing):
+- *Medium*: `load()` now validates object and number fallbacks too — corrupted `selections` (string/array/null) no longer crashes `setWineSelected()`.
+- *Low-Medium*: Step clamped at load time (`Math.max(1, Math.min(4, ...))`) — persisted `"banana"` or `999` recovers to valid range on reload.
+- *Low*: 8 new corruption recovery tests added — selections (string/array/null), step (string/object/out-of-range), results, chatId. Total: 62 state tests.
 
 **Phase D: Frontend UI**
 
