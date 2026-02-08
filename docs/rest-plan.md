@@ -501,46 +501,1135 @@ Audit focus: Destroy-before-render lifecycle (no leaked listeners), nav guards (
 | 3 | D.4 (results) | ~14 | High | Audit before Cluster 4 |
 | 4 | D.5 (controller) | ~12 | High | Audit before Phase E |
 
-**Phase E: Integration**
+**Phase E: Restaurant Pairing Integration**
 
-20. **HTML + CSS** — Update `index.html` (mode toggle + wizard inside `view-pairing`), `components.css` (namespaced `.restaurant-*` classes)
-21. **App init + cache** — Update `app.js` (import + call `initRestaurantPairing()`), `sw.js` (bump cache, pre-cache new JS)
-22. **Final test run** — `npm run test:unit` — all pass
+Phase D is complete — 5 JS modules (controller + 4 step modules) with 145 tests, all passing (1630 total). But the feature is invisible: no HTML container exists, no CSS styles exist, the controller isn't initialized in app.js, and the service worker doesn't cache the new files. Phase E wires everything together.
+
+**Execution strategy: two-cluster pass with light audit between.**
+
+All 5 file edits are _edit-time independent_ (no file's content depends on another's output), but they are _runtime coupled_ — the wizard requires HTML structure, CSS styles, app.js init, and SW caching to all be correct. A light clustering catches issues earlier:
+
+| Cluster | Files | Audit |
+|---------|-------|-------|
+| **1 — Visual** | `variables.css`, `index.html`, `components.css` | Open browser → verify toggle renders, wizard container exists, styles applied, no nesting errors |
+| **2 — Functional** | `app.js`, `sw.js` | `npm run test:all` → toggle mode → verify wizard initialises, SW caches updated |
+
+If time-constrained, a single pass with one audit at the end is acceptable since each edit is self-contained. No new JS logic — just HTML structure, CSS styling, an import/call, and a cache bump.
+
+### Quick Pair UI — Explicitly Deferred
+
+The rest-plan specifies a Quick Pair shortcut. The controller exports `runQuickPairFlow(wineItems, dishItems)` (ready to wire). However, Quick Pair needs its own mini-UI (photo + text input → parse calls → invoke flow) which is non-trivial to build and test. **Deferred to Phase F** to keep Phase E scope clean. The full 4-step wizard is the primary v1 UX; Quick Pair is a speed optimization for returning users.
+
+Manual verification item 7 (Quick Pair) is moved to Phase F verification.
+
+### Prerequisite: Fix stray `</div>` nesting in index.html
+
+**CRITICAL**: Lines 386-387 of `public/index.html` have an extra `</div>` inside `view-pairing`:
+
+```html
+      </div>        ← closes .modal.modal-sm
+    </div>          ← closes .modal-overlay#pairing-feedback-modal
+    </div>          ← STRAY — prematurely closes view-pairing ⚠️
+
+  </div>            ← intended close for #view-pairing
+```
+
+This stray tag must be **removed** before wrapping cellar content in `.pairing-cellar-section`. Otherwise the wrapper div gets closed prematurely and the feedback modal escapes the view container. Fix: delete line 387 so the indented `</div>` at line 389 properly closes `#view-pairing`.
+
+### Files Modified (5 files)
+
+| File | Change | ~Lines |
+|------|--------|--------|
+| `public/css/variables.css` | Add `--red-wine-rgb` and `--sage-green-rgb` RGB helpers in `:root` block | ~2 |
+| `public/index.html` | Fix stray `</div>`, add mode toggle + wizard container inside `view-pairing`, wrap existing cellar content in `.pairing-cellar-section`, bump CSS version | ~20 |
+| `public/css/components.css` | Append ~500 lines of `.restaurant-*` namespaced styles | ~500 |
+| `public/js/app.js` | Import + call `initRestaurantPairing()` in `startAuthenticatedApp()` | ~3 |
+| `public/sw.js` | Increment `CACHE_VERSION`, add restaurant pairing JS + all `api/*.js` sub-modules to `STATIC_ASSETS`, bump CSS version query | ~25 |
+
+No new files created. No existing JS logic changed. No backend changes.
 
 ---
 
-## Verification
+### E.1 HTML Changes (`public/index.html`)
 
-### Automated (must pass before merge)
+**Current structure** (lines 303–389):
 
-1. `npm run test:unit` — all existing + new tests pass
-2. Schema tests: valid/invalid inputs, payload size limits, discriminated type validation
-3. Service tests: prompt building (wine_list/dish_menu), per-call timeout (30s), JSON extraction + schema validation + best-effort fallback, deterministic colour-matching fallback, chat context ownership. (Note: bounded concurrency and composite dedup are frontend responsibilities — tested in Phase D.)
-4. Route tests (supertest): happy paths for all 3 endpoints, 413 rejectOversizedImage, chat ownership 404/403 via CHAT_ERRORS, 503 API-key guard, Zod validation rejections (mutual exclusion, UUID, max-length), rate limiter wiring verification (strict×3, parse config), real requireAuth→401 without Bearer token
-5. Auth scan: `apiAuthHeaders.test.js` scans `restaurantPairing/` folder — no raw `fetch('/api/...')` calls
+```html
+<div id="view-pairing">
+  <div class="natural-pairing">...</div>        ← sommelier
+  <div id="sommelier-results"></div>
+  <hr class="section-divider">
+  <div class="pairing-form">...</div>            ← manual signal pairing
+  <h3>Suggestions</h3>
+  <div id="pairing-results">...</div>
+  <div id="pairing-feedback-modal">...</div>     ← modal
+  </div>                                         ← STRAY — remove this
+</div>
+```
 
-### Manual
+**New structure**:
 
-6. Open "Find Pairing" tab → toggle "At a Restaurant" → verify existing sommelier hidden, wizard shown
-7. Quick Pair: upload 1 photo + type dishes → verify goes straight to recommendations → confidence warning if OCR low → "Refine" loads full wizard
-8. Upload 2 wine list photos → verify per-image progress, parsed wines appear as selectable cards with confidence badges and **pale burgundy tint**
-9. Low-confidence triage: verify banner appears, uncertain items highlighted, price field has `inputmode="decimal"` on mobile
-10. "Skip to Manual" button: verify visible immediately (no 10s delay)
-11. Remove image while parsing → verify request cancelled (no orphaned spinner)
-12. Apply colour filter + price range + by-the-glass toggle → verify cards hide/show, checked state preserved
-13. Counter: "N selected (M visible)" — verify both numbers present, filters don't affect payload
-14. Type dish descriptions → verify parsed dishes with categories and **pale sage tint**
-15. Uncheck some wines/dishes → "Get Pairings" sends only selected items
-16. By-the-glass only selection → verify AI suggests glass-per-dish strategy (no table bottle)
-17. Verify recommendation cards show per-dish pairings + table wine suggestion + prices
-18. Deterministic fallback: disable AI → verify colour-matching results with "AI unavailable" banner
-19. Follow-up chat ("What about a lighter option?") → verify owner-scoped context
-20. "Start Over" → verify confirm dialog appears → confirm → verify state cleared, `wineapp.restaurant.*` keys removed from sessionStorage
-21. Mobile (480px viewport): sticky nav, camera access, 44px touch targets, 2-column image grid, Start Over positioned away from Next
-22. App switch on mobile: navigate away and back → verify wizard state restored from sessionStorage
-23. Multi-menu test: upload Reserve List + Standard List photos with same wine at different prices → verify both entries preserved (not deduped)
-24. Selection cap: select 81+ wines → "Get Pairings" → verify blocking toast, API not called
-25. Parse budget: use 10 parses → verify Analyze disabled, "Parse limit reached" toast, "add items manually" guidance
-26. Fallback chat: disable AI → get pairings → verify "Follow-up chat not available" text, no chat input rendered
-27. Result invalidation: get pairings → go back → change wine selection → return to Step 4 → verify stale results cleared, fresh "Get Pairings" shown
-28. Mode switch preservation: switch to "From My Cellar" → switch back → verify restaurant wizard state intact
+```html
+<div id="view-pairing">
+  <!-- Mode Toggle (new) — proper tablist for accessibility -->
+  <div class="restaurant-mode-toggle form-toggle" role="tablist"
+       aria-label="Pairing mode">
+    <button class="toggle-btn active" data-mode="cellar" type="button"
+            id="tab-cellar" role="tab" aria-selected="true"
+            aria-controls="pairing-cellar-section">From My Cellar</button>
+    <button class="toggle-btn" data-mode="restaurant" type="button"
+            id="tab-restaurant" role="tab" aria-selected="false"
+            aria-controls="restaurant-wizard">At a Restaurant</button>
+  </div>
+
+  <!-- Cellar Mode (existing content, wrapped) -->
+  <div class="pairing-cellar-section" id="pairing-cellar-section" role="tabpanel"
+       aria-labelledby="tab-cellar">
+    <div class="natural-pairing">...</div>         ← existing, untouched
+    <div id="sommelier-results"></div>              ← existing
+    <hr class="section-divider">
+    <div class="pairing-form">...</div>             ← existing
+    <h3>Suggestions</h3>
+    <div id="pairing-results">...</div>             ← existing
+  </div>
+
+  <!-- Restaurant Mode (new — hidden by default) -->
+  <div class="restaurant-wizard" id="restaurant-wizard" role="tabpanel"
+       aria-labelledby="tab-restaurant" style="display: none;"></div>
+
+  <!-- Feedback Modal (shared, outside both sections) -->
+  <div id="pairing-feedback-modal">...</div>        ← existing, untouched
+</div>
+```
+
+**Key decisions**:
+
+- Mode toggle uses existing `.form-toggle` + `.toggle-btn` pattern (proven, accessible)
+- **Proper tablist/tab/tabpanel roles** — fixes `aria-selected` semantic (only valid on `role="tab"` elements). `aria-controls` links tabs to their panels. `aria-labelledby` on each tabpanel references the controlling tab's `id` for full screen-reader context.
+- Tab buttons get explicit `id="tab-cellar"` / `id="tab-restaurant"` so tabpanels can reference them via `aria-labelledby`.
+- Existing cellar content wrapped in `.pairing-cellar-section` div with `id` for `aria-controls` linkage. Controller shows/hides via `style.display`.
+- `.restaurant-wizard` gets `id="restaurant-wizard"` for `aria-controls`. Starts hidden — controller populates on init.
+- Feedback modal stays **outside** both tabpanels (shared resource, unaffected by mode toggle).
+- Stray `</div>` at line 387 removed — nesting validated before and after edit.
+- No changes to existing element IDs or classes — backward compatible.
+
+**Cache version bump**: Update `styles.css?v=20260207a` → `styles.css?v=20260208a` in the `<link>` tag (line 33). Required because `components.css` is `@import`ed inside `styles.css` — bumping the parent ensures browsers re-fetch the chain.
+
+**Nesting audit checklist** (execute before/after edit):
+1. Count `<div` opens inside `#view-pairing`
+2. Count `</div>` closes inside `#view-pairing`
+3. Verify counts match
+4. Verify `.pairing-cellar-section` wrapper open/close pair encloses exactly the cellar content
+5. Verify feedback modal is between close of `.restaurant-wizard` and close of `#view-pairing`
+
+---
+
+### E.2 CSS Architecture (`public/css/components.css`)
+
+All styles appended at end of file (after line 7208). All namespaced `.restaurant-*`. ~500 lines total.
+
+#### E.2.0 New CSS Variables (`public/css/variables.css`)
+
+Before writing restaurant CSS, add RGB helpers for theme-responsive card tints:
+
+```css
+/* Restaurant pairing card tints — add after existing RGB helpers */
+--red-wine-rgb: 114, 47, 55;       /* matches --red-wine: #722F37 */
+--sage-green-rgb: 76, 175, 80;     /* for dish card tint */
+```
+
+These go in the `:root` block of `variables.css` (after line ~143, near existing RGB helpers). This ensures card tints respond to theme changes instead of using hardcoded values.
+
+**Theme validation**: All referenced variables (`--bg-card`, `--bg-slot`, `--border`, `--text`, `--text-muted`, `--accent`, `--accent-rgb`, `--color-warning`, `--color-warning-bg`, `--color-error`, `--color-error-bg`, `--font-md`, `--font-sm`, `--font-xs`, `--font-2xs`, `--font-base`) confirmed present in both dark and light themes.
+
+#### E.2.1 Gestalt: Proximity — Mode Toggle + Wizard Container
+
+```css
+/* ============================================================
+   RESTAURANT PAIRING WIZARD
+   All styles namespaced .restaurant-* to avoid collisions.
+   ============================================================ */
+
+/* Mode toggle — pill-shaped container, reuses .form-toggle + .toggle-btn */
+.restaurant-mode-toggle {
+  margin-bottom: 1.5rem;
+}
+
+/* Wizard container — bounded region (Gestalt: Closure) */
+.restaurant-wizard {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
+```
+
+#### E.2.2 Gestalt: Continuity — Step Indicator
+
+Circles connected by a line, creating visual flow 1→2→3→4.
+
+```css
+.restaurant-step-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 1.5rem;
+}
+
+/* Step circles (Gestalt: Closure) */
+.restaurant-step-indicator-item {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-slot);
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: var(--font-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: default;
+  transition: all 0.2s;
+  position: relative;
+  z-index: 1;
+}
+
+/* Connecting line between circles (Gestalt: Continuity) */
+.restaurant-step-indicator-item + .restaurant-step-indicator-item::before {
+  content: '';
+  position: absolute;
+  right: 100%;
+  top: 50%;
+  width: 24px;
+  height: 2px;
+  background: var(--border);
+  transform: translateY(-50%);
+}
+
+/* Active step — prominent (Gestalt: Figure-Ground) */
+.restaurant-step-indicator-item.active {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: white;
+}
+
+/* Completed step — clickable, muted accent */
+.restaurant-step-indicator-item.completed {
+  border-color: var(--accent);
+  color: var(--accent);
+  cursor: pointer;
+}
+.restaurant-step-indicator-item.completed::before {
+  background: var(--accent);
+}
+.restaurant-step-indicator-item.active::before {
+  background: var(--accent);
+}
+```
+
+#### E.2.3 Gestalt: Similarity — Wine vs Dish Cards
+
+Both use identical card structure but differ in background tint. Users distinguish wine cards from dish cards at a glance.
+
+```css
+/* Shared card base (both wine + dish) */
+.restaurant-wine-card,
+.restaurant-dish-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  margin-bottom: 0.5rem;
+}
+
+/* Wine cards — pale burgundy tint (Gestalt: Similarity within group) */
+.restaurant-wine-card {
+  background: rgba(var(--red-wine-rgb), 0.08);
+}
+.restaurant-wine-card:hover {
+  background: rgba(var(--red-wine-rgb), 0.15);
+  border-color: var(--accent);
+}
+
+/* Dish cards — pale sage tint (Gestalt: Similarity within group) */
+.restaurant-dish-card {
+  background: rgba(var(--sage-green-rgb), 0.06);
+}
+.restaurant-dish-card:hover {
+  background: rgba(var(--sage-green-rgb), 0.12);
+  border-color: var(--accent);
+}
+
+/* Selected state — checked cards are prominent (Figure-Ground) */
+.restaurant-wine-card[aria-checked="true"],
+.restaurant-dish-card[aria-checked="true"] {
+  border-color: var(--accent);
+}
+
+/* Deselected state — dimmed (Figure-Ground) */
+.restaurant-wine-card[aria-checked="false"],
+.restaurant-dish-card[aria-checked="false"] {
+  opacity: 0.5;
+}
+.restaurant-wine-card[aria-checked="false"] .restaurant-card-info strong,
+.restaurant-dish-card[aria-checked="false"] .restaurant-card-info strong {
+  text-decoration: line-through;
+}
+
+/* Card list containers — consistent spacing */
+.restaurant-wine-cards,
+.restaurant-dish-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+```
+
+**Note**: `.filter-chip` base class is reused for colour chips (both classes applied: `filter-chip restaurant-colour-chip`). The existing `.filter-chip:has(input:checked)` rule won't conflict because our chips use `.active` class toggle (no hidden checkbox). `.restaurant-colour-chip.active` overrides the active appearance intentionally using `var(--accent)` instead of the wine-list's `var(--priority-2)`.
+
+#### E.2.4 Gestalt: Figure-Ground — Low Confidence Triage
+
+Low-confidence items stand out from the normal card flow.
+
+```css
+/* Low confidence — warning border + icon */
+.restaurant-low-confidence {
+  border-color: var(--color-warning);
+  border-width: 2px;
+}
+
+/* Triage banner — prominent alert */
+.restaurant-triage-banner {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  font-size: var(--font-sm);
+  font-weight: 500;
+  margin-bottom: 1rem;
+}
+.restaurant-triage-banner:empty {
+  display: none;
+}
+
+/* Confidence badges */
+.restaurant-conf-badge {
+  font-size: var(--font-2xs);
+  padding: 0.15rem 0.4rem;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.restaurant-conf-low {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+.restaurant-conf-medium {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+```
+
+#### E.2.5 Navigation — Sticky Bottom Bar (Mobile Priority)
+
+```css
+/* Nav bar — inline on desktop, sticky on mobile */
+.restaurant-nav-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+/* Wizard header — indicator + Start Over */
+.restaurant-wizard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+/* Start Over button — muted, intentionally small */
+.restaurant-start-over-btn {
+  font-size: var(--font-xs);
+  padding: 0.4rem 0.75rem;
+  min-height: 36px;
+}
+```
+
+#### E.2.6 Image Capture Widget
+
+```css
+/* Text input area */
+.restaurant-text-input {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-slot);
+  color: var(--text);
+  font-size: var(--font-base);
+  resize: vertical;
+  min-height: 80px;
+}
+.restaurant-text-input:focus {
+  border-color: var(--accent);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--accent-rgb), 0.15);
+}
+.restaurant-text-counter {
+  text-align: right;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+/* Image grid — responsive, 2-col on mobile */
+.restaurant-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+/* Image thumbnail */
+.restaurant-image-thumb {
+  position: relative;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  aspect-ratio: 3/4;
+}
+.restaurant-image-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Remove button — positioned top-right of image */
+.restaurant-image-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+/* Progress overlay on image */
+.restaurant-image-progress {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: var(--bg-slot);
+}
+.restaurant-image-progress.active {
+  background: linear-gradient(90deg,
+    var(--accent) 0%, var(--accent) var(--progress, 50%),
+    var(--bg-slot) var(--progress, 50%));
+}
+
+/* Capture actions + buttons */
+.restaurant-capture-actions,
+.restaurant-capture-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+.restaurant-capture-status {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  min-height: 1.2em;
+  margin-top: 0.5rem;
+}
+```
+
+#### E.2.7 Wine Review Filters (Gestalt: Proximity — grouped in one row)
+
+```css
+.restaurant-wine-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 8px;
+}
+
+/* Colour filter chips — reuse .filter-chip pill shape */
+.restaurant-colour-filters {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+/* Active override — accent instead of .filter-chip's priority-2 */
+.restaurant-colour-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: white;
+}
+
+/* Price filter + BTG toggle — inline */
+.restaurant-price-filter {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.restaurant-max-price-input {
+  width: 80px;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.restaurant-btg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+```
+
+#### E.2.8 Counter + Select Actions
+
+```css
+.restaurant-wine-counter,
+.restaurant-dish-counter {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+.restaurant-select-actions {
+  margin-bottom: 0.75rem;
+}
+.restaurant-select-all-btn {
+  font-size: var(--font-xs);
+}
+```
+
+#### E.2.9 Card Internals (shared between wine + dish cards)
+
+```css
+.restaurant-card-check {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--border);
+  border-radius: 4px;
+  font-size: var(--font-sm);
+  color: var(--accent);
+}
+[aria-checked="true"] > .restaurant-card-check {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.15);
+}
+
+.restaurant-card-info {
+  flex: 1;
+  min-width: 0;
+}
+.restaurant-card-info strong {
+  display: block;
+  font-size: var(--font-base);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.restaurant-card-vintage,
+.restaurant-card-colour,
+.restaurant-card-category,
+.restaurant-card-desc,
+.restaurant-card-price {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  margin-right: 0.5rem;
+}
+
+/* BTG badge — pill-shaped accent */
+.restaurant-btg-badge {
+  font-size: var(--font-2xs);
+  padding: 0.1rem 0.4rem;
+  border-radius: 10px;
+  background: var(--accent);
+  color: white;
+  font-weight: 600;
+}
+
+/* Inline price edit (low-confidence) */
+.restaurant-inline-price {
+  width: 70px;
+  padding: 0.2rem 0.4rem;
+  border: 1px solid var(--color-warning);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: var(--font-xs);
+}
+
+/* Remove button (X) on cards */
+.restaurant-wine-remove,
+.restaurant-dish-remove {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+.restaurant-wine-remove:hover,
+.restaurant-dish-remove:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+```
+
+#### E.2.10 Manual Add Forms
+
+```css
+.restaurant-add-wine-form,
+.restaurant-add-dish-form {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.restaurant-add-wine-form h4,
+.restaurant-add-dish-form h4 {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  margin-bottom: 0.75rem;
+}
+.restaurant-form-row {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+.restaurant-form-row input,
+.restaurant-form-row select {
+  flex: 1;
+  min-width: 100px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-slot);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.restaurant-form-row input:focus,
+.restaurant-form-row select:focus {
+  border-color: var(--accent);
+  outline: none;
+}
+.restaurant-add-wine-btg-label {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+```
+
+#### E.2.11 Results (Step 4)
+
+```css
+/* Summary bar */
+.restaurant-results-summary {
+  font-size: var(--font-md);
+  margin-bottom: 1rem;
+}
+.restaurant-over-cap-warning {
+  color: var(--color-error);
+  font-weight: 600;
+  font-size: var(--font-sm);
+}
+
+/* Options row */
+.restaurant-results-options {
+  margin-bottom: 1rem;
+}
+.restaurant-results-options .form-row {
+  align-items: flex-end;
+}
+.restaurant-prefer-btg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+/* Loading spinner */
+.restaurant-results-loading {
+  text-align: center;
+  padding: 1rem;
+  color: var(--text-muted);
+}
+
+/* Fallback banner */
+.restaurant-fallback-banner {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: var(--font-sm);
+}
+
+/* Result cards grid */
+.restaurant-results-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+/* Individual result card */
+.restaurant-result-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.restaurant-result-card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+.restaurant-result-dish {
+  margin-bottom: 0.5rem;
+}
+.restaurant-result-wine {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+.restaurant-result-wine-name {
+  font-weight: 500;
+}
+.restaurant-result-why {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 0.25rem;
+}
+.restaurant-result-tip {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+}
+.restaurant-pairing-confidence {
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+/* Table wine card — distinct from per-dish cards */
+.restaurant-table-wine-card {
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px solid var(--accent);
+  border-radius: 10px;
+  padding: 1rem;
+  margin-top: 0.5rem;
+}
+.restaurant-table-wine-why {
+  font-size: var(--font-sm);
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+```
+
+**Reduced motion**: Result card hover uses `transform: none` — the `translateY(-1px)` lift was removed to respect `prefers-reduced-motion` without needing a media query. Shadow alone provides the visual feedback.
+
+#### E.2.12 Chat Interface
+
+```css
+.restaurant-chat {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.restaurant-chat-messages {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 0.75rem;
+}
+.restaurant-chat-message {
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  font-size: var(--font-sm);
+  animation: fadeIn 0.15s ease-out;  /* reuses existing @keyframes fadeIn */
+}
+.restaurant-chat-message.user {
+  background: rgba(var(--accent-rgb), 0.15);
+  margin-left: 2rem;
+  text-align: right;
+}
+.restaurant-chat-message.assistant {
+  background: var(--bg-slot);
+  margin-right: 2rem;
+}
+
+.restaurant-chat-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.restaurant-chat-input {
+  flex: 1;
+  min-width: 150px;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-slot);
+  color: var(--text);
+  font-size: var(--font-sm);
+}
+.restaurant-chat-char-counter {
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+}
+.restaurant-chat-suggestions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.restaurant-chat-suggestion {
+  font-size: var(--font-xs);
+  padding: 0.3rem 0.6rem;
+}
+.restaurant-chat-unavailable {
+  color: var(--text-muted);
+  font-size: var(--font-sm);
+  font-style: italic;
+}
+.restaurant-chat-error {
+  color: var(--color-error);
+}
+.restaurant-chat-section {
+  margin-top: 1rem;
+}
+```
+
+#### E.2.13 Dish Review Sections
+
+```css
+.restaurant-dish-review {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+.restaurant-dish-capture-section {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 1rem;
+}
+.restaurant-dish-capture-section h3 {
+  font-size: var(--font-md);
+  margin-bottom: 0.75rem;
+}
+.restaurant-dish-review-section h3 {
+  font-size: var(--font-md);
+  margin-bottom: 0.75rem;
+}
+```
+
+#### E.2.14 Responsive — Mobile (max-width: 480px)
+
+```css
+@media (max-width: 480px) {
+  .restaurant-wizard {
+    padding: 1rem;
+    border-radius: 8px;
+  }
+
+  /* Sticky bottom nav bar */
+  .restaurant-nav-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-card);
+    padding: 0.75rem 1rem;
+    margin: 0 -1rem -1rem;
+    border-top: 1px solid var(--border);
+    z-index: 10;
+  }
+
+  /* Start Over — header stacks on small screens */
+  .restaurant-wizard-header {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  /* Image grid — force 2 columns */
+  .restaurant-image-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  /* Filters — stack vertically */
+  .restaurant-wine-filters {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  /* Form rows — stack */
+  .restaurant-form-row {
+    flex-direction: column;
+  }
+
+  /* Result cards — single column */
+  .restaurant-results-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Chat input — full width */
+  .restaurant-chat-input-row {
+    flex-direction: column;
+  }
+  .restaurant-chat-input {
+    width: 100%;
+  }
+}
+```
+
+#### E.2.15 Responsive — Tablet (max-width: 768px)
+
+```css
+@media (max-width: 768px) {
+  .restaurant-wizard {
+    padding: 1rem;
+  }
+
+  .restaurant-step-indicator-item {
+    width: 32px;
+    height: 32px;
+    font-size: var(--font-xs);
+  }
+  .restaurant-step-indicator-item + .restaurant-step-indicator-item::before {
+    width: 16px;
+  }
+}
+```
+
+---
+
+### E.3 App Init (`public/js/app.js`)
+
+**Import** (at top with other imports, after `initCellarAnalysis`):
+
+```js
+import { initRestaurantPairing } from './restaurantPairing.js';
+```
+
+**Call** (in `startAuthenticatedApp()`, after `initSommelier()`):
+
+```js
+initSommelier();
+initRestaurantPairing();    // ← new, after sommelier (same pairing tab)
+initSettings();
+```
+
+Why after `initSommelier()`: Both operate within `view-pairing`. Sommelier binds to the cellar-mode elements; restaurant pairing binds to the wizard container. Grouping pairing-related inits together.
+
+---
+
+### E.4 Service Worker (`public/sw.js`)
+
+**Bump cache version** — increment the current `CACHE_VERSION` (expected: `'v98'` → `'v99'`; verify current value before editing to avoid no-op bumps from parallel work):
+
+```js
+const CACHE_VERSION = 'v99';   // verify: was v98 at time of writing
+```
+
+**Add to STATIC_ASSETS** — two groups:
+
+_Group 1: Restaurant pairing modules_ (after `/js/pairing.js`):
+
+```js
+'/js/restaurantPairing.js',
+'/js/restaurantPairing/state.js',
+'/js/restaurantPairing/imageCapture.js',
+'/js/restaurantPairing/wineReview.js',
+'/js/restaurantPairing/dishReview.js',
+'/js/restaurantPairing/results.js',
+```
+
+_Group 2: Complete `api/*` module graph_ (pre-existing bug fix — `api.js` barrel is already cached but none of its sub-modules are, breaking offline cold-start for the **entire app**, not just restaurant pairing):
+
+```js
+'/js/api/base.js',
+'/js/api/index.js',
+'/js/api/profile.js',
+'/js/api/wines.js',
+'/js/api/ratings.js',
+'/js/api/cellar.js',
+'/js/api/settings.js',
+'/js/api/awards.js',
+'/js/api/acquisition.js',
+'/js/api/palate.js',
+'/js/api/health.js',
+'/js/api/pairing.js',
+'/js/api/restaurantPairing.js',
+'/js/api/errors.js',
+```
+
+**Why all 14, not just 3?** The reviewer correctly identified that `results.js` imports from the `api.js` barrel (which re-exports all 14 sub-modules). But this is a pre-existing issue: every module in the app imports from `api.js`, and the barrel's sub-module chain was never pre-cached after the api/ directory split. Adding all 14 fixes offline cold-start for the entire app at negligible cost (~14 extra pre-cache entries). Changing `results.js` to import from `api/restaurantPairing.js` directly was rejected because: (a) it only fixes restaurant pairing, not the app-wide gap; (b) it breaks the established import pattern used by 12+ other modules; (c) it violates Phase E's "no JS logic changes" constraint.
+
+**Bump CSS version queries** — the `?v=` on STATIC_ASSETS CSS entries serves as an audit trail for SW cache differentiation. The actual browser cache-busting mechanism is:
+1. `CACHE_VERSION` bump → old caches (STATIC + DYNAMIC) deleted during SW activate
+2. `<link href="styles.css?v=...">` bump in `index.html` → browser re-fetches entry stylesheet
+3. CSS `@import` sub-modules (e.g., `@import 'components.css'`) are fetched without query strings — they miss the pre-cache but are re-fetched from network and stored in DYNAMIC_CACHE
+
+```js
+'/css/styles.css?v=20260208a',        // was 20260207a
+'/css/variables.css?v=20260208a',      // was 20260207a — new RGB variables added
+'/css/components.css?v=20260208a',     // was 20260207a — restaurant styles added
+```
+
+Also bump `styles.css?v=` in the `<link>` tag in `index.html` (primary browser cache trigger).
+
+---
+
+### E.5 UX Flow Walkthrough
+
+**Default State**: User opens "Find Pairing" tab → sees mode toggle at top with "From My Cellar" active → familiar sommelier + manual pairing below. Zero disruption to existing users.
+
+**Switching to Restaurant Mode**: User taps "At a Restaurant" → cellar sections hide, wizard appears → Step 1 (Capture Wine List) with text area + image upload buttons. Clear visual hierarchy: step circles at top show progression.
+
+**Step 1 → Step 2** (always allowed): User uploads wine list photo or types text → clicks Analyze → wines parsed → auto-advances to Step 2. OR clicks "Skip to Manual" → advances with empty list.
+
+**Step 2 → Step 3** (needs ≥1 wine): Wine cards with pale burgundy tint. Low-confidence items have orange warning border. Filters (colour chips, max price, BTG toggle) narrow view but don't change selection. Counter: "8 selected (5 visible)". Blocked with toast if no wines selected.
+
+**Step 3 → Step 4** (needs ≥1 dish): Dish cards with pale sage tint (visually distinct from wine cards). Same capture + review pattern. Blocked with toast if no dishes.
+
+**Step 4** (Results): Summary bar, optional inputs, "Get Pairings" → AI recommendation cards. Table wine card highlighted with accent border. Chat interface below for follow-ups (gated on chatId; fallback shows explanatory line).
+
+**Navigation**: Back button hidden on step 1. Step indicator circles clickable for completed steps. "Start Over" requires confirm dialog if data exists. Switching back to "From My Cellar" preserves wizard state.
+
+---
+
+### E.6 Controller↔HTML Contract Verification
+
+The controller (`restaurantPairing.js`) queries these DOM elements that must exist in the HTML:
+
+| Selector | HTML Source | Purpose |
+|----------|------------|---------|
+| `.restaurant-wizard` | New `<div>` in index.html | Wizard container |
+| `.restaurant-mode-toggle .toggle-btn` | New mode toggle buttons | Mode switching |
+| `.pairing-cellar-section` | New wrapper div | Hide cellar content |
+
+The controller **creates** these internally (via innerHTML):
+
+| Selector | Created by | Purpose |
+|----------|-----------|---------|
+| `.restaurant-step-indicator-item` | `initRestaurantPairing()` | Step circles |
+| `.restaurant-start-over-btn` | `initRestaurantPairing()` | Start Over |
+| `.restaurant-nav-back`, `.restaurant-nav-next` | `initRestaurantPairing()` | Navigation |
+| `.restaurant-step-content` | `initRestaurantPairing()` | Step module mount point |
+
+No orphan selectors — every class queried in JS has a corresponding CSS rule or HTML source.
+
+---
+
+### E.7 Verification
+
+#### Automated (must pass before merge)
+
+1. `npm run test:all` — all 1630+ unit + integration tests pass (AGENTS.md: recommended pre-commit command)
+2. `npm run lint` — no new lint errors in `app.js` and `restaurantPairing/*.js` (note: lint targets `src/` and `public/js/` only — `sw.js` is at `public/sw.js` outside the lint scope; HTML and CSS are not ESLint targets)
+3. Auth scan: `apiAuthHeaders.test.js` scans `restaurantPairing/` folder — no raw `fetch('/api/...')` (already passing from Phase B)
+4. `sw.js` syntax check: `node --check public/sw.js` — ensures no syntax errors since sw.js is outside lint scope
+
+#### Visual / Developer Checks
+
+5. View source of `index.html` — count `<div` opens and `</div>` closes inside `#view-pairing`, verify they match
+6. Open dev tools → Application → Service Workers → verify SW updated (version incremented), all `api/*.js` + `restaurantPairing/*.js` files listed in cache
+7. Hard refresh → Network tab → verify `styles.css?v=20260208a` loaded (this is the primary cache trigger; the `@import`ed sub-files are fetched without query strings)
+
+#### Manual Regression
+
+8. Open "Find Pairing" tab → verify existing sommelier + manual pairing visible by default (mode toggle shows "From My Cellar" active)
+9. Use sommelier feature — enter dish, click "Ask Sommelier" → verify existing feature works unchanged
+10. Use manual pairing — select signals, click "Find Pairing" → verify existing feature works unchanged
+11. Click pairing result feedback → verify modal still opens (modal is outside both tabpanels)
+
+#### Manual — New Feature
+
+12. Toggle "At a Restaurant" → verify cellar content hidden, wizard appears with step indicator + nav bar
+13. Step through wizard: Step 1 → 2 → 3 → 4 → verify step indicator, nav buttons, content rendering
+14. Upload wine list photos → verify per-image progress, parsed wines as selectable cards with pale burgundy tint
+15. Low-confidence triage: verify banner, warning styling, inline price edit with `inputmode="decimal"`
+16. "Skip to Manual" button: verify visible immediately on Steps 1 and 3
+17. Remove image while parsing → verify request cancelled (no orphaned spinner)
+18. Apply colour/price/BTG filters → verify cards hide/show, checked state preserved, counter shows "N selected (M visible)"
+19. Type dish descriptions → verify parsed dishes with categories and pale sage tint
+20. Uncheck wines/dishes → "Get Pairings" sends only selected items
+21. Verify result cards show per-dish pairings + table wine + prices
+22. Deterministic fallback: disable AI → verify colour-matching results with "AI unavailable" banner — no chat UI rendered
+23. Follow-up chat (when chatId present) → verify messages appear
+24. "Start Over" → verify confirm dialog → confirm → state cleared, `wineapp.restaurant.*` removed from sessionStorage
+25. Result invalidation: get pairings → go back → change selection → return to Step 4 → verify fresh "Get Pairings" shown
+26. Mode switch preservation: switch to "From My Cellar" → switch back → verify wizard state intact
+
+#### Manual — Mobile
+
+27. Mobile (480px viewport): sticky nav, camera access via `capture="environment"`, 44px touch targets, 2-col image grid
+28. Start Over positioned away from Next button (opposite side of nav bar)
+29. App switch on mobile: navigate away → return → verify wizard state restored from sessionStorage
+
+#### Manual — Edge Cases
+
+30. Selection cap: select 81+ wines → "Get Pairings" → verify blocking toast, API not called
+31. Parse budget: exhaust 10 parses → verify Analyze disabled, guidance toast
+32. Multi-menu: upload photos with same wine at different prices → verify both entries preserved
+
+---
+
+### Phase F Backlog (deferred from Phase E)
+
+| Item | Rationale |
+|------|-----------|
+| **Quick Pair UI** | Trigger button + mini parse form → `runQuickPairFlow()`. Needs its own component + tests. Controller export is ready. |
+| **Mode switch animation** | Plan referenced "fade out" but implementation uses `display: none/block`. Add opacity transition for perceived smoothness. |
+| **Print styles** | `@media print` for result cards — users may screenshot/print at table. |
+| **`prefers-reduced-motion`** | Already safe (no `transform` on hover), but could add explicit `@media (prefers-reduced-motion: reduce)` for animation opt-out. |
