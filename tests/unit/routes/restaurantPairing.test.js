@@ -50,6 +50,7 @@ import { requireAuth } from '../../../src/middleware/auth.js';
 import { requireCellarContext } from '../../../src/middleware/cellarContext.js';
 import db from '../../../src/db/index.js';
 import { MAX_IMAGE_BASE64_CHARS } from '../../../src/schemas/restaurantPairing.js';
+import { errorHandler } from '../../../src/utils/errorResponse.js';
 
 // ---------------------------------------------------------------------------
 // Capture rate-limiter setup calls (before beforeEach clears mocks)
@@ -123,9 +124,7 @@ function createApp() {
     next();
   });
   app.use('/', router);
-  app.use((err, _req, res, _next) => {
-    res.status(err.statusCode || 500).json({ error: err.message });
-  });
+  app.use(errorHandler);
   return app;
 }
 
@@ -136,9 +135,7 @@ function createAuthApp() {
   app.use(requireAuth);
   app.use((req, _res, next) => { req.cellarId = 42; next(); });
   app.use('/', router);
-  app.use((err, _req, res, _next) => {
-    res.status(err.statusCode || 500).json({ error: err.message });
-  });
+  app.use(errorHandler);
   return app;
 }
 
@@ -155,9 +152,7 @@ function createCellarAuthApp() {
   });
   app.use(requireCellarContext);
   app.use('/', router);
-  app.use((err, _req, res, _next) => {
-    res.status(err.statusCode || 500).json({ error: err.message });
-  });
+  app.use(errorHandler);
   return app;
 }
 
@@ -179,9 +174,7 @@ function createServerMountApp() {
     next();
   });
   app.use('/', router);
-  app.use((err, _req, res, _next) => {
-    res.status(err.statusCode || 500).json({ error: err.message });
-  });
+  app.use(errorHandler);
   return app;
 }
 
@@ -327,13 +320,14 @@ describe('POST /parse-menu', () => {
   });
 
   describe('error handling', () => {
-    it('returns 500 when service throws', async () => {
+    it('returns 500 with production error contract when service throws', async () => {
       parseMenuFromText.mockRejectedValue(new Error('Claude API failure'));
 
       const res = await request(app).post('/parse-menu').send(VALID_PARSE_TEXT);
 
       expect(res.status).toBe(500);
-      expect(res.body).toHaveProperty('error');
+      expect(res.body.error).toHaveProperty('code', 'INTERNAL_ERROR');
+      expect(res.body.error).toHaveProperty('message');
     });
   });
 });
@@ -439,13 +433,14 @@ describe('POST /recommend', () => {
   });
 
   describe('error handling', () => {
-    it('returns 500 when service throws', async () => {
+    it('returns 500 with production error contract when service throws', async () => {
       getRecommendations.mockRejectedValue(new Error('AI failure'));
 
       const res = await request(app).post('/recommend').send(VALID_RECOMMEND);
 
       expect(res.status).toBe(500);
-      expect(res.body).toHaveProperty('error');
+      expect(res.body.error).toHaveProperty('code', 'INTERNAL_ERROR');
+      expect(res.body.error).toHaveProperty('message');
     });
   });
 });
@@ -519,13 +514,14 @@ describe('POST /chat', () => {
   });
 
   describe('error handling', () => {
-    it('re-throws non-chat errors to error handler', async () => {
+    it('re-throws non-chat errors to production errorHandler', async () => {
       continueChat.mockRejectedValue(new Error('Unexpected failure'));
 
       const res = await request(app).post('/chat').send(VALID_CHAT);
 
       expect(res.status).toBe(500);
-      expect(res.body).toHaveProperty('error');
+      expect(res.body.error).toHaveProperty('code', 'INTERNAL_ERROR');
+      expect(res.body.error).toHaveProperty('message');
     });
   });
 
