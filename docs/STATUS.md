@@ -12,8 +12,9 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Recent Enhancements** ✨ **NEW - 7 Feb 2026**:
 - **Restaurant Pairing Assistant — Phase A+B COMPLETE** ✅:
   - **Phase A (Backend Core, Steps 1-6)**: Zod schemas (`restaurantPairing.js` — parse-menu, recommend, chat), input sanitizer extensions (`sanitizeMenuText`, `sanitizeMenuItems`), AI model config (`menuParsing` + `restaurantPairing` → Sonnet 4.5), menu parsing service (`menuParsing.js` — single-image Claude Vision, 30s timeout, OCR sanitization), restaurant pairing service (`restaurantPairing.js` — prompt building, deterministic fallback, owner-scoped chat with 30-min TTL), route + registration (3 endpoints mounted in `server.js` BEFORE global body parser with own 5mb limit)
-  - **Phase B (Backend Tests, Steps 7-11)**: 261 new tests — schema tests (127), service tests (95: menuParsing 37 + restaurantPairing 58), route tests (39 via supertest with production errorHandler), auth header scan for `restaurantPairing/` folder. All 1406 tests passing across 46 files.
-  - **Phase C-E (Frontend)**: In progress
+  - **Phase B (Backend Tests, Steps 7-11)**: 261 new tests — schema tests (127), service tests (95: menuParsing 37 + restaurantPairing 58), route tests (39 via supertest with production errorHandler), auth header scan for `restaurantPairing/` folder.
+  - **Phase C (Frontend Foundation, Steps 12-14)**: `resizeImage` exported, API client (`restaurantPairing.js` — 3 functions with AbortSignal), state module (`state.js` — sessionStorage persistence, dedup/merge with Jaccard fuzzy match). Phase C audit: 5 findings addressed (shape guard, step clamping, input immutability, clearState guard, 54 unit tests). All 1460 tests passing across 47 files.
+  - **Phase D-E (Frontend UI + Integration)**: In progress
   - Plan document: `docs/rest-plan.md` (22 steps across 5 phases)
 
 - **Wine Data Consistency Checker - COMPLETE** ✅:
@@ -25,7 +26,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Orange colour support**: Added to WINE_COLOURS enum, Zod schemas, DB migration (049), base schema parity (postgres + sqlite CHECK constraints)
   - **Acquisition workflow fix**: Pre-existing PostgreSQL bug fixed — `RETURNING id` added to INSERT, switched to `.get()`
   - **Route-level tests with supertest**: Both `consistency.test.js` (22 tests) and `winesAdvisory.test.js` (16 tests) exercise real Express middleware chains — real Zod validation, real `req.validated` fallback, real `captureGrapes` ordering, real fail-open behavior
-  - **Test Coverage**: 1406 unit tests passing across 46 files. Zero regressions.
+  - **Test Coverage**: 1460 unit tests passing across 47 files. Zero regressions.
   - Files: `grapeColourMap.js`, `wineNormalization.js`, `consistencyChecker.js`, `consistency.js` (route), migration 049, updated `wines.js`, `acquisitionWorkflow.js`, `wine.js` (schema), `index.js` (route registration)
   - Plan document: `docs/colour-plan.md` (13 steps, 17 reviewer findings addressed)
 
@@ -286,7 +287,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **1400+ tests passing** (1406 unit + 53 integration + 30 benchmark)
+- **1500+ tests passing** (1460 unit + 53 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
