@@ -30,7 +30,8 @@ const DEFAULT_STATE = {
 
 /**
  * Read a JSON value from sessionStorage, returning fallback on miss/error.
- * Validates shape: arrays must be arrays, objects must be objects.
+ * Validates shape: arrays must be arrays, objects must be plain objects,
+ * numbers must be numbers.
  * @param {string} key - Storage key
  * @param {*} fallback - Default value
  * @returns {*}
@@ -40,8 +41,12 @@ function load(key, fallback) {
     const raw = sessionStorage.getItem(key);
     if (raw == null) return fallback;
     const parsed = JSON.parse(raw);
-    // Shape guard: if fallback is an array, parsed must also be an array
+    // Shape guards: parsed type must match fallback type
     if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    if (typeof fallback === 'number' && typeof parsed !== 'number') return fallback;
+    if (typeof fallback === 'object' && fallback !== null && !Array.isArray(fallback)) {
+      if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return fallback;
+    }
     return parsed;
   } catch {
     return fallback;
@@ -129,7 +134,7 @@ function dishKey(dish) {
 // --- Module State (in-memory, synced to sessionStorage) ---
 
 const state = {
-  step:       load(KEYS.step, DEFAULT_STATE.step),
+  step:       Math.max(1, Math.min(4, load(KEYS.step, DEFAULT_STATE.step))),
   wines:      load(KEYS.wines, DEFAULT_STATE.wines),
   dishes:     load(KEYS.dishes, DEFAULT_STATE.dishes),
   selections: load(KEYS.selections, DEFAULT_STATE.selections),

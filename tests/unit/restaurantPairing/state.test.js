@@ -434,6 +434,59 @@ describe('Restaurant Pairing State', () => {
       const mod2 = await freshImport();
       expect(mod2.getDishes()).toEqual([]);
     });
+
+    it('recovers when selections is stored as a string', async () => {
+      storage.set('wineapp.restaurant.selections', '"bad"');
+      const mod2 = await freshImport();
+      // selections should fall back to default object shape
+      const sel = mod2.getSelections();
+      expect(sel).toEqual({ wines: {}, dishes: {} });
+      // setWineSelected must not crash
+      mod2.addWine({ name: 'Test', by_the_glass: false });
+      expect(() => mod2.setWineSelected(1, true)).not.toThrow();
+    });
+
+    it('recovers when selections is stored as an array', async () => {
+      storage.set('wineapp.restaurant.selections', '[1,2,3]');
+      const mod2 = await freshImport();
+      expect(mod2.getSelections()).toEqual({ wines: {}, dishes: {} });
+    });
+
+    it('recovers when selections is stored as null', async () => {
+      storage.set('wineapp.restaurant.selections', 'null');
+      const mod2 = await freshImport();
+      expect(mod2.getSelections()).toEqual({ wines: {}, dishes: {} });
+    });
+
+    it('recovers when step is stored as a string', async () => {
+      storage.set('wineapp.restaurant.step', '"banana"');
+      const mod2 = await freshImport();
+      expect(mod2.getStep()).toBe(1);
+    });
+
+    it('recovers when step is stored as an object', async () => {
+      storage.set('wineapp.restaurant.step', '{"bad": true}');
+      const mod2 = await freshImport();
+      expect(mod2.getStep()).toBe(1);
+    });
+
+    it('clamps out-of-range step from storage', async () => {
+      storage.set('wineapp.restaurant.step', '999');
+      const mod2 = await freshImport();
+      expect(mod2.getStep()).toBe(4);
+    });
+
+    it('recovers when results is stored as invalid JSON', async () => {
+      storage.set('wineapp.restaurant.results', '{broken!!!');
+      const mod2 = await freshImport();
+      expect(mod2.getResults()).toBeNull();
+    });
+
+    it('recovers when chatId is stored as invalid JSON', async () => {
+      storage.set('wineapp.restaurant.chatId', '{broken!!!');
+      const mod2 = await freshImport();
+      expect(mod2.getChatId()).toBeNull();
+    });
   });
 
   // =========================================================================
