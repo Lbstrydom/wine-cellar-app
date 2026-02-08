@@ -490,6 +490,120 @@ describe('Restaurant Pairing State', () => {
   });
 
   // =========================================================================
+  // Result invalidation
+  // =========================================================================
+
+  describe('invalidateResults', () => {
+    it('clears results and chatId', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('abc-123');
+      mod.invalidateResults();
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('persists null to sessionStorage', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('abc-123');
+      mod.invalidateResults();
+      expect(JSON.parse(storage.get('wineapp.restaurant.results'))).toBeNull();
+      expect(JSON.parse(storage.get('wineapp.restaurant.chatId'))).toBeNull();
+    });
+
+    it('is a no-op when results already null', () => {
+      mod.invalidateResults();
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by setWineSelected', () => {
+      mod.mergeWines([{ name: 'Wine', vintage: 2020, by_the_glass: false, confidence: 'high' }]);
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.setWineSelected(1, false);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by setDishSelected', () => {
+      mod.mergeDishes([{ name: 'Dish', confidence: 'high' }]);
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.setDishSelected(1, false);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by addWine', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.addWine({ name: 'New Wine', by_the_glass: false });
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by addDish', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.addDish({ name: 'New Dish' });
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by mergeWines', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.mergeWines([{ name: 'Wine', vintage: 2020, by_the_glass: false, confidence: 'high' }]);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by mergeDishes', () => {
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.mergeDishes([{ name: 'Dish', confidence: 'high' }]);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by removeWine', () => {
+      mod.addWine({ name: 'Wine', by_the_glass: false });
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.removeWine(1);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by removeDish', () => {
+      mod.addDish({ name: 'Dish' });
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.removeDish(1);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by selectAllWines', () => {
+      mod.mergeWines([{ name: 'Wine', vintage: 2020, by_the_glass: false, confidence: 'high' }]);
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.selectAllWines();
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('is called by deselectAllWines', () => {
+      mod.mergeWines([{ name: 'Wine', vintage: 2020, by_the_glass: false, confidence: 'high' }]);
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.deselectAllWines();
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+  });
+
+  // =========================================================================
   // Persistence across reloads
   // =========================================================================
 

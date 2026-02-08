@@ -33,11 +33,11 @@ A "Quick Pair" link at the top of restaurant mode for speed at the table:
 
 ### Step 1: Capture Wine List
 - Text area for pasting/typing wine list
-- Multi-image upload (file picker + camera button, up to 5 photos)
+- Multi-image upload (file picker + camera button, up to 4 photos — reduced from 5 to stay within 10-call/15min parse budget)
 - Image thumbnails grid with remove (X) buttons
 - "Analyze" button → sends all inputs to backend
-- Per-image progress indicator (bounded concurrency: 2 at a time, not all 5)
-- **"Skip to Manual"** button appears after 10s if parsing slow — lets user type wines directly
+- Per-image progress indicator (bounded concurrency: 2 at a time, not all 4)
+- **"Skip to Manual"** button visible immediately — lets user skip capture and add wines manually in Step 2
 - Removing an image while in-flight cancels its request via `AbortController` (save battery/data)
 
 ### Step 2: Review & Filter Wines
@@ -48,14 +48,14 @@ A "Quick Pair" link at the top of restaurant mode for speed at the table:
 - **Colour filter chips** (multi-select): Red, White, Rose, Sparkling — filters hide non-matching cards but **do not change** their checked state
 - **Max price input** (derived from parsed prices) — hides wines above price
 - **By-the-glass toggle**: Filter to only by-the-glass wines
-- Counter: "12 of 18 wines selected" — reflects **checked AND visible** count (exactly what gets sent)
+- Counter: "8 selected (5 visible)" — two numbers to clarify that **filters are visual aids only**. Payload always uses `getSelectedWines()` regardless of filter state.
 - "Select All Visible" / "Deselect All Visible" toggle
 - Manual "Add Wine" button for anything parsing missed
 
 ### Step 3: Capture & Review Dishes
 - Text area for typing dish descriptions (one per line)
-- Multi-image upload (same component as Step 1)
-- "Analyze" button (+ **"Skip to Manual"** button appears after 10s if parsing is slow — lets user just type 3 wines they're considering)
+- Multi-image upload (same component as Step 1, up to 4 photos, shares parse budget)
+- "Analyze" button (+ **"Skip to Manual"** button visible immediately — lets user add dishes manually)
 - Low-confidence triage (same pattern as Step 2)
 - Parsed dishes shown as selectable cards (checked by default)
 - Cards have **subtle pale sage tint** background (distinguishes from wine cards — Gestalt: similarity)
@@ -73,7 +73,7 @@ A "Quick Pair" link at the top of restaurant mode for speed at the table:
 - **"Start Over" button** — requires `confirm()` dialog if items have already been parsed (prevents fat-finger wipe mid-meal). Positioned away from "Next" button on mobile.
 
 ### State Persistence
-Wizard state saved to `sessionStorage` with **namespaced keys** (`wineapp.restaurant.*`) to prevent collisions with cellar analysis or other features that use sessionStorage. Cleared on "Start Over" (after confirm) or switching to "From My Cellar" mode.
+Wizard state saved to `sessionStorage` with **namespaced keys** (`wineapp.restaurant.*`) to prevent collisions with cellar analysis or other features that use sessionStorage. Cleared on "Start Over" (after confirm dialog). **Switching to "From My Cellar" mode preserves state** — user might switch back; "Start Over" exists for intentional clearing.
 
 Navigation: Back/Next buttons (sticky bottom on mobile). Step indicator at top. Can click completed steps to go back.
 
@@ -385,13 +385,92 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 - *Low-Medium*: Step clamped at load time (`Math.max(1, Math.min(4, ...))`) — persisted `"banana"` or `999` recovers to valid range on reload.
 - *Low*: 8 new corruption recovery tests added — selections (string/array/null), step (string/object/out-of-range), results, chatId. Total: 62 state tests.
 
-**Phase D: Frontend UI**
+**Phase D: Frontend UI** (detailed plan: `C:\Users\User\.claude\plans\melodic-whistling-map.md`)
 
-15. **Image capture widget** — `public/js/restaurantPairing/imageCapture.js`
-16. **Wine review UI** — `public/js/restaurantPairing/wineReview.js` (selectable cards, colour/price/glass filters, triage)
-17. **Dish review UI** — `public/js/restaurantPairing/dishReview.js` (selectable cards, triage)
-18. **Results + chat UI** — `public/js/restaurantPairing/results.js` (recommendation cards, fallback banner, chat)
-19. **Main controller** — `public/js/restaurantPairing.js` (wizard init, step nav, mode toggle, Quick Pair)
+**Phase D Pre-requisites:**
+- Add `jsdom` devDependency (per-file `// @vitest-environment jsdom` for DOM tests)
+- Add `invalidateResults()` to state.js — clears results + chatId when selections change
+- Add invalidation tests to state.test.js
+
+**Phase D Audit Findings Incorporated (2 rounds, 15 findings + 3 open questions resolved):**
+- *High*: dishReview.js owns ALL of Step 3 (capture + review). Controller just calls `renderDishReview(container)`.
+- *High*: Filters are visual aids only. Counter: "N selected (M visible)". Payload = `getSelectedWines()`/`getSelectedDishes()` regardless of filter state.
+- *High*: 5 test files (all modules). jsdom + vi.fn() mocks.
+- *High*: Pre-flight validation in `requestRecommendations()` enforces backend caps (wines ≤ 80, dishes ≤ 20). Blocking toast if over.
+- *High*: Parse budget tracker in imageCapture — `maxImages` reduced to 4/step, shared `parseBudget` object tracks cross-step usage (10 req/15min). Disable Analyze when exhausted.
+- *High*: Chat gated on `chatId !== null`. Fallback shows explanatory line, no disabled chat UI.
+- *Medium*: Quick Pair extracted to `runQuickPairFlow()` helper. Calls `requestRecommendations()` directly (not synthetic DOM clicks).
+- *Medium*: Lifecycle contract: `renderStep(n)` is sole caller of `destroy*()`. Each module tracks own listeners/timers/AbortControllers.
+- *Medium*: `invalidateResults()` called from selection/merge mutations. Step 4 shows fresh "Get Pairings" after invalidation.
+- *Medium*: Accessibility: `aria-live`, `role="checkbox"`, `aria-label`, `role="alert"`. Selected state: checkmark + sr-only text. Filter chips show count.
+- *Medium*: Doc consistency fixed: counter = "N selected (M visible)", mode switch = persist state.
+- *Low*: Client-side limits mirror backend: `maxlength="5000"` (parse text), `maxlength="2000"` (chat), char counters.
+- *Open Q*: Step 1→2 always allowed (manual-only flow). "Skip to Manual" visible immediately.
+- *Open Q*: Mode switch preserves state (not clear). "Start Over" for intentional clearing.
+- *Open Q*: Fallback: hide chat, show explanatory line.
+
+**Phase D Implementation Clusters** (execute sequentially, **stop after each cluster for audit review**):
+
+Full Phase D specification: `C:\Users\User\.claude\plans\melodic-whistling-map.md`
+
+**Cluster 1: Pre-requisites + imageCapture (D.0 + D.1)** — Medium risk
+
+| Step | Task | Files |
+|------|------|-------|
+| D.0 | Pre-requisites | `npm install --save-dev jsdom`, edit `state.js` (add `invalidateResults()`), edit `state.test.js` (add invalidation tests) |
+| D.1 | imageCapture source + tests | `public/js/restaurantPairing/imageCapture.js` + `tests/unit/restaurantPairing/imageCapture.test.js` |
+
+Safe together: Pre-reqs are small state.js additions. imageCapture has zero dependencies on other Phase D files — self-contained widget using only the API client and `resizeImage()`.
+Run: `npm run test:unit` — all 1468+ existing tests pass + ~15 new tests.
+Audit focus: `invalidateResults()` integration, parse budget logic (shared `parseBudget` object, 10 req/15min), concurrency queue (max 2 concurrent), AbortController cleanup, 429 handling.
+
+**Cluster 1 Done** ✅ (1515 tests passing):
+- D.0: `invalidateResults()` added to state.js, integrated into all 10 mutation functions. 15 invalidation tests in state.test.js (including removeWine/removeDish).
+- D.1: `imageCapture.js` (385 lines) — full widget with text area, multi-image upload, concurrency queue (max 2), AbortController per request, parse budget, 429 handling, destroy lifecycle. 34 tests in imageCapture.test.js.
+- Audit round 1 — all 5 findings addressed:
+  1. **High**: `destroyed` flag guards `scheduleNext()` — queued requests won't start after `destroy()`.
+  2. **High**: Queue checks `images.some(img => img.id === req.imageId)` before starting — removed images are skipped.
+  3. **Medium**: `removeWine()` and `removeDish()` now call `invalidateResults()`.
+  4. **Medium**: Removed `updateStatus('')` from `handleAnalyze` finally block — `updateAnalyzeState()` preserves budget counter.
+  5. **Low**: `imageListeners[]` array tracks per-render image-button listeners, cleaned up in `renderImages()` and `destroy()`.
+
+**Cluster 2: wineReview + dishReview (D.2 + D.3)** — Medium risk
+
+| Step | Task | Files |
+|------|------|-------|
+| D.2 | wineReview source + tests | `public/js/restaurantPairing/wineReview.js` + `tests/unit/restaurantPairing/wineReview.test.js` |
+| D.3 | dishReview source + tests | `public/js/restaurantPairing/dishReview.js` + `tests/unit/restaurantPairing/dishReview.test.js` |
+
+Safe together: Both are selectable-card modules with the same render-from-state pattern. dishReview depends on imageCapture (Cluster 1) but not on wineReview — they're peer modules.
+Run: `npm run test:unit` — all prior tests pass + ~20 new tests.
+Audit focus: Filter ≠ selection invariant (filters are visual aids, payload unchanged), counter semantics ("N selected (M visible)"), `invalidateResults()` called on all mutations, accessibility (`role="checkbox"`, `aria-checked`, `aria-live`). dishReview owns entire Step 3 (capture + review cards).
+
+**Cluster 3: results (D.4)** — High risk, implement alone
+
+| Step | Task | Files |
+|------|------|-------|
+| D.4 | results source + tests | `public/js/restaurantPairing/results.js` + `tests/unit/restaurantPairing/results.test.js` |
+
+Alone because: Pre-flight cap validation (wines ≤ 80, dishes ≤ 20), API integration, fallback/chat gating on `chatId !== null`, exports `requestRecommendations()` for Quick Pair. Getting this wrong means 400s or broken chat.
+Run: `npm run test:unit` — all prior tests pass + ~14 new tests.
+Audit focus: Pre-flight caps block oversized payloads, chat gated on `chatId !== null` (fallback = explanatory line, no chat UI), `requestRecommendations()` callable standalone, invalidated state → fresh "Get Pairings", `maxlength="2000"` on chat input.
+
+**Cluster 4: main controller (D.5)** — High risk, implement alone
+
+| Step | Task | Files |
+|------|------|-------|
+| D.5 | controller source + tests | `public/js/restaurantPairing.js` + `tests/unit/restaurantPairing/restaurantPairing.test.js` |
+
+Alone because: Orchestrator — wires all 4 modules, manages lifecycle (`destroyCurrentStep` before each render), navigation guards, Quick Pair flow, state restoration. If lifecycle contract is wrong, all steps leak listeners.
+Run: `npm run test:unit` — all prior tests pass + ~12 new tests. Full Phase D: ~55 new tests total.
+Audit focus: Destroy-before-render lifecycle (no leaked listeners), nav guards (Step 1→2 always allowed, Step 2→3 needs ≥1 wine, Step 3→4 needs ≥1 dish), Quick Pair direct invocation (`runQuickPairFlow` → `requestRecommendations`), parse budget reset on Start Over, mode toggle preserves state.
+
+| Cluster | Steps | ~Tests | Risk | Gate |
+|---------|-------|--------|------|------|
+| 1 | D.0 + D.1 (pre-reqs + imageCapture) | ~15 | Medium | Audit before Cluster 2 |
+| 2 | D.2 + D.3 (wineReview + dishReview) | ~20 | Medium | Audit before Cluster 3 |
+| 3 | D.4 (results) | ~14 | High | Audit before Cluster 4 |
+| 4 | D.5 (controller) | ~12 | High | Audit before Phase E |
 
 **Phase E: Integration**
 
@@ -417,10 +496,10 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 7. Quick Pair: upload 1 photo + type dishes → verify goes straight to recommendations → confidence warning if OCR low → "Refine" loads full wizard
 8. Upload 2 wine list photos → verify per-image progress, parsed wines appear as selectable cards with confidence badges and **pale burgundy tint**
 9. Low-confidence triage: verify banner appears, uncertain items highlighted, price field has `inputmode="decimal"` on mobile
-10. Slow parsing: wait 10s → verify "Skip to Manual" button appears
+10. "Skip to Manual" button: verify visible immediately (no 10s delay)
 11. Remove image while parsing → verify request cancelled (no orphaned spinner)
 12. Apply colour filter + price range + by-the-glass toggle → verify cards hide/show, checked state preserved
-13. Counter: "N of M wines selected" reflects checked AND visible count
+13. Counter: "N selected (M visible)" — verify both numbers present, filters don't affect payload
 14. Type dish descriptions → verify parsed dishes with categories and **pale sage tint**
 15. Uncheck some wines/dishes → "Get Pairings" sends only selected items
 16. By-the-glass only selection → verify AI suggests glass-per-dish strategy (no table bottle)
@@ -431,3 +510,8 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 21. Mobile (480px viewport): sticky nav, camera access, 44px touch targets, 2-column image grid, Start Over positioned away from Next
 22. App switch on mobile: navigate away and back → verify wizard state restored from sessionStorage
 23. Multi-menu test: upload Reserve List + Standard List photos with same wine at different prices → verify both entries preserved (not deduped)
+24. Selection cap: select 81+ wines → "Get Pairings" → verify blocking toast, API not called
+25. Parse budget: use 10 parses → verify Analyze disabled, "Parse limit reached" toast, "add items manually" guidance
+26. Fallback chat: disable AI → get pairings → verify "Follow-up chat not available" text, no chat input rendered
+27. Result invalidation: get pairings → go back → change wine selection → return to Step 4 → verify stale results cleared, fresh "Get Pairings" shown
+28. Mode switch preservation: switch to "From My Cellar" → switch back → verify restaurant wizard state intact

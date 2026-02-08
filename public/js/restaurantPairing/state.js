@@ -254,6 +254,7 @@ export function mergeWines(newItems) {
   state.wines = existing;
   save(KEYS.wines, state.wines);
   save(KEYS.selections, state.selections);
+  invalidateResults();
   return state.wines;
 }
 
@@ -268,6 +269,7 @@ export function addWine(wine) {
   state.selections.wines[entry.id] = true;
   save(KEYS.wines, state.wines);
   save(KEYS.selections, state.selections);
+  invalidateResults();
   return entry;
 }
 
@@ -280,6 +282,7 @@ export function removeWine(id) {
   delete state.selections.wines[id];
   save(KEYS.wines, state.wines);
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 // --- Dishes ---
@@ -318,6 +321,7 @@ export function mergeDishes(newItems) {
   state.dishes = existing;
   save(KEYS.dishes, state.dishes);
   save(KEYS.selections, state.selections);
+  invalidateResults();
   return state.dishes;
 }
 
@@ -332,6 +336,7 @@ export function addDish(dish) {
   state.selections.dishes[entry.id] = true;
   save(KEYS.dishes, state.dishes);
   save(KEYS.selections, state.selections);
+  invalidateResults();
   return entry;
 }
 
@@ -344,6 +349,7 @@ export function removeDish(id) {
   delete state.selections.dishes[id];
   save(KEYS.dishes, state.dishes);
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 // --- Selections ---
@@ -364,6 +370,7 @@ export function getSelections() {
 export function setWineSelected(id, selected) {
   state.selections.wines[id] = selected;
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 /**
@@ -374,6 +381,7 @@ export function setWineSelected(id, selected) {
 export function setDishSelected(id, selected) {
   state.selections.dishes[id] = selected;
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 /**
@@ -403,6 +411,7 @@ export function selectAllWines(predicate) {
     }
   }
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 /**
@@ -416,6 +425,7 @@ export function deselectAllWines(predicate) {
     }
   }
   save(KEYS.selections, state.selections);
+  invalidateResults();
 }
 
 // --- Results ---
@@ -452,6 +462,20 @@ export function getChatId() {
 export function setChatId(chatId) {
   state.chatId = chatId;
   save(KEYS.chatId, chatId);
+}
+
+// --- Result Invalidation ---
+
+/**
+ * Clear results and chatId when selections or items change.
+ * Called automatically from mutation functions (setWineSelected,
+ * setDishSelected, addWine, addDish, mergeWines, mergeDishes).
+ */
+export function invalidateResults() {
+  state.results = null;
+  state.chatId = null;
+  save(KEYS.results, null);
+  save(KEYS.chatId, null);
 }
 
 // --- Reset ---
