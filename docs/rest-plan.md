@@ -369,9 +369,9 @@ This avoids dependency bloat and keeps the approach consistent with existing pat
 
 **Phase C: Frontend Foundation**
 
-12. **Export resizeImage** — Update `public/js/bottles/imageParsing.js` (export currently private fn)
-13. **Frontend API client** — `public/js/api/restaurantPairing.js` + update `public/js/api/index.js` barrel
-14. **Frontend state** — `public/js/restaurantPairing/state.js` (sessionStorage persistence)
+12. ~~**Export resizeImage** — Update `public/js/bottles/imageParsing.js` (export currently private fn)~~ ✅ Done. Added `export` keyword to `resizeImage()`. No other changes needed — function signature and behaviour unchanged.
+13. ~~**Frontend API client** — `public/js/api/restaurantPairing.js` + update `public/js/api/index.js` barrel~~ ✅ Done. Three functions: `parseMenu(payload, signal)` with AbortSignal support for cancel-on-remove, `getRecommendations(payload)`, `restaurantChat(chatId, message)`. All use `apiFetch` from `base.js` (automatic auth headers). Barrel re-export added to `api/index.js`.
+14. ~~**Frontend state** — `public/js/restaurantPairing/state.js` (sessionStorage persistence)~~ ✅ Done. Full sessionStorage persistence with `wineapp.restaurant.*` namespaced keys. Features: step tracking (1-4), wine/dish merge with dedup (composite key: `normalize(name)+vintage+by_the_glass`), secondary fuzzy match (Jaccard > 0.7 + same vintage), price divergence guard (>20% keeps both entries), selection state (per-item checked/unchecked), results + chatId persistence, `clearState()` for Start Over, `hasData()` for confirm guard. Stable incrementing IDs assigned client-side during merge.
 
 **Phase D: Frontend UI**
 

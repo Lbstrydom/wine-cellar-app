@@ -190,6 +190,13 @@ export {
   importBackup
 } from './health.js';
 
+// Restaurant pairing
+export {
+  parseMenu,
+  getRecommendations,
+  restaurantChat
+} from './restaurantPairing.js';
+
 // Error logging
 export {
   logClientError

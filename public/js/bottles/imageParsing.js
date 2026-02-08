@@ -164,7 +164,7 @@ function formatFileSize(bytes) {
  * @param {File} file - Image file to resize
  * @returns {Promise<{base64: string, mediaType: string, dataUrl: string, size: number}>}
  */
-function resizeImage(file) {
+export function resizeImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const canvas = document.createElement('canvas');
