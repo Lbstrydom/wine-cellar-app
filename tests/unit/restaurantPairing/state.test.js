@@ -237,6 +237,37 @@ describe('Restaurant Pairing State', () => {
       expect(mod.getSelections().wines[1]).toBeUndefined();
     });
 
+    it('updateWineField updates a specific field', () => {
+      mod.addWine({ name: 'Wine A', vintage: 2020, price: 120, by_the_glass: false });
+      mod.updateWineField(1, 'price', 150);
+      const wine = mod.getWines()[0];
+      expect(wine.price).toBe(150);
+      expect(wine.name).toBe('Wine A'); // Other fields unchanged
+    });
+
+    it('updateWineField persists to sessionStorage', () => {
+      mod.addWine({ name: 'Wine A', vintage: 2020, price: 120, by_the_glass: false });
+      mod.updateWineField(1, 'price', 150);
+      const stored = JSON.parse(storage.get('wineapp.restaurant.wines'));
+      expect(stored[0].price).toBe(150);
+    });
+
+    it('updateWineField invalidates results', () => {
+      mod.addWine({ name: 'Wine A', vintage: 2020, price: 120, by_the_glass: false });
+      mod.setResults({ pairings: [] });
+      mod.setChatId('chat-1');
+      mod.updateWineField(1, 'price', 150);
+      expect(mod.getResults()).toBeNull();
+      expect(mod.getChatId()).toBeNull();
+    });
+
+    it('updateWineField is a no-op for non-existent wine id', () => {
+      mod.addWine({ name: 'Wine A', vintage: 2020, price: 120, by_the_glass: false });
+      mod.updateWineField(999, 'price', 150); // Non-existent ID
+      const wine = mod.getWines()[0];
+      expect(wine.price).toBe(120); // Unchanged
+    });
+
     it('addDish assigns id and high confidence', () => {
       const dish = mod.addDish({ name: 'Manual Dish' });
       expect(dish.id).toBe(1);

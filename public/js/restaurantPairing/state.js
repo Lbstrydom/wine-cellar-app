@@ -274,6 +274,21 @@ export function addWine(wine) {
 }
 
 /**
+ * Update a specific field on a wine by id.
+ * @param {number} id - Wine id
+ * @param {string} field - Field name to update
+ * @param {*} value - New value
+ */
+export function updateWineField(id, field, value) {
+  const wine = state.wines.find(w => w.id === id);
+  if (wine) {
+    wine[field] = value;
+    save(KEYS.wines, state.wines);
+    invalidateResults();
+  }
+}
+
+/**
  * Remove a wine by id.
  * @param {number} id
  */
