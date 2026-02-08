@@ -39,6 +39,10 @@ const MAX_LENGTHS = {
   dishDescription: 500,
   chatMessage: 2000,
   tastingNote: 3000,
+  menuText: 5000,
+  menuItemName: 300,
+  menuItemField: 200,
+  menuItemDescription: 1000,
   generalInput: 5000
 };
 
@@ -189,6 +193,67 @@ export function sanitizeWineList(wines) {
     grapes: wine.grapes ? sanitize(wine.grapes, { maxLength: 200 }) : '',
     reduce_reason: wine.reduce_reason ? sanitize(wine.reduce_reason, { maxLength: 200 }) : ''
   }));
+}
+
+/**
+ * Sanitize free-text menu input (pasted/typed wine list or dish list).
+ * Preserves newlines since each line may be a separate item.
+ * Uses allowMarkdown to avoid escaping currency symbols ($25 → $25, not S25).
+ * @param {string} text - Raw menu text from user
+ * @returns {string} Sanitized menu text
+ */
+export function sanitizeMenuText(text) {
+  return sanitize(text, {
+    maxLength: MAX_LENGTHS.menuText,
+    allowMarkdown: true,
+    preserveNewlines: true
+  });
+}
+
+/**
+ * Sanitize a single string field from a parsed menu item.
+ * Uses allowMarkdown to preserve currency symbols in OCR output.
+ * @param {*} value - Field value (only strings are sanitized)
+ * @param {number} maxLength - Maximum allowed length
+ * @returns {*} Sanitized string, or original value if not a string
+ */
+function sanitizeMenuField(value, maxLength) {
+  if (typeof value !== 'string') return value;
+  return sanitize(value, {
+    maxLength,
+    allowMarkdown: true,
+    preserveNewlines: false
+  });
+}
+
+/**
+ * Sanitize an array of parsed menu items (wine or dish) from OCR.
+ * Cleans all string fields on each item while preserving non-string
+ * fields (numbers, booleans) unchanged.
+ * @param {Array<Object>} items - Parsed menu items from Claude Vision
+ * @returns {Array<Object>} Items with sanitized string fields
+ */
+export function sanitizeMenuItems(items) {
+  if (!Array.isArray(items)) return [];
+
+  return items.map(item => {
+    const cleaned = { ...item };
+
+    // Shared fields
+    cleaned.name = sanitizeMenuField(cleaned.name, MAX_LENGTHS.menuItemName);
+    cleaned.currency = sanitizeMenuField(cleaned.currency, 10);
+
+    // Wine-specific string fields
+    cleaned.colour = sanitizeMenuField(cleaned.colour, MAX_LENGTHS.menuItemField);
+    cleaned.style = sanitizeMenuField(cleaned.style, MAX_LENGTHS.menuItemField);
+    cleaned.region = sanitizeMenuField(cleaned.region, MAX_LENGTHS.menuItemField);
+
+    // Dish-specific string fields
+    cleaned.description = sanitizeMenuField(cleaned.description, MAX_LENGTHS.menuItemDescription);
+    cleaned.category = sanitizeMenuField(cleaned.category, MAX_LENGTHS.menuItemField);
+
+    return cleaned;
+  });
 }
 
 /**

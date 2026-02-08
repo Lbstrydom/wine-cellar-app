@@ -2,6 +2,10 @@
  * @fileoverview Aggregates all route modules.
  * Auth strategy: Authentication mounted per-router (not globally in server.js)
  * This allows mixing authenticated and public endpoints.
+ *
+ * Exception: /api/restaurant-pairing is mounted directly in server.js (before
+ * the global body parser) so it can use its own 5mb JSON limit for image uploads.
+ * See server.js for that mount and its auth/metrics chain.
  * @module routes
  */
 

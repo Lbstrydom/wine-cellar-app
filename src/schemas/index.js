@@ -115,3 +115,21 @@ export {
   batchFetchSchema,
   jobIdSchema
 } from './rating.js';
+
+// Restaurant pairing schemas
+export {
+  MENU_TYPES,
+  RESTAURANT_WINE_COLOURS,
+  DISH_CATEGORIES,
+  CONFIDENCE_LEVELS,
+  parseMenuSchema,
+  recommendSchema,
+  restaurantChatSchema,
+  parsedWineItemSchema,
+  parsedDishItemSchema,
+  wineListResponseSchema,
+  dishMenuResponseSchema,
+  pairingItemSchema,
+  tableWineSchema,
+  recommendResponseSchema
+} from './restaurantPairing.js';

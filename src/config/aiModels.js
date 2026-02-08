@@ -4,6 +4,8 @@
  * @module config/aiModels
  */
 
+import logger from '../utils/logger.js';
+
 /**
  * Available Claude models with their characteristics.
  * @type {Object.<string, Object>}
@@ -48,6 +50,10 @@ export const TASK_MODELS = {
   drinkRecommendations: 'claude-sonnet-4-5-20250929',
   tastingExtraction: 'claude-sonnet-4-5-20250929',
 
+  // Restaurant pairing tasks use Sonnet 4.5
+  menuParsing: 'claude-sonnet-4-5-20250929',
+  restaurantPairing: 'claude-sonnet-4-5-20250929',
+
   // Complex planning tasks use Opus 4.5 (with GPT-5.2 review)
   cellarAnalysis: 'claude-opus-4-5-20251101',
   zoneCapacityAdvice: 'claude-opus-4-5-20251101',
@@ -61,6 +67,13 @@ export const TASK_MODELS = {
   simpleValidation: 'claude-haiku-4-5-20251001'
 };
 
+// Startup validation: every TASK_MODELS value must reference a key in MODELS
+for (const [task, modelId] of Object.entries(TASK_MODELS)) {
+  if (!MODELS[modelId]) {
+    throw new Error(`TASK_MODELS["${task}"] references unknown model "${modelId}"`);
+  }
+}
+
 /**
  * Get model ID for a specific task.
  * Checks environment override first, then falls back to task mapping.
@@ -70,15 +83,21 @@ export const TASK_MODELS = {
 export function getModelForTask(task) {
   // Check for environment override
   const envModel = process.env.CLAUDE_MODEL;
-  if (envModel && MODELS[envModel]) {
-    return envModel;
+  if (envModel) {
+    if (MODELS[envModel]) {
+      return envModel;
+    }
+    logger.warn('AIModels', `CLAUDE_MODEL="${envModel}" is not a known model, ignoring`);
   }
 
   // Check for task-specific environment override
   const taskEnvKey = `CLAUDE_MODEL_${task.toUpperCase()}`;
   const taskEnvModel = process.env[taskEnvKey];
-  if (taskEnvModel && MODELS[taskEnvModel]) {
-    return taskEnvModel;
+  if (taskEnvModel) {
+    if (MODELS[taskEnvModel]) {
+      return taskEnvModel;
+    }
+    logger.warn('AIModels', `${taskEnvKey}="${taskEnvModel}" is not a known model, ignoring`);
   }
 
   // Use task mapping or default to Sonnet

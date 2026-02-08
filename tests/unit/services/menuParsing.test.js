@@ -1,0 +1,422 @@
+/**
+ * @fileoverview Service tests for menu parsing.
+ * Tests prompt building, Claude API integration, JSON extraction,
+ * schema validation, sanitization, and error handling.
+ * Uses vitest globals (do NOT import from 'vitest').
+ */
+
+// ---------------------------------------------------------------------------
+// Mocks (vitest hoists these before imports)
+// ---------------------------------------------------------------------------
+
+const mockCreate = vi.fn();
+vi.mock('../../../src/services/claudeClient.js', () => ({
+  default: { messages: { create: mockCreate } }
+}));
+
+vi.mock('../../../src/config/aiModels.js', () => ({
+  getModelForTask: vi.fn(() => 'claude-sonnet-4-5-20250929')
+}));
+
+const mockCleanup = vi.fn();
+vi.mock('../../../src/services/fetchUtils.js', () => ({
+  createTimeoutAbort: vi.fn(() => ({
+    controller: new AbortController(),
+    cleanup: mockCleanup
+  }))
+}));
+
+vi.mock('../../../src/services/inputSanitizer.js', () => ({
+  sanitizeMenuText: vi.fn(t => t),
+  sanitizeMenuItems: vi.fn(items => items)
+}));
+
+vi.mock('../../../src/utils/logger.js', () => ({
+  default: { info: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() }
+}));
+
+// ---------------------------------------------------------------------------
+// Imports (after mocks are declared)
+// ---------------------------------------------------------------------------
+
+const { parseMenuFromText, parseMenuFromImage } = await import('../../../src/services/menuParsing.js');
+const { getModelForTask } = await import('../../../src/config/aiModels.js');
+const { createTimeoutAbort } = await import('../../../src/services/fetchUtils.js');
+const { sanitizeMenuText, sanitizeMenuItems } = await import('../../../src/services/inputSanitizer.js');
+
+// ---------------------------------------------------------------------------
+// Fixtures
+// ---------------------------------------------------------------------------
+
+const WINE_LIST_RESPONSE = {
+  items: [{
+    type: 'wine', name: 'Kanonkop Pinotage', colour: 'red', style: 'Pinotage',
+    price: 350, currency: 'R', vintage: 2021, by_the_glass: false,
+    region: 'Stellenbosch', confidence: 'high'
+  }],
+  overall_confidence: 'high',
+  parse_notes: 'Clear wine list'
+};
+
+const DISH_MENU_RESPONSE = {
+  items: [{
+    type: 'dish', name: 'Grilled Salmon', description: 'With lemon butter',
+    price: 185, currency: 'R', category: 'Main', confidence: 'high'
+  }],
+  overall_confidence: 'high',
+  parse_notes: 'Clear menu'
+};
+
+/** Wrap JSON in a Claude API response shape */
+function claudeJson(obj) {
+  return { content: [{ text: JSON.stringify(obj) }] };
+}
+
+/** Wrap raw text in a Claude API response shape */
+function claudeText(text) {
+  return { content: [{ text }] };
+}
+
+// ---------------------------------------------------------------------------
+// Setup / teardown
+// ---------------------------------------------------------------------------
+
+const originalEnv = process.env;
+
+beforeEach(() => {
+  process.env = { ...originalEnv, ANTHROPIC_API_KEY: 'test-key' };
+  vi.clearAllMocks();
+});
+
+afterEach(() => {
+  process.env = originalEnv;
+});
+
+// ---------------------------------------------------------------------------
+// parseMenuFromText
+// ---------------------------------------------------------------------------
+
+describe('parseMenuFromText', () => {
+
+  describe('happy path', () => {
+    it('parses a wine_list and returns structured items', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      const result = await parseMenuFromText('wine_list', 'Kanonkop Pinotage R350');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].name).toBe('Kanonkop Pinotage');
+      expect(result.overall_confidence).toBe('high');
+    });
+
+    it('parses a dish_menu and returns structured items', async () => {
+      mockCreate.mockResolvedValue(claudeJson(DISH_MENU_RESPONSE));
+      const result = await parseMenuFromText('dish_menu', 'Grilled Salmon R185');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].name).toBe('Grilled Salmon');
+      expect(result.items[0].category).toBe('Main');
+    });
+  });
+
+  describe('input validation', () => {
+    it('rejects invalid menu type', async () => {
+      await expect(parseMenuFromText('cocktail_list', 'text'))
+        .rejects.toThrow('Invalid menu type');
+    });
+
+    it('throws when ANTHROPIC_API_KEY is not set', async () => {
+      delete process.env.ANTHROPIC_API_KEY;
+      await expect(parseMenuFromText('wine_list', 'text'))
+        .rejects.toThrow('Claude API key not configured');
+    });
+  });
+
+  describe('sanitization', () => {
+    it('sanitizes input text via sanitizeMenuText', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'raw menu text');
+      expect(sanitizeMenuText).toHaveBeenCalledWith('raw menu text');
+    });
+
+    it('sanitizes parsed items via sanitizeMenuItems on valid response', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      expect(sanitizeMenuItems).toHaveBeenCalledWith(WINE_LIST_RESPONSE.items);
+    });
+
+    it('sanitizes items on best-effort fallback path', async () => {
+      const malformed = {
+        items: [{ name: 'Wine' }],
+        overall_confidence: 'high',
+        parse_notes: ''
+      };
+      mockCreate.mockResolvedValue(claudeJson(malformed));
+      await parseMenuFromText('wine_list', 'text');
+      expect(sanitizeMenuItems).toHaveBeenCalled();
+    });
+  });
+
+  describe('Claude API integration', () => {
+    it('passes menuParsing task to getModelForTask', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      expect(getModelForTask).toHaveBeenCalledWith('menuParsing');
+    });
+
+    it('sends wine_list system prompt for wine_list type', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('wine list parser');
+      expect(call.system).toContain('by_the_glass');
+    });
+
+    it('sends dish_menu system prompt for dish_menu type', async () => {
+      mockCreate.mockResolvedValue(claudeJson(DISH_MENU_RESPONSE));
+      await parseMenuFromText('dish_menu', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('menu parser');
+      expect(call.system).toContain('category');
+    });
+
+    it('includes format instruction and menu text in user message', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'Merlot 2019 $45');
+      const userContent = mockCreate.mock.calls[0][0].messages[0].content;
+      expect(userContent).toContain('Respond ONLY with valid JSON');
+      expect(userContent).toContain('MENU TEXT:');
+      expect(userContent).toContain('Merlot 2019 $45');
+    });
+
+    it('creates timeout abort with 30s', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      expect(createTimeoutAbort).toHaveBeenCalledWith(30_000);
+    });
+
+    it('passes abort signal to Claude API call', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      const opts = mockCreate.mock.calls[0][1];
+      expect(opts).toHaveProperty('signal');
+      expect(opts.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  describe('JSON extraction', () => {
+    it('extracts JSON from ```json code fence', async () => {
+      const fenced = '```json\n' + JSON.stringify(WINE_LIST_RESPONSE) + '\n```';
+      mockCreate.mockResolvedValue(claudeText(fenced));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('extracts JSON from bare ``` code fence', async () => {
+      const fenced = '```\n' + JSON.stringify(WINE_LIST_RESPONSE) + '\n```';
+      mockCreate.mockResolvedValue(claudeText(fenced));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('handles raw JSON without code fences', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(1);
+    });
+
+    it('re-throws for completely unparseable response', async () => {
+      mockCreate.mockResolvedValue(claudeText('This is not valid JSON'));
+      await expect(parseMenuFromText('wine_list', 'text')).rejects.toThrow();
+    });
+  });
+
+  describe('schema validation and fallback', () => {
+    it('adds missing type discriminator to items', async () => {
+      const noType = {
+        items: [{
+          name: 'Kanonkop Pinotage', colour: 'red', style: 'Pinotage',
+          price: 350, currency: 'R', vintage: 2021, by_the_glass: false,
+          region: 'Stellenbosch', confidence: 'high'
+        }],
+        overall_confidence: 'high',
+        parse_notes: 'Test'
+      };
+      mockCreate.mockResolvedValue(claudeJson(noType));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items[0].type).toBe('wine');
+    });
+
+    it('adds dish type discriminator for dish_menu', async () => {
+      const noType = {
+        items: [{
+          name: 'Steak', description: 'Grilled', price: 200, currency: 'R',
+          category: 'Main', confidence: 'high'
+        }],
+        overall_confidence: 'high',
+        parse_notes: ''
+      };
+      mockCreate.mockResolvedValue(claudeJson(noType));
+      const result = await parseMenuFromText('dish_menu', 'text');
+      expect(result.items[0].type).toBe('dish');
+    });
+
+    it('falls back to best-effort when schema validation fails', async () => {
+      const malformed = {
+        items: [{ name: 'Mystery Wine' }],
+        overall_confidence: 'high',
+        parse_notes: 'Some notes'
+      };
+      mockCreate.mockResolvedValue(claudeJson(malformed));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.overall_confidence).toBe('low');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].confidence).toBe('low');
+    });
+
+    it('names unknown items in best-effort path', async () => {
+      const malformed = {
+        items: [{}],
+        overall_confidence: 'high',
+        parse_notes: ''
+      };
+      mockCreate.mockResolvedValue(claudeJson(malformed));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items[0].name).toBe('Unknown item');
+    });
+
+    it('returns empty items for null Claude response', async () => {
+      mockCreate.mockResolvedValue(claudeText('null'));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(0);
+      expect(result.overall_confidence).toBe('low');
+    });
+
+    it('returns empty items for array Claude response', async () => {
+      mockCreate.mockResolvedValue(claudeText('[1, 2, 3]'));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(0);
+      expect(result.overall_confidence).toBe('low');
+    });
+
+    it('handles response with no items array', async () => {
+      const noItems = { overall_confidence: 'high', parse_notes: 'No items found' };
+      mockCreate.mockResolvedValue(claudeJson(noItems));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(0);
+      expect(result.overall_confidence).toBe('low');
+    });
+  });
+
+  describe('error handling and cleanup', () => {
+    it('throws "Menu parsing timed out" on AbortError', async () => {
+      const err = new Error('Aborted');
+      err.name = 'AbortError';
+      mockCreate.mockRejectedValue(err);
+      await expect(parseMenuFromText('wine_list', 'text'))
+        .rejects.toThrow('Menu parsing timed out');
+    });
+
+    it('re-throws non-abort errors', async () => {
+      mockCreate.mockRejectedValue(new Error('API rate limit'));
+      await expect(parseMenuFromText('wine_list', 'text'))
+        .rejects.toThrow('API rate limit');
+    });
+
+    it('calls cleanup on success', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      expect(mockCleanup).toHaveBeenCalledOnce();
+    });
+
+    it('calls cleanup on timeout', async () => {
+      const err = new Error('Aborted');
+      err.name = 'AbortError';
+      mockCreate.mockRejectedValue(err);
+      await parseMenuFromText('wine_list', 'text').catch(() => {});
+      expect(mockCleanup).toHaveBeenCalledOnce();
+    });
+
+    it('calls cleanup on non-abort error', async () => {
+      mockCreate.mockRejectedValue(new Error('fail'));
+      await parseMenuFromText('wine_list', 'text').catch(() => {});
+      expect(mockCleanup).toHaveBeenCalledOnce();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseMenuFromImage
+// ---------------------------------------------------------------------------
+
+describe('parseMenuFromImage', () => {
+
+  it('sends image content block to Claude', async () => {
+    mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+    await parseMenuFromImage('wine_list', 'iVBORw0KGgo=', 'image/jpeg');
+    const msg = mockCreate.mock.calls[0][0].messages[0];
+    expect(msg.role).toBe('user');
+    expect(msg.content).toHaveLength(2);
+    expect(msg.content[0].type).toBe('image');
+    expect(msg.content[0].source).toEqual({
+      type: 'base64',
+      media_type: 'image/jpeg',
+      data: 'iVBORw0KGgo='
+    });
+  });
+
+  it('includes format instruction as second content block', async () => {
+    mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+    await parseMenuFromImage('wine_list', 'iVBORw0KGgo=', 'image/jpeg');
+    const msg = mockCreate.mock.calls[0][0].messages[0];
+    expect(msg.content[1].type).toBe('text');
+    expect(msg.content[1].text).toContain('Respond ONLY with valid JSON');
+  });
+
+  it('sends wine_list system prompt for wine_list type', async () => {
+    mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+    await parseMenuFromImage('wine_list', 'data', 'image/png');
+    expect(mockCreate.mock.calls[0][0].system).toContain('wine list parser');
+  });
+
+  it('returns parsed dishes from dish_menu image', async () => {
+    mockCreate.mockResolvedValue(claudeJson(DISH_MENU_RESPONSE));
+    const result = await parseMenuFromImage('dish_menu', 'data', 'image/png');
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].type).toBe('dish');
+  });
+
+  it('rejects invalid menu type', async () => {
+    await expect(parseMenuFromImage('invalid', 'data', 'image/jpeg'))
+      .rejects.toThrow('Invalid menu type');
+  });
+
+  it('throws when ANTHROPIC_API_KEY is not set', async () => {
+    delete process.env.ANTHROPIC_API_KEY;
+    await expect(parseMenuFromImage('wine_list', 'data', 'image/jpeg'))
+      .rejects.toThrow('Claude API key not configured');
+  });
+
+  it('throws "Menu parsing timed out" on AbortError', async () => {
+    const err = new Error('Aborted');
+    err.name = 'AbortError';
+    mockCreate.mockRejectedValue(err);
+    await expect(parseMenuFromImage('wine_list', 'data', 'image/jpeg'))
+      .rejects.toThrow('Menu parsing timed out');
+  });
+
+  it('re-throws non-abort errors', async () => {
+    mockCreate.mockRejectedValue(new Error('Vision API error'));
+    await expect(parseMenuFromImage('wine_list', 'data', 'image/jpeg'))
+      .rejects.toThrow('Vision API error');
+  });
+
+  it('calls cleanup after image parse', async () => {
+    mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+    await parseMenuFromImage('wine_list', 'data', 'image/jpeg');
+    expect(mockCleanup).toHaveBeenCalledOnce();
+  });
+
+  it('calls cleanup on image error', async () => {
+    mockCreate.mockRejectedValue(new Error('fail'));
+    await parseMenuFromImage('wine_list', 'data', 'image/jpeg').catch(() => {});
+    expect(mockCleanup).toHaveBeenCalledOnce();
+  });
+});

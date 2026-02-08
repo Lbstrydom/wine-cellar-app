@@ -11,11 +11,14 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import routes from './routes/index.js';
+import restaurantPairingRoutes from './routes/restaurantPairing.js';
 import jobQueue from './services/jobQueue.js';
 import handleRatingFetch from './jobs/ratingFetchJob.js';
 import handleBatchFetch from './jobs/batchFetchJob.js';
 import { purgeExpiredCache } from './services/cacheService.js';
 import { generalRateLimiter } from './middleware/rateLimiter.js';
+import { requireAuth } from './middleware/auth.js';
+import { requireCellarContext } from './middleware/cellarContext.js';
 import { cspMiddleware, cspDevMiddleware } from './middleware/csp.js';
 import healthRoutes from './routes/health.js';
 import { errorHandler, notFoundHandler } from './utils/errorResponse.js';
@@ -33,6 +36,29 @@ app.use(isDevelopment ? cspDevMiddleware() : cspMiddleware());
 
 // Middleware
 app.use(cors());
+
+// Restaurant pairing: mounted BEFORE global body parser with its own 5mb limit.
+// (single-image payloads ~2.7MB encoded, no need for the global 10mb limit)
+// Intentional exception to routes/index.js central mounting — see comment there.
+// Bypasses generalRateLimiter (each endpoint uses strictRateLimiter which is stricter).
+app.use('/api/restaurant-pairing', express.json({ limit: '5mb' }));
+
+// Normalize body-parser 413 to stable API error contract
+// (without this, express.json emits a raw 413 with non-standard shape)
+// eslint-disable-next-line no-unused-vars
+app.use('/api/restaurant-pairing', (err, _req, res, next) => {
+  if (err.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request payload too large (max 5MB)' });
+  }
+  next(err);
+});
+
+app.use('/api/restaurant-pairing',
+  metricsMiddleware(),
+  requireAuth, requireCellarContext,
+  restaurantPairingRoutes
+);
+
 app.use(express.json({ limit: '10mb' })); // Increased for base64 image uploads
 
 // Metrics collection (before rate limiting)
