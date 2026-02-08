@@ -30,6 +30,7 @@ const DEFAULT_STATE = {
 
 /**
  * Read a JSON value from sessionStorage, returning fallback on miss/error.
+ * Validates shape: arrays must be arrays, objects must be objects.
  * @param {string} key - Storage key
  * @param {*} fallback - Default value
  * @returns {*}
@@ -37,7 +38,11 @@ const DEFAULT_STATE = {
 function load(key, fallback) {
   try {
     const raw = sessionStorage.getItem(key);
-    return raw != null ? JSON.parse(raw) : fallback;
+    if (raw == null) return fallback;
+    const parsed = JSON.parse(raw);
+    // Shape guard: if fallback is an array, parsed must also be an array
+    if (Array.isArray(fallback) && !Array.isArray(parsed)) return fallback;
+    return parsed;
   } catch {
     return fallback;
   }
@@ -148,12 +153,12 @@ export function getStep() {
 }
 
 /**
- * Set wizard step and persist.
+ * Set wizard step and persist. Clamped to 1-4.
  * @param {number} step - Step number (1-4)
  */
 export function setStep(step) {
-  state.step = step;
-  save(KEYS.step, step);
+  state.step = Math.max(1, Math.min(4, Number(step) || 1));
+  save(KEYS.step, state.step);
 }
 
 // --- Wines ---
@@ -181,7 +186,8 @@ export function mergeWines(newItems) {
     existingKeys.set(wineKey(wine), wine);
   }
 
-  for (const item of newItems) {
+  for (const raw of newItems) {
+    const item = { ...raw }; // Clone to avoid mutating caller's objects
     const key = wineKey(item);
 
     // Exact composite key match
@@ -252,13 +258,12 @@ export function mergeWines(newItems) {
  * @returns {Object} Wine with assigned id
  */
 export function addWine(wine) {
-  wine.id = nextWineId++;
-  wine.confidence = 'high'; // Manual entry is always high confidence
-  state.wines.push(wine);
-  state.selections.wines[wine.id] = true;
+  const entry = { ...wine, id: nextWineId++, confidence: 'high' };
+  state.wines.push(entry);
+  state.selections.wines[entry.id] = true;
   save(KEYS.wines, state.wines);
   save(KEYS.selections, state.selections);
-  return wine;
+  return entry;
 }
 
 /**
@@ -291,13 +296,14 @@ export function mergeDishes(newItems) {
   const existing = [...state.dishes];
   const existingKeys = new Set(existing.map(dishKey));
 
-  for (const item of newItems) {
-    const key = dishKey(item);
+  for (const raw of newItems) {
+    const key = dishKey(raw);
     if (existingKeys.has(key)) {
       // Already exists — skip
       continue;
     }
 
+    const item = { ...raw }; // Clone to avoid mutating caller's objects
     item.id = nextDishId++;
     existing.push(item);
     existingKeys.add(key);
@@ -316,13 +322,12 @@ export function mergeDishes(newItems) {
  * @returns {Object} Dish with assigned id
  */
 export function addDish(dish) {
-  dish.id = nextDishId++;
-  dish.confidence = 'high';
-  state.dishes.push(dish);
-  state.selections.dishes[dish.id] = true;
+  const entry = { ...dish, id: nextDishId++, confidence: 'high' };
+  state.dishes.push(entry);
+  state.selections.dishes[entry.id] = true;
   save(KEYS.dishes, state.dishes);
   save(KEYS.selections, state.selections);
-  return dish;
+  return entry;
 }
 
 /**
@@ -467,7 +472,9 @@ export function clearState() {
   nextWineId = 1;
   nextDishId = 1;
 
-  for (const key of Object.values(KEYS)) {
-    sessionStorage.removeItem(key);
-  }
+  try {
+    for (const key of Object.values(KEYS)) {
+      sessionStorage.removeItem(key);
+    }
+  } catch { /* storage unavailable — non-critical */ }
 }
