@@ -1625,11 +1625,709 @@ No orphan selectors — every class queried in JS has a corresponding CSS rule o
 
 ---
 
-### Phase F Backlog (deferred from Phase E)
+### Phase F: Quick Pair + Polish
 
-| Item | Rationale |
+Phase F delivers the **Quick Pair** speed shortcut and three CSS polish items deferred from Phase E. Quick Pair is the only item requiring a new JS module + tests; the other three are CSS-only additions (~80 lines total).
+
+---
+
+#### F.0 Overview
+
+| # | Item | Type | ~Lines | Risk |
+|---|------|------|--------|------|
+| F.1 | Quick Pair UI | New JS module + CSS + HTML + tests | ~350 | High |
+| F.2 | Mode switch animation | CSS edit | ~15 | Low |
+| F.3 | Print styles | CSS append | ~35 | Low |
+| F.4 | `prefers-reduced-motion` | CSS append | ~25 | Low |
+
+**Execution strategy: two clusters.**
+
+| Cluster | Steps | Risk | Gate |
+|---------|-------|------|------|
+| **1 — Quick Pair** | F.1 (module + CSS + HTML + tests) | High | Audit before Cluster 2 |
+| **2 — CSS Polish** | F.2 + F.3 + F.4 (CSS only) | Low | `npm run test:unit` + manual check |
+
+---
+
+#### F.1 Quick Pair UI
+
+##### F.1.1 Concept
+
+Quick Pair is a speed shortcut for the **"At a Restaurant"** mode. The user skips the review steps entirely:
+
+```
+[1 photo + dish text] → Parse → Straight to pairings
+```
+
+**When to use**: Returning user who knows the flow, or time-pressed at the table. They accept lower accuracy in exchange for speed. The full wizard is always available via "Refine".
+
+##### F.1.2 Trigger Location
+
+Quick Pair link renders **inside** `.restaurant-wizard` at the top of Step 1, above the capture widget:
+
+```html
+<div class="restaurant-quick-pair-banner">
+  <button class="btn btn-link restaurant-quick-pair-trigger" type="button">
+    ⚡ Quick Pair — snap a wine list photo + type your dishes → instant pairings
+  </button>
+</div>
+```
+
+**Why Step 1 top, not a separate entry point**: Keeps Quick Pair discoverable without adding navigation complexity. The user enters restaurant mode, sees the full wizard, and can opt into the shortcut. Once familiar, they'll tap it immediately.
+
+**Visibility**: Only shown when wizard is at Step 1 (hidden on Steps 2-4). The controller's `renderStep(1)` populates this banner before the capture widget.
+
+##### F.1.3 Quick Pair Overlay
+
+Clicking the trigger opens a **minimal inline form** (not a modal — modals are jarring on mobile). This replaces the Step 1 capture widget area:
+
+```html
+<div class="restaurant-quick-pair-form">
+  <h3 class="restaurant-quick-pair-title">Quick Pair</h3>
+  <p class="text-muted">One photo + your dishes → instant suggestions</p>
+
+  <!-- Wine list: single image only (speed over accuracy) -->
+  <div class="restaurant-quick-pair-section">
+    <label class="restaurant-quick-pair-label">Wine List</label>
+    <div class="restaurant-quick-pair-image-row">
+      <button class="btn btn-secondary restaurant-quick-pair-camera" type="button">📷 Photo</button>
+      <button class="btn btn-secondary restaurant-quick-pair-file" type="button">📁 File</button>
+      <span class="restaurant-quick-pair-image-status text-muted">No image</span>
+    </div>
+    <input type="file" accept="image/*" capture="environment"
+           class="restaurant-quick-pair-camera-input" hidden>
+    <input type="file" accept="image/*"
+           class="restaurant-quick-pair-file-input" hidden>
+    <!-- Thumbnail preview -->
+    <div class="restaurant-quick-pair-thumb" style="display: none;"></div>
+  </div>
+
+  <!-- Dishes: simple text area (one per line) -->
+  <div class="restaurant-quick-pair-section">
+    <label class="restaurant-quick-pair-label" for="quick-pair-dishes">Your Dishes</label>
+    <textarea class="restaurant-quick-pair-dishes restaurant-text-input"
+              id="quick-pair-dishes"
+              placeholder="Type your dishes, one per line&#10;e.g. Grilled salmon&#10;Beef fillet&#10;Caesar salad"
+              rows="4" maxlength="2000"></textarea>
+    <div class="restaurant-text-counter"><span>0</span>/2000</div>
+  </div>
+
+  <!-- Actions -->
+  <div class="restaurant-quick-pair-actions">
+    <button class="btn btn-primary restaurant-quick-pair-go" type="button" disabled>
+      Get Pairings
+    </button>
+    <button class="btn btn-link restaurant-quick-pair-cancel" type="button">
+      Use Full Wizard
+    </button>
+  </div>
+
+  <!-- Loading state -->
+  <div class="restaurant-quick-pair-loading" style="display: none;">
+    <div class="loading-spinner"></div>
+    <span>Analyzing wine list & dishes…</span>
+  </div>
+</div>
+```
+
+**Key constraints**:
+- **Single image only** (not multi-image). Quick Pair trades accuracy for speed. One photo → one parse call → fast.
+- **No wine review step** — all parsed wines are selected by default.
+- **No dish review step** — text lines become dishes directly (one per line, trimmed, empty lines filtered).
+- **"Get Pairings" enabled** when at least one of: image selected OR dish text non-empty. Both empty → disabled.
+- **Parse budget**: Consumes 1 parse from shared `parseBudget` for the wine image (if provided). If budget exhausted, show toast and disable photo buttons — user can still type wines as text.
+- **Dish text → items**: Each non-empty line becomes a dish item `{ name: line.trim(), description: '', category: 'other', confidence: 'high' }`. No AI parse needed for typed dishes.
+
+##### F.1.4 Quick Pair Flow (detailed)
+
+```
+User taps "⚡ Quick Pair"
+  → Step 1 capture widget replaced by quick-pair-form
+  → User takes/uploads ONE photo of wine list (optional)
+  → User types dishes in text area (optional but encouraged)
+  → User taps "Get Pairings"
+  
+  IF image provided:
+    → parseMenu({ type: 'wine_list', image, mediaType }) → wineItems[]
+    → parseBudget.used++
+  IF text provided:
+    → Parse lines client-side → dishItems[]  (no API call)
+  IF neither:
+    → "Get Pairings" was disabled — should not reach here
+
+  → mergeWines(wineItems)
+  → mergeDishes(dishItems)
+  → Call runQuickPairFlow(wineItems, dishItems)
+    → renderStep(4) → requestRecommendations()
+
+  Results page shows:
+    → Confidence warning banner (role="alert"):
+      "Pairings based on best-guess parsing — tap Refine for accuracy"
+    → Normal result cards
+    → "Refine" button → loads full wizard with parsed data pre-populated
+      (data is already in state from merge calls — just renderStep(2))
+```
+
+**Confidence warning**: Always shown on Quick Pair results (no review step = inherently lower confidence). Uses `.restaurant-quick-pair-warning` class with `role="alert"` for screen readers.
+
+**"Refine" button**: Calls `renderStep(2)` so user enters the full wizard at wine review. State is already populated from the merge calls. No data loss.
+
+**Error handling**:
+- Parse fails → toast error, hide loading, re-enable form. Don't navigate away.
+- Parse succeeds but zero wines extracted → proceed with empty wines (dish-only pairing is valid). Results will show "No wines provided — showing dish-based suggestions."
+- Network error → toast, re-enable form.
+
+##### F.1.5 Module: `public/js/restaurantPairing/quickPair.js`
+
+**New file** (~200 lines). Exports:
+
+```javascript
+/**
+ * Render Quick Pair inline form, replacing current Step 1 content.
+ * @param {HTMLElement} container - Mount point (.restaurant-step-content)
+ * @param {{used: number}} parseBudget - Shared budget tracker
+ * @param {Function} onComplete - Callback after successful parse+recommend
+ * @param {Function} onCancel - Callback to return to full wizard Step 1
+ * @returns {{destroy: Function}}
+ */
+export function renderQuickPair(container, { parseBudget, onComplete, onCancel })
+```
+
+**Internal logic**:
+- Builds HTML (F.1.3 template)
+- Wires camera button → hidden `<input type="file" capture="environment">`
+- Wires file button → hidden `<input type="file" accept="image/*">`
+- On file selected: `resizeImage()` → store base64 + show thumbnail
+- Wires "Get Pairings" button:
+  1. Validate: at least image or text
+  2. Show loading spinner
+  3. If image → `parseMenu({ type: 'wine_list', image, mediaType })`
+  4. Parse dish text → `lines.filter(l => l.trim()).map(l => ({ name: l.trim(), description: '', category: 'other', confidence: 'high' }))`
+  5. `mergeWines(wineItems)`, `mergeDishes(dishItems)`
+  6. Call `onComplete(wineItems, dishItems)` (controller handles rest)
+- Wires "Use Full Wizard" → `onCancel()`
+- `destroy()`: remove listeners, abort any in-flight parse, cleanup
+
+**Dependencies**:
+- `resizeImage` from `bottles/imageParsing.js`
+- `parseMenu` from `api/restaurantPairing.js`
+- `mergeWines`, `mergeDishes` from `state.js`
+- `showToast` from `utils.js`
+
+##### F.1.6 Controller Changes (`public/js/restaurantPairing.js`)
+
+Modify `renderStep(1)` to include Quick Pair banner:
+
+```javascript
+case 1: {
+  // Quick Pair banner (only on Step 1)
+  const bannerHtml = `
+    <div class="restaurant-quick-pair-banner">
+      <button class="btn btn-link restaurant-quick-pair-trigger" type="button">
+        ⚡ Quick Pair — snap & type → instant pairings
+      </button>
+    </div>`;
+  stepContent.insertAdjacentHTML('afterbegin', bannerHtml);
+
+  // Wire Quick Pair trigger
+  const qpTrigger = stepContent.querySelector('.restaurant-quick-pair-trigger');
+  qpTrigger.addEventListener('click', () => {
+    // Replace step content with quick pair form
+    destroyCurrentStep();
+    const qp = renderQuickPair(stepContent, {
+      parseBudget,
+      onComplete: async (wineItems, dishItems) => {
+        await runQuickPairFlow(wineItems, dishItems);
+      },
+      onCancel: () => {
+        renderStep(1); // Return to full Step 1
+      }
+    });
+    currentStepDestroy = qp.destroy;
+  });
+
+  // Normal Step 1 capture widget below the banner
+  const capture = createImageCapture(stepContent, { ... });
+  currentStepDestroy = capture.destroy;
+  break;
+}
+```
+
+**Important lifecycle detail**: When Quick Pair trigger is clicked, `destroyCurrentStep()` tears down the capture widget, then `renderQuickPair` takes over the container. `currentStepDestroy` is reassigned to `qp.destroy`. If user cancels, `onCancel` → `renderStep(1)` which calls `destroyCurrentStep()` → tears down Quick Pair → renders fresh Step 1.
+
+**Modify `runQuickPairFlow`**: Add a `quickPairMode` flag to state so Step 4 knows to show the confidence warning and "Refine" button:
+
+```javascript
+export async function runQuickPairFlow(wineItems, dishItems) {
+  try {
+    mergeWines(wineItems);
+    mergeDishes(dishItems);
+    setQuickPairMode(true);  // New state flag
+    renderStep(4);
+    await requestRecommendations();
+  } catch (err) {
+    console.error('Quick Pair error:', err);
+    showToast('Failed to get pairing recommendations', 'error');
+    throw err;
+  }
+}
+```
+
+##### F.1.7 State Changes (`public/js/restaurantPairing/state.js`)
+
+Add Quick Pair mode flag:
+
+```javascript
+const KEYS = {
+  // ... existing keys ...
+  QUICK_PAIR_MODE: 'wineapp.restaurant.quickPairMode'
+};
+
+export function getQuickPairMode() {
+  return load(KEYS.QUICK_PAIR_MODE, false);
+}
+
+export function setQuickPairMode(val) {
+  save(KEYS.QUICK_PAIR_MODE, !!val);
+}
+```
+
+- `clearState()` resets `quickPairMode` to `false`.
+- `invalidateResults()` resets `quickPairMode` to `false` (editing after Quick Pair = full wizard flow).
+
+##### F.1.8 Results Changes (`public/js/restaurantPairing/results.js`)
+
+Add confidence warning and "Refine" button when in Quick Pair mode:
+
+```javascript
+import { getQuickPairMode, setQuickPairMode } from './state.js';
+
+// In renderResults():
+const isQuickPair = getQuickPairMode();
+if (isQuickPair) {
+  const warningHtml = `
+    <div class="restaurant-quick-pair-warning" role="alert">
+      <strong>⚡ Quick Pair</strong> — Pairings based on best-guess parsing.
+      <button class="btn btn-link restaurant-refine-btn" type="button">
+        Refine for accuracy →
+      </button>
+    </div>`;
+  container.insertAdjacentHTML('afterbegin', warningHtml);
+
+  const refineBtn = container.querySelector('.restaurant-refine-btn');
+  refineBtn.addEventListener('click', () => {
+    setQuickPairMode(false);
+    // Navigate to Step 2 — data is already in state
+    // Emit custom event for controller to handle (no circular import)
+    container.dispatchEvent(new CustomEvent('restaurant:refine', { bubbles: true }));
+  });
+}
+```
+
+Controller listens for `restaurant:refine` event on wizard container:
+```javascript
+addListener(wizardContainer, 'restaurant:refine', () => {
+  renderStep(2);
+});
+```
+
+This avoids circular imports (results.js doesn't import controller).
+
+##### F.1.9 CSS (`public/css/components.css`)
+
+Append ~60 lines after existing restaurant styles:
+
+```css
+/* --- Quick Pair --- */
+
+.restaurant-quick-pair-banner {
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.restaurant-quick-pair-trigger {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.restaurant-quick-pair-form {
+  padding: 0.5rem 0;
+}
+
+.restaurant-quick-pair-title {
+  font-size: var(--font-md);
+  margin-bottom: 0.25rem;
+}
+
+.restaurant-quick-pair-section {
+  margin-bottom: 1rem;
+}
+
+.restaurant-quick-pair-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--font-sm);
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.restaurant-quick-pair-image-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.restaurant-quick-pair-image-status {
+  font-size: var(--font-xs);
+}
+
+.restaurant-quick-pair-thumb {
+  margin-top: 0.5rem;
+  max-width: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.restaurant-quick-pair-thumb img {
+  width: 100%;
+  display: block;
+}
+
+.restaurant-quick-pair-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.restaurant-quick-pair-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--text-muted);
+}
+
+/* Confidence warning on Quick Pair results */
+.restaurant-quick-pair-warning {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: var(--font-sm);
+}
+
+.restaurant-refine-btn {
+  font-weight: 600;
+  margin-left: 0.25rem;
+}
+```
+
+##### F.1.10 HTML (`public/index.html`)
+
+No HTML changes needed — Quick Pair renders entirely via JS into the existing `.restaurant-step-content` container.
+
+##### F.1.11 Service Worker (`public/sw.js`)
+
+Add `quickPair.js` to `STATIC_ASSETS`:
+```javascript
+'/js/restaurantPairing/quickPair.js',
+```
+
+Bump `CACHE_VERSION` (increment from current).
+
+##### F.1.12 New Test File: `tests/unit/restaurantPairing/quickPair.test.js`
+
+**~20 tests** using jsdom + vi.fn() mocks:
+
+| Category | Tests |
+|----------|-------|
+| **Render** | Form renders with camera, file, textarea, buttons. "Get Pairings" initially disabled. |
+| **Image selection** | Camera input triggers `resizeImage()`, shows thumbnail, updates status text. File input same. Second selection replaces first. |
+| **Enable logic** | Disabled when both empty. Enabled when image only. Enabled when text only. Enabled when both. |
+| **Parse flow (image + text)** | Calls `parseMenu()` with correct payload. Merges wine items. Splits dish text by lines. Filters empty lines. Trims. Calls `onComplete`. |
+| **Parse flow (text only)** | No `parseMenu` call. Dishes created from lines. Calls `onComplete`. |
+| **Parse flow (image only)** | `parseMenu` called. Empty dish array. Calls `onComplete`. |
+| **Parse budget** | When budget exhausted → camera/file buttons disabled, toast shown. |
+| **Parse error** | `parseMenu` rejects → toast error, loading hidden, form re-enabled. |
+| **Cancel** | "Use Full Wizard" calls `onCancel`. |
+| **Destroy** | Removes listeners, aborts in-flight parse, cleans up. |
+| **Char counter** | Textarea input updates counter. |
+
+##### F.1.13 Existing Test Updates
+
+| File | Change |
+|------|--------|
+| `tests/unit/restaurantPairing/state.test.js` | Add tests for `getQuickPairMode()`, `setQuickPairMode()`, `clearState()` resets it, `invalidateResults()` resets it |
+| `tests/unit/restaurantPairing/restaurantPairing.test.js` | Add tests: Quick Pair trigger renders on Step 1, clicking trigger replaces content, `onComplete` calls `runQuickPairFlow`, `onCancel` returns to Step 1, `restaurant:refine` event navigates to Step 2 |
+| `tests/unit/restaurantPairing/results.test.js` | Add tests: Quick Pair warning renders when `getQuickPairMode()=true`, hidden when `false`, "Refine" button dispatches `restaurant:refine` event |
+| `tests/unit/utils/apiAuthHeaders.test.js` | Already scans `restaurantPairing/` folder — `quickPair.js` will be auto-detected |
+
+---
+
+#### F.2 Mode Switch Animation
+
+**Problem**: Switching between "From My Cellar" and "At a Restaurant" uses `display: none/block` — an instant cut. Adding a CSS opacity transition gives perceived smoothness.
+
+**Gotcha**: `display: none` removes elements from layout — CSS transitions don't fire on `display` changes. Fix: use `visibility` + `opacity` + `position: absolute` for the hidden panel, or use a class-based approach with `setTimeout`.
+
+**Implementation** (class-based, ~15 lines CSS + ~5 lines JS):
+
+CSS addition in `components.css`:
+```css
+/* Mode switch transition */
+.pairing-cellar-section,
+.restaurant-wizard {
+  transition: opacity 0.2s ease-in-out;
+}
+.pairing-cellar-section.mode-hidden,
+.restaurant-wizard.mode-hidden {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  visibility: hidden;
+}
+```
+
+JS change in controller `setMode()`:
+```javascript
+// Replace style.display toggles with class-based approach
+function setMode(mode) {
+  const cellarSections = document.querySelectorAll('.pairing-cellar-section');
+  const wizard = wizardContainer;
+
+  if (mode === 'restaurant') {
+    cellarSections.forEach(el => el.classList.add('mode-hidden'));
+    if (wizard) wizard.classList.remove('mode-hidden');
+  } else {
+    cellarSections.forEach(el => el.classList.remove('mode-hidden'));
+    if (wizard) wizard.classList.add('mode-hidden');
+  }
+  // ... toggle buttons unchanged
+}
+```
+
+And in `initRestaurantPairing()`, replace the initial `style.display = 'none'` with `classList.add('mode-hidden')` on the wizard.
+
+HTML change: Remove `style="display: none;"` from `.restaurant-wizard` in index.html. Replace with `class="restaurant-wizard mode-hidden"`.
+
+**Risk**: Low. Only CSS + 2 small JS changes. No new modules or tests needed — existing mode toggle tests cover the class being applied.
+
+**Test update**: Existing controller tests check for `style.display` — update to check for `mode-hidden` class instead.
+
+---
+
+#### F.3 Print Styles
+
+**Purpose**: Users may want to print or screenshot the pairing recommendations while at the table.
+
+CSS append (~35 lines):
+```css
+/* --- Print Styles --- */
+
+@media print {
+  /* Hide everything except results */
+  .restaurant-mode-toggle,
+  .restaurant-wizard-header,
+  .restaurant-nav-bar,
+  .restaurant-quick-pair-banner,
+  .restaurant-chat-section,
+  .restaurant-optional-inputs,
+  .restaurant-get-pairings-btn,
+  .restaurant-results-loading {
+    display: none !important;
+  }
+
+  /* Full-width results */
+  .restaurant-wizard {
+    border: none;
+    padding: 0;
+    background: white;
+  }
+
+  .restaurant-results-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Ensure cards are visible (not dimmed) */
+  .restaurant-result-card {
+    break-inside: avoid;
+    border: 1px solid #ccc;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Table wine suggestion — prominent */
+  .restaurant-table-wine {
+    border: 2px solid #333;
+    padding: 0.75rem;
+    break-inside: avoid;
+  }
+
+  /* Summary bar — keep visible */
+  .restaurant-results-summary {
+    font-size: 14pt;
+    margin-bottom: 1rem;
+  }
+}
+```
+
+**Scope**: Only restaurant pairing elements. Does not affect existing cellar print behaviour.
+
+---
+
+#### F.4 `prefers-reduced-motion`
+
+**Purpose**: Explicit opt-out for users who prefer reduced motion. The restaurant wizard already avoids `transform` on hover, but the step indicator has `transition: all 0.2s` and the mode switch animation (F.2) adds `transition: opacity 0.2s`.
+
+CSS append (~25 lines):
+```css
+/* --- Reduced Motion --- */
+
+@media (prefers-reduced-motion: reduce) {
+  .restaurant-step-indicator-item {
+    transition: none;
+  }
+
+  .pairing-cellar-section,
+  .restaurant-wizard {
+    transition: none;
+  }
+
+  /* If any future animations are added, disable here */
+  .restaurant-wine-card,
+  .restaurant-dish-card {
+    transition: none;
+  }
+
+  .restaurant-quick-pair-banner {
+    transition: none;
+  }
+}
+```
+
+**Placement**: After the print styles block, still within the restaurant section of `components.css`.
+
+---
+
+#### F.5 Files Summary
+
+##### New Files (2)
+
+| File | Responsibility | ~Lines |
+|------|----------------|--------|
+| `public/js/restaurantPairing/quickPair.js` | Quick Pair inline form: single image + dish text → parse → `onComplete` callback | ~200 |
+| `tests/unit/restaurantPairing/quickPair.test.js` | ~20 tests: render, enable logic, parse flows, budget, error, cancel, destroy | ~300 |
+
+##### Modified Files (6)
+
+| File | Change | ~Lines |
+|------|--------|--------|
+| `public/js/restaurantPairing.js` | Quick Pair banner on Step 1, trigger handler, `restaurant:refine` listener, `setQuickPairMode(true)` in `runQuickPairFlow`, class-based `setMode()` | ~30 |
+| `public/js/restaurantPairing/state.js` | `getQuickPairMode()`, `setQuickPairMode()`, reset in `clearState`/`invalidateResults` | ~15 |
+| `public/js/restaurantPairing/results.js` | Quick Pair warning banner + "Refine" button + `restaurant:refine` event dispatch | ~25 |
+| `public/css/components.css` | Quick Pair styles (~60), mode switch transition (~15), print styles (~35), reduced-motion (~25) | ~135 |
+| `public/index.html` | Remove `style="display: none;"` from `.restaurant-wizard`, add `mode-hidden` class | ~1 |
+| `public/sw.js` | Add `quickPair.js` to `STATIC_ASSETS`, bump `CACHE_VERSION` | ~2 |
+
+##### Updated Test Files (3)
+
+| File | New Tests |
 |------|-----------|
-| **Quick Pair UI** | Trigger button + mini parse form → `runQuickPairFlow()`. Needs its own component + tests. Controller export is ready. |
-| **Mode switch animation** | Plan referenced "fade out" but implementation uses `display: none/block`. Add opacity transition for perceived smoothness. |
-| **Print styles** | `@media print` for result cards — users may screenshot/print at table. |
-| **`prefers-reduced-motion`** | Already safe (no `transform` on hover), but could add explicit `@media (prefers-reduced-motion: reduce)` for animation opt-out. |
+| `tests/unit/restaurantPairing/state.test.js` | 4 tests (get/set quickPairMode, clearState resets, invalidateResults resets) |
+| `tests/unit/restaurantPairing/restaurantPairing.test.js` | 5 tests (banner, trigger, onComplete, onCancel, refine event) |
+| `tests/unit/restaurantPairing/results.test.js` | 3 tests (warning renders, warning hidden, refine dispatches event) |
+
+---
+
+#### F.6 Implementation Order
+
+**Cluster 1: Quick Pair (F.1)** — Implement + audit before polish
+
+| Step | Task | Files |
+|------|------|-------|
+| F.1a | State additions | `state.js` (add `quickPairMode` flag + tests) |
+| F.1b | Quick Pair module + tests | `quickPair.js` + `quickPair.test.js` |
+| F.1c | Controller updates | `restaurantPairing.js` (banner, trigger, refine listener, `setQuickPairMode`) |
+| F.1d | Results updates | `results.js` (warning banner + refine button) |
+| F.1e | CSS + SW | `components.css` (Quick Pair styles), `sw.js` (add file + bump) |
+
+Run: `npm run test:unit` — all existing + ~32 new tests pass.
+Audit focus: Parse budget accounting, lifecycle (destroy when switching back to full wizard), no circular imports (refine uses CustomEvent), `resizeImage` integration, form enable/disable logic.
+
+**Cluster 2: CSS Polish (F.2 + F.3 + F.4)** — Low risk, execute together
+
+| Step | Task | Files |
+|------|------|-------|
+| F.2 | Mode switch animation | `components.css` (transition rules), `restaurantPairing.js` (class-based setMode), `index.html` (remove inline style) |
+| F.3 | Print styles | `components.css` (append `@media print` block) |
+| F.4 | Reduced motion | `components.css` (append `@media (prefers-reduced-motion)` block) |
+
+Run: `npm run test:unit` — update mode toggle tests for class-based approach.
+Manual: Toggle modes → verify fade transition. Print preview → verify result cards only. OS reduced-motion → verify no transitions.
+
+---
+
+#### F.7 Verification Checklist
+
+##### Automated
+
+1. `npm run test:unit` — all tests pass (expected ~1665, up from 1630)
+2. `npm run lint` — no new errors
+3. `node --check public/sw.js` — syntax valid
+4. `apiAuthHeaders.test.js` — `quickPair.js` detected and scanned
+
+##### Manual — Quick Pair
+
+5. Restaurant mode → Step 1 → Quick Pair banner visible
+6. Click "⚡ Quick Pair" → inline form replaces capture widget
+7. Take/upload ONE photo → thumbnail shown, status updated
+8. Type dishes (one per line) → "Get Pairings" enabled
+9. Tap "Get Pairings" → loading spinner → results page
+10. Results show confidence warning banner + "Refine" button
+11. Tap "Refine" → navigates to Step 2 (wine review with parsed data)
+12. "Use Full Wizard" → returns to Step 1 capture widget
+13. Parse budget: after 10 parses → camera/file buttons disabled in Quick Pair form
+14. Network error during parse → toast, form re-enabled (not stuck)
+
+##### Manual — CSS Polish
+
+15. Toggle cellar ↔ restaurant → smooth 200ms fade (not instant cut)
+16. `prefers-reduced-motion: reduce` in OS settings → no fade transition
+17. Print Preview on results page → only result cards + summary shown
+18. Step indicator has no transition with `prefers-reduced-motion`
+
+##### Manual — Edge Cases
+
+19. Quick Pair with image only (no dishes) → results rendered (wines only)
+20. Quick Pair with dishes only (no photo) → results rendered (dishes only, no parse call)
+21. Quick Pair → Start Over → confirms → returns to Step 1 (not Quick Pair form)
+22. Quick Pair → get results → navigate to Step 2 → modify selections → Step 4 → no Quick Pair warning (quickPairMode reset by `invalidateResults`)
+
+---
+
+### Phase E — Done (2026-02-08)
+
+**All 5 files modified, 0 new files created. 1630 unit tests passing.**
+
+#### Changes Made
+
+| File | Lines Changed | Summary |
+|------|--------------|---------|
+| `public/css/variables.css` | +2 | Added `--red-wine-rgb` and `--sage-green-rgb` CSS variables for card tints |
+| `public/index.html` | +12, -1 | Mode toggle (tablist/tab ARIA), `.pairing-cellar-section` wrapper, `.restaurant-wizard` container, removed stray `</div>` |
+| `public/css/components.css` | +505 | Full `.restaurant-*` namespaced styles (E.2.1–E.2.15): mode toggle, step indicator, wine/dish cards, triage, navigation, image capture, filters, card internals, forms, results, chat, dish review, responsive (480px + 768px) |
+| `public/js/app.js` | +2 | Import `initRestaurantPairing`, call after `initSommelier()` |
+| `public/sw.js` | +20, ~3 | Bumped `CACHE_VERSION` to `v99`, CSS versions to `20260208a`, added 6 restaurant pairing modules + 14 `api/*.js` sub-modules to `STATIC_ASSETS` |
+
+#### Audit Notes
+
+- **No JS logic changed** — all styles are CSS-only, HTML is structural wrappers + toggle
+- **Backward compatible** — existing cellar pairing (sommelier + manual) untouched
+- **Accessibility** — `role="tablist"`, `role="tab"`, `role="tabpanel"`, `aria-selected`, `aria-controls`, `aria-labelledby` on mode toggle
+- **Gestalt principles applied** — Closure (wizard border), Continuity (step indicator line), Similarity (burgundy wine / sage dish cards), Figure-Ground (active/dimmed states), Proximity (grouped filters)
+- **Pre-existing bug fixed** — 14 `api/*.js` sub-modules were missing from `sw.js` STATIC_ASSETS (offline caching gap)
