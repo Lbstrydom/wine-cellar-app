@@ -367,7 +367,6 @@ router.delete('/:id', validateParams(storageAreaIdSchema), asyncHandler(async (r
  * @returns {Object} Created storage area
  */
 router.post('/from-template', validateBody(fromTemplateSchema), asyncHandler(async (req, res) => {
-  const { cellarId } = req;
   const { template, name: overrideName, notes: overrideNotes } = req.body;
 
   // Template definitions (canonical format with explicit rows)

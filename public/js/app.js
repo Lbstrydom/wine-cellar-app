@@ -28,6 +28,7 @@ import { escapeHtml, showToast } from './utils.js';
 import { initVirtualList, updateVirtualList, destroyVirtualList } from './virtualList.js';
 import { initGlobalSearch } from './globalSearch.js';
 import { initAccessibility } from './accessibility.js';
+import { initRestaurantPairing } from './restaurantPairing.js';
 import { initRecommendations } from './recommendations.js';
 import { initErrorBoundary } from './errorBoundary.js';
 import { addTrackedListener, cleanupNamespace } from './eventManager.js';
@@ -301,6 +302,7 @@ async function startAuthenticatedApp() {
   // Initialise modules
   initModals();
   initSommelier();
+  initRestaurantPairing();
   initSettings();
   initCellarAnalysis();
   initGlobalSearch();
@@ -478,7 +480,7 @@ async function initAuth() {
           console.log('[Auth] Token audience:', payload.aud);
           console.log('[Auth] Token expires:', new Date(payload.exp * 1000).toISOString());
         }
-      } catch (e) {
+      } catch (_e) {
         console.log('[Auth] Could not decode token for diagnostics');
       }
     } else if (hasCodeParam) {

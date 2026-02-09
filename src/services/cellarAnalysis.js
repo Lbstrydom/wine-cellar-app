@@ -13,12 +13,12 @@ import { getActiveZoneMap } from './cellarAllocation.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import { parseSlot, analyseZone, getWinesInRows } from './cellarMetrics.js';
-import { generateZoneNarratives, shouldTriggerAIReview } from './cellarNarratives.js';
+import { generateZoneNarratives } from './cellarNarratives.js';
 import {
   generateMoveSuggestions,
   buildZoneCapacityAlerts
 } from './cellarSuggestions.js';
-import { getEffectiveDrinkByYear, getFridgeCandidates } from './drinkingStrategy.js';
+// Re-exported below via barrel re-exports
 
 // ───────────────────────────────────────────────────────────
 // Main orchestrator

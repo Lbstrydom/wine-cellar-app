@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260207a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260208a">
 </head>
 <body>
   <header>
@@ -301,8 +301,21 @@
 
   <!-- Pairing View -->
   <div class="view" id="view-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
-    <!-- Sommelier section -->
-    <div class="natural-pairing">
+    <!-- Mode Toggle -->
+    <div class="restaurant-mode-toggle form-toggle" role="tablist" aria-label="Pairing mode">
+      <button class="toggle-btn active" data-mode="cellar" type="button"
+              id="tab-cellar" role="tab" aria-selected="true"
+              aria-controls="pairing-cellar-section">From My Cellar</button>
+      <button class="toggle-btn" data-mode="restaurant" type="button"
+              id="tab-restaurant" role="tab" aria-selected="false"
+              aria-controls="restaurant-wizard">At a Restaurant</button>
+    </div>
+
+    <!-- Cellar Mode (existing content, wrapped) -->
+    <div class="pairing-cellar-section" id="pairing-cellar-section" role="tabpanel"
+         aria-labelledby="tab-cellar">
+      <!-- Sommelier section -->
+      <div class="natural-pairing">
       <h2 class="view-title">Ask the Sommelier</h2>
       <input type="text" id="dish-input" placeholder="Describe your dish... e.g., 'grilled salmon with lemon butter'" />
       <div class="pairing-filters">
@@ -356,6 +369,11 @@
     <div class="pairing-results" id="pairing-results">
       <p class="text-muted">Select dish characteristics above</p>
     </div>
+    </div>
+
+    <!-- Restaurant Mode (new — hidden by default) -->
+    <div class="restaurant-wizard mode-hidden" id="restaurant-wizard" role="tabpanel"
+         aria-labelledby="tab-restaurant" aria-hidden="true"></div>
 
     <!-- Pairing Feedback Modal -->
     <div class="modal-overlay" id="pairing-feedback-modal" style="display:none;" role="dialog" aria-modal="true" aria-labelledby="pairing-feedback-title">
@@ -383,7 +401,6 @@
           </div>
         </form>
       </div>
-    </div>
     </div>
 
   </div>

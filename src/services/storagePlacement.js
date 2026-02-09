@@ -61,7 +61,7 @@ const STORAGE_ADJUSTMENT_FACTORS = {
 export function categorizeWineType(wine) {
   // Check tasting profile for palate characteristics
   const profile = wine.tasting_profile || {};
-  const { tannins, acidity, body, maturity, cellarAge } = profile;
+  const { tannins, acidity, body } = profile;
 
   // Sparkling wines
   if (wine.colour?.includes('sparkling')) {

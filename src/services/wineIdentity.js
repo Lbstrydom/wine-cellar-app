@@ -4,7 +4,7 @@
  * @module services/wineIdentity
  */
 
-import logger from '../utils/logger.js';
+// logger reserved for future use
 
 /**
  * Generate identity tokens from wine data.
@@ -136,7 +136,7 @@ export function calculateIdentityScore(text, identityTokens) {
   const { identity, negative } = identityTokens;
 
   let score = 0;
-  let matches = {
+  const matches = {
     producerMatch: false,
     vintageMatch: false,
     rangeMatch: false,
@@ -361,7 +361,7 @@ function getProducerAliases(producerName) {
  * @param {number} targetVintage - Target vintage year
  * @returns {string[]} Vintage patterns to reject
  */
-function getWrongVintagePatterns(targetVintage) {
+function getWrongVintagePatterns(_targetVintage) {
   // Don't return vintage patterns here - they're checked separately in calculateIdentityScore
   // to avoid false rejections on text containing multiple vintages
   return [];

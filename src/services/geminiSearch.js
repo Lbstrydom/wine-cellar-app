@@ -213,7 +213,7 @@ function buildWineSearchQuery(wineName, vintage, producer) {
   const parts = [];
 
   // Clean wine name (remove redundant producer if in name)
-  let cleanName = wineName;
+  const cleanName = wineName;
   if (producer && cleanName.toLowerCase().includes(producer.toLowerCase())) {
     // Producer already in name
   } else if (producer) {
@@ -311,7 +311,7 @@ Rules: Only verified data. Empty array/null for missing. No markdown, no explana
     // Extract JSON from response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
     if (jsonMatch) {
-      let jsonStr = jsonMatch[0];
+      const jsonStr = jsonMatch[0];
       let extracted;
 
       // First attempt: direct parse

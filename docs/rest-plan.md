@@ -2353,3 +2353,43 @@ Manual: Toggle modes → verify fade transition. Print preview → verify result
 - **Accessibility** — `role="tablist"`, `role="tab"`, `role="tabpanel"`, `aria-selected`, `aria-controls`, `aria-labelledby` on mode toggle
 - **Gestalt principles applied** — Closure (wizard border), Continuity (step indicator line), Similarity (burgundy wine / sage dish cards), Figure-Ground (active/dimmed states), Proximity (grouped filters)
 - **Pre-existing bug fixed** — 14 `api/*.js` sub-modules were missing from `sw.js` STATIC_ASSETS (offline caching gap)
+
+---
+
+### Phase F — Done (2026-02-08)
+
+**1665 unit tests passing (35 new). 2 new files, 8 modified files.**
+
+#### Cluster 1: Quick Pair (F.1)
+
+| File | Type | Summary |
+|------|------|---------|
+| `public/js/restaurantPairing/quickPair.js` | **New** (~200 lines) | Quick Pair inline form: single image + dish text → parse → merge → onComplete |
+| `tests/unit/restaurantPairing/quickPair.test.js` | **New** (~300 lines) | 23 tests: render, enable logic, image selection, parse flow, zero wines, budget, error, cancel, destroy, char counter |
+| `public/js/restaurantPairing/state.js` | Modified | `quickPairMode` flag (get/set), reset in `invalidateResults()` + `clearState()` |
+| `public/js/restaurantPairing.js` | Modified | Quick Pair banner on Step 1, trigger → renderQuickPair, `runQuickPairFlow()` (no params, sets quickPairMode), `restaurant:refine` event listener, sub-container for capture widget |
+| `public/js/restaurantPairing/results.js` | Modified | Quick Pair warning banner + "Refine" button (dispatches `restaurant:refine` CustomEvent) |
+| `public/css/components.css` | Modified | ~80 lines Quick Pair CSS (banner, trigger, form, thumb, actions, loading, warning, refine) |
+| `public/sw.js` | Modified | Bumped to `v100`, added `quickPair.js` to STATIC_ASSETS |
+| `tests/unit/restaurantPairing/state.test.js` | Modified | +4 tests (quickPairMode get/set/clear/invalidate) |
+| `tests/unit/restaurantPairing/restaurantPairing.test.js` | Modified | Updated Quick Pair test (no-arg signature), +5 tests (banner, trigger, onComplete, onCancel, refine event) |
+| `tests/unit/restaurantPairing/results.test.js` | Modified | +3 tests (warning renders, warning hidden, refine dispatches event) |
+
+#### Cluster 2: CSS Polish (F.2 + F.3 + F.4)
+
+| File | Type | Summary |
+|------|------|---------|
+| `public/index.html` | Modified | Replaced `style="display: none;"` with `mode-hidden` class + `aria-hidden="true"` on `.restaurant-wizard` |
+| `public/js/restaurantPairing.js` | Modified | `setMode()` now uses `classList.add/remove('mode-hidden')` + `aria-hidden` instead of `style.display` |
+| `public/css/components.css` | Modified | +12 lines mode switch transition (opacity 0.2s + `.mode-hidden`), +35 lines `@media print`, +25 lines `@media (prefers-reduced-motion: reduce)` |
+| `public/sw.js` | Modified | Bumped to `v101`, components.css version to `20260208c` |
+| `tests/unit/restaurantPairing/restaurantPairing.test.js` | Modified | Mode toggle tests updated: `classList.contains('mode-hidden')` + `aria-hidden` instead of `style.display` |
+
+#### Audit Notes
+
+- **Quick Pair lifecycle**: Trigger replaces capture widget → onComplete merges data + jumps to Step 4 → onCancel returns to full Step 1. Destroy aborts in-flight parse via AbortController
+- **No circular imports**: Results→Controller communication uses `CustomEvent('restaurant:refine', { bubbles: true })`
+- **Parse budget shared**: Same `parseBudget` object ref used by Quick Pair and full wizard
+- **Mode switch**: Class-based approach enables CSS opacity transition (200ms fade). `aria-hidden` toggled for screen readers. `prefers-reduced-motion` disables all transitions
+- **Print styles**: Hide navigation, chat, options — only results + summary visible
+- **Bug fixed during implementation**: `createImageCapture` was wiping Quick Pair banner (shared `stepContainer` innerHTML). Fixed by using sub-container for capture widget

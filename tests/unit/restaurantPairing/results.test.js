@@ -40,6 +40,7 @@ let currentSelectedWines = [];
 let currentSelectedDishes = [];
 let currentResults = null;
 let currentChatId = null;
+let currentQuickPairMode = false;
 
 vi.mock('../../../public/js/restaurantPairing/state.js', () => ({
   getSelectedWines: vi.fn(() => currentSelectedWines),
@@ -47,7 +48,9 @@ vi.mock('../../../public/js/restaurantPairing/state.js', () => ({
   getResults: vi.fn(() => currentResults),
   setResults: vi.fn((r) => { currentResults = r; }),
   getChatId: vi.fn(() => currentChatId),
-  setChatId: vi.fn((id) => { currentChatId = id; })
+  setChatId: vi.fn((id) => { currentChatId = id; }),
+  getQuickPairMode: vi.fn(() => currentQuickPairMode),
+  setQuickPairMode: vi.fn((val) => { currentQuickPairMode = !!val; })
 }));
 
 vi.mock('../../../public/js/api.js', () => ({
@@ -61,7 +64,7 @@ vi.mock('../../../public/js/utils.js', () => ({
 }));
 
 const { renderResults, destroyResults, requestRecommendations } = await import('../../../public/js/restaurantPairing/results.js');
-const { setResults: setResultsMock, setChatId: setChatIdMock } = await import('../../../public/js/restaurantPairing/state.js');
+const { setResults: setResultsMock, setChatId: setChatIdMock, setQuickPairMode: setQuickPairModeMock } = await import('../../../public/js/restaurantPairing/state.js');
 const { getRecommendations: getRecommendationsMock, restaurantChat: restaurantChatMock } = await import('../../../public/js/api.js');
 const { showToast } = await import('../../../public/js/utils.js');
 
@@ -74,6 +77,7 @@ describe('results', () => {
     currentSelectedDishes = mockDishes.map(d => ({ ...d }));
     currentResults = null;
     currentChatId = null;
+    currentQuickPairMode = false;
     container = document.createElement('div');
     container.id = 'test-results';
     document.body.appendChild(container);
@@ -365,6 +369,40 @@ describe('results', () => {
 
       const cards = container.querySelectorAll('.restaurant-result-card');
       expect(cards.length).toBe(0);
+    });
+  });
+
+  // --- Quick Pair Warning ---
+
+  describe('quick pair warning', () => {
+    it('renders warning banner when quickPairMode is true', () => {
+      currentQuickPairMode = true;
+      renderResults('test-results');
+
+      const warning = container.querySelector('.restaurant-quick-pair-warning');
+      expect(warning).toBeTruthy();
+      expect(warning.textContent).toContain('Quick Pair');
+    });
+
+    it('does not render warning when quickPairMode is false', () => {
+      currentQuickPairMode = false;
+      renderResults('test-results');
+
+      const warning = container.querySelector('.restaurant-quick-pair-warning');
+      expect(warning).toBeFalsy();
+    });
+
+    it('refine button dispatches restaurant:refine event', () => {
+      currentQuickPairMode = true;
+      renderResults('test-results');
+
+      const handler = vi.fn();
+      container.addEventListener('restaurant:refine', handler);
+
+      container.querySelector('.restaurant-refine-btn').click();
+
+      expect(handler).toHaveBeenCalledTimes(1);
+      expect(setQuickPairModeMock).toHaveBeenCalledWith(false);
     });
   });
 

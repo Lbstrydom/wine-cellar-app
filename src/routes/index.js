@@ -63,7 +63,7 @@ router.get('/public-config', (req, res) => {
 
 // Client error logging (optional auth)
 router.post('/errors/log', optionalAuth, (req, res) => {
-  const { context, message, stack, userAgent, url } = req.body || {};
+  const { context, message, url } = req.body || {};
   const userId = req.user?.id || null;
   const safeContext = typeof context === 'string' ? context.slice(0, 120) : 'ClientError';
   const safeMessage = typeof message === 'string' ? message.slice(0, 2000) : 'Unknown error';

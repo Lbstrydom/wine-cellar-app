@@ -244,7 +244,6 @@ export function parseRobotsTxt(content) {
   if (!content) return { rules, crawlDelay: null };
 
   const lines = content.split('\n');
-  let currentUserAgent = '*';
   let isRelevantSection = true; // We're a generic crawler
 
   for (const line of lines) {
@@ -259,7 +258,6 @@ export function parseRobotsTxt(content) {
 
     switch (directive) {
       case 'user-agent':
-        currentUserAgent = value;
         isRelevantSection = value === '*' || value.toLowerCase().includes('wine-cellar') || value.toLowerCase().includes('winecellar');
         break;
 
@@ -302,7 +300,7 @@ export function parseRobotsTxt(content) {
  * @param {string} userAgent - User agent (ignored for now, using *)
  * @returns {boolean}
  */
-export function checkPathAgainstRules(path, rules, userAgent) {
+export function checkPathAgainstRules(path, rules, _userAgent) {
   if (!rules) return true;
 
   // Normalize path

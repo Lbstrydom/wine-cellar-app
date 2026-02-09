@@ -7924,6 +7924,109 @@ body.move-guide-active #view-grid {
   margin-bottom: 0.75rem;
 }
 
+/* --- Mode Switch Transition --- */
+
+.pairing-cellar-section,
+.restaurant-wizard {
+  transition: opacity 0.2s ease-in-out;
+}
+.pairing-cellar-section.mode-hidden,
+.restaurant-wizard.mode-hidden {
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  visibility: hidden;
+}
+
+/* --- Quick Pair --- */
+
+.restaurant-quick-pair-banner {
+  background: rgba(var(--accent-rgb), 0.08);
+  border: 1px dashed var(--accent);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.restaurant-quick-pair-trigger {
+  font-size: var(--font-md);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.restaurant-quick-pair-form {
+  padding: 0.5rem 0;
+}
+
+.restaurant-quick-pair-title {
+  font-size: var(--font-md);
+  margin-bottom: 0.25rem;
+}
+
+.restaurant-quick-pair-section {
+  margin-bottom: 1rem;
+}
+
+.restaurant-quick-pair-label {
+  display: block;
+  font-weight: 600;
+  font-size: var(--font-sm);
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.restaurant-quick-pair-image-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.restaurant-quick-pair-image-status {
+  font-size: var(--font-xs);
+}
+
+.restaurant-quick-pair-thumb {
+  margin-top: 0.5rem;
+  max-width: 120px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.restaurant-quick-pair-thumb img {
+  width: 100%;
+  display: block;
+}
+
+.restaurant-quick-pair-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.restaurant-quick-pair-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  color: var(--text-muted);
+}
+
+/* Confidence warning on Quick Pair results */
+.restaurant-quick-pair-warning {
+  background: var(--color-warning-bg);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  font-size: var(--font-sm);
+}
+
+.restaurant-refine-btn {
+  font-weight: 600;
+  margin-left: 0.25rem;
+}
+
 /* --- Responsive: Mobile (max-width: 480px) --- */
 
 @media (max-width: 480px) {
@@ -7993,5 +8096,87 @@ body.move-guide-active #view-grid {
   }
   .restaurant-step-indicator-item + .restaurant-step-indicator-item::before {
     width: 16px;
+  }
+}
+
+/* --- Print Styles --- */
+
+@media print {
+  /* Hide everything except results */
+  .restaurant-mode-toggle,
+  .restaurant-wizard-header,
+  .restaurant-nav-bar,
+  .restaurant-quick-pair-banner,
+  .restaurant-chat-section,
+  .restaurant-results-options,
+  .restaurant-results-actions,
+  .restaurant-results-loading {
+    display: none !important;
+  }
+
+  /* Full-width results */
+  .restaurant-wizard {
+    border: none;
+    padding: 0;
+    background: white;
+  }
+
+  .restaurant-results-cards {
+    grid-template-columns: 1fr;
+  }
+
+  /* Ensure cards are visible (not dimmed) */
+  .restaurant-result-card {
+    break-inside: avoid;
+    border: 1px solid #ccc;
+    margin-bottom: 0.5rem;
+  }
+
+  /* Table wine suggestion — prominent */
+  .restaurant-table-wine-card {
+    border: 2px solid #333;
+    padding: 0.75rem;
+    break-inside: avoid;
+  }
+
+  /* Summary bar — keep visible */
+  .restaurant-results-summary {
+    font-size: 14pt;
+    margin-bottom: 1rem;
+  }
+}
+
+/* --- Reduced Motion --- */
+
+@media (prefers-reduced-motion: reduce) {
+  .restaurant-step-indicator-item {
+    transition: none;
+  }
+
+  .pairing-cellar-section,
+  .restaurant-wizard {
+    transition: none;
+  }
+
+  .restaurant-wine-card,
+  .restaurant-dish-card {
+    transition: none;
+  }
+
+  .restaurant-quick-pair-banner {
+    transition: none;
+  }
+
+  .restaurant-result-card {
+    transition: none;
+  }
+
+  .restaurant-wine-remove,
+  .restaurant-dish-remove {
+    transition: none;
+  }
+
+  .restaurant-chat-message {
+    animation: none;
   }
 }

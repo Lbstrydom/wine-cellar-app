@@ -25,9 +25,9 @@ const COLOURS = [
 /** @type {Array<{el: Element, event: string, handler: Function}>} */
 let listeners = [];
 /** @type {Array<{el: Element, event: string, handler: Function}>} Re-created on each card render */
-let cardListeners = [];
+const cardListeners = [];
 /** @type {Array<{el: Element, event: string, handler: Function}>} Re-created on each chip render */
-let chipListeners = [];
+const chipListeners = [];
 /** @type {HTMLElement|null} */
 let rootContainer = null;
 

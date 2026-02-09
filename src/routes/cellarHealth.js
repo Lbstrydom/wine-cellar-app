@@ -10,7 +10,6 @@ import {
   getAtRiskWines,
   generateShoppingList
 } from '../services/cellarHealth.js';
-import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();

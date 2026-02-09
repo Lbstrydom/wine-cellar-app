@@ -653,7 +653,7 @@ function showReportModal(wineId) {
  * Show edit drinking window modal.
  * @param {number} wineId - Wine ID
  */
-function showEditWindowModal(wineId) {
+function showEditWindowModal(_wineId) {
   // Trigger existing drinking window edit modal if available
   const manualEntry = document.getElementById('manual-window-entry');
   if (manualEntry) {

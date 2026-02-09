@@ -9,7 +9,7 @@
  */
 
 import { CELLAR_ZONES } from './cellarZones.js';
-import { normalizeGrape, stripDiacritics } from '../utils/wineNormalization.js';
+import { normalizeGrape } from '../utils/wineNormalization.js';
 
 /**
  * Module-private grape→colour map.

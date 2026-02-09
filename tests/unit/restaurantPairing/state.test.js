@@ -432,6 +432,35 @@ describe('Restaurant Pairing State', () => {
   });
 
   // =========================================================================
+  // Quick Pair Mode
+  // =========================================================================
+
+  describe('quickPairMode', () => {
+    it('defaults to false', () => {
+      expect(mod.getQuickPairMode()).toBe(false);
+    });
+
+    it('persists true to sessionStorage', () => {
+      mod.setQuickPairMode(true);
+      expect(mod.getQuickPairMode()).toBe(true);
+      expect(JSON.parse(storage.get('wineapp.restaurant.quickPairMode'))).toBe(true);
+    });
+
+    it('clearState resets quickPairMode to false', () => {
+      mod.setQuickPairMode(true);
+      mod.clearState();
+      expect(mod.getQuickPairMode()).toBe(false);
+      expect(storage.get('wineapp.restaurant.quickPairMode')).toBeUndefined();
+    });
+
+    it('invalidateResults resets quickPairMode to false', () => {
+      mod.setQuickPairMode(true);
+      mod.invalidateResults();
+      expect(JSON.parse(storage.get('wineapp.restaurant.quickPairMode'))).toBe(false);
+    });
+  });
+
+  // =========================================================================
   // Corrupted sessionStorage (Finding 1)
   // =========================================================================
 

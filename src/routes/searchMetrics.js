@@ -77,7 +77,7 @@ router.get('/search/history', asyncHandler(async (req, res) => {
  * }
  */
 router.post('/search/record', asyncHandler(async (req, res) => {
-  const { summary, apiCalls, cache, byDomain: _byDomain, byLens: _byLens, accuracy } = req.body;
+  const { summary, apiCalls, byDomain: _byDomain, byLens: _byLens, accuracy } = req.body;
 
   if (!summary || !apiCalls) {
     return res.status(400).json({ error: 'Missing required metrics fields' });

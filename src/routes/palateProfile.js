@@ -13,7 +13,6 @@ import {
   getFoodTags,
   getOccasionTypes
 } from '../services/palateProfile.js';
-import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.js';
 import { feedbackSchema, palateWineIdSchema, recommendationsQuerySchema } from '../schemas/palateProfile.js';

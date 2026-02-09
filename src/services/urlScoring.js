@@ -4,9 +4,8 @@
  * @module services/urlScoring
  */
 
-import logger from '../utils/logger.js';
 import { calculateIdentityScore, calculateDiscoveryTokenOverlap } from './wineIdentity.js';
-import { LENS, SOURCE_REGISTRY } from '../config/unifiedSources.js';
+import { LENS } from '../config/unifiedSources.js';
 
 /**
  * Market-aware per-lens caps for URL selection.
@@ -79,7 +78,7 @@ export function getMarketCaps(market) {
  * @param {string} market - Market/country for caps
  * @returns {Array<Object>} Scored and ranked URLs
  */
-export function scoreAndRankUrls(urls, identityTokens, market = 'default') {
+export function scoreAndRankUrls(urls, identityTokens, _market = 'default') {
   if (!urls || urls.length === 0) return [];
 
   // Score each URL with identity and priority metrics

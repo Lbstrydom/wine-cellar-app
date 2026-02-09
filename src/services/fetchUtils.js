@@ -64,7 +64,7 @@ export function calculateDiscoveryConfidence(results) {
 
   // Weight by source type: producer sites are most confident
   let score = 0;
-  let resultCount = Math.min(results.length, 5); // Cap at 5 for confidence calculation
+  const resultCount = Math.min(results.length, 5); // Cap at 5 for confidence calculation
 
   for (let i = 0; i < resultCount; i++) {
     const result = results[i];

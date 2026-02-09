@@ -8,10 +8,12 @@
 import {
   getStep, setStep,
   getSelectedWines, getSelectedDishes,
-  mergeWines, mergeDishes,
-  hasData, clearState
+  mergeWines,
+  hasData, clearState,
+  setQuickPairMode
 } from './restaurantPairing/state.js';
 import { createImageCapture } from './restaurantPairing/imageCapture.js';
+import { renderQuickPair } from './restaurantPairing/quickPair.js';
 import { renderWineReview, destroyWineReview } from './restaurantPairing/wineReview.js';
 import { renderDishReview, destroyDishReview } from './restaurantPairing/dishReview.js';
 import { renderResults, destroyResults, requestRecommendations } from './restaurantPairing/results.js';
@@ -67,7 +69,37 @@ function renderStep(step) {
 
   switch (step) {
     case 1: {
-      const captureWidget = createImageCapture(stepContainer, {
+      // Quick Pair banner (only on Step 1)
+      const bannerHtml = `
+        <div class="restaurant-quick-pair-banner">
+          <button class="btn btn-link restaurant-quick-pair-trigger" type="button">
+            ⚡ Quick Pair — snap &amp; type → instant pairings
+          </button>
+        </div>`;
+      stepContainer.insertAdjacentHTML('afterbegin', bannerHtml);
+
+      // Wire Quick Pair trigger (tracked via addListener for cleanup)
+      const qpTrigger = stepContainer.querySelector('.restaurant-quick-pair-trigger');
+      addListener(qpTrigger, 'click', () => {
+        // Replace step content with quick pair form
+        destroyCurrentStep();
+        stepContainer.innerHTML = '';
+        const qp = renderQuickPair(stepContainer, {
+          parseBudget,
+          onComplete: async () => {
+            await runQuickPairFlow();
+          },
+          onCancel: () => {
+            renderStep(1); // Return to full Step 1
+          }
+        });
+        currentStepDestroy = () => qp.destroy();
+      });
+
+      // Sub-container for capture widget (so banner is preserved)
+      const captureContainer = document.createElement('div');
+      stepContainer.appendChild(captureContainer);
+      const captureWidget = createImageCapture(captureContainer, {
         type: 'wine_list',
         maxImages: 4,
         parseBudget,
@@ -190,20 +222,18 @@ async function handleStartOver() {
 // --- Quick Pair ---
 
 /**
- * Run Quick Pair flow: parse wine image + dish text → straight to results.
- * @param {Array} wineItems - Parsed wine items
- * @param {Array} dishItems - Parsed dish items
+ * Run Quick Pair flow: data already merged into state by quickPair.js.
+ * Sets quickPairMode flag, renders Step 4, and requests recommendations.
  */
-export async function runQuickPairFlow(wineItems, dishItems) {
+export async function runQuickPairFlow() {
   try {
-    mergeWines(wineItems);
-    mergeDishes(dishItems);
+    setQuickPairMode(true);
     renderStep(4);
     await requestRecommendations();
   } catch (err) {
     console.error('Quick Pair error:', err);
     showToast('Failed to get pairing recommendations', 'error');
-    throw err; // Re-throw for caller handling if needed
+    throw err;
   }
 }
 
@@ -218,11 +248,23 @@ function setMode(mode) {
   const wizard = wizardContainer;
 
   if (mode === 'restaurant') {
-    cellarSections.forEach(el => { el.style.display = 'none'; });
-    if (wizard) wizard.style.display = '';
+    cellarSections.forEach(el => {
+      el.classList.add('mode-hidden');
+      el.setAttribute('aria-hidden', 'true');
+    });
+    if (wizard) {
+      wizard.classList.remove('mode-hidden');
+      wizard.setAttribute('aria-hidden', 'false');
+    }
   } else {
-    cellarSections.forEach(el => { el.style.display = ''; });
-    if (wizard) wizard.style.display = 'none';
+    cellarSections.forEach(el => {
+      el.classList.remove('mode-hidden');
+      el.setAttribute('aria-hidden', 'false');
+    });
+    if (wizard) {
+      wizard.classList.add('mode-hidden');
+      wizard.setAttribute('aria-hidden', 'true');
+    }
   }
 
   // Update toggle buttons
@@ -312,6 +354,11 @@ export function initRestaurantPairing() {
         renderStep(targetStep);
       }
     });
+  });
+
+  // --- Bind refine event (dispatched from results.js, avoids circular import) ---
+  addListener(wizardContainer, 'restaurant:refine', () => {
+    renderStep(2);
   });
 
   // --- Bind mode toggle ---

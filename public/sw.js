@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v98';
+const CACHE_VERSION = 'v101';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -20,10 +20,10 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260207a',
-  '/css/variables.css?v=20260207a',
+  '/css/styles.css?v=20260208a',
+  '/css/variables.css?v=20260208a',
   '/css/layout.css?v=20260207a',
-  '/css/components.css?v=20260207a',
+  '/css/components.css?v=20260208c',
   '/css/themes.css?v=20260207a',
   '/css/accessibility.css?v=20260207a',
   '/js/theme-init.js',
@@ -52,6 +52,27 @@ const STATIC_ASSETS = [
   '/js/errorBoundary.js',
   '/js/eventManager.js',
   '/js/pairing.js',
+  '/js/restaurantPairing.js',
+  '/js/restaurantPairing/state.js',
+  '/js/restaurantPairing/imageCapture.js',
+  '/js/restaurantPairing/wineReview.js',
+  '/js/restaurantPairing/dishReview.js',
+  '/js/restaurantPairing/results.js',
+  '/js/restaurantPairing/quickPair.js',
+  '/js/api/base.js',
+  '/js/api/index.js',
+  '/js/api/profile.js',
+  '/js/api/wines.js',
+  '/js/api/ratings.js',
+  '/js/api/cellar.js',
+  '/js/api/settings.js',
+  '/js/api/awards.js',
+  '/js/api/acquisition.js',
+  '/js/api/palate.js',
+  '/js/api/health.js',
+  '/js/api/pairing.js',
+  '/js/api/restaurantPairing.js',
+  '/js/api/errors.js',
   '/vendor/supabase.js',
   '/manifest.json'
 ];

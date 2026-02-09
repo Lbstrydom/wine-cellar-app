@@ -30,7 +30,21 @@ vi.mock('../../../public/js/restaurantPairing/state.js', () => ({
   mergeWines: vi.fn((items) => items),
   mergeDishes: vi.fn((items) => items),
   hasData: vi.fn(() => currentHasData),
-  clearState: vi.fn(() => { currentStep = 1; currentHasData = false; })
+  clearState: vi.fn(() => { currentStep = 1; currentHasData = false; }),
+  setQuickPairMode: vi.fn()
+}));
+
+let quickPairOnComplete = null;
+let quickPairOnCancel = null;
+const quickPairDestroyFn = vi.fn();
+
+vi.mock('../../../public/js/restaurantPairing/quickPair.js', () => ({
+  renderQuickPair: vi.fn((container, options) => {
+    quickPairOnComplete = options.onComplete;
+    quickPairOnCancel = options.onCancel;
+    container.innerHTML = '<div class="mock-quick-pair">Quick Pair Form</div>';
+    return { destroy: quickPairDestroyFn };
+  })
 }));
 
 vi.mock('../../../public/js/restaurantPairing/imageCapture.js', () => ({
@@ -73,12 +87,13 @@ vi.mock('../../../public/js/utils.js', () => ({
 }));
 
 const { initRestaurantPairing, runQuickPairFlow, destroyRestaurantPairing } = await import('../../../public/js/restaurantPairing.js');
-const { setStep: setStepMock, mergeWines: mergeWinesMock, mergeDishes: mergeDishsMock, clearState: clearStateMock } = await import('../../../public/js/restaurantPairing/state.js');
+const { setStep: setStepMock, mergeWines: mergeWinesMock, mergeDishes: mergeDishsMock, clearState: clearStateMock, setQuickPairMode: setQuickPairModeMock } = await import('../../../public/js/restaurantPairing/state.js');
 const { createImageCapture } = await import('../../../public/js/restaurantPairing/imageCapture.js');
 const { renderWineReview, destroyWineReview } = await import('../../../public/js/restaurantPairing/wineReview.js');
 const { renderDishReview, destroyDishReview } = await import('../../../public/js/restaurantPairing/dishReview.js');
 const { renderResults, destroyResults, requestRecommendations } = await import('../../../public/js/restaurantPairing/results.js');
 const { showToast, showConfirmDialog } = await import('../../../public/js/utils.js');
+const { renderQuickPair } = await import('../../../public/js/restaurantPairing/quickPair.js');
 
 describe('restaurantPairing controller', () => {
   let wizard;
@@ -113,6 +128,8 @@ describe('restaurantPairing controller', () => {
     currentSelectedWines = [];
     currentSelectedDishes = [];
     captureOnAnalyze = null;
+    quickPairOnComplete = null;
+    quickPairOnCancel = null;
     setupDOM();
   });
 
@@ -174,8 +191,10 @@ describe('restaurantPairing controller', () => {
       restaurantBtn.click();
 
       const cellarSection = document.querySelector('.pairing-cellar-section');
-      expect(cellarSection.style.display).toBe('none');
-      expect(wizard.style.display).not.toBe('none');
+      expect(cellarSection.classList.contains('mode-hidden')).toBe(true);
+      expect(cellarSection.getAttribute('aria-hidden')).toBe('true');
+      expect(wizard.classList.contains('mode-hidden')).toBe(false);
+      expect(wizard.getAttribute('aria-hidden')).toBe('false');
       expect(restaurantBtn.getAttribute('aria-selected')).toBe('true');
     });
 
@@ -189,7 +208,8 @@ describe('restaurantPairing controller', () => {
       document.querySelector('[data-mode="cellar"]').click();
 
       const cellarSection = document.querySelector('.pairing-cellar-section');
-      expect(cellarSection.style.display).toBe('');
+      expect(cellarSection.classList.contains('mode-hidden')).toBe(false);
+      expect(cellarSection.getAttribute('aria-hidden')).toBe('false');
       // clearState should NOT have been called
       expect(clearStateMock).not.toHaveBeenCalled();
     });
@@ -312,18 +332,68 @@ describe('restaurantPairing controller', () => {
   // --- Quick Pair ---
 
   describe('quick pair', () => {
-    it('merges items, renders step 4, and calls requestRecommendations', async () => {
+    it('sets quickPairMode, renders step 4, and calls requestRecommendations', async () => {
       initRestaurantPairing();
 
-      const wineItems = [{ name: 'Cab Sauv', colour: 'red' }];
-      const dishItems = [{ name: 'Lamb Chops', category: 'Main' }];
+      await runQuickPairFlow();
 
-      await runQuickPairFlow(wineItems, dishItems);
-
-      expect(mergeWinesMock).toHaveBeenCalledWith(wineItems);
-      expect(mergeDishsMock).toHaveBeenCalledWith(dishItems);
+      expect(setQuickPairModeMock).toHaveBeenCalledWith(true);
       expect(renderResults).toHaveBeenCalledTimes(1);
       expect(requestRecommendations).toHaveBeenCalledTimes(1);
+    });
+
+    it('renders Quick Pair banner on Step 1', () => {
+      initRestaurantPairing();
+
+      const banner = wizard.querySelector('.restaurant-quick-pair-banner');
+      expect(banner).toBeTruthy();
+      expect(banner.querySelector('.restaurant-quick-pair-trigger')).toBeTruthy();
+    });
+
+    it('trigger click replaces content with Quick Pair form', () => {
+      initRestaurantPairing();
+
+      wizard.querySelector('.restaurant-quick-pair-trigger').click();
+
+      expect(renderQuickPair).toHaveBeenCalledTimes(1);
+      expect(wizard.querySelector('.mock-quick-pair')).toBeTruthy();
+    });
+
+    it('Quick Pair onComplete calls runQuickPairFlow', async () => {
+      initRestaurantPairing();
+
+      wizard.querySelector('.restaurant-quick-pair-trigger').click();
+
+      await quickPairOnComplete();
+
+      expect(setQuickPairModeMock).toHaveBeenCalledWith(true);
+      expect(renderResults).toHaveBeenCalledTimes(1);
+      expect(requestRecommendations).toHaveBeenCalledTimes(1);
+    });
+
+    it('Quick Pair onCancel returns to Step 1', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-quick-pair-trigger').click();
+      vi.clearAllMocks();
+
+      quickPairOnCancel();
+
+      expect(createImageCapture).toHaveBeenCalledTimes(1);
+      expect(setStepMock).toHaveBeenCalledWith(1);
+    });
+  });
+
+  // --- Refine Event ---
+
+  describe('restaurant:refine event', () => {
+    it('navigates to Step 2 when refine event is dispatched', () => {
+      initRestaurantPairing();
+      vi.clearAllMocks();
+
+      wizard.dispatchEvent(new CustomEvent('restaurant:refine', { bubbles: true }));
+
+      expect(renderWineReview).toHaveBeenCalledTimes(1);
+      expect(setStepMock).toHaveBeenCalledWith(2);
     });
   });
 

@@ -468,8 +468,11 @@ async function searchGoogleForVivino(query, vintage, apiKey, serpZone, webZone) 
 
   logger.info('VivinoSearch', `Google query: "${googleQuery}"`);
 
+  let cleanup = () => {};
   try {
-    const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.SERP_API_TIMEOUT);
+    const result = createTimeoutAbort(TIMEOUTS.SERP_API_TIMEOUT);
+    const controller = result.controller;
+    cleanup = result.cleanup;
 
     // Use SERP API if zone is configured, otherwise fall back to Web Unlocker
     let response;

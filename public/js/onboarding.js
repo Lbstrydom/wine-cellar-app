@@ -65,7 +65,7 @@ function renderCountStep() {
 function renderDetailsStep() {
   const areas = getAreas();
   const list = document.createElement('div');
-  areas.forEach((a, idx) => {
+  areas.forEach((a, _idx) => {
     const card = document.createElement('div');
     card.className = 'area-card';
 
@@ -148,7 +148,7 @@ function renderLayoutStep() {
   const controls = document.createElement('div');
   controls.className = 'layout-controls';
 
-  areas.forEach((a, idx) => {
+  areas.forEach((a, _idx) => {
     const areaCtl = document.createElement('div');
     areaCtl.className = 'area-controls';
     const title = document.createElement('h3');

@@ -20,7 +20,7 @@ const CATEGORIES = ['Starter', 'Main', 'Dessert', 'Side', 'Sharing'];
 /** @type {Array<{el: Element, event: string, handler: Function}>} */
 let listeners = [];
 /** @type {Array<{el: Element, event: string, handler: Function}>} Re-created on each card render */
-let cardListeners = [];
+const cardListeners = [];
 /** @type {HTMLElement|null} */
 let rootContainer = null;
 /** @type {{getImages: Function, getText: Function, destroy: Function}|null} */

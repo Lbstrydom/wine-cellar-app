@@ -13,7 +13,6 @@ import {
   saveAcquiredWine,
   CONFIDENCE_LEVELS_EXPORT as CONFIDENCE_LEVELS
 } from '../services/acquisitionWorkflow.js';
-import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody } from '../middleware/validate.js';
 import { parseImageSchema, suggestPlacementSchema, enrichSchema, workflowSchema, saveAcquiredSchema } from '../schemas/acquisition.js';

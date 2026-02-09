@@ -278,7 +278,7 @@ function extractAllowedLinks(html, baseUrl, domain) {
  * @param {number} urlCacheId - URL cache ID
  * @param {Object} producerDomain - Producer domain record
  */
-async function extractAndCacheContent(url, content, urlCacheId, producerDomain) {
+async function extractAndCacheContent(url, content, urlCacheId, _producerDomain) {
   // Basic extraction - look for awards, medals, ratings
   const extracted = {
     awards: extractAwards(content),

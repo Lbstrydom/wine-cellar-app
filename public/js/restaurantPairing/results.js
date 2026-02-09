@@ -8,7 +8,8 @@
 import {
   getSelectedWines, getSelectedDishes,
   getResults, setResults,
-  getChatId, setChatId
+  getChatId, setChatId,
+  getQuickPairMode, setQuickPairMode
 } from './state.js';
 import { getRecommendations, restaurantChat } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
@@ -30,7 +31,7 @@ const CHAT_SUGGESTIONS = [
 /** @type {Array<{el: Element, event: string, handler: Function}>} */
 let listeners = [];
 /** @type {Array<{el: Element, event: string, handler: Function}>} Re-created on chat re-render */
-let chatListeners = [];
+const chatListeners = [];
 /** @type {HTMLElement|null} */
 let rootContainer = null;
 
@@ -104,6 +105,26 @@ export function renderResults(containerId) {
   addListener(getPairingsBtn, 'click', () => {
     requestRecommendations();
   });
+
+  // --- Quick Pair warning banner ---
+  const isQuickPair = getQuickPairMode();
+  if (isQuickPair) {
+    const warningHtml = `
+      <div class="restaurant-quick-pair-warning" role="alert">
+        <strong>⚡ Quick Pair</strong> — Pairings based on best-guess parsing.
+        <button class="btn btn-link restaurant-refine-btn" type="button">
+          Refine for accuracy →
+        </button>
+      </div>`;
+    rootContainer.querySelector('.restaurant-results').insertAdjacentHTML('afterbegin', warningHtml);
+
+    const refineBtn = rootContainer.querySelector('.restaurant-refine-btn');
+    addListener(refineBtn, 'click', () => {
+      setQuickPairMode(false);
+      // Emit custom event for controller to handle (no circular import)
+      rootContainer.dispatchEvent(new CustomEvent('restaurant:refine', { bubbles: true }));
+    });
+  }
 
   // --- Render state ---
   updateSummary();

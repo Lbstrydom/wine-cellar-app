@@ -10,16 +10,13 @@
 
 import Anthropic from '@anthropic-ai/sdk';
 import logger from '../utils/logger.js';
-import { withCircuitBreaker, isCircuitOpen } from './circuitBreaker.js';
+// circuitBreaker reserved for future resilience patterns
 import { TIMEOUTS } from '../config/scraperConfig.js';
 import { calculateIdentityScore } from './wineIdentity.js';
 
 const BRIGHTDATA_API_KEY = process.env.BRIGHTDATA_API_KEY;
 const BRIGHTDATA_SERP_ZONE = process.env.BRIGHTDATA_SERP_ZONE;
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/serp/req';
-
-// Quick extraction timeout (should be fast for Tier 1)
-const SERP_AI_TIMEOUT_MS = 15000; // 15 seconds total (SERP fetch + quick Claude parse)
 
 /**
  * Create timeout AbortController.

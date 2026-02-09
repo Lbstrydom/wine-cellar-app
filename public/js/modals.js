@@ -452,7 +452,7 @@ async function handleDeleteWindow(wineId, source) {
  * Load and display serving temperature recommendation.
  * @param {number} wineId - Wine ID
  */
-async function loadServingTemperature(wineId) {
+async function _loadServingTemperature(wineId) {
   if (!wineId) return;
 
   const container = document.getElementById('serving-temp-display');

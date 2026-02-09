@@ -6,7 +6,7 @@
 import express from 'express';
 import db from '../db/index.js';
 import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellarAnalysis.js';
-import { findBestZone, findAvailableSlot } from '../services/cellarPlacement.js';
+import { findAvailableSlot } from '../services/cellarPlacement.js';
 import { getCellarOrganisationAdvice } from '../services/cellarAI.js';
 import { getZoneCapacityAdvice } from '../services/zoneCapacityAdvisor.js';
 import { analyseFridge, suggestFridgeOrganization } from '../services/fridgeStocking.js';

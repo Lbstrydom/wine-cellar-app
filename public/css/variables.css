@@ -142,6 +142,10 @@
   --color-bronze-rgb: 205, 127, 50;
   --color-gray-500-rgb: 158, 158, 158;
 
+  /* Restaurant pairing card tints */
+  --red-wine-rgb: 114, 47, 55;       /* matches --red-wine: #722F37 */
+  --sage-green-rgb: 76, 175, 80;     /* for dish card tint */
+
   /* Phase 2: Background helpers */
   --color-success-bg: rgba(var(--color-success-rgb), 0.2);
   --color-error-bg: rgba(var(--color-error-rgb), 0.2);

@@ -3,9 +3,6 @@
  * @module services/queryBuilder
  */
 
-import { detectLocaleHints } from '../config/rangeQualifiers.js';
-import { getSourcesForCountry, REGION_SOURCE_PRIORITY } from '../config/unifiedSources.js';
-
 /**
  * Country to Google locale mappings (gl parameter).
  */

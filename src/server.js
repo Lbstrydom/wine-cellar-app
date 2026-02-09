@@ -45,7 +45,7 @@ app.use('/api/restaurant-pairing', express.json({ limit: '5mb' }));
 
 // Normalize body-parser 413 to stable API error contract
 // (without this, express.json emits a raw 413 with non-standard shape)
-// eslint-disable-next-line no-unused-vars
+ 
 app.use('/api/restaurant-pairing', (err, _req, res, next) => {
   if (err.type === 'entity.too.large') {
     return res.status(413).json({ error: 'Request payload too large (max 5MB)' });

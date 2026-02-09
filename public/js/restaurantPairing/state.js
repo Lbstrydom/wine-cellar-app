@@ -12,7 +12,8 @@ const KEYS = {
   dishes:     'wineapp.restaurant.dishes',
   selections: 'wineapp.restaurant.selections',
   results:    'wineapp.restaurant.results',
-  chatId:     'wineapp.restaurant.chatId'
+  chatId:     'wineapp.restaurant.chatId',
+  quickPairMode: 'wineapp.restaurant.quickPairMode'
 };
 
 // --- Defaults ---
@@ -479,18 +480,38 @@ export function setChatId(chatId) {
   save(KEYS.chatId, chatId);
 }
 
+// --- Quick Pair Mode ---
+
+/**
+ * Get Quick Pair mode flag.
+ * @returns {boolean}
+ */
+export function getQuickPairMode() {
+  return load(KEYS.quickPairMode, false);
+}
+
+/**
+ * Set Quick Pair mode flag and persist.
+ * @param {boolean} val
+ */
+export function setQuickPairMode(val) {
+  save(KEYS.quickPairMode, !!val);
+}
+
 // --- Result Invalidation ---
 
 /**
  * Clear results and chatId when selections or items change.
  * Called automatically from mutation functions (setWineSelected,
  * setDishSelected, addWine, addDish, mergeWines, mergeDishes).
+ * Also resets quickPairMode (editing after Quick Pair = full wizard flow).
  */
 export function invalidateResults() {
   state.results = null;
   state.chatId = null;
   save(KEYS.results, null);
   save(KEYS.chatId, null);
+  save(KEYS.quickPairMode, false);
 }
 
 // --- Reset ---
@@ -522,3 +543,8 @@ export function clearState() {
     }
   } catch { /* storage unavailable — non-critical */ }
 }
+
+/**
+ * @typedef {typeof KEYS} StateKeys
+ * @internal exported only for tests that need to verify storage key names
+ */

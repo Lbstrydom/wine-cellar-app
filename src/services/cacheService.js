@@ -5,7 +5,6 @@
 
 import crypto from 'crypto';
 import db from '../db/index.js';
-import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 
 /**

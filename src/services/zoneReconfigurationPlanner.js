@@ -571,7 +571,7 @@ Constraints:
   const reviewResult = await reviewReconfigurationPlan(planWithSummary, reviewContext, { planId });
 
   let finalPlan = { ...planWithSummary };
-  let reviewTelemetry = reviewResult.telemetry || null;
+  const reviewTelemetry = reviewResult.telemetry || null;
 
   if (!reviewResult.skipped) {
     if (reviewResult.verdict === 'approve') {

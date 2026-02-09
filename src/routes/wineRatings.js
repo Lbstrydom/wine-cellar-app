@@ -11,7 +11,7 @@ import { validateBody, validateParams } from '../middleware/validate.js';
 import { wineIdSchema, personalRatingSchema } from '../schemas/wine.js';
 import { searchVivinoWines } from '../services/vivinoSearch.js';
 import { asyncHandler } from '../utils/errorResponse.js';
-import { calculateNextRetry, extractVivinoId, resolveExtractionMethod } from './wines.js';
+import { calculateNextRetry, extractVivinoId } from './wines.js';
 
 const router = Router();
 

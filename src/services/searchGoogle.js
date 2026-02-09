@@ -129,7 +129,7 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
       logger.info('Search', `Zero results for operator-based query; trying fallback without operators`);
 
       // Remove operators and retry
-      let simplifiedQuery = query
+      const simplifiedQuery = query
         .replace(/filetype:\S+/g, '') // Remove filetype operators
         .replace(/inurl:\S+/g, '') // Remove inurl operators
         .replace(/"([^"]*)"/g, '$1') // Convert exact phrases to plain text

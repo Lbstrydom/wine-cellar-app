@@ -4,8 +4,6 @@
  * @module services/nameProcessing
  */
 
-import { RANGE_QUALIFIERS } from './searchConstants.js';
-
 /**
  * Extract significant search tokens from wine name.
  * Removes articles, normalizes spacing, keeps meaningful words.
@@ -119,16 +117,7 @@ const GRAPE_VARIETIES_FOR_NAMES = [
  */
 export function generateWineNameVariations(wineName) {
   const variations = [wineName]; // Original ALWAYS first for precision matching
-  let detectedRangeQualifier = null;
-
-  // Detect if this wine has a range/tier qualifier
   const wineNameLower = wineName.toLowerCase();
-  for (const qualifier of RANGE_QUALIFIERS) {
-    if (wineNameLower.includes(qualifier)) {
-      detectedRangeQualifier = qualifier;
-      break;
-    }
-  }
 
   // Strip parentheses content and try as variation
   const withoutParens = wineName

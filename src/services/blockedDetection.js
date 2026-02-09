@@ -5,7 +5,7 @@
  * @module services/blockedDetection
  */
 
-import logger from '../utils/logger.js';
+// logger reserved for future use
 
 /**
  * Detection patterns for blocked/error pages.
@@ -91,7 +91,7 @@ const CONTENT_THRESHOLDS = {
  */
 export function detectBlocked(response, options = {}) {
   const { content = '', statusCode = 200 } = response;
-  const { domain = '', expectedSelectors = [] } = options;
+  const { expectedSelectors = [] } = options;
 
   // Quick exit: successful status but tiny content
   if (statusCode === 200 && content.length < CONTENT_THRESHOLDS.minContentLength) {
@@ -105,7 +105,6 @@ export function detectBlocked(response, options = {}) {
 
   // Quick exit: HTTP error codes
   if (statusCode >= 400 && statusCode < 600) {
-    const reason = getStatusCodeReason(statusCode);
     return {
       blocked: true,
       reason: `http_${statusCode}`,
@@ -171,23 +170,6 @@ function checkBlockedPatterns(content) {
   }
 
   return matches;
-}
-
-/**
- * Get human-readable reason for HTTP status code.
- *
- * @param {number} statusCode - HTTP status code
- * @returns {string} Reason
- */
-function getStatusCodeReason(statusCode) {
-  const reasons = {
-    403: 'forbidden',
-    404: 'not_found',
-    429: 'too_many_requests',
-    503: 'service_unavailable'
-  };
-
-  return reasons[statusCode] || `http_error_${statusCode}`;
 }
 
 /**

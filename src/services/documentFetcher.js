@@ -30,7 +30,7 @@ import { handlePdfDocument, handleDocxDocument } from './documentHandlers.js';
  * @param {Object} budget - Budget tracker
  * @returns {Promise<Object>} { content, success, status, isDocument, documentType, error }
  */
-export async function fetchDocumentContent(url, maxLength = 8000, budget = null) {
+export async function fetchDocumentContent(url, _maxLength = 8000, budget = null) {
   const extension = url.match(/\.(pdf|doc|docx|xls|xlsx)(\?|$)/i)?.[1]?.toLowerCase() || 'unknown';
   logger.info('Document', `Fetching document: ${url} (type: ${extension})`);
 
