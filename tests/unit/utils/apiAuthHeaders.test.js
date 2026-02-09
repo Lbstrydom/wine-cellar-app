@@ -26,6 +26,25 @@ const RAW_FETCH_PATTERNS = [
 ];
 
 /**
+ * Pattern that indicates the file imports the authenticated fetch from api.js.
+ * Files with this import shadow the global fetch — their bare fetch() calls are safe.
+ * However, explicit window.fetch() calls still bypass the import and must be flagged.
+ */
+const IMPORTS_AUTH_FETCH = /import\s*\{[^}]*\bfetch\b[^}]*\}\s*from\s*['"]\.\/api\.js['"]/;
+
+/**
+ * Detects files that define a constant assigned to an API base path (e.g. const API_BASE = '/api').
+ * Used to scope the interpolated-fetch check to API-relevant contexts only.
+ */
+const DEFINES_API_BASE = /(?:const|let|var)\s+\w+\s*=\s*['"]\/api['"]/;
+
+/**
+ * Matches fetch() calls using a template literal with an interpolated variable as the base URL.
+ * Only flagged when the file also defines an API base constant (see DEFINES_API_BASE).
+ */
+const INTERPOLATED_FETCH = /fetch\s*\(\s*`\$\{[^}]+\}\//;
+
+/**
  * Files that are allowed to use raw fetch (the API wrapper itself).
  */
 const ALLOWED_FILES = [
@@ -37,12 +56,45 @@ const ALLOWED_FILES = [
  * These should be migrated to use api.js functions over time.
  * DO NOT ADD NEW FILES HERE - fix them instead!
  *
- * Last audit: 13 January 2026
+ * Last audit: 9 February 2026
  */
 const LEGACY_FILES = [
   'app.js',            // 1 call - /api/public-config (intentionally unauthenticated)
   'browserTests.js'    // 6 calls - test file, intentionally raw
 ];
+
+/**
+ * Scan file content for raw fetch violations.
+ * Files that import authenticated fetch from api.js are only checked for
+ * explicit window.fetch bypasses — bare fetch() is safe in those files.
+ * @param {string} content - File source content
+ * @returns {Array<{pattern: string, matches: number}>} Violations found
+ */
+function scanForViolations(content) {
+  const violations = [];
+  const usesAuthFetch = IMPORTS_AUTH_FETCH.test(content);
+
+  for (const pattern of RAW_FETCH_PATTERNS) {
+    // If file imports authenticated fetch, only flag explicit window.fetch bypasses
+    if (usesAuthFetch && !pattern.source.includes('window')) continue;
+
+    const matches = content.match(new RegExp(pattern.source, 'gm'));
+    if (matches) {
+      violations.push({ pattern: pattern.source, matches: matches.length });
+    }
+  }
+
+  // Separate check: interpolated base URL (e.g. fetch(`${API_BASE}/...`))
+  // Only flag if file defines an API base constant AND doesn't use auth fetch
+  if (!usesAuthFetch && DEFINES_API_BASE.test(content)) {
+    const matches = content.match(new RegExp(INTERPOLATED_FETCH.source, 'gm'));
+    if (matches) {
+      violations.push({ pattern: 'API base variable + fetch template literal', matches: matches.length });
+    }
+  }
+
+  return violations;
+}
 
 describe('API Authentication Headers', () => {
   it('should not use raw fetch() for API calls in NEW frontend modules', () => {
@@ -55,15 +107,8 @@ describe('API Authentication Headers', () => {
       const filePath = path.join(PUBLIC_JS_DIR, file);
       const content = fs.readFileSync(filePath, 'utf8');
 
-      for (const pattern of RAW_FETCH_PATTERNS) {
-        const matches = content.match(new RegExp(pattern.source, 'gm'));
-        if (matches) {
-          violations.push({
-            file,
-            pattern: pattern.source,
-            matches: matches.length
-          });
-        }
+      for (const v of scanForViolations(content)) {
+        violations.push({ file, ...v });
       }
     }
 
@@ -103,15 +148,8 @@ describe('API Authentication Headers', () => {
       const filePath = path.join(bottlesDir, file);
       const content = fs.readFileSync(filePath, 'utf8');
 
-      for (const pattern of RAW_FETCH_PATTERNS) {
-        const matches = content.match(new RegExp(pattern.source, 'gm'));
-        if (matches) {
-          violations.push({
-            file: `bottles/${file}`,
-            pattern: pattern.source,
-            matches: matches.length
-          });
-        }
+      for (const v of scanForViolations(content)) {
+        violations.push({ file: `bottles/${file}`, ...v });
       }
     }
 
@@ -140,15 +178,8 @@ describe('API Authentication Headers', () => {
       const filePath = path.join(analysisDir, file);
       const content = fs.readFileSync(filePath, 'utf8');
 
-      for (const pattern of RAW_FETCH_PATTERNS) {
-        const matches = content.match(new RegExp(pattern.source, 'gm'));
-        if (matches) {
-          violations.push({
-            file: `cellarAnalysis/${file}`,
-            pattern: pattern.source,
-            matches: matches.length
-          });
-        }
+      for (const v of scanForViolations(content)) {
+        violations.push({ file: `cellarAnalysis/${file}`, ...v });
       }
     }
 
@@ -177,15 +208,8 @@ describe('API Authentication Headers', () => {
       const filePath = path.join(pairingDir, file);
       const content = fs.readFileSync(filePath, 'utf8');
 
-      for (const pattern of RAW_FETCH_PATTERNS) {
-        const matches = content.match(new RegExp(pattern.source, 'gm'));
-        if (matches) {
-          violations.push({
-            file: `restaurantPairing/${file}`,
-            pattern: pattern.source,
-            matches: matches.length
-          });
-        }
+      for (const v of scanForViolations(content)) {
+        violations.push({ file: `restaurantPairing/${file}`, ...v });
       }
     }
 

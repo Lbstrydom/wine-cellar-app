@@ -44,6 +44,16 @@ export async function getWineRatings(wineId) {
 }
 
 /**
+ * Get raw source ratings for a wine (from wine_source_ratings table).
+ * @param {number} wineId - Wine ID
+ * @returns {Promise<Object>}
+ */
+export async function getWineSourceRatings(wineId) {
+  const res = await fetch(`${API_BASE}/api/wines/${wineId}/source-ratings`);
+  return handleResponse(res, 'Failed to get wine source ratings');
+}
+
+/**
  * Fetch ratings from web using Claude.
  * @param {number} wineId - Wine ID
  * @returns {Promise<Object>}

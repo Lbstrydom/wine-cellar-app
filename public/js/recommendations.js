@@ -5,8 +5,7 @@
  */
 
 import { escapeHtml } from './utils.js';
-
-const API_BASE = '/api';
+import { fetch } from './api.js';
 
 /**
  * State for recommendations panel.
@@ -48,14 +47,10 @@ export function initRecommendations() {
     foodSelect.addEventListener('change', () => loadRecommendations());
   }
 
-  // Debounce text input to avoid too many API calls
-  const debounceTimer = null;
   if (foodDetailInput) {
-    // Only trigger on Enter key - don't auto-load on every keystroke
     foodDetailInput.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        clearTimeout(debounceTimer);
         loadRecommendations();
       }
     });
@@ -145,7 +140,7 @@ async function loadRecommendations() {
       params.set('food', foodContext);
     }
 
-    const response = await fetch(`${API_BASE}/reduce-now/ai-recommendations?${params}`);
+    const response = await fetch(`/api/reduce-now/ai-recommendations?${params}`);
 
     if (!response.ok) {
       throw new Error('Failed to fetch recommendations');

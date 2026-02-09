@@ -37,10 +37,10 @@ router.get('/:id/external-ids', validateParams(wineIdSchema), asyncHandler(async
 }));
 
 /**
- * Get ratings with provenance for a wine.
- * @route GET /api/wines/:id/ratings
+ * Get raw source ratings for a wine.
+ * @route GET /api/wines/:id/source-ratings
  */
-router.get('/:id/ratings', validateParams(wineIdSchema), asyncHandler(async (req, res) => {
+router.get('/:id/source-ratings', validateParams(wineIdSchema), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
   if (!wine) {

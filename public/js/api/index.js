@@ -74,6 +74,7 @@ export {
   getPersonalRating,
   updatePersonalRating,
   getWineRatings,
+  getWineSourceRatings,
   fetchWineRatingsFromApi,
   fetchRatingsAsync,
   getRatingsJobStatus,

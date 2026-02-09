@@ -5,8 +5,7 @@
  */
 
 import { escapeHtml } from './utils.js';
-
-const API_BASE = '/api';
+import { fetch } from './api.js';
 
 /**
  * Global search state.
@@ -219,7 +218,7 @@ function showQuickActions() {
  */
 async function performSearch(query) {
   try {
-    const response = await fetch(`${API_BASE}/wines/global-search?q=${encodeURIComponent(query)}&limit=5`);
+    const response = await fetch(`/api/wines/global-search?q=${encodeURIComponent(query)}&limit=5`);
     if (!response.ok) throw new Error('Search failed');
 
     const results = await response.json();

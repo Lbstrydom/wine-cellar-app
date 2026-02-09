@@ -93,7 +93,7 @@ wine-cellar-app/
 ## API Reference
 
 ### Layout & Grid
-- `GET /api/layout` - Full cellar layout with all slots and contents
+- `GET /api/stats/layout` - Full cellar layout with all slots and contents
 - `GET /api/stats` - Summary stats (bottles, empty slots, etc.)
 
 ### Wines

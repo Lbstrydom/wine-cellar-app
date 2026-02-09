@@ -14,11 +14,22 @@ import {
   getSourcesByDisplayLens,
   getSourcesForCountry,
   getDomainsForCountry,
-  normaliseScore,
   getScoreFormatsForSources,
   buildScoreFormatPrompt,
   REGION_SOURCE_PRIORITY
 } from '../../../src/config/unifiedSources.js';
+
+/**
+ * Local helper: normalise a raw score via the source's normalise function.
+ * Mirrors the removed export from unifiedSources.js — kept here to test
+ * each source's normalise() logic without a production export.
+ */
+function normaliseScore(sourceId, rawScore) {
+  const source = SOURCES[sourceId];
+  if (source?.normalise) return source.normalise(rawScore);
+  const match = rawScore.match(/(\d{2,3}(?:\.\d)?)/);
+  return match ? Math.round(parseFloat(match[1])) : null;
+}
 
 describe('LENS constants', () => {
   it('should define all lens types', () => {

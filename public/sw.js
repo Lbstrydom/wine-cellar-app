@@ -85,8 +85,8 @@ const CACHEABLE_API_PATTERNS = [
   /\/api\/wines$/,
   /\/api\/wines\/\d+$/,
   /\/api\/slots$/,
-  /\/api\/layout$/,
-  /\/api\/stats$/
+  /\/api\/stats$/,
+  /\/api\/stats\/layout$/
 ];
 
 /**

@@ -1463,22 +1463,6 @@ export function getDomainsForCountry(country) {
 }
 
 /**
- * Normalise a raw score using the source's normalise function.
- * @param {string} sourceId - Source identifier
- * @param {string} rawScore - Raw score string
- * @returns {number|null} Normalised score (0-100) or null
- */
-export function normaliseScore(sourceId, rawScore) {
-  const source = SOURCES[sourceId];
-  if (source && source.normalise) {
-    return source.normalise(rawScore);
-  }
-  // Fallback: try to parse as number
-  const match = rawScore.match(/(\d{2,3}(?:\.\d)?)/);
-  return match ? Math.round(parseFloat(match[1])) : null;
-}
-
-/**
  * Get score format info for prompt building.
  * @param {string[]} sourceIds - Array of source identifiers
  * @returns {Object[]} Array of relevant score formats
@@ -1515,10 +1499,5 @@ Score formats to recognise:
 ${formats.map(f => `- ${f.name}: ${f.examples.join(', ')}`).join('\n')}
 `;
 }
-
-// Legacy exports for backwards compatibility
-export const RATING_SOURCES = SOURCES;
-export const SOURCE_REGISTRY = SOURCES;
-export const getSourceConfig = getSource;
 
 export default SOURCES;

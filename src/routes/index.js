@@ -21,7 +21,6 @@ import bottleRoutes from './bottles.js';
 import pairingRoutes from './pairing.js';
 import reduceNowRoutes from './reduceNow.js';
 import statsRoutes from './stats.js';
-import layoutRoutes from './layout.js';
 import ratingsRoutes from './ratings.js';
 import ratingsTierRoutes from './ratingsTier.js';
 import settingsRoutes from './settings.js';
@@ -41,14 +40,13 @@ import palateProfileRoutes from './palateProfile.js';
 import cellarHealthRoutes from './cellarHealth.js';
 import adminRoutes from './admin.js';
 import tastingNotesRoutes from './tastingNotes.js';
-import searchMetricsRoutes from './searchMetrics.js';
 import searchRoutes from './search.js';
 import consistencyRoutes from './consistency.js';
 
 const router = Router();
 
 // Public config for frontend (Supabase URL/anon key only)
-router.get('/public-config', (req, res) => {
+router.get('/public-config', (_req, res) => {
   const { SUPABASE_URL, SUPABASE_ANON_KEY } = process.env;
 
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
@@ -91,7 +89,6 @@ router.use('/storage-areas', requireAuth, requireCellarContext, storageAreasRout
 router.use('/pairing', requireAuth, requireCellarContext, pairingRoutes);
 router.use('/reduce-now', requireAuth, requireCellarContext, reduceNowRoutes);
 router.use('/stats', requireAuth, requireCellarContext, statsRoutes);
-router.use('/layout', requireAuth, requireCellarContext, layoutRoutes);
 router.use('/ratings', requireAuth, requireCellarContext, ratingsRoutes); // Admin routes
 router.use('/settings', requireAuth, requireCellarContext, settingsRoutes);
 router.use('/', requireAuth, requireCellarContext, drinkingWindowsRoutes);  // /wines/:wine_id/drinking-windows and /drinking-windows/urgent
@@ -106,9 +103,8 @@ router.use('/search', requireAuth, requireCellarContext, searchRoutes);  // /sea
 router.use('/acquisition', requireAuth, requireCellarContext, acquisitionRoutes);  // /acquisition/workflow, /acquisition/save, etc.
 router.use('/palate', requireAuth, requireCellarContext, palateProfileRoutes);    // /palate/feedback, /palate/profile, /palate/recommendations
 router.use('/health', requireAuth, requireCellarContext, cellarHealthRoutes);    // /health, /health/fill-fridge, /health/at-risk, /health/shopping-list
-router.use('/admin', adminRoutes);
+router.use('/admin', requireAuth, adminRoutes);
 router.use('/wines', requireAuth, requireCellarContext, tastingNotesRoutes);     // /wines/:id/tasting-notes, /wines/:id/tasting-notes/regenerate, etc.
-router.use('/metrics', requireAuth, requireCellarContext, searchMetricsRoutes);  // /metrics/search/summary, /metrics/search/history, /metrics/search/stats
 router.use('/consistency', requireAuth, requireCellarContext, consistencyRoutes);  // /consistency/audit, /consistency/check/:id, /consistency/validate
 
 export default router;

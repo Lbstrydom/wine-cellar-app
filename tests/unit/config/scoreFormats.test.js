@@ -3,7 +3,22 @@
  * Tests score normalization for various rating sources.
  */
 
-import { normaliseScore, getScoreFormatsForSources, buildScoreFormatPrompt } from '../../../src/config/unifiedSources.js';
+import SOURCES, { getScoreFormatsForSources, buildScoreFormatPrompt } from '../../../src/config/unifiedSources.js';
+
+/**
+ * Local helper: normalise a raw score via the source's normalise function.
+ * Mirrors the removed export from unifiedSources.js — kept here to test
+ * each source's normalise() logic without a production export.
+ * @param {string} sourceId - Source identifier
+ * @param {string} rawScore - Raw score string
+ * @returns {number|null} Normalised score (0-100) or null
+ */
+function normaliseScore(sourceId, rawScore) {
+  const source = SOURCES[sourceId];
+  if (source?.normalise) return source.normalise(rawScore);
+  const match = rawScore.match(/(\d{2,3}(?:\.\d)?)/);
+  return match ? Math.round(parseFloat(match[1])) : null;
+}
 
 describe('scoreFormats', () => {
   describe('100-point scale sources', () => {

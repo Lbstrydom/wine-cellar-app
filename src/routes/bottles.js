@@ -37,7 +37,7 @@ router.post('/add', asyncHandler(async (req, res) => {
   if (!parseResult.success) {
     return res.status(400).json({
       error: 'Validation failed',
-      details: parseResult.error.errors.map(e => e.message)
+      details: parseResult.error.issues.map(e => e.message)
     });
   }
 
@@ -82,10 +82,10 @@ router.post('/add', asyncHandler(async (req, res) => {
   }
 
   // Check which slots are empty
-  const placeholders = slots.map((_, i) => `$${i + 1}`).join(',');
+  const placeholders = slots.map((_, i) => `$${i + 2}`).join(',');
   const existingSlots = await db.prepare(
-    'SELECT location_code, wine_id FROM slots WHERE location_code IN (' + placeholders + ')'
-  ).all(...slots);
+    'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + placeholders + ')'
+  ).all(req.cellarId, ...slots);
   // Safe: placeholders generated from slots array length, data passed to .all()
 
   const emptySlots = slots.filter(loc => {
@@ -104,7 +104,7 @@ router.post('/add', asyncHandler(async (req, res) => {
 
   // Add bottles one by one (PostgreSQL doesn't have the same transaction API)
   for (const loc of slotsToFill) {
-    await db.prepare('UPDATE slots SET wine_id = $1 WHERE location_code = $2').run(wine_id, loc);
+    await db.prepare('UPDATE slots SET wine_id = $1 WHERE location_code = $2 AND cellar_id = $3').run(wine_id, loc, req.cellarId);
   }
 
   res.json({

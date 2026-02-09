@@ -21,7 +21,6 @@ const DATA_ROUTES = [
   'pairing.js',
   'reduceNow.js',
   'stats.js',
-  'layout.js',
   'ratings.js',
   'settings.js',
   'drinkingWindows.js',
@@ -32,8 +31,7 @@ const DATA_ROUTES = [
   'acquisition.js',
   'palateProfile.js',
   'cellarHealth.js',
-  'tastingNotes.js',
-  'searchMetrics.js'
+  'tastingNotes.js'
 ];
 
 async function checkRoutes() {
