@@ -138,16 +138,14 @@
 
 /* === System light mode (@media path) === */
 @media (prefers-color-scheme: light) {
-  /* Dark text on accent backgrounds — light accent (#7A6240) fails AA with white text */
-  :root:not([data-theme="dark"]) .onboarding-wizard button.btn-primary,
-  :root:not([data-theme="dark"]) .btn-primary,
-  :root:not([data-theme="dark"]) .confirm-dialog-confirm,
+  /* Accent-background elements: darker bg + white text for AA contrast (7:1 on #634F33) */
   :root:not([data-theme="dark"]) .toggle-btn.active,
   :root:not([data-theme="dark"]) .award-badge,
   :root:not([data-theme="dark"]) .zone-chat-panel .chat-message.user .chat-content,
   :root:not([data-theme="dark"]) .zone-order,
   :root:not([data-theme="dark"]) .recommendation-card .rank-badge {
-    color: var(--text-on-light);
+    background: var(--accent-hover);
+    color: white;
   }
 
   /* Tab active: white text on dark light-mode accent (5.2:1) */
@@ -225,16 +223,14 @@
 
 /* === Explicit light mode ([data-theme="light"] path) === */
 
-/* Dark text on accent backgrounds */
-:root[data-theme="light"] .onboarding-wizard button.btn-primary,
-:root[data-theme="light"] .btn-primary,
-:root[data-theme="light"] .confirm-dialog-confirm,
+/* Accent-background elements: darker bg + white text for AA contrast (7:1 on #634F33) */
 :root[data-theme="light"] .toggle-btn.active,
 :root[data-theme="light"] .award-badge,
 :root[data-theme="light"] .zone-chat-panel .chat-message.user .chat-content,
 :root[data-theme="light"] .zone-order,
 :root[data-theme="light"] .recommendation-card .rank-badge {
-  color: var(--text-on-light);
+  background: var(--accent-hover);
+  color: white;
 }
 
 /* Tab active: white text on dark light-mode accent (5.2:1) */
