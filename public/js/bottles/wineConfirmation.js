@@ -6,6 +6,7 @@
 
 import { searchVivinoWines } from '../api.js';
 import { escapeHtml } from '../utils.js';
+import { renderStars } from '../ratings.js';
 
 let confirmationModal = null;
 let currentCallbacks = null;
@@ -262,22 +263,6 @@ function renderMatches(matches) {
   }).join('');
 }
 
-/**
- * Render star rating display.
- * Uses individual CSS-classed spans per star (stars-filled/half/empty). Half-star threshold: 0.3–0.8.
- * @see {@link module:ratings.renderStars} for text-character variant (threshold 0.5)
- * @param {number} rating - Rating value (0-5)
- * @returns {string} HTML
- */
-function renderStars(rating) {
-  if (!rating) return '';
-  const full = Math.floor(rating);
-  const half = (rating % 1) >= 0.3 && (rating % 1) < 0.8 ? 1 : 0;
-  const empty = 5 - full - half;
-  return '<span class="stars-filled">★</span>'.repeat(full) +
-         (half ? '<span class="stars-half">★</span>' : '') +
-         '<span class="stars-empty">☆</span>'.repeat(empty);
-}
 
 /**
  * Format rating count.

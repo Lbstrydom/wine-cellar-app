@@ -63,6 +63,13 @@ function addChipListener(el, event, handler) {
   chipListeners.push({ el, event, handler });
 }
 
+/** Notify parent wizard that wine selection changed (R7 — preventive validation). */
+function dispatchSelectionChanged() {
+  if (rootContainer) {
+    rootContainer.dispatchEvent(new CustomEvent('restaurant:selection-changed', { bubbles: true }));
+  }
+}
+
 function cleanupChipListeners() {
   for (const { el, event, handler } of chipListeners) {
     el.removeEventListener(event, handler);
@@ -198,7 +205,7 @@ export function renderWineReview(containerId) {
     const selections = getSelections();
     const visibleWines = wines.filter(passesFilter);
     const allVisibleSelected = visibleWines.length > 0 &&
-      visibleWines.every(w => selections.wines[w.id]);
+      visibleWines.every(w => selections.wines[w.id] !== false);
 
     if (allVisibleSelected) {
       deselectAllWines(visiblePredicate());
@@ -208,6 +215,7 @@ export function renderWineReview(containerId) {
     renderCards();
     updateCounter();
     updateSelectAllLabel();
+    dispatchSelectionChanged();
   });
 
   // --- Add wine form ---
@@ -243,6 +251,7 @@ export function renderWineReview(containerId) {
     renderCards();
     updateCounter();
     updateTriageBanner();
+    dispatchSelectionChanged();
   });
 
   // Initial render
@@ -339,6 +348,7 @@ function renderCards() {
       renderCards();
       updateCounter();
       updateSelectAllLabel();
+      dispatchSelectionChanged();
     };
     const clickHandler = (e) => {
       if (e.target.closest('.restaurant-wine-remove')) return;
@@ -379,6 +389,7 @@ function renderCards() {
       updateCounter();
       updateTriageBanner();
       updateSelectAllLabel();
+      dispatchSelectionChanged();
     };
     addCardListener(btn, 'click', handler);
   });

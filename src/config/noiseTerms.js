@@ -5,8 +5,7 @@
  * @module config/noiseTerms
  */
 
-/** @internal — exported for unit tests only */
-export const FOOD_PAIRING_NOISE = [
+const FOOD_PAIRING_NOISE = [
   'cheese',
   'cream',
   'oil',
@@ -36,8 +35,7 @@ export const FOOD_PAIRING_NOISE = [
   'seared'
 ];
 
-/** @internal — exported for unit tests only */
-export const MARKETING_HYPERBOLE = [
+const MARKETING_HYPERBOLE = [
   'explosive',
   'amazing',
   'incredible',
@@ -71,8 +69,7 @@ export const MARKETING_HYPERBOLE = [
   'real'
 ];
 
-/** @internal — exported for unit tests only */
-export const PAIRING_CONTEXT_PHRASES = [
+const PAIRING_CONTEXT_PHRASES = [
   'pair',
   'serve',
   'match',
@@ -85,23 +82,11 @@ export const PAIRING_CONTEXT_PHRASES = [
 ];
 
 /**
- * Check if a term is in the noise list.
- * @internal — exported for unit tests only
- * @param {string} term - Term to check
- * @returns {boolean} True if term is noise
- */
-export function isMarketingNoise(term) {
-  const lower = term.toLowerCase().trim();
-  return MARKETING_HYPERBOLE.includes(lower);
-}
-
-/**
  * Check if text contains food pairing context.
- * @internal — exported for unit tests only
  * @param {string} text - Surrounding text
  * @returns {boolean} True if pairing context detected
  */
-export function hasPairingContext(text) {
+function hasPairingContext(text) {
   if (!text) return false;
   const lower = text.toLowerCase();
   return PAIRING_CONTEXT_PHRASES.some(phrase => lower.includes(phrase));

@@ -1,7 +1,7 @@
 # UX Fix Plan — Restaurant Pairing Wizard
 
 **Created**: 2026-02-09  
-**Revised**: 2026-02-09 (incorporated code review feedback)  
+**Revised**: 2026-02-10 (critical review v2 — 8 issues fixed in plan)  
 **Source**: User feedback on restaurant pairing flow clarity  
 **Focus**: Process affordances, gestalt principles, user flow clarity
 
@@ -16,12 +16,27 @@ All 9 findings from code review have been addressed:
 | R2 title injection won't survive render | HIGH | Changed to wrapper pattern with persistent title + body mount |
 | R7 missing wiring for Next-button state | HIGH | Added `restaurant:selection-changed` event contract |
 | scrollIntoView can cause unintended jumps | HIGH | Gated scroll with initial-render check + reduced-motion respect |
-| R5 fade animation won't re-trigger | MEDIUM | Added `key="step-${step}"` to reset animation per step |
+| R5 fade animation re-trigger | MEDIUM | Removed `key` attribute (React concept); innerHTML replacement creates new DOM nodes naturally |
 | Phase 3 choice cards lack keyboard handlers | MEDIUM | Added Enter/Space handlers + focus styles |
 | Step 1 choice flow missing nav gating | MEDIUM | Added Step 1 state machine (`choice`/`quickPair`/`fullCapture`) |
 | R8 Step 3 icon signature incomplete | MEDIUM | Fixed `renderDishReview()` signature + forwarding to `createImageCapture()` |
 | Test impact understated | MEDIUM | Acknowledged 32 existing wizard tests + module tests, added test update checklists |
 | Mobile deferral vs label changes | LOW | Added note about responsive handling in existing media queries |
+
+### Critical Review (2026-02-10)
+
+8 additional issues found and fixed across two review passes:
+
+| Finding | Severity | Fix Applied |
+|---------|----------|-------------|
+| R2 wrapper still broken by L67 `stepContainer.id` assignment | CRITICAL | Must remove L67; ID now lives on inner `.restaurant-step-body` only |
+| R2 module calls still target `stepContainer`, overwriting wrapper | CRITICAL | Moved `id="restaurant-step-container"` onto `.restaurant-step-body` so modules render inside it |
+| Phase 3 `step1State` scoped to `case 1` block, invisible to `updateNavButtons()` | CRITICAL | Promoted to module-level variable alongside `currentStepDestroy` |
+| Phase 3 choice screen overwrites R2 wrapper via `stepContainer.innerHTML` | CRITICAL | Changed to render into `.restaurant-step-body` via `stepBody` |
+| `key` attribute described as browser re-render trigger (it's a React/Vue concept) | MEDIUM | Corrected: `innerHTML` replacement creates new DOM nodes, naturally re-triggering CSS animations |
+| Phase 4 CSS duplicates existing `.restaurant-step-content` rule (L7228) | MEDIUM | Removed duplicate; Phase 4 only adds new `.restaurant-step-body` animation |
+| Test file path ambiguous — 3+ files named `restaurantPairing.test.js` | MEDIUM | Added full path: `tests/unit/restaurantPairing/restaurantPairing.test.js` |
+| Several line references off by 2-8 lines | LOW | Corrected across all 8 issues + all 4 phases |
 
 ---
 
@@ -78,7 +93,7 @@ Step 1: Capture  →  Step 2: Wines  →  Step 3: Dishes  →  Step 4: Pairings
 **User Impact**: Cannot preview the journey. Must click through each step to discover its purpose.
 
 **Files**:
-- `public/js/restaurantPairing.js` L23 (defines labels), L320 (renders circles with number only)
+- `public/js/restaurantPairing.js` L23 (defines labels), L317-318 (button template renders number only)
 - `public/css/components.css` L7243-7260 (step indicator styling — no label beneath circle)
 
 **Gestalt Violation**: Proximity/Labelling — indicator shows location but not identity.
@@ -96,10 +111,10 @@ Step 1: Capture  →  Step 2: Wines  →  Step 3: Dishes  →  Step 4: Pairings
 **User Impact**: Disorientation. User must infer the step's purpose from placeholder text and button labels.
 
 **Files**:
-- `public/js/restaurantPairing.js` L59-127 (renderStep — no title injection before step modules render)
+- `public/js/restaurantPairing.js` L59-129 (renderStep — no title injection before step modules render)
 - `public/js/restaurantPairing/wineReview.js` L131 (no title, starts with triage banner)
-- `public/js/restaurantPairing/dishReview.js` L62 (h3 exists but not step-level)
-- `public/js/restaurantPairing/results.js` L67 (no title, starts with summary)
+- `public/js/restaurantPairing/dishReview.js` L62 (h3 at L62, but not step-level)
+- `public/js/restaurantPairing/results.js` L69-75 (no title, starts with summary div)
 
 ---
 
@@ -112,7 +127,7 @@ Step 1: Capture  →  Step 2: Wines  →  Step 3: Dishes  →  Step 4: Pairings
 **Best Practice**: Wizards should show a one-line subtitle like *"Snap your wine list → pick dishes → get AI pairings"* on initial render.
 
 **Files**:
-- `public/js/restaurantPairing.js` L313-333 (wizard skeleton build — no subtitle element)
+- `public/js/restaurantPairing.js` L306-379 (wizard skeleton build — no subtitle element)
 
 ---
 
@@ -127,7 +142,7 @@ Both are visible on first load. User must decide which path to take without unde
 **User Impact**: Decision paralysis at entry. Two primary CTAs compete for attention. The banner format (small link button at top) doesn't signal it's a major workflow fork.
 
 **Files**:
-- `public/js/restaurantPairing.js` L73-101 (Quick Pair banner + capture widget both rendered)
+- `public/js/restaurantPairing.js` L73-111 (Quick Pair banner + capture widget both rendered)
 - `public/css/components.css` L7943-7957 (banner styled as subtle top bar, not prominent choice)
 
 **Recommendation**: Restructure Step 1 as a **choice screen** with two clear cards: "Quick Pair (fast)" vs "Full Wizard (accurate)".
@@ -142,7 +157,7 @@ Both are visible on first load. User must decide which path to take without unde
 
 **Files**:
 - `public/js/restaurantPairing.js` L59-67 (renderStep destroys + innerHTML swap, no animation)
-- `public/css/components.css` L7228-7232 (.restaurant-step-content has no transition animation)
+- `public/css/components.css` L7228-7231 (.restaurant-step-content has no transition animation)
 
 ---
 
@@ -155,7 +170,7 @@ Both are visible on first load. User must decide which path to take without unde
 **User Impact**: Missed opportunity to reinforce mental model. Contextual labels ("Review Wines →", "← Back to Capture") guide expectations.
 
 **Files**:
-- `public/js/restaurantPairing.js` L327-330 (static labels in HTML), L162-172 (updateNavButtons only toggles visibility, not text)
+- `public/js/restaurantPairing.js` L326-329 (static labels in HTML), L158-168 (updateNavButtons only toggles visibility, not text)
 
 ---
 
@@ -166,7 +181,7 @@ Both are visible on first load. User must decide which path to take without unde
 **User Impact**: User clicks Next → error toast → confusion. The button should signal unmet requirements before click.
 
 **Files**:
-- `public/js/restaurantPairing.js` L178-195 (handleNext runs validation AFTER click, shows toast)
+- `public/js/restaurantPairing.js` L173-189 (handleNext runs validation AFTER click, shows toast)
 - No disabled state or helper text for requirement visibility
 
 **Best Practice**: Disable Next button with inline text: *"Select at least one wine to continue"* until gate satisfied.
@@ -181,7 +196,7 @@ Both are visible on first load. User must decide which path to take without unde
 
 **Files**:
 - `public/js/restaurantPairing.js` L102-114 (Step 1 capture), L119-122 (Step 3 capture — same widget)
-- `public/js/restaurantPairing/imageCapture.js` L59-98 (single widget template for both)
+- `public/js/restaurantPairing/imageCapture.js` L62-85 (single widget template for both)
 
 **Opportunity**: Add distinctive header icon/color per step. Step 1: wine glass icon + burgundy accent. Step 3: plate icon + sage accent (matches existing card tinting at L7310, L7319).
 
@@ -216,7 +231,7 @@ Both are visible on first load. User must decide which path to take without unde
 
 1. **Add step labels below circles** (R1)
    - File: `public/js/restaurantPairing.js`
-   - Change L320 from `<button>...${num}</button>` to:
+   - Change L317-318 from `<button>...${num}</button>` to:
      ```html
      <button class="restaurant-step-indicator-item" ...>
        ${num}
@@ -250,15 +265,12 @@ Both are visible on first load. User must decide which path to take without unde
      stepContainer.innerHTML = `
        <div class="restaurant-step-wrapper">
          <h3 class="restaurant-step-title">${titles[step - 1]}</h3>
-         <div class="restaurant-step-body"></div>
+         <div class="restaurant-step-body" id="restaurant-step-container"></div>
        </div>
      `;
-     
-     // Get body mount for modules to render into
-     const stepBody = stepContainer.querySelector('.restaurant-step-body');
-     stepContainer.id = 'restaurant-step-container'; // Keep for module targeting
      ```
-   - Update each step module to target `.restaurant-step-body` or pass `stepBody` element.
+   - **Remove L67**: Delete `stepContainer.id = 'restaurant-step-container';` — this line would set the ID on the *outer* `.restaurant-step-content` div, creating a duplicate ID alongside the inner `.restaurant-step-body`. With two elements sharing the same ID, `getElementById` returns the outer one and modules overwrite the entire wrapper.
+   - **Key detail**: The `id="restaurant-step-container"` now lives solely on `.restaurant-step-body`. `document.getElementById('restaurant-step-container')` returns the body div, so modules render *inside* it without overwriting the title wrapper. No changes to module signatures needed.
    - **Critical**: This prevents step modules from overwriting the title when they render.
    
    - File: `public/css/components.css`
@@ -283,16 +295,16 @@ Both are visible on first load. User must decide which path to take without unde
 
 3. **Add wizard subtitle** (R3)
    - File: `public/js/restaurantPairing.js`
-   - In `initRestaurantPairing()` L313, add below `.restaurant-wizard-header`:
+   - In `initRestaurantPairing()` L306, add below `.restaurant-wizard-header`:
      ```html
      <p class="restaurant-wizard-subtitle text-muted">
        Snap your wine list → pick dishes → get AI pairings
      </p>
      ```
-   - In `renderStep()`, toggle visibility:
+   - In `renderStep()`, toggle visibility (with null guard for safety):
      ```javascript
      const subtitle = wizardContainer.querySelector('.restaurant-wizard-subtitle');
-     subtitle.style.display = step === 1 ? '' : 'none';
+     if (subtitle) subtitle.style.display = step === 1 ? '' : 'none';
      ```
 
 **Test**: Load wizard, verify circles have visible labels, each step has a title, subtitle shows on Step 1.
@@ -314,7 +326,7 @@ Both are visible on first load. User must decide which path to take without unde
 
 1. **Contextual nav labels** (R6)
    - File: `public/js/restaurantPairing.js`
-   - Update `updateNavButtons(step)` L162-172 to set text:
+   - Update `updateNavButtons(step)` L158-168 to set text:
      ```javascript
      const nextLabels = ['Review Wines →', 'Add Dishes →', 'Get Pairings →'];
      const backLabels = ['← Wine List', '← Review Wines', '← Review Dishes'];
@@ -328,7 +340,7 @@ Both are visible on first load. User must decide which path to take without unde
 
 2. **Preventive validation** (R7)
    - File: `public/js/restaurantPairing.js`
-   - Add nav helper element in `initRestaurantPairing()` L325:
+   - Add nav helper element in `initRestaurantPairing()` L326:
      ```html
      <div class="restaurant-nav-bar">
        <button class="btn btn-secondary restaurant-nav-back">...</button>
@@ -409,10 +421,16 @@ Both are visible on first load. User must decide which path to take without unde
 
 1. **Create choice screen UI**
    - File: `public/js/restaurantPairing.js`
+   - **First**: Add `step1State` as a module-level variable (next to `currentStepDestroy`, `parseBudget`):
+     ```javascript
+     /** @type {'choice'|'quickPair'|'fullCapture'} Step 1 sub-state for nav gating */
+     let step1State = 'choice';
+     ```
    - In `renderStep(1)`, replace Quick Pair banner + capture widget with choice cards:
      ```javascript
      case 1: {
-       stepContainer.innerHTML = `
+       const stepBody = document.getElementById('restaurant-step-container');
+       stepBody.innerHTML = `
          <div class="restaurant-choice-screen">
            <div class="restaurant-choice-card restaurant-choice-quick" role="button" tabindex="0">
              <div class="restaurant-choice-icon">⚡</div>
@@ -429,17 +447,14 @@ Both are visible on first load. User must decide which path to take without unde
          </div>
        `;
        
-       // State machine for Step 1: track which path chosen
-       let step1State = 'choice'; // 'choice' | 'quickPair' | 'fullCapture'
-       
-       // Bind choice handlers
-       const quickCard = stepContainer.querySelector('.restaurant-choice-quick');
-       const fullCard = stepContainer.querySelector('.restaurant-choice-full');
+       // Bind choice handlers (step1State is a module-level variable, declared above)
+       step1State = 'choice';
+       const quickCard = stepBody.querySelector('.restaurant-choice-quick');
+       const fullCard = stepBody.querySelector('.restaurant-choice-full');
        
        const handleQuickChoice = () => {
          step1State = 'quickPair';
          destroyCurrentStep();
-         const stepBody = stepContainer.querySelector('.restaurant-step-body');
          stepBody.innerHTML = '';
          const qp = renderQuickPair(stepBody, {
            parseBudget,
@@ -455,7 +470,6 @@ Both are visible on first load. User must decide which path to take without unde
        
        const handleFullChoice = () => {
          step1State = 'fullCapture';
-         const stepBody = stepContainer.querySelector('.restaurant-step-body');
          stepBody.innerHTML = '';
          const captureWidget = createImageCapture(stepBody, {
            type: 'wine_list',
@@ -575,11 +589,8 @@ Both are visible on first load. User must decide which path to take without unde
 
 1. **Animation + scroll** (R5)
    - File: `public/css/components.css`
-   - Add after L7228:
+   - Add after existing `.restaurant-step-content` rule at L7228 (do not duplicate the existing `min-height: 0`):
      ```css
-     .restaurant-step-content {
-       min-height: 0;
-     }
      .restaurant-step-body {
        animation: fadeIn 200ms ease-in;
      }
@@ -588,17 +599,7 @@ Both are visible on first load. User must decide which path to take without unde
        to { opacity: 1; }
      }
      ```
-   - **Animation Reset**: To re-trigger on each step, add a key to `.restaurant-step-body`:
-     ```javascript
-     // In renderStep(), when creating wrapper:
-     stepContainer.innerHTML = `
-       <div class="restaurant-step-wrapper">
-         <h3 class="restaurant-step-title">${titles[step - 1]}</h3>
-         <div class="restaurant-step-body" key="step-${step}"></div>
-       </div>
-     `;
-     ```
-   - The `key` attribute change forces browser to treat it as a new element, re-running animation.
+   - **Animation Reset**: Because `renderStep()` replaces `stepContainer.innerHTML` on every step change, the browser creates an entirely new `.restaurant-step-body` DOM node each time. This naturally re-triggers the `fadeIn` CSS animation without any special workaround (no `key` attribute needed — that's a React/Vue concept, not a browser feature).
    - File: `public/js/restaurantPairing.js`
    - In `renderStep()` after `updateNavButtons(step)`, add gated scroll:
      ```javascript
@@ -616,15 +617,15 @@ Both are visible on first load. User must decide which path to take without unde
 
 2. **Per-step iconography** (R8)
    - File: `public/js/restaurantPairing/imageCapture.js`
-   - Add `icon` parameter to `createImageCapture()` options (L28).
-   - In template (L59), prepend to container:
+   - Add `icon` parameter to `createImageCapture()` options (L33).
+   - In template (L62), prepend to container:
      ```html
      <div class="restaurant-capture-header">
        ${options.icon || ''} ${options.headerText || ''}
      </div>
      ```
    - File: `public/js/restaurantPairing.js`
-   - Pass icon in Step 1 capture call (L102):
+   - Pass icon in Step 1 capture call (L102, inside Phase 3 `handleFullChoice`):
      ```javascript
      const captureWidget = createImageCapture(captureContainer, {
        type: 'wine_list',
@@ -668,7 +669,7 @@ Both are visible on first load. User must decide which path to take without unde
      });
      ```
    - File: `public/css/components.css`
-   - Add after L7494:
+   - Add after L7496 (closing brace of `.restaurant-capture`):
      ```css
      .restaurant-capture-header {
        font-size: var(--font-lg);
@@ -702,7 +703,7 @@ Phase 1 (Labelling: R1+R2+R3) → Phase 2 (Navigation: R6+R7) → Phase 3 (Choic
 ### Pre-flight for each phase
 
 1. `npm run test:unit` — baseline must pass
-2. **Update existing tests**: The wizard has 32 tests in `restaurantPairing.test.js` plus module tests (`wineReview.test.js`, `dishReview.test.js`, `results.test.js`, `quickPair.test.js`). Each phase requires test updates:
+2. **Update existing tests**: The wizard has 32 tests in `tests/unit/restaurantPairing/restaurantPairing.test.js` (the **frontend controller** — not `tests/unit/services/pairing/restaurantPairing.test.js` which tests the backend AI service) plus module tests (`tests/unit/restaurantPairing/wineReview.test.js`, `dishReview.test.js`, `results.test.js`, `quickPair.test.js`). Each phase requires test updates:
    - **Phase 1**: Update snapshot tests for step indicator HTML (labels added), add title presence assertions
    - **Phase 2**: Update nav button text assertions, add validation state tests
    - **Phase 3**: Add choice screen tests (card render, keyboard handlers, state transitions)

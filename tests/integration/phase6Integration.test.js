@@ -1,9 +1,13 @@
 /**
  * @fileoverview Phase 6 end-to-end integration test
- * Tests the full wine add orchestrator pipeline
+ * Tests the full wine add orchestrator pipeline against a real database.
  *
  * NOTE: These tests require DATABASE_URL to be set as they access the database directly.
  * They will be skipped if DATABASE_URL is not configured.
+ *
+ * Core orchestration logic (fingerprinting, duplicate detection, scoring, auto-select,
+ * cellar isolation) is also covered by the always-running unit test at:
+ * tests/unit/services/wine/wineAddOrchestrator.test.js
  */
 
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';

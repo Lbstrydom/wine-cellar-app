@@ -261,7 +261,7 @@ describe('restaurantPairing controller', () => {
       expect(showToast).not.toHaveBeenCalled();
     });
 
-    it('Step 2→3 blocked when no wines selected', () => {
+    it('Step 2→3 blocked when no wines selected (button disabled)', () => {
       currentSelectedWines = [];
       initRestaurantPairing();
 
@@ -269,14 +269,13 @@ describe('restaurantPairing controller', () => {
       wizard.querySelector('.restaurant-nav-next').click();
       vi.clearAllMocks();
 
-      // Try to navigate to step 3
-      wizard.querySelector('.restaurant-nav-next').click();
-
-      expect(showToast).toHaveBeenCalledWith('Select at least one wine to continue', 'error');
+      // Next button should be disabled — preventive validation (R7)
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      expect(nextBtn.disabled).toBe(true);
       expect(renderDishReview).not.toHaveBeenCalled();
     });
 
-    it('Step 3→4 blocked when no dishes selected', () => {
+    it('Step 3→4 blocked when no dishes selected (button disabled)', () => {
       currentSelectedWines = [{ id: 1, name: 'Test Wine' }];
       currentSelectedDishes = [];
       initRestaurantPairing();
@@ -286,10 +285,9 @@ describe('restaurantPairing controller', () => {
       wizard.querySelector('.restaurant-nav-next').click();
       vi.clearAllMocks();
 
-      // Try to navigate to step 4
-      wizard.querySelector('.restaurant-nav-next').click();
-
-      expect(showToast).toHaveBeenCalledWith('Select at least one dish to continue', 'error');
+      // Next button should be disabled — preventive validation (R7)
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      expect(nextBtn.disabled).toBe(true);
       expect(renderResults).not.toHaveBeenCalled();
     });
 
@@ -496,6 +494,275 @@ describe('restaurantPairing controller', () => {
       indicators[2].click();
 
       expect(setStepMock).not.toHaveBeenCalled();
+    });
+  });
+
+  // --- Phase 1 UX: Labels, Titles, Subtitle ---
+
+  describe('step labels (R1)', () => {
+    it('renders visible labels below step circles', () => {
+      initRestaurantPairing();
+
+      const labels = wizard.querySelectorAll('.restaurant-step-label');
+      expect(labels).toHaveLength(4);
+      expect(labels[0].textContent).toBe('Capture');
+      expect(labels[1].textContent).toBe('Wines');
+      expect(labels[2].textContent).toBe('Dishes');
+      expect(labels[3].textContent).toBe('Pairings');
+    });
+
+    it('labels are children of indicator buttons', () => {
+      initRestaurantPairing();
+
+      const indicators = wizard.querySelectorAll('.restaurant-step-indicator-item');
+      indicators.forEach((btn) => {
+        const label = btn.querySelector('.restaurant-step-label');
+        expect(label).toBeTruthy();
+      });
+    });
+
+    it('labels remain in DOM on all steps (CSS controls responsive visibility)', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      currentSelectedDishes = [{ id: 1, name: 'Test' }];
+      initRestaurantPairing();
+
+      // Navigate through all steps — labels must persist
+      for (let s = 1; s <= 3; s++) {
+        wizard.querySelector('.restaurant-nav-next').click();
+        const labels = wizard.querySelectorAll('.restaurant-step-label');
+        expect(labels).toHaveLength(4);
+      }
+    });
+  });
+
+  describe('step titles (R2)', () => {
+    it('renders title on Step 1', () => {
+      initRestaurantPairing();
+
+      const title = wizard.querySelector('.restaurant-step-title');
+      expect(title).toBeTruthy();
+      expect(title.textContent).toBe('Capture Wine List');
+    });
+
+    it('renders title on Step 2', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click();
+
+      const title = wizard.querySelector('.restaurant-step-title');
+      expect(title.textContent).toBe('Review & Select Wines');
+    });
+
+    it('renders title on Step 3', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test Wine' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+
+      const title = wizard.querySelector('.restaurant-step-title');
+      expect(title.textContent).toBe('Add Your Dishes');
+    });
+
+    it('renders title on Step 4', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      currentSelectedDishes = [{ id: 1, name: 'Test' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+      wizard.querySelector('.restaurant-nav-next').click(); // 3→4
+
+      const title = wizard.querySelector('.restaurant-step-title');
+      expect(title.textContent).toBe('Your Pairings');
+    });
+
+    it('title survives module render (wrapper pattern)', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      // Module renders into #restaurant-step-container (the body), not the wrapper
+      const title = wizard.querySelector('.restaurant-step-title');
+      expect(title).toBeTruthy();
+      expect(title.textContent).toBe('Review & Select Wines');
+      // Body has module content
+      const body = wizard.querySelector('.restaurant-step-body');
+      expect(body.querySelector('.mock-wine-review')).toBeTruthy();
+    });
+  });
+
+  describe('wizard subtitle (R3)', () => {
+    it('renders subtitle on Step 1', () => {
+      initRestaurantPairing();
+
+      const subtitle = wizard.querySelector('.restaurant-wizard-subtitle');
+      expect(subtitle).toBeTruthy();
+      expect(subtitle.textContent).toContain('Snap your wine list');
+      expect(subtitle.style.display).not.toBe('none');
+    });
+
+    it('hides subtitle on Step 2', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click();
+
+      const subtitle = wizard.querySelector('.restaurant-wizard-subtitle');
+      expect(subtitle.style.display).toBe('none');
+    });
+
+    it('shows subtitle again when returning to Step 1', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-back').click(); // 2→1
+
+      const subtitle = wizard.querySelector('.restaurant-wizard-subtitle');
+      expect(subtitle.style.display).not.toBe('none');
+    });
+  });
+
+  // --- Phase 2 UX: Contextual Nav Labels + Preventive Validation ---
+
+  describe('contextual nav labels (R6)', () => {
+    it('Step 1 next button says "Review Wines →"', () => {
+      initRestaurantPairing();
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      expect(nextBtn.textContent).toBe('Review Wines \u2192');
+    });
+
+    it('Step 2 next says "Add Dishes →" and back says "← Wine List"', () => {
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const backBtn = wizard.querySelector('.restaurant-nav-back');
+      expect(nextBtn.textContent).toBe('Add Dishes \u2192');
+      expect(backBtn.textContent).toBe('\u2190 Wine List');
+    });
+
+    it('Step 3 next says "Get Pairings →" and back says "← Review Wines"', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const backBtn = wizard.querySelector('.restaurant-nav-back');
+      expect(nextBtn.textContent).toBe('Get Pairings \u2192');
+      expect(backBtn.textContent).toBe('\u2190 Review Wines');
+    });
+
+    it('Step 4 back says "← Review Dishes"', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      currentSelectedDishes = [{ id: 1, name: 'Test' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+      wizard.querySelector('.restaurant-nav-next').click(); // 3→4
+
+      const backBtn = wizard.querySelector('.restaurant-nav-back');
+      expect(backBtn.textContent).toBe('\u2190 Review Dishes');
+    });
+  });
+
+  describe('preventive validation (R7)', () => {
+    it('nav helper element exists in DOM with aria-live', () => {
+      initRestaurantPairing();
+
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(helper).toBeTruthy();
+      expect(helper.getAttribute('aria-live')).toBe('polite');
+    });
+
+    it('next button has aria-describedby linking to helper text', () => {
+      initRestaurantPairing();
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(nextBtn.getAttribute('aria-describedby')).toBe('restaurant-nav-helper');
+      expect(helper.id).toBe('restaurant-nav-helper');
+    });
+
+    it('next button is not disabled on Step 1', () => {
+      initRestaurantPairing();
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      expect(nextBtn.disabled).toBe(false);
+    });
+
+    it('next button disabled on Step 2 when no wines selected', () => {
+      currentSelectedWines = [];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(nextBtn.disabled).toBe(true);
+      expect(helper.textContent).toBe('Select at least one wine to continue');
+    });
+
+    it('next button enabled on Step 2 when wines selected', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test Wine' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(nextBtn.disabled).toBe(false);
+      expect(helper.textContent).toBe('');
+    });
+
+    it('next button disabled on Step 3 when no dishes selected', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      currentSelectedDishes = [];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(nextBtn.disabled).toBe(true);
+      expect(helper.textContent).toBe('Select at least one dish to continue');
+    });
+
+    it('next button enabled on Step 3 when dishes selected', () => {
+      currentSelectedWines = [{ id: 1, name: 'Test' }];
+      currentSelectedDishes = [{ id: 1, name: 'Test' }];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+      wizard.querySelector('.restaurant-nav-next').click(); // 2→3
+
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      const helper = wizard.querySelector('.restaurant-nav-helper');
+      expect(nextBtn.disabled).toBe(false);
+      expect(helper.textContent).toBe('');
+    });
+
+    it('selection-changed event refreshes nav validation', () => {
+      currentSelectedWines = [];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      // Initially disabled
+      const nextBtn = wizard.querySelector('.restaurant-nav-next');
+      expect(nextBtn.disabled).toBe(true);
+
+      // Simulate wine selection change
+      currentSelectedWines = [{ id: 1, name: 'Wine' }];
+      wizard.dispatchEvent(new CustomEvent('restaurant:selection-changed', { bubbles: true }));
+
+      expect(nextBtn.disabled).toBe(false);
+      expect(wizard.querySelector('.restaurant-nav-helper').textContent).toBe('');
+    });
+
+    it('helper text clears when navigating away from validation step', () => {
+      currentSelectedWines = [];
+      initRestaurantPairing();
+      wizard.querySelector('.restaurant-nav-next').click(); // 1→2
+
+      // Helper text shows on empty Step 2
+      expect(wizard.querySelector('.restaurant-nav-helper').textContent).toContain('wine');
+
+      // Go back to Step 1
+      wizard.querySelector('.restaurant-nav-back').click();
+
+      expect(wizard.querySelector('.restaurant-nav-helper').textContent).toBe('');
     });
   });
 

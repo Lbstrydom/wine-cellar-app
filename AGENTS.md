@@ -29,8 +29,17 @@ src/
 │   ├── reduceNow.js       # /api/reduce-now/* endpoints
 │   └── stats.js           # /api/stats endpoint
 ├── services/
-│   ├── claude.js          # Claude API integration
-│   └── pairing.js         # Pairing logic and scoring
+│   ├── ai/                # Claude/OpenAI/Gemini integration
+│   ├── awards/            # Wine award extraction & matching
+│   ├── cellar/            # Cellar analysis, placement, suggestions
+│   ├── pairing/           # Food pairing engine & restaurant pairing
+│   ├── ratings/           # Rating extraction & normalization
+│   ├── scraping/          # Web scraping & document fetching
+│   ├── search/            # Google/SERP search pipeline
+│   ├── shared/            # Cross-domain utilities (cache, circuit breaker, etc.)
+│   ├── wine/              # Wine identity, parsing, drinking windows
+│   ├── zone/              # Zone management & reconfiguration
+│   └── *.js               # 5 root orchestrators (acquisitionWorkflow, palateProfile, etc.)
 └── db/
     ├── index.js           # Database abstraction (auto-selects SQLite or PostgreSQL)
     ├── sqlite.js          # SQLite implementation (better-sqlite3)
@@ -47,6 +56,7 @@ public/
 └── js/
     ├── app.js             # Main app initialisation, state management
     ├── api.js             # API calls wrapper
+    ├── pwa.js             # PWA install prompt, SW registration, update notification
     ├── grid.js            # Cellar/fridge grid rendering
     ├── modals.js          # Modal management
     ├── dragdrop.js        # Drag and drop functionality
@@ -672,7 +682,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1515 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1462 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -701,7 +711,14 @@ tests/
 └── unit/
     ├── config/              # Config module tests
     ├── middleware/          # Middleware tests
-    ├── services/            # Service tests
+    ├── routes/              # Route tests (supertest)
+    ├── services/            # Service tests (mirrors src/services/ subdirs)
+    │   ├── cellar/          # Cellar service tests
+    │   ├── pairing/         # Pairing service tests
+    │   ├── ratings/         # Rating service tests
+    │   ├── search/          # Search service tests
+    │   ├── shared/          # Shared service tests
+    │   └── wine/            # Wine service tests
     └── utils/               # Utility tests
 ```
 

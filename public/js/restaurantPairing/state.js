@@ -405,7 +405,7 @@ export function setDishSelected(id, selected) {
  * @returns {Array<Object>}
  */
 export function getSelectedWines() {
-  return state.wines.filter(w => state.selections.wines[w.id]);
+  return state.wines.filter(w => state.selections.wines[w.id] !== false);
 }
 
 /**
@@ -413,7 +413,7 @@ export function getSelectedWines() {
  * @returns {Array<Object>}
  */
 export function getSelectedDishes() {
-  return state.dishes.filter(d => state.selections.dishes[d.id]);
+  return state.dishes.filter(d => state.selections.dishes[d.id] !== false);
 }
 
 /**

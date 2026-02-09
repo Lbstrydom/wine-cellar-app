@@ -313,6 +313,30 @@ describe('Restaurant Pairing State', () => {
       expect(mod.getSelectedDishes()).toHaveLength(1);
     });
 
+    it('getSelectedWines treats missing selection keys as selected (restored session)', () => {
+      mod.mergeWines([
+        { name: 'Wine A', vintage: 2020, by_the_glass: false, confidence: 'high' },
+        { name: 'Wine B', vintage: 2021, by_the_glass: false, confidence: 'high' }
+      ]);
+      // Simulate restored session: clear selections map but keep wines
+      const sel = mod.getSelections();
+      delete sel.wines[1];
+      delete sel.wines[2];
+      // Missing keys should be treated as selected (consistent with !== false)
+      expect(mod.getSelectedWines()).toHaveLength(2);
+    });
+
+    it('getSelectedDishes treats missing selection keys as selected (restored session)', () => {
+      mod.mergeDishes([
+        { name: 'Dish A', confidence: 'high' },
+        { name: 'Dish B', confidence: 'high' }
+      ]);
+      const sel = mod.getSelections();
+      delete sel.dishes[1];
+      delete sel.dishes[2];
+      expect(mod.getSelectedDishes()).toHaveLength(2);
+    });
+
     it('selectAllWines selects all', () => {
       mod.mergeWines([
         { name: 'Wine A', vintage: 2020, by_the_glass: false, confidence: 'high' },

@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 8 February 2026
+## 9 February 2026
 
 ---
 
@@ -9,7 +9,16 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 7 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 9 Feb 2026**:
+- **Codebase Fix-Plan (All 6 Phases) — COMPLETE** ✅:
+  - **Phases 1-3 (Security + Bugs + Dead Files)**: Added requireAuth to admin route, cellar_id filtering to bottles queries, replaced raw fetch() with auth-imported fetch, fixed Zod v4 .errors→.issues bug, renamed shadowed wineRatings route, removed 14 dead service files (rateLimiter, robotsParser, provenance, searchMetrics, etc.) and 5 dead test files (~3,500 LOC removed)
+  - **Phase 4 (Dead Export Cleanup)**: Un-exported internal constants/functions from `noiseTerms.js` (4 items), deleted dead `isMarketingNoise()`, un-exported `resetZoneChatState` from `cellarAnalysis.js` + `state.js`. All other Phase 4 items verified already done from prior sessions. 19 tests removed (tested un-exported internals).
+  - **Phase 5 (Duplication & Code Quality)**: Deduplicated `renderStars()` — removed local copy from `wineConfirmation.js` (had wider half-star threshold + typo), now imports from `ratings.js`. Extracted ~190 lines of PWA/service-worker code from `app.js` to new `pwa.js` module (SW registration, update notification, install prompt, PWA status). Removed unused `.stars-filled/.stars-half/.stars-empty` CSS classes. All other Phase 5 items verified already done.
+  - **Phase 6 (Directory Restructuring)**: Reorganised `src/services/` from 86 flat files into 10 domain subdirectories (ai/, awards/, cellar/, pairing/, ratings/, scraping/, search/, shared/, wine/, zone/) with 5 root orchestrators. Atomic approach: 81 files moved, ~290 import rewrites (120 outbound, 61 internal, 105 inbound, ~24 dynamic), 17 vi.mock path fixes, 12 test files moved to matching subdirectories. All @module JSDoc paths updated.
+  - **Review fixes**: Added 11 always-running unit tests for `wineAddOrchestrator.js` (fingerprinting, duplicate detection, cellar isolation, metrics resilience) to cover orchestration logic that was previously only tested by conditional DB-backed integration tests. Cleaned stale `@see` JSDoc cross-references in `ratings.js`.
+  - **Test count**: 1462 unit tests passing across 50 files. Zero regressions.
+  - Plan document: `docs/fix-plan.md` (6 phases, detailed plan in `.claude/plans/curried-rolling-salamander.md`)
+
 - **Restaurant Pairing Assistant — Phase A+B COMPLETE** ✅:
   - **Phase A (Backend Core, Steps 1-6)**: Zod schemas (`restaurantPairing.js` — parse-menu, recommend, chat), input sanitizer extensions (`sanitizeMenuText`, `sanitizeMenuItems`), AI model config (`menuParsing` + `restaurantPairing` → Sonnet 4.5), menu parsing service (`menuParsing.js` — single-image Claude Vision, 30s timeout, OCR sanitization), restaurant pairing service (`restaurantPairing.js` — prompt building, deterministic fallback, owner-scoped chat with 30-min TTL), route + registration (3 endpoints mounted in `server.js` BEFORE global body parser with own 5mb limit)
   - **Phase B (Backend Tests, Steps 7-11)**: 261 new tests — schema tests (127), service tests (95: menuParsing 37 + restaurantPairing 58), route tests (39 via supertest with production errorHandler), auth header scan for `restaurantPairing/` folder.
@@ -27,7 +36,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Orange colour support**: Added to WINE_COLOURS enum, Zod schemas, DB migration (049), base schema parity (postgres + sqlite CHECK constraints)
   - **Acquisition workflow fix**: Pre-existing PostgreSQL bug fixed — `RETURNING id` added to INSERT, switched to `.get()`
   - **Route-level tests with supertest**: Both `consistency.test.js` (22 tests) and `winesAdvisory.test.js` (16 tests) exercise real Express middleware chains — real Zod validation, real `req.validated` fallback, real `captureGrapes` ordering, real fail-open behavior
-  - **Test Coverage**: 1515 unit tests passing across 48 files. Zero regressions.
+  - **Test Coverage**: 1462 unit tests passing across 50 files. Zero regressions.
   - Files: `grapeColourMap.js`, `wineNormalization.js`, `consistencyChecker.js`, `consistency.js` (route), migration 049, updated `wines.js`, `acquisitionWorkflow.js`, `wine.js` (schema), `index.js` (route registration)
   - Plan document: `docs/colour-plan.md` (13 steps, 17 reviewer findings addressed)
 
@@ -288,7 +297,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **1500+ tests passing** (1515 unit + 53 integration + 30 benchmark)
+- **1500+ tests passing** (1462 unit + 21 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -297,8 +306,8 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1113 unit tests (~1s) | ❌ No |
-| `npm run test:integration` | Runs 53 integration tests (~6s) | ✅ Auto-managed |
+| `npm run test:unit` | Runs 1462 unit tests (~1s) | ❌ No |
+| `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -349,7 +358,13 @@ tests/
 └── unit/
     ├── config/               # Config module tests
     ├── middleware/           # Middleware tests
-    ├── services/             # Service tests (ratings, parsing, etc.)
+    ├── services/             # Service tests (mirrors src/services/ subdirs)
+    │   ├── cellar/           # Cellar service tests
+    │   ├── pairing/          # Pairing service tests
+    │   ├── ratings/          # Rating service tests
+    │   ├── search/           # Search service tests
+    │   ├── shared/           # Shared service tests
+    │   └── wine/             # Wine service tests
     └── utils/                # Utility tests
 ```
 
@@ -1114,23 +1129,21 @@ public/js/
 - Consistent error handling
 - JSON request/response format
 
-**Service Layer** (`src/services/`):
+**Service Layer** (`src/services/`) — 10 domain subdirectories + 5 root orchestrators:
 
-| Service | Purpose |
-|---------|---------|
-| `claude.js` | Claude API integration |
-| `ratings.js` | Score normalization/aggregation |
-| `searchProviders.js` | Multi-provider search |
-| `awards.js` | Award import/matching |
-| `cellarAnalysis.js` | Misplacement detection |
-| `drinkNowAI.js` | **✨ NEW** AI drink recommendations |
-| `tastingExtractor.js` | **✨ NEW** Tasting note → structured |
-| `provenance.js` | **✨ NEW** Data provenance tracking |
-| `rateLimiter.js` | **✨ NEW** Per-source rate limiting |
-| `circuitBreaker.js` | **✨ NEW** Failure protection |
-| `scrapingGovernance.js` | **✨ NEW** Unified governance |
-| `cacheService.js` | Search result caching |
-| `jobQueue.js` | Async job processing |
+| Subdirectory | Files | Purpose |
+|-------------|-------|---------|
+| `ai/` | 4 | Claude/OpenAI/Gemini API integration, AI drink recommendations |
+| `awards/` | 8 | Award import, PDF/web extraction, matching |
+| `cellar/` | 10 | Allocation, placement, health, metrics, narratives, analysis |
+| `pairing/` | 6 | Food-wine pairing engine, sommelier, restaurant pairing |
+| `ratings/` | 5 | Score normalization, source selection, structured parsers |
+| `scraping/` | 6 | Page fetching, authenticated scraping, Vivino/Decanter |
+| `search/` | 13 | Google/Gemini search, query building, URL/relevance scoring |
+| `shared/` | 9 | Cache, circuit breaker, encryption, fetch utils, job queue |
+| `wine/` | 12 | Identity, fingerprint, name parsing, drinking windows |
+| `zone/` | 8 | Zone chat, metadata, pins, capacity, reconfiguration |
+| _(root)_ | 5 | Cross-domain orchestrators (acquisitionWorkflow, palateProfile, tastingExtractor, tastingNotesV2, vocabularyNormaliser) |
 
 **Configuration Layer** (`src/config/`):
 

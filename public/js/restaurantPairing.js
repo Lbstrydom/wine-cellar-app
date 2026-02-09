@@ -60,12 +60,23 @@ function renderStep(step) {
   destroyCurrentStep();
   setStep(step);
 
+  const STEP_TITLES = ['Capture Wine List', 'Review & Select Wines', 'Add Your Dishes', 'Your Pairings'];
   const stepContainer = wizardContainer.querySelector('.restaurant-step-content');
   if (!stepContainer) return;
 
-  // Give step container a unique ID for step modules
-  stepContainer.id = 'restaurant-step-container';
-  stepContainer.innerHTML = '';
+  // Create wrapper with persistent title + body mount
+  stepContainer.innerHTML = `
+    <div class="restaurant-step-wrapper">
+      <h3 class="restaurant-step-title">${STEP_TITLES[step - 1]}</h3>
+      <div class="restaurant-step-body" id="restaurant-step-container"></div>
+    </div>
+  `;
+
+  // Toggle subtitle (visible on Step 1 only)
+  const subtitle = wizardContainer.querySelector('.restaurant-wizard-subtitle');
+  if (subtitle) subtitle.style.display = step === 1 ? '' : 'none';
+
+  const stepBody = stepContainer.querySelector('#restaurant-step-container');
 
   switch (step) {
     case 1: {
@@ -76,15 +87,15 @@ function renderStep(step) {
             ⚡ Quick Pair — snap &amp; type → instant pairings
           </button>
         </div>`;
-      stepContainer.insertAdjacentHTML('afterbegin', bannerHtml);
+      stepBody.insertAdjacentHTML('afterbegin', bannerHtml);
 
       // Wire Quick Pair trigger (tracked via addListener for cleanup)
-      const qpTrigger = stepContainer.querySelector('.restaurant-quick-pair-trigger');
+      const qpTrigger = stepBody.querySelector('.restaurant-quick-pair-trigger');
       addListener(qpTrigger, 'click', () => {
-        // Replace step content with quick pair form
+        // Replace step body with quick pair form (preserves title wrapper)
         destroyCurrentStep();
-        stepContainer.innerHTML = '';
-        const qp = renderQuickPair(stepContainer, {
+        stepBody.innerHTML = '';
+        const qp = renderQuickPair(stepBody, {
           parseBudget,
           onComplete: async () => {
             await runQuickPairFlow();
@@ -98,7 +109,7 @@ function renderStep(step) {
 
       // Sub-container for capture widget (so banner is preserved)
       const captureContainer = document.createElement('div');
-      stepContainer.appendChild(captureContainer);
+      stepBody.appendChild(captureContainer);
       const captureWidget = createImageCapture(captureContainer, {
         type: 'wine_list',
         maxImages: 4,
@@ -151,19 +162,43 @@ function updateStepIndicator(activeStep) {
 
 // --- Navigation ---
 
+/** Contextual nav button labels per step */
+const NEXT_LABELS = ['Review Wines \u2192', 'Add Dishes \u2192', 'Get Pairings \u2192'];
+const BACK_LABELS = ['\u2190 Wine List', '\u2190 Review Wines', '\u2190 Review Dishes'];
+
 /**
- * Update nav button visibility and state.
+ * Update nav button visibility, text, and validation state.
  * @param {number} step
  */
 function updateNavButtons(step) {
   const backBtn = wizardContainer.querySelector('.restaurant-nav-back');
   const nextBtn = wizardContainer.querySelector('.restaurant-nav-next');
+  const helperEl = wizardContainer.querySelector('.restaurant-nav-helper');
 
+  // Visibility + contextual labels (R6)
   if (backBtn) {
     backBtn.style.display = step === 1 ? 'none' : '';
+    if (step > 1) backBtn.textContent = BACK_LABELS[step - 2];
   }
   if (nextBtn) {
     nextBtn.style.display = step === 4 ? 'none' : '';
+    if (step < 4) nextBtn.textContent = NEXT_LABELS[step - 1];
+  }
+
+  // Preventive validation (R7)
+  if (nextBtn && helperEl) {
+    if (step === 2) {
+      const wineCount = getSelectedWines().length;
+      nextBtn.disabled = wineCount === 0;
+      helperEl.textContent = wineCount === 0 ? 'Select at least one wine to continue' : '';
+    } else if (step === 3) {
+      const dishCount = getSelectedDishes().length;
+      nextBtn.disabled = dishCount === 0;
+      helperEl.textContent = dishCount === 0 ? 'Select at least one dish to continue' : '';
+    } else {
+      nextBtn.disabled = false;
+      helperEl.textContent = '';
+    }
   }
 }
 
@@ -316,17 +351,26 @@ export function initRestaurantPairing() {
         ${STEP_LABELS.map((label, i) => {
           const num = i + 1;
           return `<button class="restaurant-step-indicator-item" type="button"
-                          data-step="${num}" aria-label="Step ${num}: ${label}">${num}</button>`;
+                          data-step="${num}" aria-label="Step ${num}: ${label}">
+                    ${num}
+                    <span class="restaurant-step-label">${label}</span>
+                  </button>`;
         }).join('')}
       </nav>
       <button class="btn btn-outline restaurant-start-over-btn" type="button">Start Over</button>
     </div>
+    <p class="restaurant-wizard-subtitle text-muted">
+      Snap your wine list \u2192 pick dishes \u2192 get AI pairings
+    </p>
     <div class="restaurant-step-content"></div>
     <div class="restaurant-nav-bar">
       <button class="btn btn-secondary restaurant-nav-back" type="button"
               aria-label="Go to previous step">Back</button>
-      <button class="btn btn-primary restaurant-nav-next" type="button"
-              aria-label="Go to next step">Next</button>
+      <div class="restaurant-nav-next-group">
+        <button class="btn btn-primary restaurant-nav-next" type="button"
+                aria-label="Go to next step" aria-describedby="restaurant-nav-helper">Next</button>
+        <span class="restaurant-nav-helper text-muted" id="restaurant-nav-helper" aria-live="polite"></span>
+      </div>
     </div>
   `;
 
@@ -359,6 +403,11 @@ export function initRestaurantPairing() {
   // --- Bind refine event (dispatched from results.js, avoids circular import) ---
   addListener(wizardContainer, 'restaurant:refine', () => {
     renderStep(2);
+  });
+
+  // --- Bind selection-changed event (dispatched from wineReview / dishReview) ---
+  addListener(wizardContainer, 'restaurant:selection-changed', () => {
+    updateNavButtons(getStep());
   });
 
   // --- Bind mode toggle ---

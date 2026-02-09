@@ -5514,19 +5514,6 @@ body.slot-picker-mode .slot.picker-placed::after {
   letter-spacing: 1px;
 }
 
-.stars-filled {
-  color: var(--accent);
-}
-
-.stars-half {
-  color: var(--accent);
-  opacity: 0.6;
-}
-
-.stars-empty {
-  color: var(--border);
-}
-
 .rating-value {
   font-weight: 600;
   color: var(--text);
@@ -7229,6 +7216,30 @@ body.move-guide-active #view-grid {
   min-height: 0;
 }
 
+/* Step wrapper — persistent title + body mount */
+.restaurant-step-wrapper {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.restaurant-step-title {
+  font-size: var(--font-xl);
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+.restaurant-step-body {
+  flex: 1;
+  min-height: 0;
+}
+
+/* Wizard subtitle — journey preview (Step 1 only) */
+.restaurant-wizard-subtitle {
+  font-size: var(--font-sm);
+  margin: 0 0 1rem 0;
+  text-align: center;
+}
+
 /* --- Step Indicator (Gestalt: Continuity) --- */
 
 .restaurant-step-indicator {
@@ -7256,6 +7267,26 @@ body.move-guide-active #view-grid {
   transition: all 0.2s;
   position: relative;
   z-index: 1;
+}
+
+/* Step labels below circles (Gestalt: Labelling) */
+.restaurant-step-label {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 0.25rem;
+  font-size: var(--font-2xs);
+  color: var(--text-muted);
+  white-space: nowrap;
+  font-weight: 500;
+  pointer-events: none;
+}
+.restaurant-step-indicator-item.active .restaurant-step-label {
+  color: var(--accent);
+}
+.restaurant-step-indicator-item.completed .restaurant-step-label {
+  color: var(--accent);
 }
 
 /* Connecting line between circles (Gestalt: Continuity) */
@@ -7399,12 +7430,31 @@ body.move-guide-active #view-grid {
   border-top: 1px solid var(--border);
 }
 
+/* Next button group — button + validation helper (R7) */
+.restaurant-nav-next-group {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.25rem;
+}
+
+.restaurant-nav-helper {
+  font-size: var(--font-xs);
+  color: var(--text-muted);
+  min-height: 1.2em;
+}
+
+.restaurant-nav-next:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Wizard header — indicator + Start Over */
 .restaurant-wizard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 1rem;
+  margin-bottom: 2rem; /* Extra space for step labels below circles */
 }
 
 /* Start Over button — muted, intentionally small */
@@ -8050,6 +8100,12 @@ body.move-guide-active #view-grid {
   .restaurant-wizard-header {
     flex-wrap: wrap;
     gap: 0.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* Abbreviated step labels on narrow screens */
+  .restaurant-step-label {
+    font-size: 0.55rem;
   }
 
   /* Image grid — force 2 columns */
@@ -8097,6 +8153,9 @@ body.move-guide-active #view-grid {
   .restaurant-step-indicator-item + .restaurant-step-indicator-item::before {
     width: 16px;
   }
+  .restaurant-step-label {
+    font-size: 0.6rem;
+  }
 }
 
 /* --- Print Styles --- */
@@ -8105,6 +8164,7 @@ body.move-guide-active #view-grid {
   /* Hide everything except results */
   .restaurant-mode-toggle,
   .restaurant-wizard-header,
+  .restaurant-wizard-subtitle,
   .restaurant-nav-bar,
   .restaurant-quick-pair-banner,
   .restaurant-chat-section,

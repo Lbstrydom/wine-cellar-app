@@ -56,7 +56,7 @@ let _currentManualRatingWineId = null;
 /**
  * Render star rating display.
  * Uses single wrapper span with text characters (★½☆). Half-star threshold: 0.5.
- * @see {@link module:bottles/wineConfirmation~renderStars} for CSS-classed per-star variant (threshold 0.3–0.8)
+ * Shared across ratings panel and wine confirmation modal.
  * @param {number} stars - Star rating (0-5, half increments)
  * @param {string} size - 'small' or 'large'
  * @returns {string} HTML string

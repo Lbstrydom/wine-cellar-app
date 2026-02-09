@@ -45,6 +45,13 @@ function cleanupCardListeners() {
   cardListeners.length = 0;
 }
 
+/** Notify parent wizard that dish selection changed (R7 — preventive validation). */
+function dispatchSelectionChanged() {
+  if (rootContainer) {
+    rootContainer.dispatchEvent(new CustomEvent('restaurant:selection-changed', { bubbles: true }));
+  }
+}
+
 // --- Render ---
 
 /**
@@ -59,7 +66,6 @@ export function renderDishReview(containerId, parseBudget) {
   rootContainer.innerHTML = `
     <div class="restaurant-dish-review" role="region" aria-label="Dish review">
       <div class="restaurant-dish-capture-section">
-        <h3>Capture Dish Menu</h3>
         <div class="restaurant-dish-capture-container"></div>
       </div>
       <div class="restaurant-dish-review-section">
@@ -97,6 +103,7 @@ export function renderDishReview(containerId, parseBudget) {
       renderDishCards();
       updateDishCounter();
       updateTriageBanner();
+      dispatchSelectionChanged();
     }
   });
 
@@ -127,6 +134,7 @@ export function renderDishReview(containerId, parseBudget) {
     renderDishCards();
     updateDishCounter();
     updateTriageBanner();
+    dispatchSelectionChanged();
   });
 
   // Initial render
@@ -180,6 +188,7 @@ function renderDishCards() {
       setDishSelected(dishId, !current);
       renderDishCards();
       updateDishCounter();
+      dispatchSelectionChanged();
     };
     const clickHandler = (e) => {
       if (e.target.closest('.restaurant-dish-remove')) return;
@@ -204,6 +213,7 @@ function renderDishCards() {
       renderDishCards();
       updateDishCounter();
       updateTriageBanner();
+      dispatchSelectionChanged();
     };
     addCardListener(btn, 'click', handler);
   });

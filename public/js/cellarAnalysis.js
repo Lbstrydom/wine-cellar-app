@@ -17,8 +17,7 @@
 // Re-export state accessors
 export {
   getCurrentAnalysis,
-  isAnalysisLoaded,
-  resetZoneChatState
+  isAnalysisLoaded
 } from './cellarAnalysis/state.js';
 
 // Re-export analysis functions

@@ -115,7 +115,7 @@ export function setZoneChatContext(context) {
 /**
  * Reset zone chat state.
  */
-export function resetZoneChatState() {
+function resetZoneChatState() {
   analysisState.zoneChatContext = null;
 }
 
