@@ -8,6 +8,7 @@ import logger from '../utils/logger.js';
 
 /**
  * Available Claude models with their characteristics.
+ * @internal — exported for unit tests only
  * @type {Object.<string, Object>}
  */
 export const MODELS = {
@@ -39,6 +40,7 @@ export const MODELS = {
 
 /**
  * Task-to-model mapping for automatic selection.
+ * @internal — exported for unit tests only
  * @type {Object.<string, string>}
  */
 export const TASK_MODELS = {
@@ -106,6 +108,7 @@ export function getModelForTask(task) {
 
 /**
  * Get model configuration.
+ * @internal — exported for unit tests only
  * @param {string} modelId - Model identifier
  * @returns {Object|null} Model configuration or null if not found
  */
@@ -125,6 +128,7 @@ export function getMaxTokens(modelId) {
 
 /**
  * Check if a model has a specific capability.
+ * @internal — exported for unit tests only
  * @param {string} modelId - Model identifier
  * @param {string} capability - Capability to check
  * @returns {boolean} Whether model has capability
@@ -136,6 +140,7 @@ export function hasCapability(modelId, capability) {
 
 /**
  * List all available models.
+ * @internal — exported for unit tests only
  * @returns {Array} Array of model configs
  */
 export function listModels() {
@@ -144,6 +149,7 @@ export function listModels() {
 
 /**
  * Get models suitable for a capability.
+ * @internal — exported for unit tests only
  * @param {string} capability - Required capability
  * @returns {Array} Array of suitable model IDs
  */

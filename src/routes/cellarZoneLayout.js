@@ -11,14 +11,14 @@ import {
   updateZoneMetadata,
   confirmZoneMetadata,
   getZonesNeedingReview
-} from '../services/zoneMetadata.js';
+} from '../services/zone/zoneMetadata.js';
 import {
   proposeZoneLayout,
   saveZoneLayout,
   getSavedZoneLayout,
   generateConsolidationMoves
-} from '../services/zoneLayoutProposal.js';
-import { discussZoneClassification } from '../services/zoneChat.js';
+} from '../services/zone/zoneLayoutProposal.js';
+import { discussZoneClassification } from '../services/zone/zoneChat.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots } from './cellar.js';
 

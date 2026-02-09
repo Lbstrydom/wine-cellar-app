@@ -14,12 +14,12 @@
  * @module jobs/ratingFetchJob
  */
 
-import { fetchWineRatings, saveExtractedWindows } from '../services/claude.js';
-import { hybridWineSearch, isGeminiSearchAvailable } from '../services/geminiSearch.js';
-import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/serpAi.js';
-import { calculateWineRatings, saveRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings.js';
+import { fetchWineRatings, saveExtractedWindows } from '../services/ai/index.js';
+import { hybridWineSearch, isGeminiSearchAvailable } from '../services/search/geminiSearch.js';
+import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/search/serpAi.js';
+import { calculateWineRatings, saveRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
-import { withCircuitBreaker, isCircuitOpen } from '../services/circuitBreaker.js';
+import { withCircuitBreaker, isCircuitOpen } from '../services/shared/circuitBreaker.js';
 import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';

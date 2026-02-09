@@ -35,43 +35,6 @@ export function nowFunc() {
 }
 
 /**
- * Get the case-insensitive LIKE operator (PostgreSQL: ILIKE).
- *
- * @returns {string} ILIKE operator
- *
- * @example
- * ilike()
- * // Returns: "ILIKE"
- */
-export function ilike() {
-  return 'ILIKE';
-}
-
-/**
- * Build an upsert statement (PostgreSQL: INSERT ... ON CONFLICT).
- *
- * @param {string} table - Table name
- * @param {string[]} columns - Column names
- * @param {string} conflictColumn - Column that defines uniqueness
- * @param {string[]} updateColumns - Columns to update on conflict
- * @returns {string} Complete INSERT statement
- *
- * @example
- * upsert('user_settings', ['key', 'value'], 'key', ['value'])
- * // Returns: "INSERT INTO user_settings (key, value) VALUES ($1, $2)
- * //           ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value"
- */
-export function upsert(table, columns, conflictColumn, updateColumns) {
-  const placeholders = columns.map((_, i) => `$${i + 1}`).join(', ');
-  const updates = updateColumns
-    .map(col => `${col} = EXCLUDED.${col}`)
-    .join(', ');
-
-  return `INSERT INTO ${table} (${columns.join(', ')}) VALUES (${placeholders})
-          ON CONFLICT(${conflictColumn}) DO UPDATE SET ${updates}`;
-}
-
-/**
  * Build an ORDER BY clause with NULLS LAST (PostgreSQL native support).
  *
  * @param {string} column - Column expression to order by
@@ -86,10 +49,3 @@ export function nullsLast(column, direction = 'ASC') {
   return `${column} ${direction} NULLS LAST`;
 }
 
-export default {
-  stringAgg,
-  nowFunc,
-  ilike,
-  upsert,
-  nullsLast
-};

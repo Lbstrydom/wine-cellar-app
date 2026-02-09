@@ -14,7 +14,7 @@ import {
   drinkBottleSchema,
   locationParamSchema
 } from '../schemas/slot.js';
-import { invalidateAnalysisCache } from '../services/cacheService.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();

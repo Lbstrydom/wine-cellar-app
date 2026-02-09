@@ -5,10 +5,7 @@
  * @module config/noiseTerms
  */
 
-/**
- * Food pairing terms that should be filtered when they appear
- * in context suggesting food pairing, not wine character.
- */
+/** @internal — exported for unit tests only */
 export const FOOD_PAIRING_NOISE = [
   'cheese',
   'cream',
@@ -39,9 +36,7 @@ export const FOOD_PAIRING_NOISE = [
   'seared'
 ];
 
-/**
- * Marketing hyperbole terms that add no descriptive value.
- */
+/** @internal — exported for unit tests only */
 export const MARKETING_HYPERBOLE = [
   'explosive',
   'amazing',
@@ -76,9 +71,7 @@ export const MARKETING_HYPERBOLE = [
   'real'
 ];
 
-/**
- * Contextual phrases that indicate food pairing context.
- */
+/** @internal — exported for unit tests only */
 export const PAIRING_CONTEXT_PHRASES = [
   'pair',
   'serve',
@@ -93,6 +86,7 @@ export const PAIRING_CONTEXT_PHRASES = [
 
 /**
  * Check if a term is in the noise list.
+ * @internal — exported for unit tests only
  * @param {string} term - Term to check
  * @returns {boolean} True if term is noise
  */
@@ -103,6 +97,7 @@ export function isMarketingNoise(term) {
 
 /**
  * Check if text contains food pairing context.
+ * @internal — exported for unit tests only
  * @param {string} text - Surrounding text
  * @returns {boolean} True if pairing context detected
  */
@@ -139,11 +134,3 @@ export function isNoiseTerm(term, context = {}) {
   return false;
 }
 
-export default {
-  FOOD_PAIRING_NOISE,
-  MARKETING_HYPERBOLE,
-  PAIRING_CONTEXT_PHRASES,
-  isMarketingNoise,
-  hasPairingContext,
-  isNoiseTerm
-};

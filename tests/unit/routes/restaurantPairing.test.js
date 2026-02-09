@@ -21,12 +21,12 @@ vi.mock('../../../src/middleware/rateLimiter.js', () => ({
   createRateLimiter: vi.fn(() => (_req, _res, next) => next())
 }));
 
-vi.mock('../../../src/services/menuParsing.js', () => ({
+vi.mock('../../../src/services/pairing/menuParsing.js', () => ({
   parseMenuFromText: vi.fn(),
   parseMenuFromImage: vi.fn()
 }));
 
-vi.mock('../../../src/services/restaurantPairing.js', () => ({
+vi.mock('../../../src/services/pairing/restaurantPairing.js', () => ({
   getRecommendations: vi.fn(),
   continueChat: vi.fn(),
   CHAT_ERRORS: { NOT_FOUND: 'NOT_FOUND', FORBIDDEN: 'FORBIDDEN' }
@@ -43,8 +43,8 @@ vi.mock('../../../src/utils/logger.js', () => ({
 import express from 'express';
 import request from 'supertest';
 import router from '../../../src/routes/restaurantPairing.js';
-import { parseMenuFromText, parseMenuFromImage } from '../../../src/services/menuParsing.js';
-import { getRecommendations, continueChat, CHAT_ERRORS } from '../../../src/services/restaurantPairing.js';
+import { parseMenuFromText, parseMenuFromImage } from '../../../src/services/pairing/menuParsing.js';
+import { getRecommendations, continueChat, CHAT_ERRORS } from '../../../src/services/pairing/restaurantPairing.js';
 import { strictRateLimiter, createRateLimiter } from '../../../src/middleware/rateLimiter.js';
 import { requireAuth } from '../../../src/middleware/auth.js';
 import { requireCellarContext } from '../../../src/middleware/cellarContext.js';

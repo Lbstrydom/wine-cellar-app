@@ -74,30 +74,6 @@ export const STYLE_TAGS = [
   'austere', 'generous', 'complex', 'approachable'
 ];
 
-/**
- * Intensity levels for various wine characteristics.
- */
-export const INTENSITY_LEVELS = ['light', 'medium', 'pronounced'];
-
-/**
- * Sweetness scale.
- */
-export const SWEETNESS_LEVELS = ['dry', 'off-dry', 'medium', 'sweet'];
-
-/**
- * Body scale.
- */
-export const BODY_LEVELS = ['light', 'medium', 'full'];
-
-/**
- * Acidity, tannin, alcohol scales.
- */
-export const STRUCTURAL_LEVELS = ['low', 'medium', 'high'];
-
-/**
- * Finish length scale.
- */
-export const FINISH_LEVELS = ['short', 'medium', 'long'];
 
 /**
  * Get all fruit terms as a flat array.
@@ -123,73 +99,3 @@ export function getAllTertiaryTerms() {
   return Object.values(TERTIARY_DESCRIPTORS).flat();
 }
 
-/**
- * Check if a term exists in our vocabulary.
- * @param {string} term - Term to check
- * @returns {Object|null} Category info or null if not found
- */
-export function findTermCategory(term) {
-  const normalizedTerm = term.toLowerCase().replace(/ /g, '_');
-
-  // Check fruits
-  for (const [category, terms] of Object.entries(FRUIT_DESCRIPTORS)) {
-    if (terms.includes(normalizedTerm)) {
-      return { type: 'fruit', category, term: normalizedTerm };
-    }
-  }
-
-  // Check secondary
-  for (const [category, terms] of Object.entries(SECONDARY_DESCRIPTORS)) {
-    if (terms.includes(normalizedTerm)) {
-      return { type: 'secondary', category, term: normalizedTerm };
-    }
-  }
-
-  // Check tertiary
-  for (const [category, terms] of Object.entries(TERTIARY_DESCRIPTORS)) {
-    if (terms.includes(normalizedTerm)) {
-      return { type: 'tertiary', category, term: normalizedTerm };
-    }
-  }
-
-  // Check texture
-  if (TEXTURE_DESCRIPTORS.includes(normalizedTerm)) {
-    return { type: 'texture', term: normalizedTerm };
-  }
-
-  // Check style tags
-  if (STYLE_TAGS.includes(normalizedTerm)) {
-    return { type: 'style_tag', term: normalizedTerm };
-  }
-
-  return null;
-}
-
-/**
- * Get human-readable display name for a vocabulary term.
- * @param {string} term - Term in snake_case
- * @returns {string} Human-readable name
- */
-export function getDisplayName(term) {
-  return term
-    .replace(/_/g, ' ')
-    .replace(/\b\w/g, c => c.toUpperCase());
-}
-
-export default {
-  FRUIT_DESCRIPTORS,
-  SECONDARY_DESCRIPTORS,
-  TERTIARY_DESCRIPTORS,
-  TEXTURE_DESCRIPTORS,
-  STYLE_TAGS,
-  INTENSITY_LEVELS,
-  SWEETNESS_LEVELS,
-  BODY_LEVELS,
-  STRUCTURAL_LEVELS,
-  FINISH_LEVELS,
-  getAllFruitTerms,
-  getAllSecondaryTerms,
-  getAllTertiaryTerms,
-  findTermCategory,
-  getDisplayName
-};

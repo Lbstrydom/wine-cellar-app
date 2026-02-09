@@ -5,8 +5,8 @@
  */
 
 import { Router } from 'express';
-import { parseMenuFromText, parseMenuFromImage } from '../services/menuParsing.js';
-import { getRecommendations, continueChat, CHAT_ERRORS } from '../services/restaurantPairing.js';
+import { parseMenuFromText, parseMenuFromImage } from '../services/pairing/menuParsing.js';
+import { getRecommendations, continueChat, CHAT_ERRORS } from '../services/pairing/restaurantPairing.js';
 import { createRateLimiter, strictRateLimiter } from '../middleware/rateLimiter.js';
 import { validateBody } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/errorResponse.js';

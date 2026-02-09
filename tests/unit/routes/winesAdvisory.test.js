@@ -13,13 +13,13 @@ vi.mock('../../../src/db/index.js', () => ({
 }));
 
 // Mock consistencyChecker so we can control findings and test fail-open
-vi.mock('../../../src/services/consistencyChecker.js', () => ({
+vi.mock('../../../src/services/shared/consistencyChecker.js', () => ({
   checkWineConsistency: vi.fn(),
   auditCellar: vi.fn(),
 }));
 
 // Mock WineFingerprint (not under test)
-vi.mock('../../../src/services/wineFingerprint.js', () => ({
+vi.mock('../../../src/services/wine/wineFingerprint.js', () => ({
   WineFingerprint: {
     generateWithVersion: vi.fn(() => ({ fingerprint: 'mock-fp', version: 1 })),
     FINGERPRINT_VERSION: 1,
@@ -27,14 +27,14 @@ vi.mock('../../../src/services/wineFingerprint.js', () => ({
 }));
 
 // Mock wineAddOrchestrator (not under test)
-vi.mock('../../../src/services/wineAddOrchestrator.js', () => ({
+vi.mock('../../../src/services/wine/wineAddOrchestrator.js', () => ({
   evaluateWineAdd: vi.fn(),
 }));
 
 import express from 'express';
 import request from 'supertest';
 import winesRouter from '../../../src/routes/wines.js';
-import { checkWineConsistency } from '../../../src/services/consistencyChecker.js';
+import { checkWineConsistency } from '../../../src/services/shared/consistencyChecker.js';
 import db from '../../../src/db/index.js';
 
 /**

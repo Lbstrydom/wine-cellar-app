@@ -9,7 +9,7 @@ import {
   executeFillFridge,
   getAtRiskWines,
   generateShoppingList
-} from '../services/cellarHealth.js';
+} from '../services/cellar/cellarHealth.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();

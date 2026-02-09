@@ -17,7 +17,7 @@ let evaluateWineAdd;
 
 if (hasDatabase) {
   db = (await import('../../src/db/index.js')).default;
-  evaluateWineAdd = (await import('../../src/services/wineAddOrchestrator.js')).evaluateWineAdd;
+  evaluateWineAdd = (await import('../../src/services/wine/wineAddOrchestrator.js')).evaluateWineAdd;
 }
 
 const TEST_CELLAR_ID = '00000000-0000-0000-0000-000000000001';
@@ -197,7 +197,7 @@ describe.skipIf(!hasDatabase)('Phase 6: Wine Add Orchestrator Integration', () =
 
 describe.skipIf(!hasDatabase)('Phase 6: Cache Integration', () => {
   it('lookup returns null for cache miss', async () => {
-    const { lookupWineSearchCache } = await import('../../src/services/searchCache.js');
+    const { lookupWineSearchCache } = await import('../../src/services/search/searchCache.js');
     const result = await lookupWineSearchCache(
       TEST_CELLAR_ID,
       'nonexistent-fingerprint-xyz',
@@ -207,7 +207,7 @@ describe.skipIf(!hasDatabase)('Phase 6: Cache Integration', () => {
   });
 
   it('store and retrieve from cache', async () => {
-    const { storeWineSearchCache, lookupWineSearchCache } = await import('../../src/services/searchCache.js');
+    const { storeWineSearchCache, lookupWineSearchCache } = await import('../../src/services/search/searchCache.js');
     
     const fingerprint = 'test-cache-wine|cabernet|cabernet|2021|za';
     const queryHash = 'test-hash-123';

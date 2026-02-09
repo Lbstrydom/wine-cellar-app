@@ -349,6 +349,3 @@ function navigateToWine(wineId) {
   }, 200);
 }
 
-export default {
-  initRecommendations
-};

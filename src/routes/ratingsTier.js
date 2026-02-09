@@ -10,12 +10,12 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
-import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings.js';
-import { fetchWineRatings } from '../services/claude.js';
-import { hybridWineSearch, isGeminiSearchAvailable } from '../services/geminiSearch.js';
-import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/serpAi.js';
+import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
+import { fetchWineRatings } from '../services/ai/index.js';
+import { hybridWineSearch, isGeminiSearchAvailable } from '../services/search/geminiSearch.js';
+import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/search/serpAi.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
-import { withCircuitBreaker, isCircuitOpen } from '../services/circuitBreaker.js';
+import { withCircuitBreaker, isCircuitOpen } from '../services/shared/circuitBreaker.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateParams } from '../middleware/validate.js';

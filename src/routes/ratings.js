@@ -7,11 +7,11 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES } from '../config/unifiedSources.js';
-import { normalizeScore, calculateWineRatings } from '../services/ratings.js';
-import jobQueue from '../services/jobQueue.js';
-import { getCacheStats, purgeExpiredCache } from '../services/cacheService.js';
+import { normalizeScore, calculateWineRatings } from '../services/ratings/ratings.js';
+import jobQueue from '../services/shared/jobQueue.js';
+import { getCacheStats, purgeExpiredCache } from '../services/shared/cacheService.js';
 import logger from '../utils/logger.js';
-import { getWineAwards } from '../services/awards.js';
+import { getWineAwards } from '../services/awards/index.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
 import {
@@ -423,7 +423,7 @@ router.post('/:wineId/ratings/hybrid-search', validateParams(ratingWineIdSchema)
   }
 
   // Import hybrid search
-  const { hybridWineSearch, isGeminiSearchAvailable } = await import('../services/geminiSearch.js');
+  const { hybridWineSearch, isGeminiSearchAvailable } = await import('../services/search/geminiSearch.js');
 
   if (!isGeminiSearchAvailable()) {
     return res.status(503).json({

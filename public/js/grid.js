@@ -359,7 +359,7 @@ export function renderStorageAreas() {
  * Clean up grid event listeners.
  * Must be called before re-rendering.
  */
-export function cleanupGrid() {
+function cleanupGrid() {
   cleanupNamespace(NAMESPACE);
   cleanupDragAndDrop();
 }
@@ -641,6 +641,6 @@ function applyZoom() {
  * Get current zoom level.
  * @returns {number}
  */
-export function getZoomLevel() {
+function getZoomLevel() {
   return zoomState.level;
 }

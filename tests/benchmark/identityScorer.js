@@ -7,7 +7,7 @@ import {
   generateIdentityTokens,
   calculateIdentityScore,
   calculateDiscoveryTokenOverlap
-} from '../../src/services/wineIdentity.js';
+} from '../../src/services/wine/wineIdentity.js';
 
 /**
  * Extract range name from gold canonical name by removing producer prefix.

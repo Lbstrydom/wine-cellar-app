@@ -16,7 +16,7 @@ import {
   getAllTertiaryTerms
 } from '../config/tastingVocabulary.js';
 import { getModelForTask } from '../config/aiModels.js';
-import { sanitizeTastingNote } from './inputSanitizer.js';
+import { sanitizeTastingNote } from './shared/inputSanitizer.js';
 import logger from '../utils/logger.js';
 
 let anthropic = null;

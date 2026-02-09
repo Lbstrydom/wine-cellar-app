@@ -89,7 +89,7 @@ export function addArea({ name, storage_type, temp_zone }) {
   return area;
 }
 
-export function removeArea(index) {
+function removeArea(index) {
   if (index >= 0 && index < state.areas.length) {
     state.areas.splice(index, 1);
     emitChange();
@@ -104,7 +104,7 @@ export function addRow(areaIndex) {
   emitChange();
 }
 
-export function removeRow(areaIndex, rowNum) {
+function removeRow(areaIndex, rowNum) {
   const area = state.areas[areaIndex];
   if (!area) return;
   const idx = area.rows.findIndex(r => r.row_num === rowNum);
@@ -116,7 +116,7 @@ export function removeRow(areaIndex, rowNum) {
   }
 }
 
-export function setColumns(areaIndex, rowNum, colCount) {
+function setColumns(areaIndex, rowNum, colCount) {
   const area = state.areas[areaIndex];
   if (!area) return;
   const row = area.rows.find(r => r.row_num === rowNum);
@@ -128,7 +128,7 @@ export function setColumns(areaIndex, rowNum, colCount) {
 
 // Simple event system so host app can persist changes
 let onChangeCallbacks = [];
-export function onChange(cb) {
+function onChange(cb) {
   onChangeCallbacks.push(cb);
   return () => {
     onChangeCallbacks = onChangeCallbacks.filter(fn => fn !== cb);

@@ -122,7 +122,7 @@ function bindTriggerButton() {
 /**
  * Open the search overlay.
  */
-export function openSearch() {
+function openSearch() {
   searchState.isOpen = true;
   searchState.selectedIndex = 0;
   overlay.classList.add('active');
@@ -134,7 +134,7 @@ export function openSearch() {
 /**
  * Close the search overlay.
  */
-export function closeSearch() {
+function closeSearch() {
   searchState.isOpen = false;
   overlay.classList.remove('active');
   searchInput.value = '';
@@ -551,8 +551,3 @@ function executeAction(action) {
   }
 }
 
-export default {
-  initGlobalSearch,
-  openSearch,
-  closeSearch
-};

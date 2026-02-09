@@ -25,7 +25,7 @@ async function testPuppeteer() {
   console.log('='.repeat(70));
 
   try {
-    const { scrapeVivinoPage } = await import('../src/services/puppeteerScraper.js');
+    const { scrapeVivinoPage } = await import('../src/services/scraping/puppeteerScraper.js');
 
     console.log('Starting Puppeteer scrape...');
     const startTime = Date.now();
@@ -285,7 +285,7 @@ async function main() {
 
   // Cleanup
   try {
-    const { closePuppeteerClient } = await import('../src/services/puppeteerScraper.js');
+    const { closePuppeteerClient } = await import('../src/services/scraping/puppeteerScraper.js');
     await closePuppeteerClient();
   } catch {
     // Ignore

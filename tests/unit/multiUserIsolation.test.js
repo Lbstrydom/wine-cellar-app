@@ -25,7 +25,7 @@ describe('Multi-User Isolation', () => {
       db.prepare.mockReturnValue({ get: mockGet });
 
       // Import after mocking
-      const { lookupWineSearchCache } = await import('../../src/services/searchCache.js');
+      const { lookupWineSearchCache } = await import('../../src/services/search/searchCache.js');
 
       const cellarA = 1;
       const fingerprint = 'test-fingerprint';
@@ -44,7 +44,7 @@ describe('Multi-User Isolation', () => {
       const mockRun = vi.fn().mockResolvedValue({ changes: 1 });
       db.prepare.mockReturnValue({ run: mockRun });
 
-      const { storeWineSearchCache } = await import('../../src/services/searchCache.js');
+      const { storeWineSearchCache } = await import('../../src/services/search/searchCache.js');
 
       const cellarA = 1;
       const fingerprint = 'test-fingerprint';
@@ -77,7 +77,7 @@ describe('Multi-User Isolation', () => {
       const expectedPattern = /INSERT INTO search_metrics.*cellar_id/i;
 
       // Simulate what the orchestrator does
-      const { evaluateWineAdd } = await import('../../src/services/wineAddOrchestrator.js');
+      const { evaluateWineAdd } = await import('../../src/services/wine/wineAddOrchestrator.js');
 
       // This will try to insert metrics with cellar_id
       try {

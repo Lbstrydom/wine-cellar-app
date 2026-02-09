@@ -15,8 +15,8 @@
  */
 
 import 'dotenv/config';
-import { searchVivinoWines } from '../../src/services/vivinoSearch.js';
-import { searchWineRatings } from '../../src/services/searchProviders.js';
+import { searchVivinoWines } from '../../src/services/scraping/vivinoSearch.js';
+import { searchWineRatings } from '../../src/services/search/searchProviders.js';
 import { writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';

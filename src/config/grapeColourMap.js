@@ -19,10 +19,7 @@ import { normalizeGrape } from '../utils/wineNormalization.js';
  */
 const grapeColourMap = buildGrapeColourMap();
 
-/**
- * Grape synonym map — aliases to canonical names (~50 pairs).
- * Re-exported from wineNormalization for convenience.
- */
+/** @internal — exported for unit tests only */
 export { GRAPE_SYNONYMS } from '../utils/wineNormalization.js';
 
 /**
@@ -134,6 +131,7 @@ export function getExpectedColours(grape) {
 
 /**
  * Get canonical grape name via synonym resolution.
+ * @internal — exported for unit tests only
  * @param {string} grape - Raw grape name
  * @returns {string|null} Canonical grape name or null
  */
@@ -143,6 +141,7 @@ export function getCanonicalGrape(grape) {
 
 /**
  * Get the number of grapes in the map.
+ * @internal — exported for unit tests only
  * @returns {number}
  */
 export function getGrapeCount() {

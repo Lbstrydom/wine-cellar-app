@@ -166,7 +166,7 @@ router.get('/:id/serving-temperature', asyncHandler(async (req, res) => {
     return res.status(404).json({ error: 'Wine not found' });
   }
 
-  const { findServingTemperature, formatTemperature } = await import('../services/servingTemperature.js');
+  const { findServingTemperature, formatTemperature } = await import('../services/wine/servingTemperature.js');
   const temp = await findServingTemperature(wine);
 
   if (!temp) {

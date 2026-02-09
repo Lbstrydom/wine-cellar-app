@@ -5,8 +5,8 @@
 
 import { Router } from 'express';
 import multer from 'multer';
-import * as awardsService from '../services/awards.js';
-import * as ocrService from '../services/ocrService.js';
+import * as awardsService from '../services/awards/index.js';
+import * as ocrService from '../services/awards/ocrService.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';

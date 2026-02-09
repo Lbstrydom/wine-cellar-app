@@ -10,9 +10,7 @@
  * - LOW: Accept ±2 years or NV (everyday wines, consistent house styles)
  */
 
-/**
- * Wine types and their vintage sensitivity.
- */
+/** @internal — exported for unit tests only */
 export const vintageSensitivityByType = {
   // High sensitivity - each vintage is unique
   high: [
@@ -160,6 +158,7 @@ export function getVintageSensitivity(wine) {
 
 /**
  * Check if a vintage match is acceptable given wine sensitivity.
+ * @internal — exported for unit tests only
  * @param {Object} wine - Wine object
  * @param {number|null} wineVintage - Wine's vintage year
  * @param {number|null} ratingVintage - Rating's vintage year
@@ -249,6 +248,7 @@ export function filterRatingsByVintageSensitivity(wine, ratings) {
 
 /**
  * Get sensitivity level description.
+ * @internal — exported for unit tests only
  * @param {'high'|'medium'|'low'} level - Sensitivity level
  * @returns {string} Description
  */

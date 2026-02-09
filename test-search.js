@@ -4,7 +4,7 @@
  */
 
 import 'dotenv/config';
-import { searchGoogle, searchBrave, searchWineRatings } from './src/services/searchProviders.js';
+import { searchGoogle, searchBrave, searchWineRatings } from './src/services/search/searchProviders.js';
 
 const testWine = 'Springfield Estate Special Cuvee Sauvignon Blanc';
 const testVintage = '2024';

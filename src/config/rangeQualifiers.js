@@ -6,13 +6,7 @@
 
 /**
  * Registry of wine range qualifiers (classifications, product lines, marketing terms).
- * Each entry includes:
- * - term: The qualifier string to match
- * - aliases: Alternative spellings or abbreviations
- * - locales: ISO 639-1 codes where this term is regulated/common ('global' for worldwide)
- * - ambiguity: 'low', 'medium', or 'high' - how specific/ambiguous is this term?
- * - type: 'regulated_classification', 'product_line', 'marketing', 'sparkling'
- * - weight_base: Base scoring weight (0.5 to 1.0)
+ * @internal — exported for unit tests only
  */
 export const RANGE_QUALIFIER_REGISTRY = [
   // ===== GERMAN VDP + PRÄDIKAT =====
@@ -317,7 +311,7 @@ export function detectLocaleHints(wineName) {
 
 /**
  * Get effective weight for a qualifier, accounting for ambiguity.
- * High-ambiguity qualifiers are dampened unless locale is confirmed.
+ * @internal — exported for unit tests only
  * @param {Object} qualifier - Qualifier object from registry
  * @param {Object} localeHints - Locale hints map from detectLocaleHints
  * @returns {number} Effective weight (0.5 - 1.0)
@@ -366,9 +360,3 @@ export function getEffectiveWeight(qualifier, localeHints = {}) {
   return Math.max(0.4, Math.min(1.0, weight));
 }
 
-export default {
-  RANGE_QUALIFIER_REGISTRY,
-  detectQualifiers,
-  detectLocaleHints,
-  getEffectiveWeight
-};

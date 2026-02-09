@@ -15,8 +15,8 @@ import {
   STRUCTURED_PARSERS,
   tryStructuredExtraction,
   calculateConfidence
-} from '../../src/services/structuredParsers.js';
-import { WineFingerprint } from '../../src/services/wineFingerprint.js';
+} from '../../src/services/ratings/structuredParsers.js';
+import { WineFingerprint } from '../../src/services/wine/wineFingerprint.js';
 
 function loadFixture(filename) {
   return readFileSync(join(process.cwd(), 'tests', 'fixtures', filename), 'utf8');

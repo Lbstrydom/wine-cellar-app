@@ -109,30 +109,3 @@ export const FRIDGE_PAR_LEVELS = {
  */
 export const FRIDGE_CAPACITY = 9;
 
-/**
- * Get par-level config for a category.
- * @param {string} category - Category name
- * @returns {Object|null} Par-level config
- */
-export function getParLevelConfig(category) {
-  return FRIDGE_PAR_LEVELS[category] || null;
-}
-
-/**
- * Get all par-level categories in priority order.
- * @returns {Array} Category names sorted by priority
- */
-export function getCategoriesInPriorityOrder() {
-  return Object.entries(FRIDGE_PAR_LEVELS)
-    .sort((a, b) => a[1].priority - b[1].priority)
-    .map(([name]) => name);
-}
-
-/**
- * Get total minimum required bottles for par-levels.
- * @returns {number} Minimum bottles needed
- */
-export function getMinimumParLevelTotal() {
-  return Object.values(FRIDGE_PAR_LEVELS)
-    .reduce((sum, config) => sum + config.min, 0);
-}

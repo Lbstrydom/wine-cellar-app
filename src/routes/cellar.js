@@ -6,17 +6,17 @@
 import express from 'express';
 import db from '../db/index.js';
 import { CELLAR_ZONES } from '../config/cellarZones.js';
-import { findBestZone, findAvailableSlot } from '../services/cellarPlacement.js';
+import { findBestZone, findAvailableSlot } from '../services/cellar/cellarPlacement.js';
 import {
   getActiveZoneMap,
   getZoneStatuses,
   getAllZoneAllocations,
   allocateRowToZone,
   updateZoneWineCount
-} from '../services/cellarAllocation.js';
-import { invalidateAnalysisCache } from '../services/cacheService.js';
+} from '../services/cellar/cellarAllocation.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
-import { reassignWineZone } from '../services/zoneChat.js';
+import { reassignWineZone } from '../services/zone/zoneChat.js';
 
 const router = express.Router();
 

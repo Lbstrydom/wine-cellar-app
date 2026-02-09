@@ -3,8 +3,8 @@
  * @module jobs/batchFetchJob
  */
 
-import { fetchWineRatings, saveExtractedWindows } from '../services/claude.js';
-import { calculateWineRatings, saveRatings } from '../services/ratings.js';
+import { fetchWineRatings, saveExtractedWindows } from '../services/ai/index.js';
+import { calculateWineRatings, saveRatings } from '../services/ratings/ratings.js';
 import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';

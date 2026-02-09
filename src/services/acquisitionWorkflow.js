@@ -4,12 +4,12 @@
  * @module services/acquisitionWorkflow
  */
 
-import { parseWineFromImage, parseWineFromText, fetchWineRatings, saveExtractedWindows } from './claude.js';
-import { findBestZone, findAvailableSlot } from './cellarPlacement.js';
-import { categoriseWine, getFridgeStatus } from './fridgeStocking.js';
+import { parseWineFromImage, parseWineFromText, fetchWineRatings, saveExtractedWindows } from './ai/index.js';
+import { findBestZone, findAvailableSlot } from './cellar/cellarPlacement.js';
+import { categoriseWine, getFridgeStatus } from './cellar/fridgeStocking.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
-import { checkWineConsistency } from './consistencyChecker.js';
+import { checkWineConsistency } from './shared/consistencyChecker.js';
 
 /**
  * Field confidence levels.

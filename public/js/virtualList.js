@@ -245,7 +245,7 @@ function render() {
  * @param {number} index - Item index to scroll to
  * @param {string} [position='start'] - 'start', 'center', or 'end'
  */
-export function scrollToIndex(index, position = 'start') {
+function scrollToIndex(index, position = 'start') {
   if (!virtualState.isInitialized || !virtualState.container) return;
 
   const { itemHeight } = virtualState.config;
@@ -271,7 +271,7 @@ export function scrollToIndex(index, position = 'start') {
  * Get current scroll information.
  * @returns {Object} Scroll info { scrollTop, visibleStart, visibleEnd, totalItems }
  */
-export function getScrollInfo() {
+function getScrollInfo() {
   if (!virtualState.isInitialized) return null;
 
   const range = calculateVisibleRange();
@@ -288,15 +288,7 @@ export function getScrollInfo() {
  * Check if virtual list is active/initialized.
  * @returns {boolean} True if initialized
  */
-export function isVirtualListActive() {
+function isVirtualListActive() {
   return virtualState.isInitialized;
 }
 
-export default {
-  initVirtualList,
-  updateVirtualList,
-  destroyVirtualList,
-  scrollToIndex,
-  getScrollInfo,
-  isVirtualListActive
-};

@@ -260,7 +260,7 @@ Trim unused exports from files that are otherwise alive. No file deletions — j
 
 | File | Dead exports to remove | Keep |
 |------|------------------------|------|
-| `src/config/tastingVocabulary.js` | `INTENSITY_LEVELS`, `SWEETNESS_LEVELS`, `BODY_LEVELS`, `STRUCTURAL_LEVELS`, `FINISH_LEVELS`, `findTermCategory()`, `getDisplayName()` (7 exports) | `AROMA_DESCRIPTORS`, `FLAVOUR_DESCRIPTORS`, `getAllAromaTerms()`, `getAllFlavourTerms()` |
+| `src/config/tastingVocabulary.js` | `INTENSITY_LEVELS`, `SWEETNESS_LEVELS`, `BODY_LEVELS`, `STRUCTURAL_LEVELS`, `FINISH_LEVELS`, `findTermCategory()`, `getDisplayName()` (7 exports) | `FRUIT_DESCRIPTORS`, `SECONDARY_DESCRIPTORS`, `TERTIARY_DESCRIPTORS`, `TEXTURE_DESCRIPTORS`, `STYLE_TAGS`, `getAllFruitTerms()`, `getAllSecondaryTerms()`, `getAllTertiaryTerms()` |
 | `src/config/pairingRules.js` | `getStyleBuckets()`, `getSignalDetails()`, `getStyleDetails()` (3) | All scoring/signal data |
 | `src/config/fridgeParLevels.js` | `getParLevelConfig()`, `getCategoriesInPriorityOrder()`, `getMinimumParLevelTotal()` (3) | Par level constants used by `fridgeStocking.js` |
 | `src/config/noiseTerms.js` | `FOOD_PAIRING_NOISE`, `MARKETING_HYPERBOLE`, `PAIRING_CONTEXT_PHRASES`, `isMarketingNoise()`, `hasPairingContext()` (5) | `isNoiseTerm()` (the only production import) |
@@ -296,11 +296,11 @@ Applies to: `vintageSensitivity.js` (3), `rangeQualifiers.js` (2), `grapeColourM
 | `public/js/errorBoundary.js` | `withErrorBoundary()`, `safeAsync()` |
 | `public/js/eventManager.js` | `cleanupAll()` (keep `getListenerCount`/`getTotalListenerCount` for `browserTests.js`) |
 | `public/js/storageBuilder.js` | `removeArea()`, `removeRow()`, `setColumns()`, `onChange()` |
-| `public/js/restaurantPairing.js` | `destroyRestaurantPairing()` |
+| `public/js/restaurantPairing.js` | ~~`destroyRestaurantPairing()`~~ [VERIFIED LIVE — called internally at L307, exported at L285] |
 | `public/js/cellarAnalysis.js` | `resetZoneChat` re-export |
 | `public/js/cellarAnalysis/state.js` | `resetAnalysisState()` |
-| `public/js/cellarAnalysis/moveGuide.js` | `closeMoveGuide()`, `isMoveGuideActive()`, `annotateGrid()` |
-| `public/js/api/pairing.js` | `clearSommelierChat()` |
+| `public/js/cellarAnalysis/moveGuide.js` | ~~`closeMoveGuide()`, `isMoveGuideActive()`~~ [VERIFIED TEST-ONLY — kept with @internal tag], `annotateGrid()` |
+| `public/js/api/pairing.js` | ~~`clearSommelierChat()`~~ [VERIFIED LIVE — re-exported in api/index.js L99] |
 
 Also remove the dead `export default { ... }` objects from: `virtualList.js`, `recommendations.js`, `globalSearch.js`, `eventManager.js`.
 
@@ -410,11 +410,11 @@ Move files into subdirectories by domain. Each subdirectory gets an `index.js` b
 
 ### Execution notes
 
-- **Priority**: LOW — do after Phases 1–5. This is a quality-of-life refactor with no behaviour change.
-- **Risk**: MEDIUM (many import paths change). Use automated refactoring (IDE rename) or a script to update all `import ... from '../services/foo.js'` → `'../services/domain/foo.js'`.
-- **Strategy**: Move one domain at a time. After each move: update imports, run `npm run test:all`, commit.
-- **Test files**: `tests/unit/` mirrors `src/` structure — test files must move in sync.
-- **Do not move** files marked for deletion in Phase 3 — delete first, then reorganize survivors.
+- **Status**: COMPLETE (atomic approach — all moves + rewrites in a single pass)
+- **Actual scope**: 81 files moved into 10 subdirectories, 5 root orchestrators unmoved
+- **Import rewrites**: ~290 total — Category A (outbound `../db/` etc. → `../../`): ~120, Category B (internal service→service): 61, Category C (inbound static from routes/jobs/tests/scripts): 105, Category D (dynamic `import()`): ~24, plus 17 `vi.mock`/`vi.doMock` path rewrites in tests
+- **Test files moved**: 12 test files into matching subdirectories under `tests/unit/services/`
+- **Detailed plan**: See `curried-rolling-salamander.md` in `.claude/plans/`
 
 ---
 

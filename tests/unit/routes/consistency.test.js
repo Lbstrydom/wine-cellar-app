@@ -15,7 +15,7 @@ vi.mock('../../../src/db/index.js', () => ({
 }));
 
 // Mock consistencyChecker — route behavior is under test, not checker logic
-vi.mock('../../../src/services/consistencyChecker.js', () => ({
+vi.mock('../../../src/services/shared/consistencyChecker.js', () => ({
   checkWineConsistency: vi.fn(),
   auditCellar: vi.fn(),
 }));
@@ -23,7 +23,7 @@ vi.mock('../../../src/services/consistencyChecker.js', () => ({
 import express from 'express';
 import request from 'supertest';
 import consistencyRouter from '../../../src/routes/consistency.js';
-import { checkWineConsistency, auditCellar } from '../../../src/services/consistencyChecker.js';
+import { checkWineConsistency, auditCellar } from '../../../src/services/shared/consistencyChecker.js';
 import db from '../../../src/db/index.js';
 
 /**

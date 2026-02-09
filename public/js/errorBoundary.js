@@ -4,6 +4,7 @@
  */
 
 import { logClientError } from './api.js';
+import { escapeHtml } from './utils.js';
 
 /**
  * Initialize global error handling.
@@ -23,7 +24,6 @@ export function initErrorBoundary() {
     event.preventDefault();
   });
 
-  console.log('[ErrorBoundary] Global error handling initialized');
 }
 
 /**
@@ -137,16 +137,6 @@ function showErrorToast(title, message) {
   }, 10000);
 }
 
-/**
- * Escape HTML to prevent XSS.
- * @param {string} text - Text to escape
- * @returns {string} Escaped text
- */
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
 
 /**
  * Log error to server for monitoring (optional).
@@ -175,7 +165,7 @@ function logErrorToServer(_context, _message, _stack) {
  * @param {string} context - Context for error messages
  * @returns {Function} Wrapped function
  */
-export function withErrorBoundary(fn, context) {
+function withErrorBoundary(fn, context) {
   return async function(...args) {
     try {
       return await fn.apply(this, args);
@@ -192,7 +182,7 @@ export function withErrorBoundary(fn, context) {
  * @param {string} context - Context for error messages
  * @returns {Promise} Wrapped promise
  */
-export async function safeAsync(promise, context) {
+async function safeAsync(promise, context) {
   try {
     return await promise;
   } catch (error) {

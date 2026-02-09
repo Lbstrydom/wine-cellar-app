@@ -122,7 +122,7 @@ export function resetZoneChatState() {
 /**
  * Reset all analysis state.
  */
-export function resetAnalysisState() {
+function resetAnalysisState() {
   analysisState.currentAnalysis = null;
   analysisState.analysisLoaded = false;
   analysisState.currentProposal = null;

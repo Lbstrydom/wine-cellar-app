@@ -6,11 +6,11 @@
 import express from 'express';
 import db from '../db/index.js';
 import { getZoneById } from '../config/cellarZones.js';
-import { invalidateAnalysisCache } from '../services/cacheService.js';
-import { validateMovePlan } from '../services/movePlanner.js';
-import { ensureReconfigurationTables } from '../services/reconfigurationTables.js';
-import { putPlan, getPlan, deletePlan } from '../services/reconfigurationPlanStore.js';
-import { generateReconfigurationPlan } from '../services/zoneReconfigurationPlanner.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { validateMovePlan } from '../services/cellar/movePlanner.js';
+import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
+import { putPlan, getPlan, deletePlan } from '../services/zone/reconfigurationPlanStore.js';
+import { generateReconfigurationPlan } from '../services/zone/zoneReconfigurationPlanner.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
 import { getAllWinesWithSlots } from './cellar.js';

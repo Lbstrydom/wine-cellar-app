@@ -49,7 +49,7 @@ export function cleanupNamespace(namespace) {
 /**
  * Clean up all tracked event listeners.
  */
-export function cleanupAll() {
+function cleanupAll() {
   for (const namespace of listenerRegistry.keys()) {
     cleanupNamespace(namespace);
   }
@@ -77,10 +77,3 @@ export function getTotalListenerCount() {
   return total;
 }
 
-export default {
-  addTrackedListener,
-  cleanupNamespace,
-  cleanupAll,
-  getListenerCount,
-  getTotalListenerCount
-};

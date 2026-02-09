@@ -33,10 +33,8 @@ import { initRecommendations } from './recommendations.js';
 import { initErrorBoundary } from './errorBoundary.js';
 import { addTrackedListener, cleanupNamespace } from './eventManager.js';
 
-/**
- * Namespace for app-level event listeners.
- */
-const _NAMESPACE = 'app'; // Reserved for future app-level event cleanup
+/** @type {boolean} Enable verbose logging via localStorage.setItem('debug', 'true') */
+const DEBUG = (() => { try { return localStorage.getItem('debug') === 'true'; } catch { return false; } })();
 
 /**
  * Namespace for wine list event listeners.
@@ -88,11 +86,13 @@ async function getSupabaseClient() {
     }
 
     // Log config for debugging (project ref from URL)
-    const projectRef = data.supabase_url?.match(/https:\/\/([^.]+)/)?.[1] || 'unknown';
-    console.log('[Auth] Supabase config:', {
-      projectRef,
-      anonKeyPrefix: data.supabase_anon_key?.substring(0, 20) + '...'
-    });
+    if (DEBUG) {
+      const projectRef = data.supabase_url?.match(/https:\/\/([^.]+)/)?.[1] || 'unknown';
+      console.log('[Auth] Supabase config:', {
+        projectRef,
+        anonKeyPrefix: data.supabase_anon_key?.substring(0, 20) + '...'
+      });
+    }
 
     // Configure Supabase client with session persistence for "Remember Me" functionality
     // Session persists across browser sessions; refresh tokens auto-renew access tokens
@@ -255,7 +255,7 @@ async function loadUserContext() {
 
     // If user has cellars but no active cellar, set the first one
     if (!profile?.active_cellar_id && cellars.length > 0) {
-      console.log('[Auth] No active cellar, setting first cellar:', cellars[0].id);
+      if (DEBUG) console.log('[Auth] No active cellar, setting first cellar:', cellars[0].id);
       await setActiveCellar(cellars[0].id);
       // Reload profile to get updated active_cellar_id
       const updatedProfile = await getProfile();
@@ -468,23 +468,24 @@ async function initAuth() {
     const hasHashToken = window.location.hash && window.location.hash.includes('access_token');
     const hasCodeParam = window.location.search && window.location.search.includes('code=');
 
-    if (hasHashToken) {
-      console.log('[Auth] OAuth callback detected: IMPLICIT flow (hash tokens)');
-      // Extract and log token issuer for debugging
-      try {
-        const hashParams = new URLSearchParams(window.location.hash.substring(1));
-        const token = hashParams.get('access_token');
-        if (token) {
-          const payload = JSON.parse(atob(token.split('.')[1]));
-          console.log('[Auth] Token issuer:', payload.iss);
-          console.log('[Auth] Token audience:', payload.aud);
-          console.log('[Auth] Token expires:', new Date(payload.exp * 1000).toISOString());
+    if (DEBUG) {
+      if (hasHashToken) {
+        console.log('[Auth] OAuth callback detected: IMPLICIT flow (hash tokens)');
+        try {
+          const hashParams = new URLSearchParams(window.location.hash.substring(1));
+          const token = hashParams.get('access_token');
+          if (token) {
+            const payload = JSON.parse(atob(token.split('.')[1]));
+            console.log('[Auth] Token issuer:', payload.iss);
+            console.log('[Auth] Token audience:', payload.aud);
+            console.log('[Auth] Token expires:', new Date(payload.exp * 1000).toISOString());
+          }
+        } catch (_e) {
+          console.log('[Auth] Could not decode token for diagnostics');
         }
-      } catch (_e) {
-        console.log('[Auth] Could not decode token for diagnostics');
+      } else if (hasCodeParam) {
+        console.log('[Auth] OAuth callback detected: PKCE flow (code param)');
       }
-    } else if (hasCodeParam) {
-      console.log('[Auth] OAuth callback detected: PKCE flow (code param)');
     }
 
     // Note: Do NOT manually clean the URL hash here!
@@ -492,7 +493,7 @@ async function initAuth() {
     // Cleaning it before Supabase processes it breaks the OAuth flow.
 
     const { data, error } = await supabase.auth.getSession();
-    console.log('[Auth] getSession result:', { hasSession: !!data?.session, error: error?.message });
+    if (DEBUG) console.log('[Auth] getSession result:', { hasSession: !!data?.session, error: error?.message });
 
     if (error) throw error;
 
@@ -510,12 +511,12 @@ async function initAuth() {
     }
 
     supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[Auth] State change:', event);
+      if (DEBUG) console.log('[Auth] State change:', event);
 
       if (event === 'TOKEN_REFRESHED') {
         // Silent token refresh - just update stored token, no UI changes needed
         setAccessToken(session?.access_token || null);
-        console.log('[Auth] Token refreshed silently');
+        if (DEBUG) console.log('[Auth] Token refreshed silently');
         return;
       }
 
@@ -969,7 +970,7 @@ async function registerServiceWorker() {
         scope: '/'
       });
 
-      console.log('[App] Service Worker registered:', registration.scope);
+      if (DEBUG) console.log('[App] Service Worker registered:', registration.scope);
 
       // Check for updates periodically
       setInterval(() => {
@@ -979,7 +980,7 @@ async function registerServiceWorker() {
       // Handle updates
       registration.addEventListener('updatefound', () => {
         const newWorker = registration.installing;
-        console.log('[App] Service Worker update found');
+        if (DEBUG) console.log('[App] Service Worker update found');
 
         newWorker.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
@@ -1018,14 +1019,14 @@ function showUpdateNotification(registration) {
   document.body.appendChild(notification);
 
   document.getElementById('update-app-btn').addEventListener('click', () => {
-    console.log('[App] Triggering service worker update...');
+    if (DEBUG) console.log('[App] Triggering service worker update...');
     // Tell the WAITING service worker to skip waiting and activate
     if (registration.waiting) {
       registration.waiting.postMessage({ type: 'SKIP_WAITING' });
     }
     // Listen for the controller to change, then reload
     navigator.serviceWorker.addEventListener('controllerchange', () => {
-      console.log('[App] Controller changed, reloading...');
+      if (DEBUG) console.log('[App] Controller changed, reloading...');
       window.location.reload();
     });
     // Fallback reload after short delay if controllerchange doesn't fire
@@ -1102,7 +1103,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
       if (deferredPrompt) {
         deferredPrompt.prompt();
         const { outcome } = await deferredPrompt.userChoice;
-        console.log('[App] Install prompt outcome:', outcome);
+        if (DEBUG) console.log('[App] Install prompt outcome:', outcome);
 
         if (outcome === 'accepted') {
           deferredPrompt = null;
@@ -1116,7 +1117,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 });
 
 window.addEventListener('appinstalled', () => {
-  console.log('[App] PWA was installed');
+  if (DEBUG) console.log('[App] PWA was installed');
   deferredPrompt = null;
   updateInstallStatus();
 

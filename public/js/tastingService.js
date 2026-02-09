@@ -6,6 +6,7 @@
  */
 
 import { getTastingNotes, getServingTemperature, getBestDrinkingWindow, reportTastingNotes } from './api.js';
+import { escapeHtml } from './utils.js';
 
 /**
  * Render the Tasting & Service card for a wine.
@@ -549,17 +550,6 @@ function capitalise(str) {
   return str.charAt(0).toUpperCase() + str.slice(1);
 }
 
-/**
- * Escape HTML characters.
- * @param {string} str - String to escape
- * @returns {string} Escaped string
- */
-function escapeHtml(str) {
-  if (!str) return '';
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
-}
 
 /**
  * Convert Celsius to Fahrenheit.

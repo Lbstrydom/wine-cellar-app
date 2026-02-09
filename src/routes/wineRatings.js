@@ -9,7 +9,7 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { wineIdSchema, personalRatingSchema } from '../schemas/wine.js';
-import { searchVivinoWines } from '../services/vivinoSearch.js';
+import { searchVivinoWines } from '../services/scraping/vivinoSearch.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { calculateNextRetry, extractVivinoId } from './wines.js';
 

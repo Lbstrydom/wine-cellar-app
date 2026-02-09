@@ -5,7 +5,7 @@
  */
 
 import 'dotenv/config';
-import { reviewReconfigurationPlan } from '../src/services/openaiReviewer.js';
+import { reviewReconfigurationPlan } from '../src/services/ai/openaiReviewer.js';
 
 if (!process.env.OPENAI_API_KEY) {
   console.error('Missing OPENAI_API_KEY in environment.');

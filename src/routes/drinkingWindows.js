@@ -7,7 +7,7 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { stringAgg } from '../db/helpers.js';
 import logger from '../utils/logger.js';
-import { getDefaultDrinkingWindow } from '../services/windowDefaults.js';
+import { getDefaultDrinkingWindow } from '../services/wine/windowDefaults.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();

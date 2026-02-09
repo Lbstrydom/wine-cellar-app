@@ -90,5 +90,3 @@ export function initCellarAnalysis() {
   }
 }
 
-// Re-export clearZoneChat for external use
-export { clearZoneChat as resetZoneChat } from './cellarAnalysis/zoneChat.js';

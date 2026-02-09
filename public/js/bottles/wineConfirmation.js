@@ -264,6 +264,8 @@ function renderMatches(matches) {
 
 /**
  * Render star rating display.
+ * Uses individual CSS-classed spans per star (stars-filled/half/empty). Half-star threshold: 0.3–0.8.
+ * @see {@link module:ratings.renderStars} for text-character variant (threshold 0.5)
  * @param {number} rating - Rating value (0-5)
  * @returns {string} HTML
  */

@@ -11,7 +11,7 @@ vi.mock('../../../src/db/index.js', () => ({
 }));
 
 // Mock services used by ratings.js
-vi.mock('../../../src/services/ratings.js', () => ({
+vi.mock('../../../src/services/ratings/ratings.js', () => ({
   normalizeScore: vi.fn(),
   calculateWineRatings: vi.fn(() => ({
     confidence_level: 'high',
@@ -20,16 +20,16 @@ vi.mock('../../../src/services/ratings.js', () => ({
   }))
 }));
 
-vi.mock('../../../src/services/jobQueue.js', () => ({
+vi.mock('../../../src/services/shared/jobQueue.js', () => ({
   default: { enqueue: vi.fn(), getJobStatus: vi.fn(), cancelJob: vi.fn(), getStats: vi.fn() }
 }));
 
-vi.mock('../../../src/services/cacheService.js', () => ({
+vi.mock('../../../src/services/shared/cacheService.js', () => ({
   getCacheStats: vi.fn(() => ({})),
   purgeExpiredCache: vi.fn()
 }));
 
-vi.mock('../../../src/services/awards.js', () => ({
+vi.mock('../../../src/services/awards/index.js', () => ({
   getWineAwards: vi.fn(() => [])
 }));
 
@@ -38,7 +38,7 @@ vi.mock('../../../src/utils/logger.js', () => ({
 }));
 
 // Mock services used by wineRatings.js
-vi.mock('../../../src/services/vivinoSearch.js', () => ({
+vi.mock('../../../src/services/scraping/vivinoSearch.js', () => ({
   searchVivinoWines: vi.fn(() => ({ matches: [] }))
 }));
 

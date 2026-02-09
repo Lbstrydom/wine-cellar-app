@@ -7,9 +7,9 @@ import { Router } from 'express';
 import { randomUUID } from 'crypto';
 import db from '../db/index.js';
 import { stringAgg } from '../db/helpers.js';
-import { getSommelierRecommendation, continueSommelierChat } from '../services/claude.js';
-import { scorePairing } from '../services/pairing.js';
-import { getHybridPairing, generateShortlist, extractSignals } from '../services/pairingEngine.js';
+import { getSommelierRecommendation, continueSommelierChat } from '../services/ai/index.js';
+import { scorePairing } from '../services/pairing/pairing.js';
+import { getHybridPairing, generateShortlist, extractSignals } from '../services/pairing/pairingEngine.js';
 import { getAvailableSignals, FOOD_SIGNALS, DEFAULT_HOUSE_STYLE } from '../config/pairingRules.js';
 import { strictRateLimiter } from '../middleware/rateLimiter.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
@@ -300,7 +300,7 @@ import {
   getPairingHistory,
   getPairingStats,
   FAILURE_REASONS
-} from '../services/pairingSession.js';
+} from '../services/pairing/pairingSession.js';
 
 /**
  * POST /api/pairing/sessions/:id/choose

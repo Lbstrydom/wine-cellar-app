@@ -96,6 +96,7 @@ export function openMoveGuide(allMoves) {
 
 /**
  * Close the move guide and clean up.
+ * @internal — exported for unit tests only
  */
 export function closeMoveGuide() {
   guideState.active = false;
@@ -121,6 +122,7 @@ export function closeMoveGuide() {
 
 /**
  * Check if the move guide is currently active.
+ * @internal — exported for unit tests only
  * @returns {boolean}
  */
 export function isMoveGuideActive() {
@@ -130,7 +132,7 @@ export function isMoveGuideActive() {
 /**
  * Re-apply CSS classes to grid slots (called after grid re-renders).
  */
-export function annotateGrid() {
+function annotateGrid() {
   if (!guideState.active) return;
   applyAnnotations();
 }

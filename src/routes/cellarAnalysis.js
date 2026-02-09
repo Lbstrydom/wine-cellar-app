@@ -5,17 +5,17 @@
 
 import express from 'express';
 import db from '../db/index.js';
-import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellarAnalysis.js';
-import { findAvailableSlot } from '../services/cellarPlacement.js';
-import { getCellarOrganisationAdvice } from '../services/cellarAI.js';
-import { getZoneCapacityAdvice } from '../services/zoneCapacityAdvisor.js';
-import { analyseFridge, suggestFridgeOrganization } from '../services/fridgeStocking.js';
+import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellar/cellarAnalysis.js';
+import { findAvailableSlot } from '../services/cellar/cellarPlacement.js';
+import { getCellarOrganisationAdvice } from '../services/cellar/cellarAI.js';
+import { getZoneCapacityAdvice } from '../services/zone/zoneCapacityAdvisor.js';
+import { analyseFridge, suggestFridgeOrganization } from '../services/cellar/fridgeStocking.js';
 import {
   getCachedAnalysis,
   cacheAnalysis,
   invalidateAnalysisCache,
   getAnalysisCacheInfo
-} from '../services/cacheService.js';
+} from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots } from './cellar.js';
 

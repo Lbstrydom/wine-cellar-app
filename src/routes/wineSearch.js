@@ -5,7 +5,7 @@
  */
 
 import { Router } from 'express';
-import { searchVivinoWines, getVivinoWineDetails } from '../services/vivinoSearch.js';
+import { searchVivinoWines, getVivinoWineDetails } from '../services/scraping/vivinoSearch.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
 

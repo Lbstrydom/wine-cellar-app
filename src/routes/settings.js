@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import db from '../db/index.js';
-import { encrypt, decrypt, isConfigured } from '../services/encryption.js';
+import { encrypt, decrypt, isConfigured } from '../services/shared/encryption.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateParams } from '../middleware/validate.js';

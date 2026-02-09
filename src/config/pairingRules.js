@@ -346,28 +346,3 @@ export function getAvailableSignals() {
   return Object.keys(FOOD_SIGNALS);
 }
 
-/**
- * Get wine style bucket IDs.
- * @returns {string[]} Style bucket IDs
- */
-export function getStyleBuckets() {
-  return Object.keys(WINE_STYLES);
-}
-
-/**
- * Get signal details.
- * @param {string} signal - Signal name
- * @returns {Object|null} Signal definition
- */
-export function getSignalDetails(signal) {
-  return FOOD_SIGNALS[signal.toLowerCase()] || null;
-}
-
-/**
- * Get style details.
- * @param {string} style - Style bucket ID
- * @returns {Object|null} Style definition
- */
-export function getStyleDetails(style) {
-  return WINE_STYLES[style] || null;
-}

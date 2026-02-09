@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { stringAgg, nullsLast } from '../db/helpers.js';
-import { getDefaultDrinkingWindow, adjustForStorage, getStorageSettings } from '../services/windowDefaults.js';
+import { getDefaultDrinkingWindow, adjustForStorage, getStorageSettings } from '../services/wine/windowDefaults.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 
 const router = Router();
@@ -385,7 +385,7 @@ router.post('/batch', asyncHandler(async (req, res) => {
  */
 router.get('/ai-recommendations', asyncHandler(async (req, res) => {
   // Dynamic import to avoid issues if service not available
-  const { generateDrinkRecommendations } = await import('../services/drinkNowAI.js');
+  const { generateDrinkRecommendations } = await import('../services/ai/drinkNowAI.js');
 
   const context = {};
   if (req.query.weather) context.weather = req.query.weather;

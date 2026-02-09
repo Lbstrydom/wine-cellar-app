@@ -6,7 +6,7 @@
  */
 
 import db from '../index.js';
-import { WineFingerprint } from '../../services/wineFingerprint.js';
+import { WineFingerprint } from '../../services/wine/wineFingerprint.js';
 
 const shouldNullifyDuplicates = process.argv.includes('--nullify-duplicates');
 const shouldAddUniqueIndex = process.argv.includes('--add-unique-index');

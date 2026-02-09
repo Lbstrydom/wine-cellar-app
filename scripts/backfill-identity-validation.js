@@ -7,7 +7,7 @@
 
 import db from '../src/db/index.js';
 import logger from '../src/utils/logger.js';
-import { generateIdentityTokens, calculateIdentityScore } from '../src/services/wineIdentity.js';
+import { generateIdentityTokens, calculateIdentityScore } from '../src/services/wine/wineIdentity.js';
 
 /**
  * Backfill identity scores for all ratings.

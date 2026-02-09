@@ -17,10 +17,10 @@ import {
   duplicateCheckSchema
 } from '../schemas/wine.js';
 import { paginationSchema } from '../schemas/common.js';
-import { WineFingerprint } from '../services/wineFingerprint.js';
-import { evaluateWineAdd } from '../services/wineAddOrchestrator.js';
+import { WineFingerprint } from '../services/wine/wineFingerprint.js';
+import { evaluateWineAdd } from '../services/wine/wineAddOrchestrator.js';
 import { asyncHandler } from '../utils/errorResponse.js';
-import { checkWineConsistency } from '../services/consistencyChecker.js';
+import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 
 const router = Router();
 
@@ -249,7 +249,7 @@ router.post('/parse', validateBody(parseTextSchema), asyncHandler(async (req, re
   const { text } = req.body;
 
   try {
-    const { parseWineFromText } = await import('../services/claude.js');
+    const { parseWineFromText } = await import('../services/ai/index.js');
     const result = await parseWineFromText(text);
     res.json(result);
   } catch (error) {
@@ -268,7 +268,7 @@ router.post('/parse-image', validateBody(parseImageSchema), asyncHandler(async (
   const { image, mediaType } = req.body;
 
   try {
-    const { parseWineFromImage } = await import('../services/claude.js');
+    const { parseWineFromImage } = await import('../services/ai/index.js');
     const result = await parseWineFromImage(image, mediaType);
     res.json(result);
   } catch (error) {
@@ -308,7 +308,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
   // Enrich with drinking window if not already set and vintage exists
   if (wine.vintage && !wine.drink_from && !wine.drink_until) {
     try {
-      const { getDefaultDrinkingWindow } = await import('../services/windowDefaults.js');
+      const { getDefaultDrinkingWindow } = await import('../services/wine/windowDefaults.js');
       const defaultWindow = await getDefaultDrinkingWindow(wine, wine.vintage);
       if (defaultWindow) {
         wine.drink_from = wine.drink_from || defaultWindow.drink_from;
@@ -324,7 +324,7 @@ router.get('/:id', asyncHandler(async (req, res) => {
 
   // Enrich with serving temperature
   try {
-    const { findServingTemperature, formatTemperature } = await import('../services/servingTemperature.js');
+    const { findServingTemperature, formatTemperature } = await import('../services/wine/servingTemperature.js');
     const temp = await findServingTemperature(wine);
     if (temp) {
       wine.serving_temp_celsius = `${temp.temp_min_celsius}-${temp.temp_max_celsius}`;

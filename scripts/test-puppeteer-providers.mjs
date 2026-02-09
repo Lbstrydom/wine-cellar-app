@@ -8,9 +8,9 @@
  * Usage: node scripts/test-puppeteer-providers.mjs
  */
 
-import { searchVivinoWines, getVivinoWineDetails } from '../src/services/vivinoSearch.js';
-import { fetchDecanterAuthenticated } from '../src/services/searchProviders.js';
-import { scrapeVivinoPage, closePuppeteerClient } from '../src/services/puppeteerScraper.js';
+import { searchVivinoWines, getVivinoWineDetails } from '../src/services/scraping/vivinoSearch.js';
+import { fetchDecanterAuthenticated } from '../src/services/search/searchProviders.js';
+import { scrapeVivinoPage, closePuppeteerClient } from '../src/services/scraping/puppeteerScraper.js';
 
 async function testVivinoDirectScrape() {
   console.log('\n=== VIVINO DIRECT SCRAPE TEST ===\n');

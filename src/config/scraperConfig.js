@@ -55,36 +55,6 @@ export const COOKIE_CONSENT_SELECTORS = {
 };
 
 /**
- * Selectors for extracting wine data from Vivino pages.
- */
-export const VIVINO_SELECTORS = {
-  rating: [
-    '.vivinoRating_averageValue__uDdPM',
-    '[class*="averageValue"]',
-    '.average__number'
-  ],
-  ratingCount: [
-    '.vivinoRating_caption__xL84P',
-    '[class*="ratingCount"]',
-    '[class*="caption"]'
-  ],
-  wineName: ['h1'],
-  winery: [
-    '[class*="winery"]',
-    'a[href*="/wineries/"]'
-  ],
-  region: [
-    '[class*="location"]',
-    'a[href*="/wine-regions/"]'
-  ],
-  grape: [
-    '[class*="grape"]',
-    'a[href*="/grapes/"]'
-  ],
-  price: ['[class*="price"]']
-};
-
-/**
  * Grape variety keywords for wine name parsing.
  * Used to extract winery name from wine name.
  */
@@ -177,13 +147,3 @@ export const PRODUCER_CRAWL = {
   ROBOTS_TTL_HOURS: parseInt(process.env.ROBOTS_TTL_HOURS, 10) || 24          // 24h for robots.txt (RFC 9309)
 };
 
-export default {
-  TIMEOUTS,
-  COOKIE_CONSENT_SELECTORS,
-  VIVINO_SELECTORS,
-  GRAPE_KEYWORDS,
-  LIMITS,
-  RERANK_WEIGHTS,
-  SEARCH_BUDGET,
-  PRODUCER_CRAWL
-};

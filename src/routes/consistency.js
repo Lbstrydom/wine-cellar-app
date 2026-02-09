@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db/index.js';
-import { checkWineConsistency, auditCellar } from '../services/consistencyChecker.js';
+import { checkWineConsistency, auditCellar } from '../services/shared/consistencyChecker.js';
 import { validateQuery, validateParams, validateBody } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { WINE_COLOURS } from '../schemas/wine.js';
