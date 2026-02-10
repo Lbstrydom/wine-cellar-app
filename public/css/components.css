@@ -484,6 +484,31 @@
   padding: 0.75rem 1.5rem;
 }
 
+/* Grid loading & error indicators (PWA init) */
+.grid-loading-indicator {
+  text-align: center;
+  padding: 3rem 1rem;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  animation: pulse-fade 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-fade {
+  0%, 100% { opacity: 0.5; }
+  50% { opacity: 1; }
+}
+
+.grid-error-indicator {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text);
+}
+
+.grid-error-indicator p {
+  margin-bottom: 1rem;
+  color: var(--red, #dc3545);
+}
+
 /* Analysis View */
 .analysis-view-header {
   display: flex;

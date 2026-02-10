@@ -311,12 +311,80 @@ async function startAuthenticatedApp() {
   initRecommendations();
   await initBottles();
 
-  // Load initial data
-  await loadLayout();
-  await loadStats();
+  // Load initial data with error handling to prevent PWA freeze
+  await loadInitialData();
 
   // Initialize zoom controls after grid is rendered
   initZoomControls();
+}
+
+/**
+ * Load layout + stats with loading indicator, error handling, and retry.
+ * Prevents the app from freezing on slow/failed connections.
+ */
+async function loadInitialData() {
+  showGridLoading(true);
+  try {
+    await loadLayout();
+    await loadStats();
+  } catch (err) {
+    console.error('[App] Failed to load cellar data:', err);
+    showGridError(err.message);
+  } finally {
+    showGridLoading(false);
+  }
+}
+
+/**
+ * Show or hide loading indicator in the grid view.
+ * @param {boolean} show
+ */
+function showGridLoading(show) {
+  let loader = document.getElementById('grid-loading-indicator');
+  if (show) {
+    if (!loader) {
+      loader = document.createElement('div');
+      loader.id = 'grid-loading-indicator';
+      loader.className = 'grid-loading-indicator';
+      loader.textContent = 'Loading your cellar\u2026';
+      const gridView = document.getElementById('view-grid');
+      if (gridView) gridView.prepend(loader);
+    }
+  } else if (loader) {
+    loader.remove();
+  }
+}
+
+/**
+ * Show error with retry button in the grid view.
+ * @param {string} message
+ */
+function showGridError(message) {
+  const gridView = document.getElementById('view-grid');
+  if (!gridView) return;
+
+  // Remove any previous error
+  document.getElementById('grid-error-indicator')?.remove();
+
+  const errorEl = document.createElement('div');
+  errorEl.id = 'grid-error-indicator';
+  errorEl.className = 'grid-error-indicator';
+
+  const msg = document.createElement('p');
+  msg.textContent = `Failed to load cellar: ${message}`;
+  errorEl.appendChild(msg);
+
+  const retryBtn = document.createElement('button');
+  retryBtn.className = 'btn btn-primary';
+  retryBtn.textContent = 'Retry';
+  retryBtn.addEventListener('click', async () => {
+    errorEl.remove();
+    await loadInitialData();
+    initZoomControls();
+  });
+  errorEl.appendChild(retryBtn);
+
+  gridView.prepend(errorEl);
 }
 
 /**
@@ -569,7 +637,7 @@ export async function loadLayout() {
     if (cellarZone) cellarZone.style.display = '';
 
     renderFridge();
-    renderCellar();
+    await renderCellar();
   }
 }
 

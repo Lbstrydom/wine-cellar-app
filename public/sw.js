@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v102';
+const CACHE_VERSION = 'v103';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -23,7 +23,7 @@ const STATIC_ASSETS = [
   '/css/styles.css?v=20260208a',
   '/css/variables.css?v=20260208a',
   '/css/layout.css?v=20260207a',
-  '/css/components.css?v=20260208c',
+  '/css/components.css?v=20260210a',
   '/css/themes.css?v=20260207a',
   '/css/accessibility.css?v=20260207a',
   '/js/theme-init.js',
@@ -216,7 +216,14 @@ async function networkFirstWithCache(request) {
   );
 
   try {
-    const networkResponse = await fetch(request);
+    // Race network against a timeout to prevent PWA freeze on slow connections
+    const NETWORK_TIMEOUT_MS = 10000;
+    const networkResponse = await Promise.race([
+      fetch(request),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Network timeout')), NETWORK_TIMEOUT_MS)
+      )
+    ]);
 
     // Cache successful GET responses for cacheable endpoints
     if (networkResponse.ok && isCacheable) {
@@ -226,7 +233,7 @@ async function networkFirstWithCache(request) {
 
     return networkResponse;
   } catch (error) {
-    // Network failed, try cache
+    // Network failed or timed out, try cache
     const cachedResponse = await caches.match(request);
 
     if (cachedResponse) {
