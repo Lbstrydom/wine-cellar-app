@@ -656,10 +656,13 @@ export async function loadStats() {
  * Load wine list with reduce-now data.
  */
 export async function loadWineList() {
-  const [wines, reduceNow] = await Promise.all([
+  const [winesResponse, reduceNow] = await Promise.all([
     fetchWines(),
     fetchReduceNow()
   ]);
+
+  // Backend returns { data: [...], pagination: {...} }
+  const wines = Array.isArray(winesResponse) ? winesResponse : (winesResponse.data || []);
 
   // Store reduce-now IDs for filtering
   state.reduceNowIds = new Set(reduceNow.map(r => r.wine_id));
