@@ -309,7 +309,7 @@ import {
 router.post('/sessions/:id/choose', validateParams(sessionIdSchema), validateBody(sessionChooseSchema), asyncHandler(async (req, res) => {
   const sessionId = req.validated?.params?.id ?? parseInt(req.params.id, 10);
   const { wineId, rank } = req.body;
-  await recordWineChoice(sessionId, wineId, rank);
+  await recordWineChoice(sessionId, wineId, rank, req.cellarId);
   res.json({ success: true });
 }));
 
@@ -325,7 +325,7 @@ router.post('/sessions/:id/feedback', validateParams(sessionIdSchema), validateB
     wouldPairAgain,
     failureReasons,
     notes
-  });
+  }, req.cellarId);
   res.json({ success: true });
 }));
 
@@ -334,7 +334,7 @@ router.post('/sessions/:id/feedback', validateParams(sessionIdSchema), validateB
  * Get sessions that need feedback.
  */
 router.get('/sessions/pending-feedback', asyncHandler(async (req, res) => {
-  const sessions = await getPendingFeedbackSessions();
+  const sessions = await getPendingFeedbackSessions(req.cellarId);
   res.json({ sessions });
 }));
 
@@ -346,7 +346,7 @@ router.get('/history', asyncHandler(async (req, res) => {
   const limit = parseInt(req.query.limit, 10) || 20;
   const offset = parseInt(req.query.offset, 10) || 0;
   const feedbackOnly = req.query.feedbackOnly === 'true';
-  const history = await getPairingHistory('default', { limit, offset, feedbackOnly });
+  const history = await getPairingHistory(req.cellarId, { limit, offset, feedbackOnly });
   res.json({ history });
 }));
 
@@ -355,7 +355,7 @@ router.get('/history', asyncHandler(async (req, res) => {
  * Get aggregate pairing statistics.
  */
 router.get('/stats', asyncHandler(async (req, res) => {
-  const stats = await getPairingStats();
+  const stats = await getPairingStats(req.cellarId);
   res.json(stats);
 }));
 

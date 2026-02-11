@@ -27,6 +27,8 @@ const {
   FAILURE_REASONS
 } = await import('../../../../src/services/pairing/pairingSession.js');
 
+const TEST_CELLAR_ID = 'cellar-uuid-123';
+
 describe('PairingSession Service', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -54,6 +56,7 @@ describe('PairingSession Service', () => {
       mockDb.prepare.mockReturnValue(mockStatement);
 
       const sessionId = await createPairingSession({
+        cellarId: TEST_CELLAR_ID,
         dish: 'grilled salmon with lemon',
         source: 'all',
         colour: 'white',
@@ -62,47 +65,19 @@ describe('PairingSession Service', () => {
         recommendations: [
           { wine_id: 10, wine_name: 'Sauvignon Blanc', rank: 1 },
           { wine_id: 20, wine_name: 'Pinot Grigio', rank: 2 }
-        ],
-        userId: 'user123'
+        ]
       });
 
       expect(sessionId).toBe(42);
       expect(mockDb.prepare).toHaveBeenCalled();
       expect(mockStatement.get).toHaveBeenCalledWith(
-        'user123',
+        TEST_CELLAR_ID,
         'grilled salmon with lemon',
         'all',
         'white',
         JSON.stringify(['fish', 'acid', 'light']),
         'Light fish with citrus notes',
         expect.any(String) // JSON.stringify of recommendations
-      );
-    });
-
-    it('should use default userId if not provided', async () => {
-      const mockStatement = {
-        get: vi.fn().mockReturnValue({ id: 99 })
-      };
-      mockDb.prepare.mockReturnValue(mockStatement);
-
-      const sessionId = await createPairingSession({
-        dish: 'beef steak',
-        source: 'reduce_now',
-        colour: 'red',
-        foodSignals: ['beef', 'roasted'],
-        dishAnalysis: 'Rich beef dish',
-        recommendations: []
-      });
-
-      expect(sessionId).toBe(99);
-      expect(mockStatement.get).toHaveBeenCalledWith(
-        'default', // default userId
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything(),
-        expect.anything()
       );
     });
 
@@ -116,6 +91,7 @@ describe('PairingSession Service', () => {
 
       await expect(
         createPairingSession({
+          cellarId: TEST_CELLAR_ID,
           dish: 'test',
           source: 'all',
           colour: 'red',
@@ -134,10 +110,10 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      await recordWineChoice(42, 15, 1);
+      await recordWineChoice(42, 15, 1, TEST_CELLAR_ID);
 
       expect(mockDb.prepare).toHaveBeenCalled();
-      expect(mockStatement.run).toHaveBeenCalledWith(15, 1, 42);
+      expect(mockStatement.run).toHaveBeenCalledWith(15, 1, 42, TEST_CELLAR_ID);
     });
 
     it('should handle rank 2 and 3', async () => {
@@ -146,11 +122,11 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      await recordWineChoice(42, 20, 2);
-      expect(mockStatement.run).toHaveBeenCalledWith(20, 2, 42);
+      await recordWineChoice(42, 20, 2, TEST_CELLAR_ID);
+      expect(mockStatement.run).toHaveBeenCalledWith(20, 2, 42, TEST_CELLAR_ID);
 
-      await recordWineChoice(42, 30, 3);
-      expect(mockStatement.run).toHaveBeenCalledWith(30, 3, 42);
+      await recordWineChoice(42, 30, 3, TEST_CELLAR_ID);
+      expect(mockStatement.run).toHaveBeenCalledWith(30, 3, 42, TEST_CELLAR_ID);
     });
 
     it('should throw on database error', async () => {
@@ -161,7 +137,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      await expect(recordWineChoice(-1, 15, 1)).rejects.toThrow();
+      await expect(recordWineChoice(-1, 15, 1, TEST_CELLAR_ID)).rejects.toThrow();
     });
   });
 
@@ -172,10 +148,10 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      await linkConsumption(42, 100);
+      await linkConsumption(42, 100, TEST_CELLAR_ID);
 
       expect(mockDb.prepare).toHaveBeenCalled();
-      expect(mockStatement.run).toHaveBeenCalledWith(100, 42);
+      expect(mockStatement.run).toHaveBeenCalledWith(100, 42, TEST_CELLAR_ID);
     });
   });
 
@@ -191,7 +167,7 @@ describe('PairingSession Service', () => {
         wouldPairAgain: true,
         failureReasons: null,
         notes: 'Perfect match with the salmon!'
-      });
+      }, TEST_CELLAR_ID);
 
       expect(mockDb.prepare).toHaveBeenCalled();
       expect(mockStatement.run).toHaveBeenCalledWith(
@@ -199,7 +175,8 @@ describe('PairingSession Service', () => {
         true,
         null,
         'Perfect match with the salmon!',
-        42
+        42,
+        TEST_CELLAR_ID
       );
     });
 
@@ -214,14 +191,15 @@ describe('PairingSession Service', () => {
         wouldPairAgain: false,
         failureReasons: ['too_tannic', 'overwhelmed_dish'],
         notes: 'Too heavy for the dish'
-      });
+      }, TEST_CELLAR_ID);
 
       expect(mockStatement.run).toHaveBeenCalledWith(
         2,
         false,
         JSON.stringify(['too_tannic', 'overwhelmed_dish']),
         'Too heavy for the dish',
-        42
+        42,
+        TEST_CELLAR_ID
       );
     });
 
@@ -230,7 +208,7 @@ describe('PairingSession Service', () => {
         recordFeedback(42, {
           pairingFitRating: 0.5,
           wouldPairAgain: false
-        })
+        }, TEST_CELLAR_ID)
       ).rejects.toThrow('between 1 and 5');
     });
 
@@ -239,7 +217,7 @@ describe('PairingSession Service', () => {
         recordFeedback(42, {
           pairingFitRating: 5.5,
           wouldPairAgain: true
-        })
+        }, TEST_CELLAR_ID)
       ).rejects.toThrow('between 1 and 5');
     });
 
@@ -249,7 +227,7 @@ describe('PairingSession Service', () => {
           pairingFitRating: 2,
           wouldPairAgain: false,
           failureReasons: ['invalid_reason', 'too_tannic']
-        })
+        }, TEST_CELLAR_ID)
       ).rejects.toThrow('Invalid failure reasons');
     });
 
@@ -264,9 +242,9 @@ describe('PairingSession Service', () => {
         wouldPairAgain: true,
         failureReasons: null,
         notes: null
-      });
+      }, TEST_CELLAR_ID);
 
-      expect(mockStatement.run).toHaveBeenCalledWith(4, true, null, null, 42);
+      expect(mockStatement.run).toHaveBeenCalledWith(4, true, null, null, 42, TEST_CELLAR_ID);
     });
   });
 
@@ -287,22 +265,12 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const sessions = await getPendingFeedbackSessions('user123', 2);
+      const sessions = await getPendingFeedbackSessions(TEST_CELLAR_ID, 2);
 
       expect(sessions).toHaveLength(1);
       expect(sessions[0].id).toBe(1);
       expect(sessions[0].wine_name).toBe('Sauvignon Blanc');
-    });
-
-    it('should use default userId and maxAgeDays', async () => {
-      const mockStatement = {
-        all: vi.fn().mockReturnValue([])
-      };
-      mockDb.prepare.mockReturnValue(mockStatement);
-
-      await getPendingFeedbackSessions();
-
-      expect(mockStatement.all).toHaveBeenCalledWith('default');
+      expect(mockStatement.all).toHaveBeenCalledWith(TEST_CELLAR_ID);
     });
 
     it('should handle empty results', async () => {
@@ -311,7 +279,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const sessions = await getPendingFeedbackSessions();
+      const sessions = await getPendingFeedbackSessions(TEST_CELLAR_ID);
 
       expect(sessions).toEqual([]);
     });
@@ -328,11 +296,11 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const session = await findRecentSessionForWine(15, 'user123', 48);
+      const session = await findRecentSessionForWine(15, TEST_CELLAR_ID, 48);
 
       expect(session).not.toBeNull();
       expect(session.id).toBe(42);
-      expect(mockStatement.get).toHaveBeenCalledWith('user123', 15);
+      expect(mockStatement.get).toHaveBeenCalledWith(TEST_CELLAR_ID, 15);
     });
 
     it('should return null if no matching session', async () => {
@@ -341,20 +309,9 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const session = await findRecentSessionForWine(99, 'user123');
+      const session = await findRecentSessionForWine(99, TEST_CELLAR_ID);
 
       expect(session).toBeNull();
-    });
-
-    it('should use default userId and maxAgeHours', async () => {
-      const mockStatement = {
-        get: vi.fn().mockReturnValue(null)
-      };
-      mockDb.prepare.mockReturnValue(mockStatement);
-
-      await findRecentSessionForWine(15);
-
-      expect(mockStatement.get).toHaveBeenCalledWith('default', 15);
     });
   });
 
@@ -381,12 +338,12 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const history = await getPairingHistory();
+      const history = await getPairingHistory(TEST_CELLAR_ID);
 
       expect(history).toHaveLength(1);
       expect(history[0].wine_name).toBe('Sauvignon Blanc');
       expect(history[0].food_signals).toEqual(['fish', 'acid']);
-      expect(mockStatement.all).toHaveBeenCalledWith('default', 20, 0);
+      expect(mockStatement.all).toHaveBeenCalledWith(TEST_CELLAR_ID, 20, 0);
     });
 
     it('should respect custom limit and offset', async () => {
@@ -395,9 +352,9 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      await getPairingHistory('user123', { limit: 50, offset: 10 });
+      await getPairingHistory(TEST_CELLAR_ID, { limit: 50, offset: 10 });
 
-      expect(mockStatement.all).toHaveBeenCalledWith('user123', 50, 10);
+      expect(mockStatement.all).toHaveBeenCalledWith(TEST_CELLAR_ID, 50, 10);
     });
 
     it('should parse food_signals and failure_reasons JSON', async () => {
@@ -422,7 +379,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const history = await getPairingHistory();
+      const history = await getPairingHistory(TEST_CELLAR_ID);
 
       expect(history[0].food_signals).toEqual(['beef', 'roasted']);
       expect(history[0].failure_reasons).toEqual(['too_tannic']);
@@ -450,7 +407,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const history = await getPairingHistory();
+      const history = await getPairingHistory(TEST_CELLAR_ID);
 
       expect(history[0].food_signals).toEqual([]);
       expect(history[0].failure_reasons).toBeNull();
@@ -471,7 +428,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const stats = await getPairingStats('user123');
+      const stats = await getPairingStats(TEST_CELLAR_ID);
 
       expect(stats.totalSessions).toBe(15);
       expect(stats.sessionsWithChoice).toBe(14);
@@ -479,24 +436,7 @@ describe('PairingSession Service', () => {
       expect(stats.avgPairingRating).toBe(4.2);
       expect(stats.wouldPairAgainRate).toBe('80.0');
       expect(stats.consumptionConfirmationRate).toBe('50.0');
-    });
-
-    it('should use default userId if not provided', async () => {
-      const mockStatement = {
-        get: vi.fn().mockReturnValue({
-          total_sessions: 0,
-          sessions_with_choice: 0,
-          sessions_with_feedback: 0,
-          avg_pairing_rating: null,
-          would_pair_again_count: 0,
-          confirmed_consumed_count: 0
-        })
-      };
-      mockDb.prepare.mockReturnValue(mockStatement);
-
-      await getPairingStats();
-
-      expect(mockStatement.get).toHaveBeenCalledWith('default');
+      expect(mockStatement.get).toHaveBeenCalledWith(TEST_CELLAR_ID);
     });
 
     it('should handle null average rating', async () => {
@@ -512,7 +452,7 @@ describe('PairingSession Service', () => {
       };
       mockDb.prepare.mockReturnValue(mockStatement);
 
-      const stats = await getPairingStats();
+      const stats = await getPairingStats(TEST_CELLAR_ID);
 
       expect(stats.avgPairingRating).toBeNull();
       expect(stats.wouldPairAgainRate).toBeNull();
@@ -538,6 +478,7 @@ describe('PairingSession Service', () => {
 
       // Create session
       const sessionId = await createPairingSession({
+        cellarId: TEST_CELLAR_ID,
         dish: 'pasta carbonara',
         source: 'all',
         colour: 'white',
@@ -548,8 +489,8 @@ describe('PairingSession Service', () => {
       expect(sessionId).toBe(100);
 
       // Record choice
-      await recordWineChoice(sessionId, 25, 1);
-      expect(choiceStatement.run).toHaveBeenCalledWith(25, 1, 100);
+      await recordWineChoice(sessionId, 25, 1, TEST_CELLAR_ID);
+      expect(choiceStatement.run).toHaveBeenCalledWith(25, 1, 100, TEST_CELLAR_ID);
 
       // Submit feedback
       await recordFeedback(sessionId, {
@@ -557,7 +498,7 @@ describe('PairingSession Service', () => {
         wouldPairAgain: true,
         failureReasons: null,
         notes: 'Perfect match!'
-      });
+      }, TEST_CELLAR_ID);
       expect(feedbackStatement.run).toHaveBeenCalled();
     });
 
@@ -572,14 +513,15 @@ describe('PairingSession Service', () => {
         wouldPairAgain: false,
         failureReasons: ['too_tannic', 'clashed_with_sauce'],
         notes: 'Overpowered the delicate sauce'
-      });
+      }, TEST_CELLAR_ID);
 
       expect(feedbackStatement.run).toHaveBeenCalledWith(
         1.5,
         false,
         JSON.stringify(['too_tannic', 'clashed_with_sauce']),
         'Overpowered the delicate sauce',
-        42
+        42,
+        TEST_CELLAR_ID
       );
     });
   });

@@ -19,7 +19,7 @@ import logger from '../../utils/logger.js';
  * @param {string} colour - 'any', 'red', 'white', or 'rose'
  * @returns {Promise<Object>} Sommelier recommendations
  */
-export async function getSommelierRecommendation(db, dish, source, colour) {
+export async function getSommelierRecommendation(db, dish, source, colour, cellarId) {
   if (!anthropic) {
     throw new Error('Claude API key not configured');
   }
@@ -181,6 +181,7 @@ export async function getSommelierRecommendation(db, dish, source, colour) {
   // Import here to avoid circular dependency at top
   const { createPairingSession } = await import('./pairingSession.js');
   const sessionId = await createPairingSession({
+    cellarId,
     dish,
     source,
     colour,

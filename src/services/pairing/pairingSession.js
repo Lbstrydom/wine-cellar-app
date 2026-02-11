@@ -26,29 +26,29 @@ export const FAILURE_REASONS = [
 /**
  * Create a new pairing session record.
  * Called automatically when getSommelierRecommendation returns successfully.
- * 
+ *
  * @param {Object} params
+ * @param {string} params.cellarId - Cellar UUID (required for multi-tenant isolation)
  * @param {string} params.dish - Original dish description
  * @param {string} params.source - 'all' | 'reduce_now'
  * @param {string} params.colour - 'any' | 'red' | 'white' | 'rose' | 'sparkling'
  * @param {string[]} params.foodSignals - Extracted food signals
  * @param {string} params.dishAnalysis - AI's dish interpretation
  * @param {Object[]} params.recommendations - Ranked recommendations with wine_ids
- * @param {string} [params.userId='default'] - User identifier
  * @returns {Promise<number>} Session ID
  */
 export async function createPairingSession({
+  cellarId,
   dish,
   source,
   colour,
   foodSignals,
   dishAnalysis,
-  recommendations,
-  userId = 'default'
+  recommendations
 }) {
   const result = await db.prepare(`
     INSERT INTO pairing_sessions (
-      user_id,
+      cellar_id,
       dish_description,
       source_filter,
       colour_filter,
@@ -58,7 +58,7 @@ export async function createPairingSession({
     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
     RETURNING id
   `).get(
-    userId,
+    cellarId,
     dish,
     source,
     colour,
@@ -66,54 +66,57 @@ export async function createPairingSession({
     dishAnalysis,
     JSON.stringify(recommendations)
   );
-  
+
   return result.id;
 }
 
 /**
  * Record which wine the user chose from recommendations.
- * 
+ *
  * @param {number} sessionId - Pairing session ID
  * @param {number} wineId - Chosen wine ID
  * @param {number} rank - Which rank was chosen (1, 2, or 3)
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @returns {Promise<void>}
  */
-export async function recordWineChoice(sessionId, wineId, rank) {
+export async function recordWineChoice(sessionId, wineId, rank, cellarId) {
   await db.prepare(`
     UPDATE pairing_sessions
     SET chosen_wine_id = $1,
         chosen_rank = $2,
         chosen_at = NOW()
-    WHERE id = $3
-  `).run(wineId, rank, sessionId);
+    WHERE id = $3 AND cellar_id = $4
+  `).run(wineId, rank, sessionId, cellarId);
 }
 
 /**
  * Link a pairing session to a consumption event.
  * Called when user logs consumption of a wine that has a recent pairing session.
- * 
+ *
  * @param {number} sessionId - Pairing session ID
  * @param {number} consumptionLogId - ID from consumption_log table
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @returns {Promise<void>}
  */
-export async function linkConsumption(sessionId, consumptionLogId) {
+export async function linkConsumption(sessionId, consumptionLogId, cellarId) {
   await db.prepare(`
     UPDATE pairing_sessions
     SET consumption_log_id = $1,
         confirmed_consumed = TRUE
-    WHERE id = $2
-  `).run(consumptionLogId, sessionId);
+    WHERE id = $2 AND cellar_id = $3
+  `).run(consumptionLogId, sessionId, cellarId);
 }
 
 /**
  * Record user feedback on a pairing.
- * 
+ *
  * @param {number} sessionId - Pairing session ID
  * @param {Object} feedback
  * @param {number} feedback.pairingFitRating - 1.0-5.0 in 0.5 steps
  * @param {boolean} feedback.wouldPairAgain - Would they pair these again?
  * @param {string[]} [feedback.failureReasons] - If rating <= 2.5, what went wrong
  * @param {string} [feedback.notes] - Optional free text (never injected into prompts)
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @returns {Promise<void>}
  */
 export async function recordFeedback(sessionId, {
@@ -121,12 +124,12 @@ export async function recordFeedback(sessionId, {
   wouldPairAgain,
   failureReasons = null,
   notes = null
-}) {
+}, cellarId) {
   // Validate rating
   if (pairingFitRating < 1 || pairingFitRating > 5) {
     throw new Error('Pairing fit rating must be between 1 and 5');
   }
-  
+
   // Validate failure reasons if provided
   if (failureReasons) {
     const invalid = failureReasons.filter(r => !FAILURE_REASONS.includes(r));
@@ -134,7 +137,7 @@ export async function recordFeedback(sessionId, {
       throw new Error(`Invalid failure reasons: ${invalid.join(', ')}`);
     }
   }
-  
+
   await db.prepare(`
     UPDATE pairing_sessions
     SET pairing_fit_rating = $1,
@@ -142,25 +145,26 @@ export async function recordFeedback(sessionId, {
         failure_reasons = $3,
         feedback_notes = $4,
         feedback_at = NOW()
-    WHERE id = $5
+    WHERE id = $5 AND cellar_id = $6
   `).run(
     pairingFitRating,
     wouldPairAgain,
     failureReasons ? JSON.stringify(failureReasons) : null,
     notes,
-    sessionId
+    sessionId,
+    cellarId
   );
 }
 
 /**
  * Find pairing sessions pending feedback.
  * Used by feedback trigger logic.
- * 
- * @param {string} [userId='default'] - User identifier
+ *
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @param {number} [maxAgeDays=2] - Only return sessions within this many days
  * @returns {Promise<Object[]>} Sessions needing feedback
  */
-export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays = 2) {
+export async function getPendingFeedbackSessions(cellarId, maxAgeDays = 2) {
   const intervalDays = `INTERVAL '${maxAgeDays} days'`;
 
   const sql = [
@@ -174,59 +178,59 @@ export async function getPendingFeedbackSessions(userId = 'default', maxAgeDays 
     '  w.vintage',
     'FROM pairing_sessions ps',
     'LEFT JOIN wines w ON ps.chosen_wine_id = w.id',
-    'WHERE ps.user_id = $1',
+    'WHERE ps.cellar_id = $1',
     '  AND ps.chosen_wine_id IS NOT NULL',
     '  AND ps.pairing_fit_rating IS NULL',
     '  AND ps.created_at > NOW() - ' + intervalDays,
     'ORDER BY ps.created_at DESC'
   ].join('\n');
-  const results = await db.prepare(sql).all(userId);
-  
+  const results = await db.prepare(sql).all(cellarId);
+
   return results;
 }
 
 /**
  * Find recent pairing session for a specific wine.
  * Used when user logs consumption to auto-link sessions.
- * 
+ *
  * @param {number} wineId - Wine ID
- * @param {string} [userId='default'] - User identifier
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @param {number} [maxAgeHours=48] - Look back this many hours
  * @returns {Promise<Object|null>} Most recent matching session or null
  */
-export async function findRecentSessionForWine(wineId, userId = 'default', maxAgeHours = 48) {
+export async function findRecentSessionForWine(wineId, cellarId, maxAgeHours = 48) {
   const intervalHours = `INTERVAL '${maxAgeHours} hours'`;
 
   const sql = [
     'SELECT id, dish_description, created_at',
     'FROM pairing_sessions',
-    'WHERE user_id = $1',
+    'WHERE cellar_id = $1',
     '  AND chosen_wine_id = $2',
     '  AND consumption_log_id IS NULL',
     '  AND created_at > NOW() - ' + intervalHours,
     'ORDER BY created_at DESC',
     'LIMIT 1'
   ].join('\n');
-  const result = await db.prepare(sql).get(userId, wineId);
-  
+  const result = await db.prepare(sql).get(cellarId, wineId);
+
   return result || null;
 }
 
 /**
- * Get pairing history for a user.
+ * Get pairing history for a cellar.
  * Used for "Past Pairings" review section.
- * 
- * @param {string} [userId='default'] - User identifier
+ *
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @param {Object} [options]
  * @param {number} [options.limit=20] - Max results
  * @param {number} [options.offset=0] - Pagination offset
  * @param {boolean} [options.feedbackOnly=false] - Only sessions with feedback
  * @returns {Promise<Object[]>} Pairing history
  */
-export async function getPairingHistory(userId = 'default', { limit = 20, offset = 0, feedbackOnly = false } = {}) {
+export async function getPairingHistory(cellarId, { limit = 20, offset = 0, feedbackOnly = false } = {}) {
   // Safe: feedbackFilter is a conditional clause string, all values from whitelist
   const feedbackFilter = feedbackOnly ? 'AND ps.pairing_fit_rating IS NOT NULL' : '';
-  
+
   const sql = [
     'SELECT',
     '  ps.id,',
@@ -244,13 +248,13 @@ export async function getPairingHistory(userId = 'default', { limit = 20, offset
     '  w.colour',
     'FROM pairing_sessions ps',
     'LEFT JOIN wines w ON ps.chosen_wine_id = w.id',
-    'WHERE ps.user_id = $1',
+    'WHERE ps.cellar_id = $1',
     '  ' + feedbackFilter,
     'ORDER BY ps.created_at DESC',
     'LIMIT $2 OFFSET $3'
   ].filter(line => !line.match(/^\s*$/)).join('\n');
-  const results = await db.prepare(sql).all(userId, limit, offset);
-  
+  const results = await db.prepare(sql).all(cellarId, limit, offset);
+
   return results.map(r => ({
     ...r,
     food_signals: r.food_signals ? JSON.parse(r.food_signals) : [],
@@ -261,13 +265,13 @@ export async function getPairingHistory(userId = 'default', { limit = 20, offset
 /**
  * Get aggregate statistics for pairing feedback.
  * Used for profile calculation and UI display.
- * 
- * @param {string} [userId='default'] - User identifier
+ *
+ * @param {string} cellarId - Cellar UUID for tenant isolation
  * @returns {Promise<Object>} Aggregate stats
  */
-export async function getPairingStats(userId = 'default') {
+export async function getPairingStats(cellarId) {
   const result = await db.prepare(`
-    SELECT 
+    SELECT
       COUNT(*) as total_sessions,
       COUNT(chosen_wine_id) as sessions_with_choice,
       COUNT(pairing_fit_rating) as sessions_with_feedback,
@@ -275,8 +279,8 @@ export async function getPairingStats(userId = 'default') {
       SUM(CASE WHEN would_pair_again THEN 1 ELSE 0 END) as would_pair_again_count,
       SUM(CASE WHEN confirmed_consumed THEN 1 ELSE 0 END) as confirmed_consumed_count
     FROM pairing_sessions
-    WHERE user_id = $1
-  `).get(userId);
+    WHERE cellar_id = $1
+  `).get(cellarId);
   
   return {
     totalSessions: result.total_sessions,
