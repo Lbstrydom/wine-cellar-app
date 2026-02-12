@@ -74,6 +74,7 @@ const recommendWineSchema = z.object({
   style: z.string().max(200).nullable().default(null),
   vintage: z.number().int().min(1900).max(2100).nullable().default(null),
   price: z.number().min(0).nullable().default(null),
+  currency: z.string().max(10).nullable().default(null),
   by_the_glass: z.boolean().default(false)
 });
 
@@ -175,6 +176,7 @@ export const pairingItemSchema = z.object({
   wine_name: z.string(),
   wine_colour: z.string(),
   wine_price: z.number().nullable().default(null),
+  currency: z.string().nullable().default(null),
   by_the_glass: z.boolean(),
   why: z.string(),
   serving_tip: z.string(),
@@ -187,6 +189,7 @@ export const pairingItemSchema = z.object({
 export const tableWineSchema = z.object({
   wine_name: z.string(),
   wine_price: z.number().nullable().default(null),
+  currency: z.string().nullable().default(null),
   why: z.string()
 });
 

@@ -301,7 +301,7 @@ function validateAndSanitize(type, parsed) {
 
   // Ensure items have correct type discriminator and required defaults
   if (Array.isArray(parsed.items)) {
-    parsed.items = parsed.items.map(item => {
+    parsed.items = parsed.items.filter(item => item != null).map(item => {
       const patched = { ...item, type: item.type || expectedType };
       // Ensure by_the_glass has a boolean value for wine items
       if (expectedType === 'wine' && typeof patched.by_the_glass !== 'boolean') {
@@ -322,7 +322,7 @@ function validateAndSanitize(type, parsed) {
   logger.warn('MenuParsing', `Schema validation failed, using best-effort: ${result.error.message}`);
 
   const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-  const items = sanitizeMenuItems(rawItems.map(item => {
+  const items = sanitizeMenuItems(rawItems.filter(item => item != null).map(item => {
     const patched = {
       ...item,
       type: item.type || expectedType,

@@ -13,6 +13,7 @@ import {
 } from './state.js';
 import { getRecommendations, restaurantChat } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
+import { formatPriceWithConversion } from './currencyUtils.js';
 
 /** Must match backend recommendSchema */
 const MAX_WINES = 80;
@@ -188,8 +189,15 @@ export async function requestRecommendations() {
   const maxBottlesInput = rootContainer.querySelector('.restaurant-max-bottles');
   const preferBtgCheckbox = rootContainer.querySelector('.restaurant-prefer-btg-checkbox');
 
-  const partySize = partySizeInput?.value ? Number(partySizeInput.value) : null;
-  const maxBottles = maxBottlesInput?.value ? Number(maxBottlesInput.value) : null;
+  // Validate and clamp optional numeric inputs (prevent avoidable 400s)
+  const rawParty = partySizeInput?.value ? Number(partySizeInput.value) : null;
+  const partySize = (rawParty != null && !isNaN(rawParty))
+    ? Math.min(20, Math.max(1, Math.round(rawParty)))
+    : null;
+  const rawBottles = maxBottlesInput?.value ? Number(maxBottlesInput.value) : null;
+  const maxBottles = (rawBottles != null && !isNaN(rawBottles))
+    ? Math.min(10, Math.max(1, Math.round(rawBottles)))
+    : null;
   const preferBtg = preferBtgCheckbox?.checked || false;
 
   // Build payload
@@ -197,7 +205,8 @@ export async function requestRecommendations() {
     wines: wines.map(w => ({
       id: w.id, name: w.name, colour: w.colour ?? null,
       style: w.style ?? null, vintage: w.vintage ?? null,
-      price: w.price ?? null, by_the_glass: w.by_the_glass ?? false
+      price: w.price ?? null, currency: w.currency ?? null,
+      by_the_glass: w.by_the_glass ?? false
     })),
     dishes: dishes.map(d => ({
       id: d.id, name: d.name,
@@ -256,9 +265,15 @@ function renderResultCards(data) {
 
   const pairings = Array.isArray(data.pairings) ? data.pairings : [];
 
+  // Defense-in-depth: show message if no pairings returned
+  if (pairings.length === 0) {
+    cardsContainer.innerHTML = '<div class="restaurant-no-results">No pairings found. Try adjusting your wine selection or constraints.</div>';
+    return;
+  }
+
   let html = pairings.map(p => {
     const btgBadge = p.by_the_glass ? '<span class="restaurant-btg-badge">BTG</span>' : '';
-    const priceText = p.wine_price != null ? `<span class="restaurant-card-price">$${escapeHtml(String(p.wine_price))}</span>` : '';
+    const priceText = p.wine_price != null ? `<span class="restaurant-card-price">${escapeHtml(formatPriceWithConversion(p.wine_price, p.currency))}</span>` : '';
     const colourText = p.wine_colour ? `<span class="restaurant-card-colour">${escapeHtml(p.wine_colour)}</span>` : '';
     const confText = p.confidence ? `<span class="restaurant-pairing-confidence">${escapeHtml(p.confidence)}</span>` : '';
 
@@ -277,7 +292,7 @@ function renderResultCards(data) {
   // Table wine suggestion (object with wine_name, wine_price, why)
   if (data.table_wine) {
     const tw = data.table_wine;
-    const twPrice = tw.wine_price != null ? ` ($${escapeHtml(String(tw.wine_price))})` : '';
+    const twPrice = tw.wine_price != null ? ` (${escapeHtml(formatPriceWithConversion(tw.wine_price, tw.currency))})` : '';
     html += `<div class="restaurant-table-wine-card" role="listitem">
       <strong>Table Wine Suggestion</strong>
       <div>${escapeHtml(tw.wine_name ?? '')}${twPrice}</div>

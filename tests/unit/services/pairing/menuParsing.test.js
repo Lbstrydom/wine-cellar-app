@@ -152,6 +152,36 @@ describe('parseMenuFromText', () => {
       await parseMenuFromText('wine_list', 'text');
       expect(sanitizeMenuItems).toHaveBeenCalled();
     });
+
+    it('filters null items without crashing (pre-validation path)', async () => {
+      const withNulls = {
+        items: [
+          null,
+          { type: 'wine', name: 'Valid Wine', colour: 'red', style: 'Pinotage',
+            price: 200, currency: 'R', vintage: 2021, by_the_glass: false,
+            region: 'Stellenbosch', confidence: 'high' },
+          null
+        ],
+        overall_confidence: 'high',
+        parse_notes: 'Some nulls'
+      };
+      mockCreate.mockResolvedValue(claudeJson(withNulls));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].name).toBe('Valid Wine');
+    });
+
+    it('filters null items without crashing (best-effort path)', async () => {
+      const withNulls = {
+        items: [null, { name: 'Loose Wine' }, null],
+        overall_confidence: 'high',
+        parse_notes: ''
+      };
+      mockCreate.mockResolvedValue(claudeJson(withNulls));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items).toHaveLength(1);
+      expect(result.items[0].name).toBe('Loose Wine');
+    });
   });
 
   describe('Claude API integration', () => {

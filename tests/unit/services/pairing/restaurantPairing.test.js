@@ -303,10 +303,61 @@ describe('getRecommendations', () => {
       expect(result.pairings[0].wine_id).toBe(1);
     });
 
-    it('returns empty pairings for non-object AI response', async () => {
+    it('falls back when AI returns non-object response', async () => {
       mockCreate.mockResolvedValue(claudeText('null'));
       const result = await getRecommendations(makeParams(), 'user1', 1);
-      expect(result.pairings).toHaveLength(0);
+      expect(result.fallback).toBe(true);
+      expect(result.pairings.length).toBeGreaterThan(0);
+      expect(result.chatId).toBeNull();
+    });
+
+    it('rejects hallucinated wine_ids not in submitted list', async () => {
+      const hallucinated = {
+        table_summary: 'Test',
+        pairings: [{
+          rank: 1, dish_name: 'Steak', wine_id: 999, wine_name: 'Fake Wine',
+          wine_colour: 'red', wine_price: 100, by_the_glass: false,
+          why: 'AI made this up', serving_tip: '', confidence: 'high'
+        }]
+      };
+      mockCreate.mockResolvedValue(claudeJson(hallucinated));
+      const result = await getRecommendations(makeParams(), 'user1', 1);
+      // Hallucinated wine_id 999 is not in submitted wines (id:1), so fallback
+      expect(result.fallback).toBe(true);
+      expect(result.pairings[0].wine_id).toBe(1); // from fallback, matches submitted wine
+    });
+
+    it('keeps valid wine_ids and rejects hallucinated ones', async () => {
+      const params = makeParams({
+        wines: [makeWine({ id: 1 }), makeWine({ id: 2, name: 'Another Wine' })],
+        dishes: [makeDish(), makeDish({ id: 2, name: 'Salad' })]
+      });
+      const mixed = {
+        table_summary: 'Test',
+        pairings: [
+          { rank: 1, dish_name: 'Steak', wine_id: 1, wine_name: 'Kanonkop', wine_colour: 'red', wine_price: 350, by_the_glass: false, why: 'Good', serving_tip: '', confidence: 'high' },
+          { rank: 2, dish_name: 'Salad', wine_id: 999, wine_name: 'Hallucinated', wine_colour: 'white', wine_price: 100, by_the_glass: false, why: 'Bad', serving_tip: '', confidence: 'high' }
+        ]
+      };
+      mockCreate.mockResolvedValue(claudeJson(mixed));
+      const result = await getRecommendations(params, 'user1', 1);
+      // wine_id 1 is valid, wine_id 999 is not — only valid one survives
+      expect(result.fallback).toBe(false);
+      expect(result.pairings).toHaveLength(1);
+      expect(result.pairings[0].wine_id).toBe(1);
+    });
+
+    it('passes currency through from AI response', async () => {
+      const withCurrency = {
+        ...VALID_AI_RESPONSE,
+        pairings: [{
+          ...VALID_AI_RESPONSE.pairings[0],
+          currency: 'EUR'
+        }]
+      };
+      mockCreate.mockResolvedValue(claudeJson(withCurrency));
+      const result = await getRecommendations(makeParams(), 'user1', 1);
+      expect(result.pairings[0].currency).toBe('EUR');
     });
 
     it('filters out pairings with invalid wine_id in best-effort', async () => {

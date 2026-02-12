@@ -31,7 +31,7 @@ const mockPairingsResponse = {
     { rank: 2, dish_name: 'Caesar Salad', wine_id: 2, wine_name: 'Sauvignon Blanc', wine_colour: 'white', wine_price: 80, by_the_glass: true, why: 'Crisp acidity matches greens', serving_tip: 'Serve chilled', confidence: 'high' },
     { rank: 3, dish_name: 'Chocolate Fondant', wine_id: 5, wine_name: 'Merlot', wine_colour: 'red', wine_price: 110, by_the_glass: false, why: 'Soft tannins with chocolate', serving_tip: 'Slight chill', confidence: 'medium' }
   ],
-  table_wine: { wine_name: 'Pinot Noir', wine_price: 150, why: 'Versatile table wine for the group' },
+  table_wine: { wine_name: 'Pinot Noir', wine_price: 150, currency: 'USD', why: 'Versatile table wine for the group' },
   chatId: 'chat-uuid-123',
   fallback: false
 };
@@ -216,7 +216,7 @@ describe('results', () => {
       const tableWine = container.querySelector('.restaurant-table-wine-card');
       expect(tableWine).toBeTruthy();
       expect(tableWine.textContent).toContain('Pinot Noir');
-      expect(tableWine.textContent).toContain('$150');
+      expect(tableWine.textContent).toContain('150');
       expect(tableWine.textContent).toContain('Versatile table wine');
     });
   });

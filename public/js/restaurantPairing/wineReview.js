@@ -11,6 +11,7 @@ import {
   updateWineField
 } from './state.js';
 import { showToast, escapeHtml } from '../utils.js';
+import { formatPriceWithConversion } from './currencyUtils.js';
 
 /** Wine colour options — values match backend canonical (lowercase, no diacritics) */
 const COLOURS = [
@@ -319,7 +320,7 @@ function renderCards() {
                data-price-wine="${wine.id}" value="${wine.price ?? ''}"
                min="0" step="0.01" aria-label="Edit price for ${escapeHtml(wine.name)}">`
       : wine.price != null
-        ? `<span class="restaurant-card-price">$${escapeHtml(String(wine.price))}</span>`
+        ? `<span class="restaurant-card-price">${escapeHtml(formatPriceWithConversion(wine.price, wine.currency))}</span>`
         : '';
 
     return `<div class="restaurant-wine-card${isLow ? ' restaurant-low-confidence' : ''}"

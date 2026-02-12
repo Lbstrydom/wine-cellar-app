@@ -145,6 +145,7 @@ Respond with valid JSON only, no other text. Use this exact schema:
       "wine_name": "Exact wine name from the list",
       "wine_colour": "red",
       "wine_price": 45.00,
+      "currency": "EUR",
       "by_the_glass": false,
       "why": "Why this pairing works",
       "serving_tip": "Temperature, decanting, or other tip",
@@ -154,6 +155,7 @@ Respond with valid JSON only, no other text. Use this exact schema:
   "table_wine": {
     "wine_name": "Best single bottle for the whole table",
     "wine_price": 55.00,
+    "currency": "EUR",
     "why": "Why this works across dishes"
   }
 }
@@ -257,6 +259,16 @@ export async function getRecommendations(params, userId, cellarId) {
     const parsed = extractJson(responseText);
     const validated = validateResponse(parsed);
 
+    // Validate wine_ids against submitted wine list (reject hallucinated IDs)
+    const validWineIds = new Set(params.wines.map(w => w.id));
+    validated.pairings = validated.pairings.filter(p => validWineIds.has(p.wine_id));
+
+    // If AI returned valid JSON but no usable pairings, fall back
+    if (validated.pairings.length === 0) {
+      logger.warn('RestaurantPairing', 'No valid pairings (empty or all wine_ids hallucinated), using fallback');
+      return buildFallbackResponse(params);
+    }
+
     // Create chat context for follow-up
     const chatId = randomUUID();
     chatContexts.set(chatId, {
@@ -329,6 +341,7 @@ function validateResponse(parsed) {
           wine_name: p.wine_name || 'Unknown wine',
           wine_colour: p.wine_colour || 'red',
           wine_price: p.wine_price ?? null,
+          currency: p.currency ?? null,
           by_the_glass: p.by_the_glass ?? false,
           why: p.why || 'AI-suggested pairing',
           serving_tip: p.serving_tip || '',
@@ -417,6 +430,7 @@ function buildFallbackResponse(params) {
       wine_name: match.name,
       wine_colour: match.colour || 'red',
       wine_price: match.price ?? null,
+      currency: match.currency ?? null,
       by_the_glass: match.by_the_glass ?? false,
       why: reason,
       serving_tip: '',
@@ -435,6 +449,7 @@ function buildFallbackResponse(params) {
     table_wine = {
       wine_name: tableCandidate.name,
       wine_price: tableCandidate.price ?? null,
+      currency: tableCandidate.currency ?? null,
       why: 'Most versatile option for the table (colour-based suggestion)'
     };
   }

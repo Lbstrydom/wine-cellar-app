@@ -9,9 +9,9 @@
 // --- Mocks ---
 
 const mockWines = [
-  { id: 1, name: 'Cab Sauv Reserve', vintage: 2019, colour: 'red', price: 350, by_the_glass: false, confidence: 'high' },
-  { id: 2, name: 'Chardonnay Estate', vintage: 2021, colour: 'white', price: 180, by_the_glass: true, confidence: 'high' },
-  { id: 3, name: 'Pinot Noir', vintage: 2020, colour: 'red', price: 250, by_the_glass: false, confidence: 'low' }
+  { id: 1, name: 'Cab Sauv Reserve', vintage: 2019, colour: 'red', price: 350, currency: 'USD', by_the_glass: false, confidence: 'high' },
+  { id: 2, name: 'Chardonnay Estate', vintage: 2021, colour: 'white', price: 180, currency: 'USD', by_the_glass: true, confidence: 'high' },
+  { id: 3, name: 'Pinot Noir', vintage: 2020, colour: 'red', price: 250, currency: 'USD', by_the_glass: false, confidence: 'low' }
 ];
 
 const mockSelections = {
@@ -132,7 +132,7 @@ describe('wineReview', () => {
       const firstCard = container.querySelector('.restaurant-wine-card');
       expect(firstCard.textContent).toContain('Cab Sauv Reserve');
       expect(firstCard.textContent).toContain('2019');
-      expect(firstCard.textContent).toContain('$350');
+      expect(firstCard.textContent).toContain('350');
       expect(firstCard.getAttribute('role')).toBe('checkbox');
       expect(firstCard.getAttribute('aria-checked')).toBe('true');
     });
