@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 9 February 2026
+## 12 February 2026
 
 ---
 
@@ -9,14 +9,14 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 9 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 12 Feb 2026**:
 - **Codebase Fix-Plan (All 6 Phases) — COMPLETE** ✅:
   - **Phases 1-3 (Security + Bugs + Dead Files)**: Added requireAuth to admin route, cellar_id filtering to bottles queries, replaced raw fetch() with auth-imported fetch, fixed Zod v4 .errors→.issues bug, renamed shadowed wineRatings route, removed 14 dead service files (rateLimiter, robotsParser, provenance, searchMetrics, etc.) and 5 dead test files (~3,500 LOC removed)
   - **Phase 4 (Dead Export Cleanup)**: Un-exported internal constants/functions from `noiseTerms.js` (4 items), deleted dead `isMarketingNoise()`, un-exported `resetZoneChatState` from `cellarAnalysis.js` + `state.js`. All other Phase 4 items verified already done from prior sessions. 19 tests removed (tested un-exported internals).
   - **Phase 5 (Duplication & Code Quality)**: Deduplicated `renderStars()` — removed local copy from `wineConfirmation.js` (had wider half-star threshold + typo), now imports from `ratings.js`. Extracted ~190 lines of PWA/service-worker code from `app.js` to new `pwa.js` module (SW registration, update notification, install prompt, PWA status). Removed unused `.stars-filled/.stars-half/.stars-empty` CSS classes. All other Phase 5 items verified already done.
   - **Phase 6 (Directory Restructuring)**: Reorganised `src/services/` from 86 flat files into 10 domain subdirectories (ai/, awards/, cellar/, pairing/, ratings/, scraping/, search/, shared/, wine/, zone/) with 5 root orchestrators. Atomic approach: 81 files moved, ~290 import rewrites (120 outbound, 61 internal, 105 inbound, ~24 dynamic), 17 vi.mock path fixes, 12 test files moved to matching subdirectories. All @module JSDoc paths updated.
   - **Review fixes**: Added 11 always-running unit tests for `wineAddOrchestrator.js` (fingerprinting, duplicate detection, cellar isolation, metrics resilience) to cover orchestration logic that was previously only tested by conditional DB-backed integration tests. Cleaned stale `@see` JSDoc cross-references in `ratings.js`.
-  - **Test count**: 1462 unit tests passing across 50 files. Zero regressions.
+  - **Test count**: 1475 unit tests passing across 50 files. Zero regressions.
   - Plan document: `docs/fix-plan.md` (6 phases, detailed plan in `.claude/plans/curried-rolling-salamander.md`)
 
 - **Restaurant Pairing Assistant — Phase A+B COMPLETE** ✅:
@@ -25,6 +25,13 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Phase C (Frontend Foundation, Steps 12-14)**: `resizeImage` exported, API client (`restaurantPairing.js` — 3 functions with AbortSignal), state module (`state.js` — sessionStorage persistence, dedup/merge with Jaccard fuzzy match). Two audit rounds: 8 findings addressed (full load() shape guards for arrays/objects/numbers, step clamping at load+set, input immutability, clearState guard, 62 unit tests).
   - **Phase D Cluster 1 (D.0 + D.1)** ✅: `invalidateResults()` added to state.js (integrated into all 10 mutation functions, 15 invalidation tests). `imageCapture.js` (385 lines) — multi-image capture widget with text area, concurrency queue (max 2), AbortController per request, parse budget, 429 handling, destroy lifecycle. 34 tests. Audit round: 5 findings addressed (destroyed guard, queue skip for removed images, removeWine/removeDish invalidation, budget status persistence, listener cleanup). All 1515 tests passing across 48 files.
   - **Phase D Clusters 2-4 + Phase E (Frontend UI + Integration)**: In progress
+  - **Flexible Currency System + Review Fixes (12 Feb 2026)** ✅:
+    - New `currencyUtils.js` module: locale-based home currency detection (`navigator.language` → country → ISO 4217), `Intl.NumberFormat` price display with `narrowSymbol`, approximate exchange rates (~28 currencies), conversion display (e.g. `€15 (~R294)`)
+    - Currency flows end-to-end: OCR parse → state → recommend payload → AI/fallback → response → display
+    - Added `currency` field to `recommendWineSchema`, `pairingItemSchema`, `tableWineSchema` (Zod schemas)
+    - **5 review fixes**: (1) Empty pairings with `fallback: false` now triggers deterministic fallback in `getRecommendations()`, (2) Null items in menu parse array filtered before `.map()` in both validation paths, (3) Hallucinated `wine_id`s validated against submitted wine list (`Set` filter + fallback if all rejected), (4) `party_size`/`max_bottles` NaN-safe client-side clamping (1-20 / 1-10), (5) Hardcoded `$` replaced with `formatPriceWithConversion()` across all price displays
+    - 7 new tests (null item filtering ×2, hallucinated wine_id rejection ×2, currency passthrough, updated existing tests)
+    - **Test count**: 1475 unit tests passing across 50 files
   - Plan document: `docs/rest-plan.md` (22 steps across 5 phases)
 
 - **Wine Data Consistency Checker - COMPLETE** ✅:
@@ -36,7 +43,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Orange colour support**: Added to WINE_COLOURS enum, Zod schemas, DB migration (049), base schema parity (postgres + sqlite CHECK constraints)
   - **Acquisition workflow fix**: Pre-existing PostgreSQL bug fixed — `RETURNING id` added to INSERT, switched to `.get()`
   - **Route-level tests with supertest**: Both `consistency.test.js` (22 tests) and `winesAdvisory.test.js` (16 tests) exercise real Express middleware chains — real Zod validation, real `req.validated` fallback, real `captureGrapes` ordering, real fail-open behavior
-  - **Test Coverage**: 1462 unit tests passing across 50 files. Zero regressions.
+  - **Test Coverage**: 1475 unit tests passing across 50 files. Zero regressions.
   - Files: `grapeColourMap.js`, `wineNormalization.js`, `consistencyChecker.js`, `consistency.js` (route), migration 049, updated `wines.js`, `acquisitionWorkflow.js`, `wine.js` (schema), `index.js` (route registration)
   - Plan document: `docs/colour-plan.md` (13 steps, 17 reviewer findings addressed)
 
@@ -306,7 +313,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1462 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1475 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |

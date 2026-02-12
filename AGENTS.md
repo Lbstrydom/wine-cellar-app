@@ -62,7 +62,15 @@ public/
     ├── dragdrop.js        # Drag and drop functionality
     ├── sommelier.js       # Claude pairing UI
     ├── bottles.js         # Bottle add/edit functionality
-    └── utils.js           # Shared utility functions
+    ├── utils.js           # Shared utility functions
+    └── restaurantPairing/ # Restaurant pairing assistant UI
+        ├── state.js       # Session state management
+        ├── imageCapture.js # Multi-image capture widget
+        ├── wineReview.js  # Wine review & filter cards
+        ├── dishReview.js  # Dish review cards
+        ├── results.js     # Pairing results & recommendations
+        ├── quickPair.js   # Quick pair shortcut
+        └── currencyUtils.js # Currency detection, formatting & conversion
 ```
 
 ---
@@ -682,7 +690,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1462 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1475 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
