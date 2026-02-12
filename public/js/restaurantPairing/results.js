@@ -195,13 +195,13 @@ export async function requestRecommendations() {
   // Build payload
   const payload = {
     wines: wines.map(w => ({
-      id: w.id, name: w.name, colour: w.colour,
-      style: w.style, vintage: w.vintage,
-      price: w.price, by_the_glass: w.by_the_glass
+      id: w.id, name: w.name, colour: w.colour ?? null,
+      style: w.style ?? null, vintage: w.vintage ?? null,
+      price: w.price ?? null, by_the_glass: w.by_the_glass ?? false
     })),
     dishes: dishes.map(d => ({
       id: d.id, name: d.name,
-      description: d.description, category: d.category
+      description: d.description ?? null, category: d.category ?? null
     }))
   };
   if (partySize != null) payload.party_size = partySize;

@@ -31,41 +31,64 @@ function buildSystemPrompt(type) {
   if (type === 'wine_list') {
     return `You are a restaurant wine list parser. Extract every wine from the input into structured data.
 
+LANGUAGE HANDLING:
+- The menu may be in ANY language (Dutch, Finnish, German, French, Spanish, Italian, etc.)
+- Auto-detect the menu language and parse all items regardless of language
+- Always output wine names as they appear on the menu (original language)
+- Translate descriptive info (e.g., tasting notes) into English for the style/region fields
+- Country names in region field should be in English (e.g., "France" not "Frankrijk")
+
 For each wine, extract:
-- name: Full wine name (producer + wine name, exclude vintage)
+- name: Full wine name (producer + wine name, exclude vintage) — keep in original language as shown on menu
 - colour: One of "red", "white", "rose", "sparkling" (infer from grape/style if not explicit, null if truly unknown)
-- style: Grape variety or wine style (e.g., "Sauvignon Blanc", "Chianti")
-- price: Numeric price (null if not shown). Keep in original currency.
+- style: Grape variety or wine style in English (e.g., "Sauvignon Blanc", "Chianti")
+- price: Numeric price (null if not shown). Keep in original currency. If shown as "5,75" (European comma decimal), convert to 5.75.
 - currency: Currency symbol or code (e.g., "$", "€", "£", "R", "ZAR", null if no price)
 - vintage: Year as integer (null if NV or not specified)
 - by_the_glass: true if explicitly marked as by-the-glass, false otherwise
-- region: Wine region if mentioned (null if not)
+- region: Wine region if mentioned, with country name in English (null if not)
 - confidence: "high" if clearly legible, "medium" if partially inferred, "low" if guessing
 
 RULES:
 - Every item MUST have type: "wine"
-- Infer colour from grape variety if not stated (Merlot→red, Chardonnay→white, etc.)
+- Infer colour from grape variety if not stated (Merlot→red, Chardonnay→white, Pinotage→red, etc.)
 - Do NOT convert currencies — preserve the original price and currency
 - If a wine appears at two prices (glass/bottle), create TWO entries: one with by_the_glass: true, one with false
 - Bin numbers are NOT prices — they are typically 3-digit codes without currency symbols
-- Set overall_confidence based on worst individual item confidence`;
+- European price format uses comma as decimal separator (e.g., "5,75" = 5.75, "27.90" = 27.90)
+- Set overall_confidence based on worst individual item confidence
+- Include menu_language in parse_notes (e.g., "Menu language: Dutch")`;
   }
 
   return `You are a restaurant menu parser. Extract every dish from the input into structured data.
 
+LANGUAGE HANDLING:
+- The menu may be in ANY language (Dutch, Finnish, German, French, Spanish, Italian, etc.)
+- Auto-detect the menu language and parse all items regardless of language
+- Keep the original dish name as it appears on the menu
+- Provide an English translation of the dish name and description in the description field
+  - Format: "[English translation]. [Original description if any]"
+  - Example: For Dutch "Ossenhaas" with description "met Roseval aardappelen", output:
+    name: "Ossenhaas", description: "Beef tenderloin. With Roseval potatoes, red cabbage, stewed pears and pepper sauce"
+- This ensures the pairing engine can understand non-English dishes
+
 For each dish, extract:
-- name: Dish name as it appears on the menu
-- description: Any description or ingredients listed (null if none)
-- price: Numeric price (null if not shown). Keep in original currency.
+- name: Dish name as it appears on the menu (original language)
+- description: English translation + any listed ingredients/description (null if truly no info). Always translate to English.
+- price: Numeric price (null if not shown). Keep in original currency. If shown as "13,90" (European comma decimal), convert to 13.90.
 - currency: Currency symbol or code (null if no price)
 - category: One of "Starter", "Main", "Dessert", "Side", "Sharing" (infer from menu section or dish type, null if unclear)
 - confidence: "high" if clearly legible, "medium" if partially inferred, "low" if guessing
 
 RULES:
 - Every item MUST have type: "dish"
-- Infer category from menu section headers if present (Starters, Mains, etc.)
+- Infer category from menu section headers if present (Starters, Mains, Entrées, Hauptgerichte, etc.) regardless of language
+- Check for language-specific section headers: Voorgerechten/Starters, Hoofdgerechten/Mains, Nagerechten/Desserts, Vorspeisen, Entrées, etc.
+- Look for markers like (V) = vegetarian, (VG) = vegan and note in description
 - If a dish has no clear category, use null rather than guessing
-- Set overall_confidence based on worst individual item confidence`;
+- European price format uses comma as decimal separator (e.g., "13,90" = 13.90)
+- Set overall_confidence based on worst individual item confidence
+- Include menu_language in parse_notes (e.g., "Menu language: Dutch")`;
 }
 
 /**
@@ -276,12 +299,16 @@ function validateAndSanitize(type, parsed) {
   const schema = type === 'wine_list' ? wineListResponseSchema : dishMenuResponseSchema;
   const expectedType = type === 'wine_list' ? 'wine' : 'dish';
 
-  // Ensure items have correct type discriminator
+  // Ensure items have correct type discriminator and required defaults
   if (Array.isArray(parsed.items)) {
-    parsed.items = parsed.items.map(item => ({
-      ...item,
-      type: item.type || expectedType
-    }));
+    parsed.items = parsed.items.map(item => {
+      const patched = { ...item, type: item.type || expectedType };
+      // Ensure by_the_glass has a boolean value for wine items
+      if (expectedType === 'wine' && typeof patched.by_the_glass !== 'boolean') {
+        patched.by_the_glass = false;
+      }
+      return patched;
+    });
   }
 
   const result = schema.safeParse(parsed);
@@ -295,12 +322,19 @@ function validateAndSanitize(type, parsed) {
   logger.warn('MenuParsing', `Schema validation failed, using best-effort: ${result.error.message}`);
 
   const rawItems = Array.isArray(parsed.items) ? parsed.items : [];
-  const items = sanitizeMenuItems(rawItems.map(item => ({
-    ...item,
-    type: item.type || expectedType,
-    name: item.name || 'Unknown item',
-    confidence: item.confidence || 'low'
-  })));
+  const items = sanitizeMenuItems(rawItems.map(item => {
+    const patched = {
+      ...item,
+      type: item.type || expectedType,
+      name: item.name || 'Unknown item',
+      confidence: item.confidence || 'low'
+    };
+    // Ensure by_the_glass has a boolean value for wine items
+    if (expectedType === 'wine' && typeof patched.by_the_glass !== 'boolean') {
+      patched.by_the_glass = false;
+    }
+    return patched;
+  }));
 
   return {
     items,

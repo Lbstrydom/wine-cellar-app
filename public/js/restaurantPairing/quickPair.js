@@ -45,7 +45,7 @@ function parseDishText(text) {
     .filter(Boolean)
     .map(name => ({
       name,
-      description: '',
+      description: null,
       category: null,
       confidence: 'high'
     }));

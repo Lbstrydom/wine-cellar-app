@@ -430,6 +430,24 @@ describe('POST /recommend', () => {
       expect(res.status).toBe(400);
       expect(res.body.error).toHaveProperty('code', 'VALIDATION_ERROR');
     });
+
+    it('accepts wine without by_the_glass (defaults to false)', async () => {
+      getRecommendations.mockResolvedValue({
+        pairings: [{ wine_id: 1, dish_id: 10, score: 85, reason: 'Great match' }]
+      });
+
+      const res = await request(app)
+        .post('/recommend')
+        .send({
+          wines: [{ id: 1, name: 'Merlot', colour: 'red' }],
+          dishes: [{ id: 10, name: 'Steak' }]
+        });
+
+      expect(res.status).toBe(200);
+      // Verify by_the_glass defaulted to false in service call
+      const callArgs = getRecommendations.mock.calls[0][0];
+      expect(callArgs.wines[0].by_the_glass).toBe(false);
+    });
   });
 
   describe('error handling', () => {

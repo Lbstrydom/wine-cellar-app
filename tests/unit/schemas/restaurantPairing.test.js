@@ -314,10 +314,11 @@ describe('recommendSchema', () => {
       expect(result.wines[0].price).toBe(0);
     });
 
-    it('requires by_the_glass boolean', () => {
+    it('defaults by_the_glass to false when omitted', () => {
       const wine = validWine();
       delete wine.by_the_glass;
-      expectSchemaFail(recommendSchema, validRecommend({ wines: [wine] }));
+      const result = expectSchemaPass(recommendSchema, validRecommend({ wines: [wine] }));
+      expect(result.wines[0].by_the_glass).toBe(false);
     });
   });
 

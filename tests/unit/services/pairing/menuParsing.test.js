@@ -177,6 +177,40 @@ describe('parseMenuFromText', () => {
       expect(call.system).toContain('category');
     });
 
+    it('includes multi-language handling in wine_list system prompt', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('LANGUAGE HANDLING');
+      expect(call.system).toContain('ANY language');
+      expect(call.system).toContain('Auto-detect');
+    });
+
+    it('includes multi-language handling in dish_menu system prompt', async () => {
+      mockCreate.mockResolvedValue(claudeJson(DISH_MENU_RESPONSE));
+      await parseMenuFromText('dish_menu', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('LANGUAGE HANDLING');
+      expect(call.system).toContain('ANY language');
+      expect(call.system).toContain('English translation');
+    });
+
+    it('includes European decimal format instruction in wine_list prompt', async () => {
+      mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
+      await parseMenuFromText('wine_list', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('European');
+      expect(call.system).toContain('comma');
+    });
+
+    it('includes European decimal format instruction in dish_menu prompt', async () => {
+      mockCreate.mockResolvedValue(claudeJson(DISH_MENU_RESPONSE));
+      await parseMenuFromText('dish_menu', 'text');
+      const call = mockCreate.mock.calls[0][0];
+      expect(call.system).toContain('European');
+      expect(call.system).toContain('comma');
+    });
+
     it('includes format instruction and menu text in user message', async () => {
       mockCreate.mockResolvedValue(claudeJson(WINE_LIST_RESPONSE));
       await parseMenuFromText('wine_list', 'Merlot 2019 $45');
@@ -242,6 +276,47 @@ describe('parseMenuFromText', () => {
       mockCreate.mockResolvedValue(claudeJson(noType));
       const result = await parseMenuFromText('wine_list', 'text');
       expect(result.items[0].type).toBe('wine');
+    });
+
+    it('defaults by_the_glass to false when missing from wine item', async () => {
+      const noGlass = {
+        items: [{
+          name: 'Diemersdal Pinotage', colour: 'red', style: 'Pinotage',
+          price: 32.00, currency: '€', vintage: null,
+          region: 'Durbanville', confidence: 'high'
+        }],
+        overall_confidence: 'high',
+        parse_notes: 'Test'
+      };
+      mockCreate.mockResolvedValue(claudeJson(noGlass));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items[0].by_the_glass).toBe(false);
+    });
+
+    it('defaults by_the_glass to false in best-effort wine items', async () => {
+      const malformed = {
+        items: [{ name: 'Domaine Muret' }],
+        overall_confidence: 'high',
+        parse_notes: ''
+      };
+      mockCreate.mockResolvedValue(claudeJson(malformed));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items[0].by_the_glass).toBe(false);
+    });
+
+    it('preserves by_the_glass true when set', async () => {
+      const withGlass = {
+        items: [{
+          name: 'Dom Doriac Reserve', colour: 'white', style: 'Chardonnay',
+          price: 5.75, currency: '€', vintage: null, by_the_glass: true,
+          region: 'Languedoc', confidence: 'high'
+        }],
+        overall_confidence: 'high',
+        parse_notes: 'Test'
+      };
+      mockCreate.mockResolvedValue(claudeJson(withGlass));
+      const result = await parseMenuFromText('wine_list', 'text');
+      expect(result.items[0].by_the_glass).toBe(true);
     });
 
     it('adds dish type discriminator for dish_menu', async () => {
@@ -418,5 +493,109 @@ describe('parseMenuFromImage', () => {
     mockCreate.mockRejectedValue(new Error('fail'));
     await parseMenuFromImage('wine_list', 'data', 'image/jpeg').catch(() => {});
     expect(mockCleanup).toHaveBeenCalledOnce();
+  });
+
+  it('defaults by_the_glass to false for image-parsed wines missing the field', async () => {
+    const noGlass = {
+      items: [{
+        name: 'Diemersdal Pinotage', colour: 'red', style: 'Pinotage',
+        price: 32.00, currency: '€', vintage: null,
+        region: 'Durbanville', confidence: 'high'
+        // by_the_glass intentionally omitted
+      }],
+      overall_confidence: 'high',
+      parse_notes: 'Test'
+    };
+    mockCreate.mockResolvedValue(claudeJson(noGlass));
+    const result = await parseMenuFromImage('wine_list', 'data', 'image/jpeg');
+    expect(result.items[0].by_the_glass).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Multi-language menu parsing
+// ---------------------------------------------------------------------------
+
+describe('multi-language menu parsing', () => {
+  it('parses Dutch wine list with European prices', async () => {
+    const dutchWines = {
+      items: [
+        {
+          type: 'wine', name: "Dom Doriac 'Reserve'", colour: 'white',
+          style: 'Chardonnay', price: 5.75, currency: '€', vintage: null,
+          by_the_glass: true, region: 'Languedoc, France', confidence: 'high'
+        },
+        {
+          type: 'wine', name: "Dom Doriac 'Reserve'", colour: 'white',
+          style: 'Chardonnay', price: 27.90, currency: '€', vintage: null,
+          by_the_glass: false, region: 'Languedoc, France', confidence: 'high'
+        },
+        {
+          type: 'wine', name: 'Diemersdal', colour: 'red', style: 'Pinotage',
+          price: 32.00, currency: '€', vintage: null, by_the_glass: false,
+          region: 'Durbanville, South Africa', confidence: 'high'
+        }
+      ],
+      overall_confidence: 'high',
+      parse_notes: 'Menu language: Dutch. Country names translated to English.'
+    };
+    mockCreate.mockResolvedValue(claudeJson(dutchWines));
+    const result = await parseMenuFromText('wine_list', 'Dom Doriac Chardonnay 5,75/27.90');
+    expect(result.items).toHaveLength(3);
+    expect(result.items[0].by_the_glass).toBe(true);
+    expect(result.items[1].by_the_glass).toBe(false);
+    expect(result.items[2].region).toContain('South Africa');
+  });
+
+  it('parses Dutch dish menu with English translated descriptions', async () => {
+    const dutchDishes = {
+      items: [
+        {
+          type: 'dish', name: 'Ossenhaas',
+          description: 'Beef tenderloin. With Roseval potatoes, red cabbage, stewed pears and pepper sauce',
+          price: 18.90, currency: '€', category: 'Sharing', confidence: 'high'
+        },
+        {
+          type: 'dish', name: 'Saffraan risotto',
+          description: 'Saffron risotto. With roasted bell pepper, green asparagus, baby carrots and burrata. Vegetarian',
+          price: 13.90, currency: '€', category: 'Sharing', confidence: 'high'
+        }
+      ],
+      overall_confidence: 'high',
+      parse_notes: 'Menu language: Dutch. Dish descriptions translated to English.'
+    };
+    mockCreate.mockResolvedValue(claudeJson(dutchDishes));
+    const result = await parseMenuFromText('dish_menu', 'Ossenhaas 18,90');
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].name).toBe('Ossenhaas');
+    expect(result.items[0].description).toContain('Beef tenderloin');
+    expect(result.items[1].description).toContain('Saffron risotto');
+  });
+
+  it('handles mixed-confidence items from partially legible menu', async () => {
+    const mixedConfidence = {
+      items: [
+        {
+          type: 'wine', name: 'Mantlerhof', colour: 'white',
+          style: 'Grüner Veltliner', price: 37.50, currency: '€',
+          vintage: null, by_the_glass: false,
+          region: 'Austria', confidence: 'high'
+        },
+        {
+          type: 'wine', name: 'Unknown Producer', colour: null,
+          style: null, price: null, currency: null,
+          vintage: null, by_the_glass: false,
+          region: null, confidence: 'low'
+        }
+      ],
+      overall_confidence: 'low',
+      parse_notes: 'Menu language: Dutch. Some items partially legible.'
+    };
+    mockCreate.mockResolvedValue(claudeJson(mixedConfidence));
+    const result = await parseMenuFromText('wine_list', 'blurry text');
+    expect(result.items).toHaveLength(2);
+    expect(result.overall_confidence).toBe('low');
+    expect(result.items[0].confidence).toBe('high');
+    expect(result.items[1].confidence).toBe('low');
   });
 });

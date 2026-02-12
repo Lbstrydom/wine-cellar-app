@@ -74,7 +74,7 @@ const recommendWineSchema = z.object({
   style: z.string().max(200).nullable().default(null),
   vintage: z.number().int().min(1900).max(2100).nullable().default(null),
   price: z.number().min(0).nullable().default(null),
-  by_the_glass: z.boolean()
+  by_the_glass: z.boolean().default(false)
 });
 
 /**
