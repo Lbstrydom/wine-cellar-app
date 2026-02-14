@@ -59,6 +59,128 @@ export function calculateFragmentation(rows, wines) {
 }
 
 // ───────────────────────────────────────────────────────────
+// Wine scattering detection
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Detect wines scattered across non-contiguous rows.
+ * Identifies bottles of the same wine placed in distant rows that should be consolidated.
+ * @param {Array} wines - All wines with slot assignments
+ * @returns {Array} Scattered wine groups sorted by bottle count (descending)
+ */
+export function detectScatteredWines(wines) {
+  const wineMap = new Map();
+
+  for (const wine of wines) {
+    const slotId = wine.slot_id || wine.location_code;
+    if (!slotId || !slotId.startsWith('R')) continue;
+
+    const parsed = parseSlot(slotId);
+    if (!parsed) continue;
+
+    const wineId = wine.id;
+    if (!wineMap.has(wineId)) {
+      wineMap.set(wineId, {
+        wineId,
+        wineName: wine.wine_name,
+        slots: [],
+        rows: new Set()
+      });
+    }
+
+    const entry = wineMap.get(wineId);
+    entry.slots.push(slotId);
+    entry.rows.add(`R${parsed.row}`);
+  }
+
+  const scattered = [];
+  for (const [, entry] of wineMap) {
+    if (entry.rows.size <= 1) continue;
+
+    const rowNums = [...entry.rows]
+      .map(r => parseInt(r.slice(1), 10))
+      .sort((a, b) => a - b);
+
+    // Check if rows are contiguous (adjacent)
+    const isContiguous = rowNums.every((r, i) =>
+      i === 0 || r === rowNums[i - 1] + 1
+    );
+
+    if (!isContiguous) {
+      scattered.push({
+        wineId: entry.wineId,
+        wineName: entry.wineName,
+        bottleCount: entry.slots.length,
+        rows: [...entry.rows].sort(),
+        slots: entry.slots.sort()
+      });
+    }
+  }
+
+  return scattered.sort((a, b) => b.bottleCount - a.bottleCount);
+}
+
+// ───────────────────────────────────────────────────────────
+// Color adjacency detection
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Get the effective color category for a zone (red or white-family).
+ * @param {Object} zone - Zone configuration
+ * @returns {'red'|'white'|'any'} Effective color
+ */
+export function getEffectiveZoneColor(zone) {
+  if (!zone) return 'any';
+  if (zone.isFallbackZone || zone.isCuratedZone) return 'any';
+  const color = zone.color;
+  if (Array.isArray(color)) {
+    return color.includes('red') ? 'red' : 'white';
+  }
+  return color === 'red' ? 'red' : 'white';
+}
+
+/**
+ * Detect color boundary violations where red and white zones are adjacent.
+ * @param {Object} rowToZoneId - Row-to-zone mapping { R1: 'sauvignon_blanc', R8: 'cabernet', ... }
+ * @returns {Array} Adjacency violation objects
+ */
+export function detectColorAdjacencyIssues(rowToZoneId) {
+  const issues = [];
+
+  for (let row = 1; row <= 18; row++) {
+    const currentZoneId = rowToZoneId[`R${row}`];
+    const nextZoneId = rowToZoneId[`R${row + 1}`];
+
+    if (!currentZoneId || !nextZoneId || currentZoneId === nextZoneId) continue;
+
+    const currentZone = getZoneById(currentZoneId);
+    const nextZone = getZoneById(nextZoneId);
+    if (!currentZone || !nextZone) continue;
+
+    const c1 = getEffectiveZoneColor(currentZone);
+    const c2 = getEffectiveZoneColor(nextZone);
+
+    // Skip buffer/fallback/curated zones (they can be anywhere)
+    if (c1 === 'any' || c2 === 'any') continue;
+
+    if (c1 !== c2) {
+      issues.push({
+        row1: `R${row}`,
+        zone1: currentZoneId,
+        zone1Name: currentZone.displayName,
+        color1: c1,
+        row2: `R${row + 1}`,
+        zone2: nextZoneId,
+        zone2Name: nextZone.displayName,
+        color2: c2
+      });
+    }
+  }
+
+  return issues;
+}
+
+// ───────────────────────────────────────────────────────────
 // Placement helpers
 // ───────────────────────────────────────────────────────────
 

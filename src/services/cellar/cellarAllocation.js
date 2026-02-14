@@ -84,13 +84,31 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
     }
   }
 
-  // If no preferred row available, try any row
+  // If no preferred row available, try color-compatible rows first, then any row
   if (!assignedRow) {
-    for (let rowNum = 1; rowNum <= 19; rowNum++) {
+    const zoneColor = zone.color;
+    const isRed = zoneColor === 'red' || (Array.isArray(zoneColor) && zoneColor.includes('red'));
+    const colorRange = isRed
+      ? [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
+      : [1, 2, 3, 4, 5, 6, 7];
+
+    // Try color-compatible rows first
+    for (const rowNum of colorRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
         assignedRow = rowId;
         break;
+      }
+    }
+
+    // Last resort: any available row (logs a warning)
+    if (!assignedRow) {
+      for (let rowNum = 1; rowNum <= 19; rowNum++) {
+        const rowId = `R${rowNum}`;
+        if (!usedRows.has(rowId)) {
+          assignedRow = rowId;
+          break;
+        }
       }
     }
   }

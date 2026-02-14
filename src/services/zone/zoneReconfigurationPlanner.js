@@ -10,6 +10,7 @@ import { getNeverMergeZones } from './zonePins.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
+import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import {
@@ -31,6 +32,7 @@ function clampStabilityBias(value) {
 
 /**
  * Build a comprehensive picture of current zone utilization.
+ * Aggregates per-row analysis entries into per-zone totals.
  */
 function buildZoneUtilization(report) {
   const zoneAnalysis = Array.isArray(report?.zoneAnalysis) ? report.zoneAnalysis : [];
@@ -40,17 +42,34 @@ function buildZoneUtilization(report) {
     const zoneId = za.zoneId;
     if (!zoneId) continue;
 
-    utilization[zoneId] = {
-      zoneId,
-      zoneName: za.zoneName || zoneId,
-      bottleCount: za.bottleCount || 0,
-      rowCount: za.rowCount || 1,
-      capacity: (za.rowCount || 1) * SLOTS_PER_ROW,
-      utilizationPct: za.rowCount > 0 ? Math.round((za.bottleCount / ((za.rowCount || 1) * SLOTS_PER_ROW)) * 100) : 0,
-      isOverflowing: za.isOverflowing || false,
-      misplacedCount: za.misplaced?.length || 0,
-      correctCount: za.correctlyPlaced?.length || 0
-    };
+    if (!utilization[zoneId]) {
+      utilization[zoneId] = {
+        zoneId,
+        zoneName: za.displayName || za.zoneName || zoneId,
+        bottleCount: 0,
+        rowCount: 0,
+        capacity: 0,
+        utilizationPct: 0,
+        isOverflowing: false,
+        misplacedCount: 0,
+        correctCount: 0
+      };
+    }
+
+    const entry = utilization[zoneId];
+    entry.bottleCount += za.currentCount ?? za.bottleCount ?? 0;
+    entry.rowCount += 1;
+    entry.capacity += za.capacity ?? SLOTS_PER_ROW;
+    entry.isOverflowing = entry.isOverflowing || (za.isOverflowing || false);
+    entry.misplacedCount += za.misplaced?.length ?? 0;
+    entry.correctCount += za.correctlyPlaced?.length ?? 0;
+  }
+
+  // Calculate utilization percentage after aggregation
+  for (const entry of Object.values(utilization)) {
+    entry.utilizationPct = entry.capacity > 0
+      ? Math.round((entry.bottleCount / entry.capacity) * 100)
+      : 0;
   }
 
   return utilization;
@@ -202,6 +221,58 @@ function parseJsonObject(text) {
   }
 }
 
+/**
+ * Check if a reallocate_row action would create a color adjacency violation.
+ * Simulates the row move and checks whether the target zone's color matches
+ * the neighboring rows.
+ * @param {Object} action - { fromZoneId, toZoneId, rowNumber }
+ * @param {Map} zoneRowMap - Zone ID → assigned rows
+ * @returns {boolean} True if the action would create a color violation
+ */
+function wouldCreateColorViolation(action, zoneRowMap) {
+  if (action.type !== 'reallocate_row') return false;
+
+  const toZone = getZoneById(action.toZoneId);
+  if (!toZone) return false;
+
+  const toColor = getEffectiveZoneColor(toZone);
+  if (toColor === 'any') return false;
+
+  const rowId = typeof action.rowNumber === 'number' ? `R${action.rowNumber}` : String(action.rowNumber);
+  const rowNum = parseInt(rowId.replace('R', ''), 10);
+
+  // Build current row→zone mapping
+  const rowToZone = new Map();
+  for (const [zoneId, rows] of zoneRowMap) {
+    for (const r of rows) {
+      rowToZone.set(r, zoneId);
+    }
+  }
+
+  // Simulate the move
+  rowToZone.set(rowId, action.toZoneId);
+
+  // Check adjacent rows
+  for (const adjacentRowNum of [rowNum - 1, rowNum + 1]) {
+    if (adjacentRowNum < 1 || adjacentRowNum > 19) continue;
+    const adjacentRowId = `R${adjacentRowNum}`;
+    const adjacentZoneId = rowToZone.get(adjacentRowId);
+    if (!adjacentZoneId || adjacentZoneId === action.toZoneId) continue;
+
+    const adjacentZone = getZoneById(adjacentZoneId);
+    if (!adjacentZone) continue;
+
+    const adjacentColor = getEffectiveZoneColor(adjacentZone);
+    if (adjacentColor === 'any') continue;
+
+    if (toColor !== adjacentColor) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function computeSummary(report, actions) {
   const misplacedBefore = report?.summary?.misplacedBottles ?? 0;
   const bottlesAffected = actions.reduce((sum, a) => sum + (a.bottlesAffected || 0), 0);
@@ -318,8 +389,17 @@ export async function generateReconfigurationPlan(report, options = {}) {
         neverMergeZones: Array.from(neverMerge),
         includeRetirements,
         stabilityBias: stability,
-        flexibleColorAllocation: true
-      }
+        flexibleColorAllocation: false
+      },
+      scatteredWines: (report.scatteredWines || []).slice(0, 10).map(sw => ({
+        wineName: sw.wineName,
+        bottleCount: sw.bottleCount,
+        rows: sw.rows
+      })),
+      colorAdjacencyIssues: (report.colorAdjacencyIssues || []).map(ci => ({
+        row1: ci.row1, zone1: ci.zone1, zone1Name: ci.zone1Name, color1: ci.color1,
+        row2: ci.row2, zone2: ci.zone2, zone2Name: ci.zone2Name, color2: ci.color2
+      }))
     };
 
     const system = `You are a sommelier reorganizing a wine cellar with FIXED physical constraints.
@@ -330,10 +410,15 @@ You must work within these constraints by:
 3. Retiring zones and moving bottles to related zones
 4. Restructuring zones by criteria (geographic to style-based, or vice versa) for better space utilization
 
-The red/white row allocation can FLEX based on seasonality:
-- Summer: more rows for whites, rosés, sparkling
-- Winter: more rows for reds, fortified wines
-This is a key flexibility lever for accommodating changing collection composition.
+COLOR BOUNDARY RULE (CRITICAL):
+- White wines (sauvignon blanc, chenin blanc, chardonnay, aromatic whites, rosé, sparkling, dessert/fortified) MUST be in lower-numbered rows.
+- Red wines (cabernet, shiraz, pinot noir, etc.) MUST be in higher-numbered rows.
+- NEVER place a red wine zone adjacent to a white wine zone. There must be a clear boundary.
+- If color adjacency violations are reported, FIX them by reallocating rows to maintain the white-then-red order.
+
+CONSOLIDATION RULE:
+- Wines of the same type should be physically near each other (same row or adjacent rows).
+- If scatteredWines are reported, suggest row reallocations that bring scattered bottles together.
 
 You must respond with valid JSON only.`;
 
@@ -380,6 +465,8 @@ Strategic guidance:
 - Consider restructuring zones by criteria (e.g., changing from geographic organization like "Italian Reds" to style-based like "Full-bodied Reds") if it better fits the collection
 - Prioritize actions that reduce misplacements while minimizing bottle moves
 - Balance immediate space needs with long-term cellar organization
+- If colorAdjacencyIssues exist, fix them by swapping rows so white zones are in rows 1-7 and red zones are in rows 8-19
+- If scatteredWines exist, suggest row reallocations that group bottles of the same wine into contiguous rows
 
 Constraints:
 - NEVER propose adding rows beyond the ${TOTAL_CELLAR_ROWS}-row limit
@@ -425,6 +512,12 @@ Constraints:
         if (!fromRows.includes(rowId)) {
           logger.warn('Reconfig', `Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
           return false;
+        }
+
+        // Warn (but don't filter) if this would create a color adjacency violation
+        if (wouldCreateColorViolation(a, zoneRowMap)) {
+          logger.warn('Reconfig', `reallocate_row ${rowId} from ${a.fromZoneId} to ${a.toZoneId} would create color adjacency violation`);
+          a._colorViolationWarning = true;
         }
 
         return true;

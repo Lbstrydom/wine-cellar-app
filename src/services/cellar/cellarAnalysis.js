@@ -12,11 +12,15 @@ import { findBestZone } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
 
 // Sub-modules ───────────────────────────────────────────────
-import { parseSlot, analyseZone, getWinesInRows } from './cellarMetrics.js';
+import {
+  parseSlot, analyseZone, getWinesInRows,
+  detectScatteredWines, detectColorAdjacencyIssues
+} from './cellarMetrics.js';
 import { generateZoneNarratives } from './cellarNarratives.js';
 import {
   generateMoveSuggestions,
-  buildZoneCapacityAlerts
+  buildZoneCapacityAlerts,
+  getCurrentZoneAllocation
 } from './cellarSuggestions.js';
 // Re-exported below via barrel re-exports
 
@@ -112,17 +116,56 @@ export async function analyseCellar(wines) {
   const capacityAlerts = await buildZoneCapacityAlerts(zoneCapacityIssues, report.needsZoneSetup, allowFallback, cellarId);
   report.alerts.unshift(...capacityAlerts);
 
+  // Detect scattered wines (same wine in non-contiguous rows)
+  const scatteredWines = detectScatteredWines(wines);
+  report.scatteredWines = scatteredWines;
+  report.summary.scatteredWineCount = scatteredWines.length;
+
+  if (scatteredWines.length > 0) {
+    report.alerts.push({
+      type: 'scattered_wines',
+      severity: 'warning',
+      message: `${scatteredWines.length} wine(s) have bottles scattered across non-adjacent rows and should be consolidated.`,
+      data: { wines: scatteredWines.slice(0, 10) }
+    });
+  }
+
+  // Detect color adjacency issues (red zones next to white zones)
+  if (hasZoneAllocations) {
+    const { rowToZoneId } = await getCurrentZoneAllocation(cellarId);
+    const colorAdjacencyIssues = detectColorAdjacencyIssues(rowToZoneId);
+    report.colorAdjacencyIssues = colorAdjacencyIssues;
+    report.summary.colorAdjacencyViolations = colorAdjacencyIssues.length;
+
+    if (colorAdjacencyIssues.length > 0) {
+      const examples = colorAdjacencyIssues.slice(0, 3)
+        .map(i => `${i.zone1Name} (${i.color1}) in ${i.row1} next to ${i.zone2Name} (${i.color2}) in ${i.row2}`);
+      report.alerts.push({
+        type: 'color_adjacency_violation',
+        severity: 'warning',
+        message: `${colorAdjacencyIssues.length} color boundary violation(s): ${examples.join('; ')}.`,
+        data: { issues: colorAdjacencyIssues }
+      });
+    }
+  }
+
   // Check if reorganisation is recommended
   const shouldReorg =
     report.summary.misplacedBottles >= REORG_THRESHOLDS.minMisplacedForReorg ||
     (report.summary.totalBottles > 0 &&
-      (report.summary.misplacedBottles / report.summary.totalBottles * 100) >= REORG_THRESHOLDS.minMisplacedPercent);
+      (report.summary.misplacedBottles / report.summary.totalBottles * 100) >= REORG_THRESHOLDS.minMisplacedPercent) ||
+    scatteredWines.length > 0 ||
+    (report.colorAdjacencyIssues?.length ?? 0) > 0;
 
   if (shouldReorg && hasZoneAllocations) {
+    const reasons = [];
+    if (report.summary.misplacedBottles > 0) reasons.push(`${report.summary.misplacedBottles} misplaced`);
+    if (scatteredWines.length > 0) reasons.push(`${scatteredWines.length} scattered`);
+    if (report.colorAdjacencyIssues?.length > 0) reasons.push(`${report.colorAdjacencyIssues.length} color boundary issue(s)`);
     report.alerts.push({
       type: 'reorganisation_recommended',
       severity: 'info',
-      message: `${report.summary.misplacedBottles} bottles could be better organised. Review suggested moves.`
+      message: `Reorganisation recommended: ${reasons.join(', ')}. Review suggested moves.`
     });
   }
 
