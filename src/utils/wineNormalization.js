@@ -170,3 +170,101 @@ export function parseGrapesField(grapes) {
 
   return [...new Set(cleaned)];
 }
+
+/**
+ * Known compound (multi-word) grape names. Used to prevent partial
+ * substring matching — e.g. "sauvignon" should NOT match text that
+ * contains "cabernet sauvignon" but not standalone "sauvignon".
+ * @type {Set<string>}
+ */
+const COMPOUND_GRAPES = new Set([
+  'cabernet sauvignon', 'cabernet franc',
+  'sauvignon blanc',
+  'pinot noir', 'pinot gris', 'pinot grigio', 'pinot blanc', 'pinot meunier',
+  'chenin blanc',
+  'petit verdot', 'petite sirah',
+  'grenache blanc', 'grenache noir',
+  'gamay noir',
+  'muscat blanc', 'muscat ottonel', 'muscat d\'alexandrie',
+  'melon de bourgogne',
+  'ugni blanc',
+  'cinsault noir',
+  'touriga nacional', 'tinta roriz', 'tinta barroca',
+  'nero d\'avola', 'nero d avola',
+  'gruner veltliner', 'grüner veltliner',
+  'blanc de blancs', 'blanc de noirs',
+]);
+
+/**
+ * Cache of compiled regex patterns for grape matching.
+ * Maps keyword → RegExp for word-boundary-aware matching.
+ * @type {Map<string, RegExp>}
+ */
+const _grapeRegexCache = new Map();
+
+/**
+ * Get or create a word-boundary-aware regex for a grape/keyword.
+ * @param {string} keyword - Grape name or keyword (e.g. 'sauvignon blanc', 'chenin')
+ * @returns {RegExp} Compiled regex with word boundaries
+ */
+function getGrapeRegex(keyword) {
+  let re = _grapeRegexCache.get(keyword);
+  if (!re) {
+    const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    re = new RegExp(`(?:^|\\b|[\\s,;/&+])${escaped}(?:$|\\b|[\\s,;/&+])`, 'i');
+    _grapeRegexCache.set(keyword, re);
+  }
+  return re;
+}
+
+/**
+ * Check whether a text contains a grape keyword, preventing compound-grape
+ * overlap errors. Uses a two-pass strategy:
+ *
+ * 1. **Segment match** — split text on delimiters (`,;/&+`) and check for
+ *    exact segment equality (handles grape lists like "cabernet sauvignon, merlot").
+ * 2. **Compound-grape guard** — if keyword is a substring of a known compound
+ *    grape that appears in the text, reject (e.g. "sauvignon" inside "cabernet sauvignon").
+ * 3. **Word-boundary fallback** — regex match for wine names / style text
+ *    (e.g. "pinotage" inside "Kanonkop Pinotage 2019").
+ *
+ * @param {string} text - Text to search in (grape field, wine name, style, etc.)
+ * @param {string} keyword - Grape name to look for (e.g. 'sauvignon blanc', 'chenin')
+ * @returns {boolean} True if keyword appears as a distinct grape match
+ */
+export function grapeMatchesText(text, keyword) {
+  if (!text || !keyword) return false;
+  const lowerKey = keyword.toLowerCase().trim();
+  const lowerText = text.toLowerCase();
+
+  // Quick bail-out: keyword not in text at all
+  if (!lowerText.includes(lowerKey)) return false;
+
+  // Pass 1: segment-split + exact match (handles comma-separated grape lists)
+  const segments = lowerText.split(/[,;/&+\n]/).map(s => s.trim()).filter(Boolean);
+  if (segments.some(seg => seg === lowerKey)) return true;
+
+  // Pass 2: compound-grape guard — reject if keyword is a partial substring of a
+  // known compound grape name that appears in the text
+  for (const compound of COMPOUND_GRAPES) {
+    if (compound !== lowerKey && compound.includes(lowerKey) && lowerText.includes(compound)) {
+      return false;
+    }
+  }
+
+  // Pass 3: word-boundary regex (handles wine names, style descriptions)
+  return getGrapeRegex(lowerKey).test(lowerText);
+}
+
+/**
+ * Check whether any of the given grape keywords match the text.
+ * Compound-grape-aware — prevents partial overlap issues.
+ *
+ * @param {string} text - Text to search in
+ * @param {string[]} keywords - Array of grape names to look for
+ * @returns {string|undefined} The first matching keyword, or undefined
+ */
+export function findGrapeMatch(text, keywords) {
+  if (!text || !keywords) return undefined;
+  return keywords.find(k => grapeMatchesText(text, k));
+}

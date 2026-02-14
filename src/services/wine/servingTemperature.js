@@ -122,8 +122,14 @@ export async function findServingTemperature(wine) {
 
       for (const tg of tempGrapeList) {
         for (const wg of wineGrapeList) {
-          if (tg && wg && (tg.includes(wg) || wg.includes(tg))) {
-            score += 30;
+          if (tg && wg && (tg === wg || tg.includes(wg) || wg.includes(tg))) {
+            // Avoid partial overlap: e.g. "sauvignon" should not match "cabernet sauvignon"
+            // Require that the shorter string is at least 60% of the longer one
+            const shorter = tg.length <= wg.length ? tg : wg;
+            const longer = tg.length > wg.length ? tg : wg;
+            if (shorter.length / longer.length >= 0.6) {
+              score += 30;
+            }
           }
         }
       }

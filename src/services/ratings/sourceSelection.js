@@ -37,7 +37,7 @@ export function getSourcesForWine(country, grape = null) {
         config.lens === LENS.COMPETITION &&
         config.grape_affinity &&
         config.grape_affinity.some(g =>
-          grapeNormalised.includes(g) || g.includes(grapeNormalised)
+          grapeNormalised === g || grapeNormalised.includes(g) || g.includes(grapeNormalised)
         )
       ) {
         // Don't add if already in sources

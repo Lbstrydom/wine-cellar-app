@@ -8,6 +8,7 @@ import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../../config/fridgeParLevels
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
+import { grapeMatchesText } from '../../utils/wineNormalization.js';
 
 /**
  * Categorise a wine into a fridge par-level category.
@@ -54,10 +55,10 @@ export function categoriseWine(wine) {
       if (!rules.colours.includes(colour)) continue;
     }
 
-    // Check grape match
+    // Check grape match (word-boundary-aware to prevent overlap like "chenin" matching unrelated substrings)
     if (rules.grapes && rules.grapes.length > 0) {
       const hasGrape = rules.grapes.some(g =>
-        grapes.includes(g) || wineName.includes(g) || style.includes(g)
+        grapeMatchesText(grapes, g) || grapeMatchesText(wineName, g) || grapeMatchesText(style, g)
       );
       if (!hasGrape && !rules.keywords) continue;
       if (hasGrape) return category;

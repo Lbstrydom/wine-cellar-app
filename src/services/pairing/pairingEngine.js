@@ -10,6 +10,7 @@ import { getModelForTask, getMaxTokens } from '../../config/aiModels.js';
 import { sanitizeDishDescription, sanitizeWineList } from '../shared/inputSanitizer.js';
 import { parseAndValidate } from '../shared/responseValidator.js';
 import { getEffectiveDrinkByYear } from '../cellar/cellarAnalysis.js';
+import { grapeMatchesText } from '../../utils/wineNormalization.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -38,10 +39,10 @@ export function matchWineToStyle(wine) {
       matchedBy.push('colour');
     }
 
-    // Check grape match (strong indicator)
+    // Check grape match (strong indicator, word-boundary-aware)
     if (styleDef.grapes.length > 0) {
       const grapeMatch = styleDef.grapes.some(g =>
-        grapes.includes(g) || wineName.includes(g) || style.includes(g)
+        grapeMatchesText(grapes, g) || grapeMatchesText(wineName, g) || grapeMatchesText(style, g)
       );
       if (grapeMatch) {
         score += 3;

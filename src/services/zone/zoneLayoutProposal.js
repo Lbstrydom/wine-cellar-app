@@ -6,6 +6,7 @@
 
 import db from '../../db/index.js';
 import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
+import { grapeMatchesText } from '../../utils/wineNormalization.js';
 
 // Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
 const CELLAR_LAYOUT = {
@@ -184,9 +185,9 @@ function classifyWine(wine) {
       }
     }
 
-    // Check grape match
+    // Check grape match (word-boundary-aware to prevent e.g. "sauvignon" matching "cabernet sauvignon")
     if (rules.grapes?.length > 0) {
-      if (rules.grapes.some(g => grapes.includes(g.toLowerCase()))) {
+      if (rules.grapes.some(g => grapeMatchesText(grapes, g.toLowerCase()))) {
         return zone.id;
       }
     }

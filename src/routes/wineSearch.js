@@ -118,14 +118,23 @@ router.post('/', asyncHandler(async (req, res) => {
       const grape = (wine.grapeVariety || '').toLowerCase();
 
       // White wine indicators
-      const isWhite = wineName.includes('blanc') ||
+      const isWhite = /\bblanc\b/i.test(wineName) ||
         wineName.includes('white') ||
         grape.includes('chardonnay') ||
         grape.includes('sauvignon blanc') ||
         grape.includes('riesling') ||
         grape.includes('roussanne') ||
         grape.includes('viognier') ||
-        grape.includes('chenin');
+        grape.includes('chenin blanc') ||
+        grape.includes('chenin') ||
+        grape.includes('pinot grigio') ||
+        grape.includes('pinot gris') ||
+        grape.includes('semillon') ||
+        grape.includes('gruner veltliner') ||
+        grape.includes('albarino') ||
+        grape.includes('vermentino') ||
+        grape.includes('torrontes') ||
+        grape.includes('gewurztraminer');
 
       // Rosé wine indicators
       const isRose = wineName.includes('rosé') ||

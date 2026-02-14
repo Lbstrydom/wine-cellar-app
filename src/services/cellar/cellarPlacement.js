@@ -7,6 +7,7 @@
 import { ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../../config/cellarThresholds.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
+import { grapeMatchesText } from '../../utils/wineNormalization.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -113,11 +114,11 @@ function calculateZoneMatch(wine, zone) {
     }
   }
 
-  // Grape match
+  // Grape match (word-boundary-aware to prevent overlap like "sauvignon" vs "cabernet sauvignon")
   if (rules.grapes && rules.grapes.length > 0) {
     possiblePoints += SCORING_WEIGHTS.grape;
     const grapeMatch = wine.grapes.find(g =>
-      rules.grapes.some(rg => g.toLowerCase().includes(rg.toLowerCase()))
+      rules.grapes.some(rg => grapeMatchesText(g.toLowerCase(), rg.toLowerCase()))
     );
     if (grapeMatch) {
       earnedPoints += SCORING_WEIGHTS.grape;
@@ -207,7 +208,7 @@ function calculateZoneMatch(wine, zone) {
   if (rules.minGrapePercent && wine.grapePercentages && wine.grapePercentages.length > 0) {
     const dominantGrape = wine.grapePercentages[0];
     const matchesZoneGrape = rules.grapes?.some(g =>
-      dominantGrape.grape.toLowerCase().includes(g.toLowerCase())
+      grapeMatchesText(dominantGrape.grape.toLowerCase(), g.toLowerCase())
     );
     if (matchesZoneGrape && dominantGrape.percent < rules.minGrapePercent) {
       return { score: 0, matchedOn: [] };

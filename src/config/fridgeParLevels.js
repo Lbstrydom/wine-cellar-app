@@ -59,7 +59,7 @@ export const FRIDGE_PAR_LEVELS = {
     preferredZones: ['chardonnay', 'chenin_blanc'],
     matchRules: {
       colours: ['white'],
-      grapes: ['chardonnay', 'chenin blanc', 'chenin'],
+      grapes: ['chardonnay', 'chenin blanc'],
       winemaking: ['oaked', 'barrel aged', 'malolactic'],
       keywords: ['burgundy', 'meursault', 'oaked']
     }
