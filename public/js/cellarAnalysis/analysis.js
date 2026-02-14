@@ -178,8 +178,8 @@ function updateActionButton(analysis, onRenderAnalysis) {
   const state = deriveState(analysis);
   const config = {
     [AnalysisState.NO_ZONES]:          { label: 'Setup Zones',    handler: () => startZoneSetup() },
-    [AnalysisState.ZONES_DEGRADED]:    { label: 'Reconfigure Zones', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
-    [AnalysisState.ZONES_HEALTHY]:     { label: 'Optimize Cellar',   handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_DEGRADED]:    { label: 'Reorganise Cellar', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:     { label: 'Reorganise Cellar',   handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.JUST_RECONFIGURED]: {
       label: 'Guide Me Through Moves',
       handler: () => {

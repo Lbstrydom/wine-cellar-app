@@ -15,13 +15,13 @@ export async function handleGetAIAdvice() {
   if (!adviceEl) return;
 
   // Inline button spinner — no page jump
-  if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Getting advice\u2026'; }
-  if (statusEl) statusEl.textContent = 'AI analysis in progress (may take up to 2 minutes)...';
+  if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Reviewing\u2026'; }
+  if (statusEl) statusEl.textContent = 'AI review in progress (may take up to 2 minutes)...';
 
   try {
     const result = await analyseCellarAI();
     adviceEl.style.display = 'block';
-    adviceEl.innerHTML = formatAIAdvice(result.aiAdvice);
+    adviceEl.innerHTML = `<h3>Expert Review</h3><p class="section-desc">AI sommelier's assessment of your cellar organisation.</p>${formatAIAdvice(result.aiAdvice)}`;
     adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (statusEl) statusEl.textContent = '';
   } catch (err) {
@@ -29,7 +29,7 @@ export async function handleGetAIAdvice() {
     adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
     if (statusEl) statusEl.textContent = '';
   } finally {
-    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.originalText || 'Get AI Advice'; }
+    if (btn) { btn.disabled = false; btn.textContent = btn.dataset.originalText || 'Expert Review'; }
   }
 }
 
@@ -46,7 +46,7 @@ function formatAIAdvice(advice) {
     const paragraphs = advice.split('\n\n').map(p => {
       return `<p>${p.replaceAll('\n', '<br>')}</p>`;
     }).join('');
-    return `<h4>AI Sommelier Advice</h4><div class="ai-advice-content">${paragraphs}</div>`;
+    return `<h4>Expert Review</h4><div class="ai-advice-content">${paragraphs}</div>`;
   }
 
   // Format structured advice object

@@ -91,7 +91,7 @@ export function renderZoneCapacityAlert(analysis, { onRenderAnalysis }) {
         </div>
         ${wineList}
         <div class="zone-capacity-alert-actions">
-          <button class="btn btn-primary" data-action="zone-capacity-get-ai" data-alert-index="${index}">Get AI Suggestions</button>
+          <button class="btn btn-primary" data-action="zone-capacity-get-ai" data-alert-index="${index}">Suggest Fix</button>
           <button class="btn btn-secondary" data-action="zone-capacity-use-fallback" data-alert-index="${index}">Ignore &amp; Use Fallback</button>
         </div>
         <div class="zone-capacity-advice" data-zone-capacity-advice></div>
@@ -149,7 +149,7 @@ function renderAdviceMarkup(advice) {
 
   return `
     <div class="zone-capacity-advice-panel">
-      <div class="zone-capacity-advice-header">🍷 Sommelier Zone Recommendation</div>
+      <div class="zone-capacity-advice-header">Suggested Fix</div>
       ${recommendation ? `<div class="zone-capacity-advice-recommendation">Suggested: <strong>${recommendation}</strong></div>` : ''}
       ${reasoning ? `<div class="zone-capacity-advice-reasoning">${reasoning}</div>` : ''}
       ${warningsHtml}

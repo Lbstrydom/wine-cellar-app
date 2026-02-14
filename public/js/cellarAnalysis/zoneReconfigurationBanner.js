@@ -67,7 +67,7 @@ function renderBannerMarkup(summary) {
         ${bullets ? `<ul class="zone-reconfig-banner-list">${bullets}${moreCount ? `<li>• ... and ${moreCount} more zone(s)</li>` : ''}</ul>` : ''}
         <div class="zone-reconfig-banner-actions">
           <button class="btn btn-secondary" data-action="zone-reconfig-quick-fix">Quick Fix Individual Zones</button>
-          <button class="btn btn-primary" data-action="zone-reconfig-full">Full Reconfiguration</button>
+          <button class="btn btn-primary" data-action="zone-reconfig-full">Reorganise Cellar</button>
         </div>
         <div class="zone-reconfig-banner-details" data-zone-reconfig-details></div>
       </div>

@@ -159,7 +159,7 @@
         <!-- Single primary CTA — text/action driven by state machine -->
         <button class="btn btn-primary" id="cellar-action-btn">Setup Zones</button>
         <!-- Secondary actions -->
-        <button class="btn btn-secondary" id="get-ai-advice-btn">AI Advice</button>
+        <button class="btn btn-secondary" id="get-ai-advice-btn">Expert Review</button>
         <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn" title="Refresh analysis" aria-label="Refresh analysis">↻</button>
         <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
         <span class="analysis-cache-status" id="analysis-cache-status"></span>
@@ -232,12 +232,14 @@
     <!-- Zone Narratives Section -->
     <div class="analysis-zones" id="analysis-zones" style="display: none;">
       <h3>Zone Overview</h3>
+      <p class="section-desc">How your cellar rows are grouped by wine style.</p>
       <div class="zone-cards-grid" id="zone-cards-grid"></div>
     </div>
 
     <!-- Suggested Moves Section -->
     <div class="analysis-moves" id="analysis-moves">
       <h3>Suggested Moves</h3>
+      <p class="section-desc">Bottles that should be moved to their correct zones.</p>
       <div class="moves-list" id="moves-list"></div>
       <div class="moves-actions" id="moves-actions" style="display: none;">
         <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
@@ -247,6 +249,7 @@
     <!-- Fridge Status Section -->
     <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
       <h3>Fridge Status</h3>
+      <p class="section-desc">Fridge capacity and wine rotation suggestions.</p>
       <div class="fridge-status-content" id="fridge-status-content"></div>
     </div>
 
@@ -1162,7 +1165,7 @@
   <div class="modal-overlay" id="reconfig-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="reconfig-modal-title">
     <div class="modal modal-large" id="reconfig-modal">
       <div class="reconfig-modal-header">
-        <h2 id="reconfig-modal-title">Cellar Zone Reconfiguration Plan</h2>
+        <h2 id="reconfig-modal-title">Cellar Reorganisation Plan</h2>
         <button class="btn btn-secondary btn-small" id="reconfig-modal-close">Close</button>
       </div>
       <div class="modal-subtitle" id="reconfig-modal-subtitle"></div>
