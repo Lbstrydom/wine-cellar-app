@@ -53,12 +53,16 @@ export function renderFridgeStatus(fridgeStatus) {
   if (fridgeStatus.hasGaps && Object.keys(fridgeStatus.parLevelGaps).length > 0) {
     const gapItems = Object.entries(fridgeStatus.parLevelGaps)
       .sort((a, b) => a[1].priority - b[1].priority)
-      .map(([cat, gap]) => `
-        <div class="fridge-gap-item">
-          <span>${categoryLabels[cat] || cat}: ${gap.description}</span>
-          <span class="need">Need ${gap.need}</span>
-        </div>
-      `).join('');
+      .map(([cat, gap]) => {
+        const unfilled = fridgeStatus.unfilledGaps?.[cat];
+        return `
+          <div class="fridge-gap-item">
+            <span>${categoryLabels[cat] || cat}: ${gap.description}</span>
+            <span class="need">Need ${gap.need}</span>
+          </div>
+          ${unfilled ? `<div class="fridge-gap-unfilled">${escapeHtml(unfilled.message)}</div>` : ''}
+        `;
+      }).join('');
 
     gapsHtml = `
       <div class="fridge-gaps">

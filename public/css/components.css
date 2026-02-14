@@ -1148,6 +1148,13 @@
   font-weight: 500;
 }
 
+.fridge-gap-unfilled {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0.15rem 0.6rem 0.3rem;
+}
+
 .fridge-candidates {
   margin-top: 1rem;
 }

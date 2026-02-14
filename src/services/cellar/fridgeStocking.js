@@ -394,10 +394,20 @@ async function selectFlexCandidates(cellarWines, slotsNeeded, excludeIds, reduce
 
   return unique
     .slice(0, slotsNeeded)
-    .map(({ wine, category }) => ({
-      ...buildCandidateObject(wine, category, reduceNowIds),
-      isFlex: true
-    }));
+    .map(({ wine, category }) => {
+      const candidate = buildCandidateObject(wine, category, reduceNowIds);
+      // Override reason for flex candidates — they don't fill a specific gap
+      const drinkByYear = getEffectiveDrinkByYear(wine);
+      const currentYear = new Date().getFullYear();
+      const urgencyParts = [];
+      if (wine._suggestReason) urgencyParts.push(wine._suggestReason);
+      if (drinkByYear && drinkByYear <= currentYear) urgencyParts.push('Past optimal window');
+      else if (drinkByYear && drinkByYear <= currentYear + 2) urgencyParts.push(`Drink by ${drinkByYear}`);
+      urgencyParts.push('Fill remaining fridge slot');
+      candidate.reason = urgencyParts.join(' • ');
+      candidate.isFlex = true;
+      return candidate;
+    });
 }
 
 /**
@@ -449,6 +459,7 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
 
   let candidates = [];
   let alternatives = {};
+  let unfilledGaps = {};
   const shouldGenerateCandidates = status.hasGaps || status.emptySlots > 0;
 
   if (shouldGenerateCandidates) {
@@ -457,6 +468,20 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
     candidates = status.hasGaps
       ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
       : [];
+
+    // Detect which gaps weren't filled (no suitable wines in cellar)
+    if (status.hasGaps) {
+      const filledCategories = new Set(candidates.map(c => c.category));
+      for (const [category, gap] of Object.entries(status.parLevelGaps)) {
+        if (!filledCategories.has(category)) {
+          const categoryName = formatCategoryName(category);
+          unfilledGaps[category] = {
+            ...gap,
+            message: `No ${categoryName.toLowerCase()} wines available in your cellar`
+          };
+        }
+      }
+    }
 
     // Alternatives (up to 2 per gap category)
     if (status.hasGaps) {
@@ -500,6 +525,7 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
     ...status,
     candidates,
     alternatives,
+    unfilledGaps,
     wines: fridgeWines.map(w => ({
       wineId: w.id,
       wineName: w.wine_name,
