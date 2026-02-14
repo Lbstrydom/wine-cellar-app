@@ -491,15 +491,18 @@ function findAnyAvailableSlot(occupiedSet, wine = null) {
  * @returns {Object} Normalized wine object
  */
 function normalizeWineAttributes(wine) {
+  const parsedGrapes = parseTextArray(wine.grapes);
+  const parsedWinemaking = parseTextArray(wine.winemaking);
+
   return {
     name: wine.wine_name || wine.name || '',
-    grapes: parseJsonArray(wine.grapes) || extractGrapesFromText(wine),
+    grapes: parsedGrapes.length > 0 ? parsedGrapes : extractGrapesFromText(wine),
     style: wine.style || '',
     color: wine.colour || wine.color || inferColor(wine),
     country: wine.country || '',
     region: wine.region || '',
     appellation: wine.appellation || '',
-    winemaking: parseJsonArray(wine.winemaking) || extractWinemakingFromText(wine),
+    winemaking: parsedWinemaking.length > 0 ? parsedWinemaking : extractWinemakingFromText(wine),
     sweetness: wine.sweetness || 'dry',
     grapePercentages: parseJsonArray(wine.grapePercentages) || [],
     vintage: wine.vintage
@@ -514,11 +517,48 @@ function normalizeWineAttributes(wine) {
 function parseJsonArray(value) {
   if (!value) return null;
   if (Array.isArray(value)) return value;
+  if (typeof value !== 'string') return null;
+
   try {
-    return JSON.parse(value);
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed : null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Parse text-array fields (grapes, winemaking) from JSON array, delimited text, or scalar values.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseTextArray(value) {
+  if (!value) return [];
+
+  if (Array.isArray(value)) {
+    return value.map(v => String(v).trim()).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+
+    const parsedJson = parseJsonArray(trimmed);
+    if (parsedJson) {
+      return parsedJson.map(v => String(v).trim()).filter(Boolean);
+    }
+
+    if (trimmed.includes(',') || trimmed.includes(';') || trimmed.includes('/')) {
+      return trimmed
+        .split(/[,;/]/)
+        .map(part => part.trim())
+        .filter(Boolean);
+    }
+
+    return [trimmed];
+  }
+
+  return [String(value)];
 }
 
 /**

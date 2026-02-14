@@ -15,6 +15,62 @@ const CELLAR_LAYOUT = {
 };
 
 /**
+ * Normalize text-ish values (string, array, JSON-string) into lowercase searchable text.
+ * @param {unknown} value
+ * @returns {string}
+ */
+function toSearchableText(value) {
+  if (Array.isArray(value)) {
+    return value.map(v => String(v)).join(' ').toLowerCase();
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return '';
+
+    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
+        (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        if (Array.isArray(parsed)) {
+          return parsed.map(v => String(v)).join(' ').toLowerCase();
+        }
+        if (typeof parsed === 'string') {
+          return parsed.toLowerCase();
+        }
+      } catch {
+        // Fall through to raw string normalization.
+      }
+    }
+
+    return trimmed.toLowerCase();
+  }
+
+  if (value == null) return '';
+  return String(value).toLowerCase();
+}
+
+/**
+ * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseAssignedRows(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Get current bottle counts by zone (based on matching rules, not location).
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Map<string, Object>>} Zone ID → { count, wines }
@@ -59,14 +115,14 @@ async function getBottlesByZone(cellarId) {
  * @returns {string} Zone ID
  */
 function classifyWine(wine) {
-  const colour = (wine.colour || '').toLowerCase();
-  const grapes = (wine.grapes || '').toLowerCase();
-  const style = (wine.style || '').toLowerCase();
-  const country = (wine.country || '').toLowerCase();
-  const wineName = (wine.wine_name || '').toLowerCase();
-  const region = (wine.region || '').toLowerCase();
-  const winemaking = (wine.winemaking || '').toLowerCase();
-  const sweetness = (wine.sweetness || '').toLowerCase();
+  const colour = toSearchableText(wine.colour);
+  const grapes = toSearchableText(wine.grapes);
+  const style = toSearchableText(wine.style);
+  const country = toSearchableText(wine.country);
+  const wineName = toSearchableText(wine.wine_name);
+  const region = toSearchableText(wine.region);
+  const winemaking = toSearchableText(wine.winemaking);
+  const sweetness = toSearchableText(wine.sweetness);
   const searchText = `${wineName} ${style} ${region} ${winemaking}`;
 
   // Use priority order for classification
@@ -267,7 +323,7 @@ export async function getSavedZoneLayout(cellarId) {
 
   return rows.map(row => ({
     zoneId: row.zone_id,
-    assignedRows: JSON.parse(row.assigned_rows || '[]'),
+    assignedRows: parseAssignedRows(row.assigned_rows),
     wineCount: row.wine_count,
     updatedAt: row.updated_at
   }));

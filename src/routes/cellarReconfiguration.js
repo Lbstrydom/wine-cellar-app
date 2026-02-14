@@ -19,6 +19,26 @@ import { runAnalysis } from './cellarAnalysis.js';
 const router = express.Router();
 
 /**
+ * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseAssignedRows(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== 'string') return [];
+
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
  * POST /api/cellar/reconfiguration-plan
  * Generate a holistic zone reconfiguration plan.
  */
@@ -124,7 +144,7 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
   );
 
   if (existing.rows.length > 0) {
-    const rows = JSON.parse(existing.rows[0].assigned_rows || '[]');
+    const rows = parseAssignedRows(existing.rows[0].assigned_rows);
     rows.push(assignedRow);
     await client.query(
       'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
@@ -161,8 +181,8 @@ async function mergeZonesTransactional(client, cellarId, sourceZoneId, targetZon
     [cellarId, targetZoneId]
   );
 
-  const sourceRows = sourceAlloc.rows[0]?.assigned_rows ? JSON.parse(sourceAlloc.rows[0].assigned_rows) : [];
-  const targetRows = targetAlloc.rows[0]?.assigned_rows ? JSON.parse(targetAlloc.rows[0].assigned_rows) : [];
+  const sourceRows = parseAssignedRows(sourceAlloc.rows[0]?.assigned_rows);
+  const targetRows = parseAssignedRows(targetAlloc.rows[0]?.assigned_rows);
   const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
 
   await client.query('UPDATE wines SET zone_id = $1 WHERE cellar_id = $2 AND zone_id = $3', [targetZoneId, cellarId, sourceZoneId]);
@@ -211,8 +231,8 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
     [cellarId, toZoneId]
   );
 
-  const fromRows = fromAlloc.rows[0]?.assigned_rows ? JSON.parse(fromAlloc.rows[0].assigned_rows) : [];
-  const toRows = toAlloc.rows[0]?.assigned_rows ? JSON.parse(toAlloc.rows[0].assigned_rows) : [];
+  const fromRows = parseAssignedRows(fromAlloc.rows[0]?.assigned_rows);
+  const toRows = parseAssignedRows(toAlloc.rows[0]?.assigned_rows);
 
   // Verify the row belongs to fromZone - return skip status instead of throwing
   if (!fromRows.includes(rowId)) {
@@ -296,22 +316,14 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     const allAlloc = await client.query('SELECT assigned_rows FROM zone_allocations WHERE cellar_id = $1', [req.cellarId]);
     const usedRows = new Set();
     for (const r of allAlloc.rows) {
-      try {
-        JSON.parse(r.assigned_rows || '[]').forEach(rowId => usedRows.add(rowId));
-      } catch {
-        // ignore
-      }
+      parseAssignedRows(r.assigned_rows).forEach(rowId => usedRows.add(rowId));
     }
 
     // Build current zone allocation map for validation at apply time
     const zoneAllocMap = new Map();
     const allocWithZone = await client.query('SELECT zone_id, assigned_rows FROM zone_allocations WHERE cellar_id = $1', [req.cellarId]);
     for (const r of allocWithZone.rows) {
-      try {
-        zoneAllocMap.set(r.zone_id, JSON.parse(r.assigned_rows || '[]'));
-      } catch {
-        zoneAllocMap.set(r.zone_id, []);
-      }
+      zoneAllocMap.set(r.zone_id, parseAssignedRows(r.assigned_rows));
     }
 
     let zonesChanged = 0;

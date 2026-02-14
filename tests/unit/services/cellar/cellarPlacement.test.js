@@ -34,4 +34,15 @@ describe('cellarPlacement varietal disambiguation', () => {
 
     expect(result.zoneId).toBe('sauvignon_blanc');
   });
+
+  it('uses grapes text field for zoning when wine name is generic', () => {
+    const result = findBestZone({
+      wine_name: 'Estate Reserve 2022',
+      style: '',
+      colour: null,
+      grapes: 'cabernet sauvignon'
+    });
+
+    expect(result.zoneId).toBe('cabernet');
+  });
 });
