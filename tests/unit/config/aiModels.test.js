@@ -79,8 +79,9 @@ describe('aiModels', () => {
         'sommelier', 'parsing', 'ratings', 'zoneChat',
         'drinkRecommendations', 'tastingExtraction',
         'menuParsing', 'restaurantPairing',
-        'cellarAnalysis', 'zoneCapacityAdvice', 'zoneReconfigurationPlan',
-        'awardExtraction',
+        'cellarAnalysis', 'zoneCapacityAdvice', 'zoneCapacityEscalation',
+        'zoneReconfigurationPlan', 'zoneReconfigEscalation',
+        'awardExtraction', 'awardExtractionEscalation',
         'wineClassification', 'simpleValidation'
       ];
       for (const task of expectedTasks) {
@@ -90,8 +91,17 @@ describe('aiModels', () => {
 
     it('should map complex tasks to Opus 4.6', () => {
       expect(TASK_MODELS.cellarAnalysis).toBe('claude-opus-4-6');
-      expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-opus-4-6');
-      expect(TASK_MODELS.awardExtraction).toBe('claude-opus-4-6');
+    });
+
+    it('should map base capacity/award tasks to Sonnet (Opus via escalation)', () => {
+      expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-sonnet-4-5-20250929');
+      expect(TASK_MODELS.awardExtraction).toBe('claude-sonnet-4-5-20250929');
+    });
+
+    it('should map escalation tasks to Opus 4.6', () => {
+      expect(TASK_MODELS.zoneCapacityEscalation).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.awardExtractionEscalation).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.zoneReconfigEscalation).toBe('claude-opus-4-6');
     });
 
     it('should map zoneReconfigurationPlan to Sonnet (solver handles primary planning)', () => {
@@ -207,17 +217,31 @@ describe('aiModels', () => {
       });
     });
 
-    it('should return adaptive thinking with medium effort for zoneCapacityAdvice', () => {
+    it('should return adaptive thinking with low effort for zoneCapacityAdvice (base task, Opus via escalation)', () => {
       expect(getThinkingConfig('zoneCapacityAdvice')).toEqual({
         thinking: { type: 'adaptive' },
-        output_config: { effort: 'medium' }
+        output_config: { effort: 'low' }
       });
     });
 
-    it('should return adaptive thinking with medium effort for awardExtraction', () => {
+    it('should return adaptive thinking with high effort for zoneCapacityEscalation', () => {
+      expect(getThinkingConfig('zoneCapacityEscalation')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' }
+      });
+    });
+
+    it('should return adaptive thinking with low effort for awardExtraction (base task, Opus via escalation)', () => {
       expect(getThinkingConfig('awardExtraction')).toEqual({
         thinking: { type: 'adaptive' },
-        output_config: { effort: 'medium' }
+        output_config: { effort: 'low' }
+      });
+    });
+
+    it('should return adaptive thinking with high effort for awardExtractionEscalation', () => {
+      expect(getThinkingConfig('awardExtractionEscalation')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' }
       });
     });
 

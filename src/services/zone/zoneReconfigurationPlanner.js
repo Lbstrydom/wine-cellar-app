@@ -11,6 +11,9 @@ import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
 import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
+import { getTotalRows, getTotalCapacity, getRowCapacity } from '../../config/cellarCapacity.js';
+import { validateActions, LLMDeltaResponseSchema, applyDelta } from '../../schemas/reconfigurationActions.js';
+import { simulatePlan, autoRepairPlan } from './planSimulator.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import {
@@ -22,9 +25,9 @@ import {
 } from '../ai/openaiReviewer.js';
 import { solveRowAllocation } from './rowAllocationSolver.js';
 
-// Physical cellar constraints
-const TOTAL_CELLAR_ROWS = 19;
-const SLOTS_PER_ROW = 9; // Most rows have 9 slots (row 1 has 7)
+// Physical cellar constraints — derived from capacity map
+const TOTAL_CELLAR_ROWS = getTotalRows();
+const TOTAL_CELLAR_CAPACITY = getTotalCapacity();
 
 function clampStabilityBias(value) {
   if (value === 'low' || value === 'moderate' || value === 'high') return value;
@@ -60,7 +63,9 @@ function buildZoneUtilization(report) {
     const entry = utilization[zoneId];
     entry.bottleCount += za.currentCount ?? za.bottleCount ?? 0;
     entry.rowCount += 1;
-    entry.capacity += za.capacity ?? SLOTS_PER_ROW;
+    // Use true row capacity instead of flat constant
+    const rowId = za.rowId || za.row;
+    entry.capacity += za.capacity ?? (rowId ? getRowCapacity(rowId) : 9);
     entry.isOverflowing = entry.isOverflowing || (za.isOverflowing || false);
     entry.misplacedCount += za.misplaced?.length ?? 0;
     entry.correctCount += za.correctlyPlaced?.length ?? 0;
@@ -275,16 +280,84 @@ function wouldCreateColorViolation(action, zoneRowMap) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// Complexity scoring for adaptive model escalation
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Compute a complexity score (0.0 to 1.0) for a reconfiguration scenario.
+ * Higher scores indicate more complex situations that benefit from Opus 4.6
+ * adaptive thinking over Sonnet 4.5.
+ *
+ * @param {Object} params
+ * @param {Array} params.overflowingZones - Zones that need more capacity
+ * @param {Array} params.colorAdjacencyIssues - Unresolved color boundary violations
+ * @param {Set} params.neverMerge - Active pin constraints
+ * @param {number} params.solverActionCount - Actions from the deterministic solver
+ * @param {Array} params.scatteredWines - Wines spread across non-adjacent rows
+ * @param {number} params.totalBottles - Total bottles in cellar
+ * @returns {{ score: number, factors: Object }}
+ */
+export function computeComplexityScore({
+  overflowingZones = [],
+  colorAdjacencyIssues = [],
+  neverMerge = new Set(),
+  solverActionCount = 0,
+  scatteredWines = [],
+  totalBottles = 0
+}) {
+  let score = 0;
+  const factors = {};
+
+  // Many deficit zones → needs strategic thinking
+  if (overflowingZones.length > 3) {
+    score += 0.2;
+    factors.manyDeficits = true;
+  }
+
+  // Unresolved color boundary violations → spatial reasoning
+  const colorIssueCount = Array.isArray(colorAdjacencyIssues) ? colorAdjacencyIssues.length : 0;
+  if (colorIssueCount > 2) {
+    score += 0.2;
+    factors.colorConflicts = colorIssueCount;
+  }
+
+  // Many pin constraints → constrained optimization
+  const pinCount = neverMerge instanceof Set ? neverMerge.size : 0;
+  if (pinCount > 2) {
+    score += 0.2;
+    factors.pinConstraints = pinCount;
+  }
+
+  // Solver produced many actions → complex rebalancing
+  if (solverActionCount > 4) {
+    score += 0.2;
+    factors.highSolverOutput = solverActionCount;
+  }
+
+  // Many scattered wines → consolidation requires strategic insight
+  if (scatteredWines.length > 5) {
+    score += 0.2;
+    factors.scatteredWines = scatteredWines.length;
+  }
+
+  return { score: Math.min(score, 1.0), factors };
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Layer 2: LLM refinement (receives solver draft for improvement)
 // ═══════════════════════════════════════════════════════════════
 
 /**
  * Call LLM to refine/augment the solver's draft plan.
- * The LLM receives the draft and can accept, modify, reorder, or add actions.
- * Much faster than generating from scratch because the LLM validates rather than creates.
+ *
+ * Uses a structured delta protocol: the LLM returns patches against the
+ * solver draft (accept/remove/patch/add) instead of a full rewrite.
+ *
+ * Escalates from Sonnet 4.5 to Opus 4.6 with adaptive thinking when the
+ * complexity score exceeds 0.6 (many deficits, color conflicts, or pin constraints).
  *
  * @param {Object} ctx - All context needed for the LLM call
- * @returns {{ actions: Array, reasoning: string }}
+ * @returns {{ actions: Array, reasoning: string, telemetry: Object }}
  */
 async function refinePlanWithLLM(ctx) {
   const {
@@ -293,14 +366,14 @@ async function refinePlanWithLLM(ctx) {
     capacityIssues, underutilizedZones, mergeCandidates,
     neverMerge, stability, includeRetirements,
     totalBottles, misplacedBottles, misplacementPct,
-    report, zoneRowMap
+    report, zoneRowMap, complexityScore
   } = ctx;
 
   const statePayload = {
     physicalConstraints: {
       totalRows: TOTAL_CELLAR_ROWS,
-      slotsPerRow: SLOTS_PER_ROW,
-      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+      totalCapacity: TOTAL_CELLAR_CAPACITY,
+      rowCapacities: { R1: 7, default: 9 }
     },
     currentState: { totalBottles, misplaced: misplacedBottles, misplacementPct },
     zones: zonesWithAllocations,
@@ -337,72 +410,122 @@ async function refinePlanWithLLM(ctx) {
     }))
   };
 
+  // Determine model: escalate to Opus for high complexity
+  const useOpus = (complexityScore?.score ?? 0) >= 0.6;
+  const taskKey = useOpus ? 'zoneReconfigEscalation' : 'zoneReconfigurationPlan';
+  const modelId = getModelForTask(taskKey);
+  const maxTokens = useOpus ? 16000 : 8000;
+
+  if (useOpus) {
+    logger.info('Reconfig', `Complexity score ${complexityScore.score.toFixed(2)} >= 0.6 — escalating to Opus 4.6 with adaptive thinking`);
+    logger.info('Reconfig', `Complexity factors: ${JSON.stringify(complexityScore.factors)}`);
+  }
+
   const system = `You are a sommelier REVIEWING and REFINING an algorithmically generated cellar reconfiguration plan.
-The cellar has exactly ${TOTAL_CELLAR_ROWS} rows. You CANNOT add new rows.
+The cellar has exactly ${TOTAL_CELLAR_ROWS} rows (R1 has 7 slots, R2-R19 have 9 slots each, 169 total). You CANNOT add new rows.
 
-A solver has already produced a draft plan. Your job is to:
-1. ACCEPT good actions as-is
-2. MODIFY actions if they can be improved (better donor, better priority, better reasoning)
-3. ADD new actions the solver missed (strategic merges, zone restructuring)
-4. REMOVE actions that are counterproductive
-5. Write a concise reasoning narrative explaining the strategic vision
+A deterministic solver has produced a draft plan with ${solverActions.length} action(s). Your job is to return a DELTA response:
 
-COLOR BOUNDARY RULE: White wines in lower rows, red wines in higher rows. Never adjacent.
-CONSOLIDATION RULE: Same wine type should be physically near each other.
+1. accept_action_indices: indices of solver actions to keep as-is
+2. remove_action_indices: indices of solver actions to remove (counterproductive)
+3. patches: field-level modifications to accepted actions [{action_index, field, value}]
+4. new_actions: additional actions the solver missed (max 5)
+5. reasoning: strategic explanation of your refinements
 
-You MUST respond with valid JSON only. Be concise.`;
+${useOpus ? `DEEP ANALYSIS MODE: This is a complex reconfiguration scenario. Think carefully about:
+- Multi-zone cascading effects (moving one row affects adjacent zones)
+- Optimal contiguity (keep same zone's rows adjacent)
+- Strategic merges that improve thematic organization
+- Long-term cellar evolution (growth patterns, seasonal patterns)` : ''}
 
-  // Include the solver's draft in the prompt so the LLM can build on it
+COLOR BOUNDARY RULE: White wines in lower rows (1-7), red wines in higher rows (8-19). Never adjacent.
+CONSOLIDATION RULE: Same wine type should be physically near each other for easy access.
+
+Respond with valid JSON only matching the delta schema.`;
+
   const draftSection = solverActions.length > 0
-    ? `\n\nDRAFT PLAN (from algorithmic solver — review, refine, or accept):
-${JSON.stringify({ reasoning: solverReasoning, actions: solverActions }, null, 2)}
+    ? `\n\nDRAFT PLAN (indexed for delta reference):
+${solverActions.map((a, i) => `[${i}] ${JSON.stringify(a)}`).join('\n')}
 
-The draft plan was generated algorithmically. It handles capacity rebalancing and color boundaries well, but may miss:
-- Strategic zone restructuring (e.g., reorganizing by style instead of geography)
-- Nuanced merge candidates that improve the collection's thematic organization
-- Better prioritization of actions
+Solver reasoning: ${solverReasoning}`
+    : '\n\nNo solver actions — generate new_actions from scratch.';
 
-You may accept all draft actions, modify some, add new ones, or remove counterproductive ones.`
-    : '\n\nNo draft plan available — generate a plan from scratch.';
-
-  const user = `Review and refine the reconfiguration plan within the ${TOTAL_CELLAR_ROWS}-row limit.
+  const user = `Review and refine within the ${TOTAL_CELLAR_ROWS}-row limit.
 
 STATE JSON:
 ${JSON.stringify(statePayload, null, 2)}
 ${draftSection}
 
-Return JSON: { "reasoning": string, "actions": [{ "type": "reallocate_row"|"merge_zones"|"retire_zone", "priority": 1-5, "reason": string, ...fields }] }
+Return JSON delta: {
+  "accept_action_indices": [0, 1, ...],
+  "remove_action_indices": [2, ...],
+  "patches": [{"action_index": 0, "field": "priority", "value": 1}],
+  "new_actions": [{"type": "reallocate_row"|"merge_zones"|"retire_zone", ...}],
+  "reasoning": "strategic explanation"
+}
 
 Action field requirements:
-- reallocate_row: fromZoneId (string), toZoneId (string), rowNumber (number from fromZone's actualAssignedRows), bottlesAffected
-- merge_zones: sourceZones (string[]), targetZoneId (string), bottlesAffected
-- retire_zone: zoneId (string), mergeIntoZoneId (string), bottlesAffected
-Zone IDs are lowercase with underscores (e.g. "chenin_blanc", NOT numbers).
-Stability bias: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMerge))}`;
+- reallocate_row: fromZoneId (string), toZoneId (string), rowNumber (number), reason (string), bottlesAffected (number), priority (1-5)
+- merge_zones: sourceZones (string[]), targetZoneId (string), reason, bottlesAffected, priority
+- retire_zone: zoneId (string), mergeIntoZoneId (string), reason, bottlesAffected, priority
+Zone IDs are lowercase with underscores (e.g. "chenin_blanc").
+Stability: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMerge))}`;
 
-  const modelId = getModelForTask('zoneReconfigurationPlan');
   const llmStart = Date.now();
 
   const response = await anthropic.messages.create({
     model: modelId,
-    max_tokens: 8000,
+    max_tokens: maxTokens,
     system,
     messages: [{ role: 'user', content: user }],
-    ...(getThinkingConfig('zoneReconfigurationPlan') || {})
+    ...(getThinkingConfig(taskKey) || {})
   });
 
   const llmMs = Date.now() - llmStart;
-  logger.info('Reconfig', `LLM refinement completed in ${llmMs}ms`);
+  logger.info('Reconfig', `LLM refinement completed in ${llmMs}ms (model: ${modelId})`);
 
   const text = extractText(response);
   const json = parseJsonObject(text);
   if (!json) throw new Error('Invalid AI response (not JSON)');
-  const plan = validatePlanShape(json);
 
-  // Validate/filter LLM actions the same way as before
-  plan.actions = filterLLMActions(plan.actions, zoneRowMap, neverMerge);
+  // Try to parse as delta protocol first, fall back to legacy full-plan format
+  const deltaResult = LLMDeltaResponseSchema.safeParse(json);
 
-  return { actions: plan.actions, reasoning: plan.reasoning };
+  let actions, reasoning;
+  const llmTelemetry = {
+    model: modelId,
+    latencyMs: llmMs,
+    usedOpus: useOpus,
+    complexityScore: complexityScore?.score ?? 0,
+    complexityFactors: complexityScore?.factors ?? {},
+    protocol: 'unknown'
+  };
+
+  if (deltaResult.success) {
+    // Delta protocol — apply patches to solver draft
+    const delta = deltaResult.data;
+    const merged = applyDelta(solverActions, delta);
+    actions = merged.actions;
+    reasoning = delta.reasoning;
+    llmTelemetry.protocol = 'delta';
+    llmTelemetry.patchesApplied = merged.patchesApplied;
+    llmTelemetry.actionsRemoved = (delta.remove_action_indices || []).length;
+    llmTelemetry.actionsAdded = (delta.new_actions || []).length;
+    logger.info('Reconfig', `Delta protocol: ${merged.patchesApplied} patches, ${llmTelemetry.actionsRemoved} removed, ${llmTelemetry.actionsAdded} added`);
+  } else {
+    // Legacy full-plan format (backward compatible)
+    const plan = validatePlanShape(json);
+    actions = plan.actions;
+    reasoning = plan.reasoning;
+    llmTelemetry.protocol = 'legacy';
+    logger.info('Reconfig', 'LLM returned legacy format, not delta protocol');
+  }
+
+  // Validate actions through schema and zone/row filters
+  const { valid: schemaValid } = validateActions(actions);
+  actions = filterLLMActions(schemaValid.length > 0 ? schemaValid : actions, zoneRowMap, neverMerge);
+
+  return { actions, reasoning, llmTelemetry };
 }
 
 /**
@@ -622,17 +745,34 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const zonesWithAllocations = await buildZoneListWithAllocations(cellarId);
 
   // ═══════════════════════════════════════════════════════════════
-  // ITERATIVE 3-LAYER PIPELINE
+  // ITERATIVE 4-LAYER PIPELINE
   //
-  // Each layer builds on the previous layer's output:
-  //   Layer 1 — Solver:    Fast deterministic baseline  (<10ms)
-  //   Layer 2 — LLM:       Refines solver draft with strategic insight (~5-15s)
-  //   Layer 3 — Heuristic: Fills gaps that neither layer caught  (<1ms)
+  //   Layer 1 — Solver:     Fast deterministic baseline          (<10ms)
+  //   Layer 2 — LLM:        Delta refinement with Opus escalation (~5-45s)
+  //   Layer 3 — Heuristic:  Fills gaps neither layer caught       (<1ms)
+  //   Layer 4 — Simulator:  Sequential validation gate            (<1ms)
   //
-  // The layers are additive: the LLM receives the solver's draft and
-  // can accept, modify, or add actions. The heuristic patches any
-  // remaining deficit issues that the first two layers missed.
+  // The layers are additive. The LLM uses a delta protocol (patches
+  // against the solver draft). Opus 4.6 adaptive thinking is used
+  // when the complexity score exceeds 0.6 for deep strategic insight.
   // ═══════════════════════════════════════════════════════════════
+
+  // Pipeline telemetry
+  const telemetry = {
+    pipelineStartMs: Date.now(),
+    solverLatencyMs: 0,
+    llmLatencyMs: 0,
+    heuristicLatencyMs: 0,
+    simulatorLatencyMs: 0,
+    complexityScore: 0,
+    complexityFactors: {},
+    llmModel: null,
+    llmProtocol: null,
+    usedOpus: false,
+    actionsBySource: { solver: 0, llm: 0, heuristic: 0 },
+    simulatorResult: null,
+    autoRepaired: 0
+  };
 
   // Shared row map for validation across all layers
   const zoneRowMap = new Map();
@@ -656,17 +796,31 @@ export async function generateReconfigurationPlan(report, options = {}) {
       scatteredWines: report.scatteredWines || [],
       colorAdjacencyIssues: report.colorAdjacencyIssues || []
     });
-    const solverMs = Date.now() - solverStart;
-    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s)`);
+    telemetry.solverLatencyMs = Date.now() - solverStart;
+    logger.info('Reconfig', `Solver completed in ${telemetry.solverLatencyMs}ms with ${solverResult.actions.length} action(s)`);
     solverActions = solverResult.actions;
     solverReasoning = solverResult.reasoning;
+    telemetry.actionsBySource.solver = solverActions.length;
   } catch (solverErr) {
     logger.error('Reconfig', `Solver failed: ${solverErr.message}`);
   }
 
-  // ─── Layer 2: LLM refinement (builds on solver draft) ───────
+  // ─── Complexity scoring (determines Sonnet vs Opus) ──────────
+  const complexityScore = computeComplexityScore({
+    overflowingZones,
+    colorAdjacencyIssues: report.colorAdjacencyIssues || [],
+    neverMerge,
+    solverActionCount: solverActions.length,
+    scatteredWines: report.scatteredWines || [],
+    totalBottles
+  });
+  telemetry.complexityScore = complexityScore.score;
+  telemetry.complexityFactors = complexityScore.factors;
+
+  // ─── Layer 2: LLM refinement (delta protocol + Opus escalation) ───
   let llmActions = null;  // null = LLM skipped or failed
   let llmReasoning = '';
+  let llmTelemetry = null;
   if (process.env.ANTHROPIC_API_KEY) {
     try {
       const llmResult = await refinePlanWithLLM({
@@ -685,17 +839,24 @@ export async function generateReconfigurationPlan(report, options = {}) {
         misplacedBottles,
         misplacementPct,
         report,
-        zoneRowMap
+        zoneRowMap,
+        complexityScore
       });
       llmActions = llmResult.actions;
       llmReasoning = llmResult.reasoning;
+      llmTelemetry = llmResult.llmTelemetry;
+      telemetry.llmLatencyMs = llmTelemetry?.latencyMs ?? 0;
+      telemetry.llmModel = llmTelemetry?.model ?? null;
+      telemetry.llmProtocol = llmTelemetry?.protocol ?? null;
+      telemetry.usedOpus = llmTelemetry?.usedOpus ?? false;
+      telemetry.actionsBySource.llm = (llmTelemetry?.actionsAdded ?? 0);
     } catch (llmErr) {
       logger.warn('Reconfig', `LLM refinement failed: ${llmErr.message} — using solver output`);
     }
   }
 
   // ─── Layer 3: Heuristic gap-fill ────────────────────────────
-  // Start from the best plan so far (LLM if available, else solver)
+  const heuristicStart = Date.now();
   const baseActions = llmActions ?? [...solverActions];
   const baseReasoning = llmActions ? llmReasoning : solverReasoning;
   const baseSource = llmActions ? 'solver+llm' : (solverActions.length > 0 ? 'solver' : 'heuristic');
@@ -704,11 +865,30 @@ export async function generateReconfigurationPlan(report, options = {}) {
     baseActions, capacityIssues, underutilizedZones,
     mergeCandidates, neverMerge, zonesWithAllocations, stability
   );
+  telemetry.heuristicLatencyMs = Date.now() - heuristicStart;
+  telemetry.actionsBySource.heuristic = Math.max(0, patchedActions.length - baseActions.length);
+
+  // ─── Layer 4: Sequential plan simulator (validation gate) ────
+  const simulatorStart = Date.now();
+  const simResult = simulatePlan(patchedActions, zonesWithAllocations, utilization);
+  telemetry.simulatorLatencyMs = Date.now() - simulatorStart;
+  telemetry.simulatorResult = simResult.valid ? 'pass' : 'fail';
+
+  let finalActions = patchedActions;
+  if (!simResult.valid) {
+    logger.warn('Reconfig', `Simulator found ${simResult.violations.length} violation(s) — auto-repairing`);
+    const repaired = autoRepairPlan(patchedActions, zonesWithAllocations, utilization);
+    finalActions = repaired.actions;
+    telemetry.autoRepaired = repaired.removed;
+    logger.info('Reconfig', `Auto-repair removed ${repaired.removed} invalid action(s)`);
+  }
+
+  telemetry.totalLatencyMs = Date.now() - telemetry.pipelineStartMs;
 
   const planResult = {
-    source: patchedActions.length > baseActions.length ? `${baseSource}+heuristic` : baseSource,
+    source: finalActions.length > baseActions.length ? `${baseSource}+heuristic` : baseSource,
     reasoning: baseReasoning || 'No reconfiguration actions needed or possible within current constraints.',
-    actions: patchedActions
+    actions: finalActions
   };
 
   const initialSummary = computeSummary(report, planResult.actions);
@@ -718,8 +898,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
     zones: zonesWithAllocations,
     physicalConstraints: {
       totalRows: TOTAL_CELLAR_ROWS,
-      slotsPerRow: SLOTS_PER_ROW,
-      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+      totalCapacity: TOTAL_CELLAR_CAPACITY
     },
     currentState: {
       totalBottles,
@@ -778,6 +957,21 @@ export async function generateReconfigurationPlan(report, options = {}) {
       wasFallback: Boolean(reviewTelemetry.was_fallback)
     } : {
       stabilityScore
+    },
+    _pipelineTelemetry: {
+      solverLatencyMs: telemetry.solverLatencyMs,
+      llmLatencyMs: telemetry.llmLatencyMs,
+      heuristicLatencyMs: telemetry.heuristicLatencyMs,
+      simulatorLatencyMs: telemetry.simulatorLatencyMs,
+      totalLatencyMs: telemetry.totalLatencyMs,
+      complexityScore: telemetry.complexityScore,
+      complexityFactors: telemetry.complexityFactors,
+      llmModel: telemetry.llmModel,
+      llmProtocol: telemetry.llmProtocol,
+      usedOpus: telemetry.usedOpus,
+      actionsBySource: telemetry.actionsBySource,
+      simulatorResult: telemetry.simulatorResult,
+      autoRepaired: telemetry.autoRepaired
     }
   };
 }

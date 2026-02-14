@@ -66,12 +66,17 @@ export const TASK_MODELS = {
 
   // Complex planning tasks use Opus 4.6 with adaptive thinking
   cellarAnalysis: 'claude-opus-4-6',
-  zoneCapacityAdvice: 'claude-opus-4-6',
+  // Zone capacity: Sonnet for simple, Opus for complex (escalated by advisor)
+  zoneCapacityAdvice: 'claude-sonnet-4-5-20250929',
+  zoneCapacityEscalation: 'claude-opus-4-6',
   // Reconfiguration uses Sonnet — primary planning is done by algorithmic solver
   zoneReconfigurationPlan: 'claude-sonnet-4-5-20250929',
+  // Escalation to Opus 4.6 for complex reconfigurations (many deficits, pin conflicts)
+  zoneReconfigEscalation: 'claude-opus-4-6',
 
-  // Complex extraction tasks use Opus 4.6 with adaptive thinking
-  awardExtraction: 'claude-opus-4-6',
+  // Award extraction: Sonnet for structured tables, Opus for complex documents
+  awardExtraction: 'claude-sonnet-4-5-20250929',
+  awardExtractionEscalation: 'claude-opus-4-6',
 
   // Simple classification tasks use Haiku 4.5
   wineClassification: 'claude-haiku-4-5-20251001',
@@ -100,8 +105,11 @@ const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'max']);
 export const TASK_THINKING = {
   cellarAnalysis: 'high',
   zoneReconfigurationPlan: 'low',
-  zoneCapacityAdvice: 'medium',
-  awardExtraction: 'medium'
+  zoneReconfigEscalation: 'high',
+  zoneCapacityAdvice: 'low',
+  zoneCapacityEscalation: 'high',
+  awardExtraction: 'low',
+  awardExtractionEscalation: 'high'
 };
 
 // Startup validation: every TASK_THINKING key must exist in TASK_MODELS

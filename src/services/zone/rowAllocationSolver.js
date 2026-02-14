@@ -20,9 +20,9 @@
 
 import { getZoneById } from '../../config/cellarZones.js';
 import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
+import { getRowCapacity, computeRowsCapacity, getTotalRows } from '../../config/cellarCapacity.js';
 
-const TOTAL_ROWS = 19;
-const SLOTS_PER_ROW = 9;
+const TOTAL_ROWS = getTotalRows();
 
 /**
  * Solve the row allocation problem deterministically.
@@ -146,18 +146,35 @@ function buildZoneRowMap(zones) {
 }
 
 /**
- * Compute row demand for each zone.
+ * Compute minimum row demand for each zone using true row capacities.
+ * Returns the minimum number of rows needed to hold each zone's bottles,
+ * which enables detecting surplus rows that can be donated.
+ *
+ * Uses a greedy approach: fill the smallest available rows first to
+ * get a tight lower bound. For most rows (9 slots), this is equivalent
+ * to Math.ceil(bottles / 9), except Row 1 has 7 slots.
+ *
  * @param {Array} zones
  * @param {Object} utilization
- * @returns {Map<string, number>} zoneId → required rows
+ * @returns {Map<string, number>} zoneId → minimum required rows
  */
 function computeDemand(zones, utilization) {
   const demand = new Map();
   for (const zone of zones) {
     const util = utilization[zone.id];
     const bottles = util?.bottleCount ?? 0;
-    // Each zone with bottles needs at least 1 row
-    const required = bottles > 0 ? Math.ceil(bottles / SLOTS_PER_ROW) : 0;
+    if (bottles === 0) {
+      demand.set(zone.id, 0);
+      continue;
+    }
+    // Compute minimum rows needed based on actual row capacities.
+    // Most rows have 9 slots, but Row 1 has 7. For a tight bound,
+    // check if the zone owns Row 1 (smaller capacity) or only standard rows.
+    const currentRows = zone.actualAssignedRows || [];
+    const hasRow1 = currentRows.some(r => r === 'R1');
+    // Use the smallest capacity in the zone's rows for conservative estimate
+    const effectiveCapacity = hasRow1 ? 7 : 9;
+    const required = Math.max(1, Math.ceil(bottles / effectiveCapacity));
     demand.set(zone.id, required);
   }
   return demand;
@@ -259,7 +276,7 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge) {
       rowNumber: whiteRow.rowNumber,
       reason: `Fix color boundary: move row ${whiteRow.rowNumber} (${whiteRow.zoneId}, white) ` +
         `to make room for red zone, swap with row ${redRow.rowNumber}`,
-      bottlesAffected: SLOTS_PER_ROW
+      bottlesAffected: getRowCapacity(whiteRow.rowId)
     });
     actions.push({
       type: 'reallocate_row',
@@ -269,7 +286,7 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge) {
       rowNumber: redRow.rowNumber,
       reason: `Fix color boundary: move row ${redRow.rowNumber} (${redRow.zoneId}, red) ` +
         `to white region, swap with row ${whiteRow.rowNumber}`,
-      bottlesAffected: SLOTS_PER_ROW
+      bottlesAffected: getRowCapacity(redRow.rowId)
     });
 
     // Update mutable state
@@ -444,9 +461,16 @@ function scoreDonorCandidates(
       const minDist = recipientRowNums.length > 0
         ? Math.min(...recipientRowNums.map(n => Math.abs(n - candidateRowNum)))
         : TOTAL_ROWS;
-      if (minDist <= 1) score += 20;
-      else if (minDist <= 2) score += 10;
+      if (minDist <= 1) score += 25; // Directly adjacent — strong contiguity
+      else if (minDist <= 2) score += 12;
       else if (minDist <= 3) score += 5;
+
+      // Contiguity bonus: would this row extend a contiguous block?
+      if (recipientRowNums.length > 0) {
+        const wouldExtend = recipientRowNums.includes(candidateRowNum - 1) ||
+                           recipientRowNums.includes(candidateRowNum + 1);
+        if (wouldExtend) score += 8; // Extends contiguous span
+      }
 
       // Lower donor utilization = better to take from
       score += Math.round(20 * (1 - donorUtilPct / 100));
@@ -513,7 +537,7 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
     // Check if combined bottles fit in target's current + source's rows
     const targetRows = zoneRowMap.get(candidate.targetZone) || [];
     const sourceRows = zoneRowMap.get(candidate.sourceZone) || [];
-    const combinedCapacity = (targetRows.length + sourceRows.length) * SLOTS_PER_ROW;
+    const combinedCapacity = computeRowsCapacity([...targetRows, ...sourceRows]);
     if (sourceBottles + targetBottles > combinedCapacity) continue;
 
     if (sourceBottles <= 2) {
@@ -552,27 +576,102 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
 /**
  * Generate row reallocation actions to reduce wine scattering.
  * Wines of the same type scattered across non-adjacent rows can be
- * consolidated by swapping adjacent rows into the zone.
+ * consolidated by acquiring adjacent rows from underutilized neighbours.
  *
- * @param {Map} zoneRowMap
- * @param {Array} scatteredWines
- * @param {Array} zones
- * @param {Set} neverMerge
+ * Strategy: For each scattered wine, find the zone it belongs to,
+ * identify a gap row between the zone's existing rows, and try to
+ * reallocate that gap row from its current zone (if underutilized).
+ *
+ * @param {Map} zoneRowMap - Mutable zone→rows map
+ * @param {Array} scatteredWines - [{wineName, bottleCount, rows, zoneId?}]
+ * @param {Array} zones - Zone metadata
+ * @param {Set} neverMerge - Protected zones
  * @param {string} stabilityBias
- * @returns {Array} Actions
+ * @returns {Array} reallocate_row actions
  */
 function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias) {
-  // Only consolidate when stability allows
   if (stabilityBias === 'high') return [];
   if (!scatteredWines || scatteredWines.length === 0) return [];
 
-  // This is a lower-priority optimization — limit to top 3 scattered wines
-  const topScattered = scatteredWines.slice(0, 3);
+  const actions = [];
+  const maxScatterActions = stabilityBias === 'moderate' ? 2 : 3;
+  const donated = new Set();
 
-  // For now, scattered wine consolidation is handled by the capacity rebalancing
-  // (moving rows to zones with more bottles). Additional scatter-specific logic
-  // could be added here as row-swap heuristics.
-  return [];
+  // Build row→zone reverse map
+  const rowToZone = new Map();
+  for (const [zoneId, rows] of zoneRowMap) {
+    for (const r of rows) {
+      rowToZone.set(r, zoneId);
+    }
+  }
+
+  // Focus on the most scattered wines (highest bottle count first)
+  const topScattered = scatteredWines.slice(0, 5);
+
+  for (const scattered of topScattered) {
+    if (actions.length >= maxScatterActions) break;
+
+    // Determine which zone these scattered bottles belong to
+    const scatteredRows = scattered.rows || [];
+    if (scatteredRows.length < 2) continue;
+
+    // Find the zone that owns the majority of these rows
+    const zoneCounts = new Map();
+    for (const r of scatteredRows) {
+      const z = rowToZone.get(r);
+      if (z) zoneCounts.set(z, (zoneCounts.get(z) ?? 0) + 1);
+    }
+    if (zoneCounts.size === 0) continue;
+
+    const ownerZoneId = [...zoneCounts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+    const ownerRows = zoneRowMap.get(ownerZoneId) || [];
+    const ownerRowNums = ownerRows.map(r => rowNum(r)).sort((a, b) => a - b);
+
+    if (ownerRowNums.length < 1) continue;
+
+    // Find gap rows between the zone's existing rows
+    const minRow = ownerRowNums[0];
+    const maxRow = ownerRowNums[ownerRowNums.length - 1];
+    const ownerRowSet = new Set(ownerRowNums);
+
+    for (let r = minRow; r <= maxRow; r++) {
+      if (actions.length >= maxScatterActions) break;
+      if (ownerRowSet.has(r)) continue; // Already owned
+
+      const gapRowId = `R${r}`;
+      if (donated.has(gapRowId)) continue;
+
+      const gapOwner = rowToZone.get(gapRowId);
+      if (!gapOwner || gapOwner === ownerZoneId) continue;
+      if (neverMerge.has(gapOwner)) continue;
+
+      // Only take from underutilized zones with surplus rows
+      const gapOwnerRows = zoneRowMap.get(gapOwner) || [];
+      if (gapOwnerRows.length <= 1) continue;
+
+      // Check colors are compatible
+      const ownerColor = getZoneColor(ownerZoneId);
+      const gapColor = getZoneColor(gapOwner);
+      if (ownerColor !== 'any' && gapColor !== 'any' && ownerColor !== gapColor) continue;
+
+      actions.push({
+        type: 'reallocate_row',
+        priority: 4,
+        fromZoneId: gapOwner,
+        toZoneId: ownerZoneId,
+        rowNumber: r,
+        reason: `Consolidate scattered ${scattered.wineName} (${scattered.bottleCount} bottles across ` +
+          `${scatteredRows.length} rows): fill gap row ${r} from ${getZoneDisplayName(gapOwner, zones)}`,
+        bottlesAffected: Math.round((scattered.bottleCount || 0) / scatteredRows.length),
+        source: 'solver'
+      });
+
+      updateZoneRowMap(zoneRowMap, gapOwner, gapRowId, ownerZoneId);
+      donated.add(gapRowId);
+    }
+  }
+
+  return actions;
 }
 
 // ═══════════════════════════════════════════

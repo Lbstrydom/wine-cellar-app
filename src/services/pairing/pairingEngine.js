@@ -6,7 +6,8 @@
 
 import anthropic from '../ai/claudeClient.js';
 import { FOOD_SIGNALS, WINE_STYLES, DEFAULT_HOUSE_STYLE } from '../../config/pairingRules.js';
-import { getModelForTask, getMaxTokens } from '../../config/aiModels.js';
+import { getModelForTask, getMaxTokens, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
 import { sanitizeDishDescription, sanitizeWineList } from '../shared/inputSanitizer.js';
 import { parseAndValidate } from '../shared/responseValidator.js';
 import { getEffectiveDrinkByYear } from '../cellar/cellarAnalysis.js';
@@ -332,7 +333,59 @@ export function generateShortlist(wines, dish, options = {}) {
 }
 
 /**
+ * Compute pairing explanation complexity.
+ * Simple pairings (few signals, high-confidence matches) use Sonnet.
+ * Complex pairings (many conflicting signals, low confidence, diverse styles) use Opus with thinking.
+ * @param {string[]} signals - Detected food signals
+ * @param {Object[]} topWines - Top wines from shortlist
+ * @returns {{ score: number, factors: Object, useOpus: boolean }}
+ */
+export function computePairingComplexity(signals, topWines) {
+  let score = 0;
+  const factors = {};
+
+  // Many signals → complex flavour profile needs deeper reasoning
+  if (signals.length >= 6) {
+    score += 0.25;
+    factors.manySignals = signals.length;
+  }
+
+  // Conflicting signals (e.g., creamy + acid, sweet + spicy)
+  const conflicts = [
+    ['creamy', 'acid'], ['sweet', 'spicy'], ['raw', 'smoky'],
+    ['sweet', 'acid'], ['fried', 'raw']
+  ];
+  const signalSet = new Set(signals);
+  const conflictCount = conflicts.filter(([a, b]) => signalSet.has(a) && signalSet.has(b)).length;
+  if (conflictCount > 0) {
+    score += 0.2 * Math.min(conflictCount, 2);
+    factors.conflictingSignals = conflictCount;
+  }
+
+  // Low-confidence style matches → LLM needs to reason harder about why pairing works
+  const lowConfCount = topWines.filter(w => w.styleMatch?.confidence === 'low').length;
+  if (lowConfCount >= 2) {
+    score += 0.2;
+    factors.lowConfidenceMatches = lowConfCount;
+  }
+
+  // Diverse styles in shortlist → more nuanced explanation needed
+  const uniqueStyles = new Set(topWines.map(w => w.styleMatch?.styleId));
+  if (uniqueStyles.size >= 3) {
+    score += 0.15;
+    factors.diverseStyles = uniqueStyles.size;
+  }
+
+  score = Math.min(score, 1.0);
+  const useOpus = score >= 0.5;
+
+  return { score, factors, useOpus };
+}
+
+/**
  * Get AI explanation for shortlist selections.
+ * Uses complexity-based model routing: Sonnet for typical pairings, Opus with
+ * adaptive thinking for complex flavour profiles with conflicting signals.
  * @param {string} dish - Original dish description
  * @param {Object} shortlistResult - Result from generateShortlist
  * @param {number} topN - Number of wines to explain (default 3)
@@ -410,16 +463,23 @@ OUTPUT FORMAT (JSON only):
 }`;
 
   try {
-    const modelId = getModelForTask('sommelier');
-    const maxTokens = Math.min(getMaxTokens(modelId), 1200);
+    // Compute complexity for model routing
+    const complexity = computePairingComplexity(signals, topWines);
+    const taskKey = complexity.useOpus ? 'cellarAnalysis' : 'sommelier';
+    const modelId = getModelForTask(taskKey);
+    const thinkingConfig = getThinkingConfig(taskKey);
+    const maxTokens = thinkingConfig ? 8192 : Math.min(getMaxTokens(modelId), 1200);
+
+    logger.info('PairingEngine', `Complexity=${complexity.score.toFixed(2)}, model=${modelId}, factors=${JSON.stringify(complexity.factors)}`);
 
     const message = await anthropic.messages.create({
       model: modelId,
       max_tokens: maxTokens,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
+      ...(thinkingConfig || {})
     });
 
-    const responseText = message.content[0].text;
+    const responseText = thinkingConfig ? extractText(message) : message.content[0].text;
     const validated = parseAndValidate(responseText, 'sommelier');
 
     let parsed;

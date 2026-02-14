@@ -8,9 +8,63 @@ import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getZoneById, CELLAR_ZONES } from '../../config/cellarZones.js';
 import { reviewZoneCapacityAdvice, isZoneCapacityReviewEnabled } from '../ai/openaiReviewer.js';
+import logger from '../../utils/logger.js';
+
+/**
+ * Compute complexity score for zone capacity scenario.
+ * Simple overflows (few wines, clear adjacency, available rows) use Sonnet.
+ * Complex overflows (many wines, multiple adjacent zones, no free rows) escalate to Opus.
+ * @param {Object} params
+ * @param {number} params.wineCount - Number of wines needing placement
+ * @param {number} params.adjacentZoneCount - Number of adjacent zones
+ * @param {number} params.availableRowCount - Number of unallocated rows
+ * @param {number} params.totalAllocatedZones - Number of zones with allocations
+ * @param {boolean} params.hasOverflowZone - Whether zone has a configured overflow target
+ * @returns {{ score: number, factors: Object, useOpus: boolean }}
+ */
+export function computeCapacityComplexity({
+  wineCount = 0,
+  adjacentZoneCount = 0,
+  availableRowCount = 0,
+  totalAllocatedZones = 0,
+  hasOverflowZone = false
+}) {
+  let score = 0;
+  const factors = {};
+
+  // Many wines needing placement → more complex recommendation
+  if (wineCount > 5) {
+    score += 0.25;
+    factors.manyWines = wineCount;
+  }
+
+  // Multiple adjacent zones to consider → more trade-offs
+  if (adjacentZoneCount > 3) {
+    score += 0.25;
+    factors.manyAdjacentZones = adjacentZoneCount;
+  }
+
+  // No free rows → must merge or reorganize (harder decision)
+  if (availableRowCount === 0) {
+    score += 0.3;
+    factors.noFreeRows = true;
+  }
+
+  // Many active zones → crowded cellar, cascading effects
+  if (totalAllocatedZones > 8) {
+    score += 0.2;
+    factors.crowdedCellar = totalAllocatedZones;
+  }
+
+  score = Math.min(score, 1.0);
+  const useOpus = score >= 0.5;
+
+  return { score, factors, useOpus };
+}
 
 /**
  * Get zone capacity advice from Claude.
+ * Uses complexity-based model routing: Sonnet for simple overflows, Opus for complex ones.
  * @param {Object} input
  * @param {string} input.overflowingZoneId
  * @param {Array<{wineId:number, wineName:string, currentSlot:string}>} input.winesNeedingPlacement
@@ -72,15 +126,28 @@ Consider:
 
 Return only valid JSON.`;
 
-  const modelId = getModelForTask('zoneCapacityAdvice');
+  // Compute complexity to determine model routing
+  const complexity = computeCapacityComplexity({
+    wineCount: winesNeedingPlacement.length,
+    adjacentZoneCount: adjacentZones.length,
+    availableRowCount: availableRows.length,
+    totalAllocatedZones: Object.keys(currentZoneAllocation).length,
+    hasOverflowZone: !!zone?.overflowZoneId
+  });
+
+  const taskKey = complexity.useOpus ? 'zoneCapacityEscalation' : 'zoneCapacityAdvice';
+  const modelId = getModelForTask(taskKey);
+  const maxTokens = complexity.useOpus ? 16000 : 8192;
+
+  logger.info('ZoneCapacityAdvisor', `Complexity=${complexity.score.toFixed(2)}, model=${modelId}, factors=${JSON.stringify(complexity.factors)}`);
 
   try {
     const message = await anthropic.messages.create({
       model: modelId,
-      max_tokens: 16000,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: [{ role: 'user', content: userPrompt }],
-      ...(getThinkingConfig('zoneCapacityAdvice') || {})
+      ...(getThinkingConfig(taskKey) || {})
     });
 
     const responseText = extractText(message);
@@ -90,6 +157,13 @@ Return only valid JSON.`;
     if (!validated.success) {
       return { success: false, error: validated.error };
     }
+
+    const telemetry = {
+      complexityScore: complexity.score,
+      complexityFactors: complexity.factors,
+      model: modelId,
+      escalated: complexity.useOpus
+    };
 
     // GPT-5.2 review if enabled
     if (isZoneCapacityReviewEnabled()) {
@@ -101,7 +175,7 @@ Return only valid JSON.`;
       };
       const reviewResult = await reviewZoneCapacityAdvice(validated.advice, reviewContext);
       if (reviewResult.reviewed) {
-        console.info(`[ZoneCapacityAdvisor] GPT-5.2 review: ${reviewResult.verdict} (${reviewResult.latencyMs}ms)`);
+        logger.info('ZoneCapacityAdvisor', `GPT-5.2 review: ${reviewResult.verdict} (${reviewResult.latencyMs}ms)`);
         return {
           success: true,
           advice: validated.advice,
@@ -111,12 +185,13 @@ Return only valid JSON.`;
             reasoning: reviewResult.reasoning,
             confidence: reviewResult.confidence,
             latencyMs: reviewResult.latencyMs
-          }
+          },
+          _telemetry: telemetry
         };
       }
     }
 
-    return { success: true, advice: validated.advice };
+    return { success: true, advice: validated.advice, _telemetry: telemetry };
   } catch (err) {
     return { success: false, error: err.message || 'Claude request failed' };
   }
