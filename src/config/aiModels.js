@@ -67,7 +67,8 @@ export const TASK_MODELS = {
   // Complex planning tasks use Opus 4.6 with adaptive thinking
   cellarAnalysis: 'claude-opus-4-6',
   zoneCapacityAdvice: 'claude-opus-4-6',
-  zoneReconfigurationPlan: 'claude-opus-4-6',
+  // Reconfiguration uses Sonnet — primary planning is done by algorithmic solver
+  zoneReconfigurationPlan: 'claude-sonnet-4-5-20250929',
 
   // Complex extraction tasks use Opus 4.6 with adaptive thinking
   awardExtraction: 'claude-opus-4-6',
@@ -98,7 +99,7 @@ const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'max']);
  */
 export const TASK_THINKING = {
   cellarAnalysis: 'high',
-  zoneReconfigurationPlan: 'high',
+  zoneReconfigurationPlan: 'low',
   zoneCapacityAdvice: 'medium',
   awardExtraction: 'medium'
 };

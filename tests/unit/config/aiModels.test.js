@@ -90,9 +90,12 @@ describe('aiModels', () => {
 
     it('should map complex tasks to Opus 4.6', () => {
       expect(TASK_MODELS.cellarAnalysis).toBe('claude-opus-4-6');
-      expect(TASK_MODELS.zoneReconfigurationPlan).toBe('claude-opus-4-6');
       expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-opus-4-6');
       expect(TASK_MODELS.awardExtraction).toBe('claude-opus-4-6');
+    });
+
+    it('should map zoneReconfigurationPlan to Sonnet (solver handles primary planning)', () => {
+      expect(TASK_MODELS.zoneReconfigurationPlan).toBe('claude-sonnet-4-5-20250929');
     });
 
     it('should map conversational tasks to Sonnet 4.5', () => {
@@ -197,10 +200,10 @@ describe('aiModels', () => {
       });
     });
 
-    it('should return adaptive thinking with high effort for zoneReconfigurationPlan', () => {
+    it('should return adaptive thinking with low effort for zoneReconfigurationPlan (solver handles primary planning)', () => {
       expect(getThinkingConfig('zoneReconfigurationPlan')).toEqual({
         thinking: { type: 'adaptive' },
-        output_config: { effort: 'high' }
+        output_config: { effort: 'low' }
       });
     });
 

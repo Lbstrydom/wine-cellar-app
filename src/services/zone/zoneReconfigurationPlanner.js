@@ -20,6 +20,7 @@ import {
   hashPlan,
   calculateStabilityScore
 } from '../ai/openaiReviewer.js';
+import { solveRowAllocation } from './rowAllocationSolver.js';
 
 // Physical cellar constraints
 const TOTAL_CELLAR_ROWS = 19;
@@ -273,6 +274,286 @@ function wouldCreateColorViolation(action, zoneRowMap) {
   return false;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// Layer 2: LLM refinement (receives solver draft for improvement)
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Call LLM to refine/augment the solver's draft plan.
+ * The LLM receives the draft and can accept, modify, reorder, or add actions.
+ * Much faster than generating from scratch because the LLM validates rather than creates.
+ *
+ * @param {Object} ctx - All context needed for the LLM call
+ * @returns {{ actions: Array, reasoning: string }}
+ */
+async function refinePlanWithLLM(ctx) {
+  const {
+    solverActions, solverReasoning,
+    zonesWithAllocations, utilization, allZones,
+    capacityIssues, underutilizedZones, mergeCandidates,
+    neverMerge, stability, includeRetirements,
+    totalBottles, misplacedBottles, misplacementPct,
+    report, zoneRowMap
+  } = ctx;
+
+  const statePayload = {
+    physicalConstraints: {
+      totalRows: TOTAL_CELLAR_ROWS,
+      slotsPerRow: SLOTS_PER_ROW,
+      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+    },
+    currentState: { totalBottles, misplaced: misplacedBottles, misplacementPct },
+    zones: zonesWithAllocations,
+    zoneUtilization: allZones.map(z => ({
+      zoneId: z.zoneId, zoneName: z.zoneName, bottleCount: z.bottleCount,
+      rowCount: z.rowCount, capacity: z.capacity,
+      utilizationPct: z.utilizationPct, isOverflowing: z.isOverflowing
+    })),
+    overflowingZones: capacityIssues.map(i => ({
+      zoneId: i.overflowingZoneId, zoneName: i.overflowingZoneName,
+      affectedCount: i.affectedCount,
+      currentRows: i.currentZoneAllocation?.[i.overflowingZoneId] || []
+    })),
+    underutilizedZones: underutilizedZones.map(z => ({
+      zoneId: z.zoneId, zoneName: z.zoneName, utilizationPct: z.utilizationPct,
+      rowCount: z.rowCount, bottleCount: z.bottleCount, canDonateRows: z.rowCount - 1
+    })),
+    mergeCandidates: mergeCandidates.slice(0, 5).map(c => ({
+      sourceZone: c.sourceZone, targetZone: c.targetZone,
+      affinity: c.affinity, reason: c.reason
+    })),
+    constraints: {
+      neverMergeZones: Array.from(neverMerge),
+      includeRetirements,
+      stabilityBias: stability,
+      flexibleColorAllocation: false
+    },
+    scatteredWines: (report.scatteredWines || []).slice(0, 10).map(sw => ({
+      wineName: sw.wineName, bottleCount: sw.bottleCount, rows: sw.rows
+    })),
+    colorAdjacencyIssues: (report.colorAdjacencyIssues || []).map(ci => ({
+      row1: ci.row1, zone1: ci.zone1, zone1Name: ci.zone1Name, color1: ci.color1,
+      row2: ci.row2, zone2: ci.zone2, zone2Name: ci.zone2Name, color2: ci.color2
+    }))
+  };
+
+  const system = `You are a sommelier REVIEWING and REFINING an algorithmically generated cellar reconfiguration plan.
+The cellar has exactly ${TOTAL_CELLAR_ROWS} rows. You CANNOT add new rows.
+
+A solver has already produced a draft plan. Your job is to:
+1. ACCEPT good actions as-is
+2. MODIFY actions if they can be improved (better donor, better priority, better reasoning)
+3. ADD new actions the solver missed (strategic merges, zone restructuring)
+4. REMOVE actions that are counterproductive
+5. Write a concise reasoning narrative explaining the strategic vision
+
+COLOR BOUNDARY RULE: White wines in lower rows, red wines in higher rows. Never adjacent.
+CONSOLIDATION RULE: Same wine type should be physically near each other.
+
+You MUST respond with valid JSON only. Be concise.`;
+
+  // Include the solver's draft in the prompt so the LLM can build on it
+  const draftSection = solverActions.length > 0
+    ? `\n\nDRAFT PLAN (from algorithmic solver — review, refine, or accept):
+${JSON.stringify({ reasoning: solverReasoning, actions: solverActions }, null, 2)}
+
+The draft plan was generated algorithmically. It handles capacity rebalancing and color boundaries well, but may miss:
+- Strategic zone restructuring (e.g., reorganizing by style instead of geography)
+- Nuanced merge candidates that improve the collection's thematic organization
+- Better prioritization of actions
+
+You may accept all draft actions, modify some, add new ones, or remove counterproductive ones.`
+    : '\n\nNo draft plan available — generate a plan from scratch.';
+
+  const user = `Review and refine the reconfiguration plan within the ${TOTAL_CELLAR_ROWS}-row limit.
+
+STATE JSON:
+${JSON.stringify(statePayload, null, 2)}
+${draftSection}
+
+Return JSON: { "reasoning": string, "actions": [{ "type": "reallocate_row"|"merge_zones"|"retire_zone", "priority": 1-5, "reason": string, ...fields }] }
+
+Action field requirements:
+- reallocate_row: fromZoneId (string), toZoneId (string), rowNumber (number from fromZone's actualAssignedRows), bottlesAffected
+- merge_zones: sourceZones (string[]), targetZoneId (string), bottlesAffected
+- retire_zone: zoneId (string), mergeIntoZoneId (string), bottlesAffected
+Zone IDs are lowercase with underscores (e.g. "chenin_blanc", NOT numbers).
+Stability bias: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMerge))}`;
+
+  const modelId = getModelForTask('zoneReconfigurationPlan');
+  const llmStart = Date.now();
+
+  const response = await anthropic.messages.create({
+    model: modelId,
+    max_tokens: 8000,
+    system,
+    messages: [{ role: 'user', content: user }],
+    ...(getThinkingConfig('zoneReconfigurationPlan') || {})
+  });
+
+  const llmMs = Date.now() - llmStart;
+  logger.info('Reconfig', `LLM refinement completed in ${llmMs}ms`);
+
+  const text = extractText(response);
+  const json = parseJsonObject(text);
+  if (!json) throw new Error('Invalid AI response (not JSON)');
+  const plan = validatePlanShape(json);
+
+  // Validate/filter LLM actions the same way as before
+  plan.actions = filterLLMActions(plan.actions, zoneRowMap, neverMerge);
+
+  return { actions: plan.actions, reasoning: plan.reasoning };
+}
+
+/**
+ * Filter LLM-generated actions for validity (zone IDs, row ownership, etc.).
+ * @param {Array} actions
+ * @param {Map} zoneRowMap
+ * @param {Set} neverMerge
+ * @returns {Array} Validated actions
+ */
+function filterLLMActions(actions, zoneRowMap, neverMerge) {
+  const originalCount = actions.length;
+  const filtered = actions.filter(a => {
+    if (a.type === 'reallocate_row') {
+      const fromValid = !!getZoneById(a.fromZoneId);
+      const toValid = !!getZoneById(a.toZoneId);
+      if (!fromValid || !toValid) {
+        logger.warn('Reconfig', `Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
+        return false;
+      }
+      const fromRows = zoneRowMap.get(a.fromZoneId) || [];
+      const rowId = typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber);
+      if (!fromRows.includes(rowId)) {
+        logger.warn('Reconfig', `Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
+        return false;
+      }
+      if (wouldCreateColorViolation(a, zoneRowMap)) {
+        logger.warn('Reconfig', `reallocate_row ${rowId} from ${a.fromZoneId} to ${a.toZoneId} would create color adjacency violation`);
+        a._colorViolationWarning = true;
+      }
+      return true;
+    }
+    if (a.type === 'expand_zone') {
+      const valid = !!getZoneById(a.zoneId);
+      if (!valid) logger.warn('Reconfig', `Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
+      return valid;
+    }
+    if (a.type === 'merge_zones') {
+      if (!Array.isArray(a.sourceZones)) return false;
+      if (!getZoneById(a.targetZoneId)) return false;
+      const allValid = a.sourceZones.every(z => !!getZoneById(z));
+      if (!allValid) return false;
+      return a.sourceZones.every(z => !neverMerge.has(z));
+    }
+    if (a.type === 'retire_zone') {
+      if (!getZoneById(a.zoneId) || !getZoneById(a.mergeIntoZoneId)) return false;
+      return !neverMerge.has(a.zoneId);
+    }
+    logger.warn('Reconfig', `Filtering unknown action type: ${a.type}`);
+    return false;
+  });
+
+  if (filtered.length < originalCount) {
+    logger.warn('Reconfig', `Filtered ${originalCount - filtered.length} invalid LLM actions`);
+  }
+  return filtered;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Layer 3: Heuristic gap-fill
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * Patch remaining capacity deficits that the solver and LLM both missed.
+ * Adds simple single-donor-per-overflow reallocation actions.
+ *
+ * @param {Array} existingActions - Actions from previous layers
+ * @param {Array} capacityIssues - Overflowing zones
+ * @param {Array} underutilizedZones
+ * @param {Array} mergeCandidates
+ * @param {Set} neverMerge
+ * @param {Array} zonesWithAllocations
+ * @param {string} stability
+ * @returns {Array} Combined actions (existing + patches)
+ */
+function heuristicGapFill(
+  existingActions, capacityIssues, underutilizedZones,
+  mergeCandidates, neverMerge, zonesWithAllocations, stability
+) {
+  // Check which overflow zones were already addressed
+  const addressedZones = new Set(
+    existingActions
+      .filter(a => a.type === 'reallocate_row')
+      .map(a => a.toZoneId)
+  );
+  const addressedMerges = new Set(
+    existingActions
+      .filter(a => a.type === 'merge_zones' || a.type === 'retire_zone')
+      .flatMap(a => a.type === 'merge_zones' ? a.sourceZones : [a.zoneId])
+  );
+
+  const rowsAlreadyMoved = new Set(
+    existingActions
+      .filter(a => a.type === 'reallocate_row')
+      .map(a => typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber))
+  );
+
+  const newActions = [];
+  const zoneRowMapHeuristic = new Map();
+  for (const z of zonesWithAllocations) {
+    zoneRowMapHeuristic.set(z.id, z.actualAssignedRows || []);
+  }
+
+  // Patch unaddressed capacity issues
+  for (const issue of capacityIssues) {
+    const toZoneId = issue.overflowingZoneId;
+    if (addressedZones.has(toZoneId)) continue;
+    if (!getZoneById(toZoneId)) continue;
+
+    for (const donor of underutilizedZones) {
+      if (donor.zoneId === toZoneId) continue;
+      if (donor.rowCount <= 1) continue;
+      if (neverMerge.has(donor.zoneId)) continue;
+
+      const donorRows = zoneRowMapHeuristic.get(donor.zoneId) || [];
+      const availableRow = donorRows.find(r => !rowsAlreadyMoved.has(r));
+      if (availableRow) {
+        rowsAlreadyMoved.add(availableRow);
+        newActions.push({
+          type: 'reallocate_row',
+          priority: 3,
+          fromZoneId: donor.zoneId,
+          toZoneId,
+          rowNumber: availableRow,
+          reason: `[heuristic] ${donor.zoneName} is ${donor.utilizationPct}% full; reallocate row ${availableRow} to ${issue.overflowingZoneName}`,
+          bottlesAffected: issue.affectedCount
+        });
+        break;
+      }
+    }
+  }
+
+  // If nothing was produced at all, try a merge
+  if (existingActions.length === 0 && newActions.length === 0 && mergeCandidates.length > 0) {
+    const best = mergeCandidates[0];
+    if (!neverMerge.has(best.sourceZone) && !neverMerge.has(best.targetZone) && !addressedMerges.has(best.sourceZone)) {
+      newActions.push({
+        type: 'merge_zones',
+        priority: 3,
+        sourceZones: [best.sourceZone],
+        targetZoneId: best.targetZone,
+        reason: `[heuristic] Merge ${best.sourceZone} into ${best.targetZone}: ${best.reason}`,
+        bottlesAffected: best.combinedBottles
+      });
+    }
+  }
+
+  const combined = [...existingActions, ...newActions];
+  const maxActions = stability === 'high' ? 3 : stability === 'moderate' ? 6 : 10;
+  return combined.slice(0, maxActions);
+}
+
 function computeSummary(report, actions) {
   const misplacedBefore = report?.summary?.misplacedBottles ?? 0;
   const bottlesAffected = actions.reduce((sum, a) => sum + (a.bottlesAffected || 0), 0);
@@ -340,303 +621,95 @@ export async function generateReconfigurationPlan(report, options = {}) {
 
   const zonesWithAllocations = await buildZoneListWithAllocations(cellarId);
 
-  let planResult = null;
+  // ═══════════════════════════════════════════════════════════════
+  // ITERATIVE 3-LAYER PIPELINE
+  //
+  // Each layer builds on the previous layer's output:
+  //   Layer 1 — Solver:    Fast deterministic baseline  (<10ms)
+  //   Layer 2 — LLM:       Refines solver draft with strategic insight (~5-15s)
+  //   Layer 3 — Heuristic: Fills gaps that neither layer caught  (<1ms)
+  //
+  // The layers are additive: the LLM receives the solver's draft and
+  // can accept, modify, or add actions. The heuristic patches any
+  // remaining deficit issues that the first two layers missed.
+  // ═══════════════════════════════════════════════════════════════
 
-  if (process.env.ANTHROPIC_API_KEY) {
-    const prompt = {
-      physicalConstraints: {
-        totalRows: TOTAL_CELLAR_ROWS,
-        slotsPerRow: SLOTS_PER_ROW,
-        totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW,
-        note: 'The cellar has exactly 19 rows. You CANNOT add new rows. You can only reallocate existing rows between zones or merge zones.'
-      },
-      currentState: {
-        totalBottles,
-        misplaced: misplacedBottles,
-        misplacementPct
-      },
+  // Shared row map for validation across all layers
+  const zoneRowMap = new Map();
+  for (const z of zonesWithAllocations) {
+    zoneRowMap.set(z.id, [...(z.actualAssignedRows || [])]);
+  }
+
+  // ─── Layer 1: Deterministic solver ───────────────────────────
+  let solverActions = [];
+  let solverReasoning = '';
+  try {
+    const solverStart = Date.now();
+    const solverResult = solveRowAllocation({
       zones: zonesWithAllocations,
-      zoneUtilization: allZones.map(z => ({
-        zoneId: z.zoneId,
-        zoneName: z.zoneName,
-        bottleCount: z.bottleCount,
-        rowCount: z.rowCount,
-        capacity: z.capacity,
-        utilizationPct: z.utilizationPct,
-        isOverflowing: z.isOverflowing
-      })),
-      overflowingZones: capacityIssues.map(i => ({
-        zoneId: i.overflowingZoneId,
-        zoneName: i.overflowingZoneName,
-        affectedCount: i.affectedCount,
-        currentRows: i.currentZoneAllocation?.[i.overflowingZoneId] || []
-      })),
-      underutilizedZones: underutilizedZones.map(z => ({
-        zoneId: z.zoneId,
-        zoneName: z.zoneName,
-        utilizationPct: z.utilizationPct,
-        rowCount: z.rowCount,
-        bottleCount: z.bottleCount,
-        canDonateRows: z.rowCount - 1
-      })),
-      mergeCandidates: mergeCandidates.slice(0, 5).map(c => ({
-        sourceZone: c.sourceZone,
-        targetZone: c.targetZone,
-        affinity: c.affinity,
-        reason: c.reason
-      })),
-      constraints: {
-        neverMergeZones: Array.from(neverMerge),
+      utilization,
+      overflowingZones,
+      underutilizedZones,
+      mergeCandidates,
+      neverMerge,
+      stabilityBias: stability,
+      scatteredWines: report.scatteredWines || [],
+      colorAdjacencyIssues: report.colorAdjacencyIssues || []
+    });
+    const solverMs = Date.now() - solverStart;
+    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s)`);
+    solverActions = solverResult.actions;
+    solverReasoning = solverResult.reasoning;
+  } catch (solverErr) {
+    logger.error('Reconfig', `Solver failed: ${solverErr.message}`);
+  }
+
+  // ─── Layer 2: LLM refinement (builds on solver draft) ───────
+  let llmActions = null;  // null = LLM skipped or failed
+  let llmReasoning = '';
+  if (process.env.ANTHROPIC_API_KEY) {
+    try {
+      const llmResult = await refinePlanWithLLM({
+        solverActions,
+        solverReasoning,
+        zonesWithAllocations,
+        utilization,
+        allZones,
+        capacityIssues,
+        underutilizedZones,
+        mergeCandidates,
+        neverMerge,
+        stability,
         includeRetirements,
-        stabilityBias: stability,
-        flexibleColorAllocation: false
-      },
-      scatteredWines: (report.scatteredWines || []).slice(0, 10).map(sw => ({
-        wineName: sw.wineName,
-        bottleCount: sw.bottleCount,
-        rows: sw.rows
-      })),
-      colorAdjacencyIssues: (report.colorAdjacencyIssues || []).map(ci => ({
-        row1: ci.row1, zone1: ci.zone1, zone1Name: ci.zone1Name, color1: ci.color1,
-        row2: ci.row2, zone2: ci.zone2, zone2Name: ci.zone2Name, color2: ci.color2
-      }))
-    };
-
-    const system = `You are a sommelier reorganizing a wine cellar with FIXED physical constraints.
-CRITICAL: The cellar has exactly ${TOTAL_CELLAR_ROWS} rows total. You CANNOT create new rows or expand beyond this limit.
-You must work within these constraints by:
-1. Reallocating rows from underutilized zones to overflowing zones
-2. Merging similar zones to consolidate space
-3. Retiring zones and moving bottles to related zones
-4. Restructuring zones by criteria (geographic to style-based, or vice versa) for better space utilization
-
-COLOR BOUNDARY RULE (CRITICAL):
-- White wines (sauvignon blanc, chenin blanc, chardonnay, aromatic whites, rosé, sparkling, dessert/fortified) MUST be in lower-numbered rows.
-- Red wines (cabernet, shiraz, pinot noir, etc.) MUST be in higher-numbered rows.
-- NEVER place a red wine zone adjacent to a white wine zone. There must be a clear boundary.
-- If color adjacency violations are reported, FIX them by reallocating rows to maintain the white-then-red order.
-
-CONSOLIDATION RULE:
-- Wines of the same type should be physically near each other (same row or adjacent rows).
-- If scatteredWines are reported, suggest row reallocations that bring scattered bottles together.
-
-You must respond with valid JSON only.`;
-
-    const user = `Generate a holistic zone reconfiguration plan that works WITHIN the ${TOTAL_CELLAR_ROWS}-row physical limit.
-
-STATE JSON:
-${JSON.stringify(prompt, null, 2)}
-
-Return JSON with schema:
-{
-  "reasoning": string,
-  "actions": [
-    {
-      "type": "reallocate_row"|"merge_zones"|"retire_zone",
-      "priority": 1|2|3|4|5,
-      "reason": string,
-      ...type-specific fields
+        totalBottles,
+        misplacedBottles,
+        misplacementPct,
+        report,
+        zoneRowMap
+      });
+      llmActions = llmResult.actions;
+      llmReasoning = llmResult.reasoning;
+    } catch (llmErr) {
+      logger.warn('Reconfig', `LLM refinement failed: ${llmErr.message} — using solver output`);
     }
-  ]
-}
-
-Action types:
-1. "reallocate_row": Move a row from one zone to another
-   - Required fields: fromZoneId, toZoneId, rowNumber, bottlesAffected
-   - IMPORTANT: fromZoneId and toZoneId must be exact zone ID strings like "chenin_blanc", "sauvignon_blanc", "rioja_ribera" - NOT numbers!
-   - CRITICAL: rowNumber MUST be from the fromZone's "actualAssignedRows" array - these are the ONLY rows that zone currently owns!
-   - rowNumber should be a number like 2, 3, 4 etc. (not "R2", just 2)
-   - Example: if zone X has actualAssignedRows: ["R3", "R5"], you can only reallocate rows 3 or 5 from zone X
-   - Use when a zone is underutilized and another needs space
-2. "merge_zones": Combine two similar zones into one
-   - Required fields: sourceZones (array of zone ID strings), targetZoneId (string), bottlesAffected
-   - Use when zones have high affinity (same style, country, or grape variety)
-3. "retire_zone": Close a zone and move all bottles to another
-   - Required fields: zoneId (string), mergeIntoZoneId (string), bottlesAffected
-   - Use when a zone is nearly empty or redundant
-
-CRITICAL - Zone ID format:
-- Zone IDs are lowercase strings with underscores, like: "chenin_blanc", "sauvignon_blanc", "aromatic_whites", "rioja_ribera", "appassimento", "curiosities"
-- DO NOT use numbers as zone IDs! "2", "4", "10" are NOT valid zone IDs.
-- The "id" field in the zones array contains the EXACT zone ID to use.
-- Example: If a zone has {"id": "curiosities", "name": "Curiosities"}, use "curiosities" NOT "4" or any other number.
-
-Strategic guidance:
-- Consider restructuring zones by criteria (e.g., changing from geographic organization like "Italian Reds" to style-based like "Full-bodied Reds") if it better fits the collection
-- Prioritize actions that reduce misplacements while minimizing bottle moves
-- Balance immediate space needs with long-term cellar organization
-- If colorAdjacencyIssues exist, fix them by swapping rows so white zones are in rows 1-7 and red zones are in rows 8-19
-- If scatteredWines exist, suggest row reallocations that group bottles of the same wine into contiguous rows
-
-Constraints:
-- NEVER propose adding rows beyond the ${TOTAL_CELLAR_ROWS}-row limit
-- Only use zone IDs that EXACTLY match the "id" field in the zones list (e.g., "chenin_blanc", NOT "Chenin Blanc" or "2")
-- Never merge zones in neverMergeZones: ${JSON.stringify(Array.from(neverMerge))}
-- Prefer fewer changes when stabilityBias is "${stability}"
-- Consider underutilizedZones as row donors
-- Consider mergeCandidates for zones with high affinity
-`;
-
-    const modelId = getModelForTask('zoneReconfigurationPlan');
-
-    const response = await anthropic.messages.create({
-      model: modelId,
-      max_tokens: 32000,
-      system,
-      messages: [{ role: 'user', content: user }],
-      ...(getThinkingConfig('zoneReconfigurationPlan') || {})
-    });
-
-    const text = extractText(response);
-    const json = parseJsonObject(text);
-    if (!json) throw new Error('Invalid AI response (not JSON)');
-    const plan = validatePlanShape(json);
-
-    const zoneRowMap = new Map();
-    for (const z of zonesWithAllocations) {
-      zoneRowMap.set(z.id, z.actualAssignedRows || []);
-    }
-
-    const originalCount = plan.actions.length;
-    plan.actions = plan.actions.filter(a => {
-      if (a.type === 'reallocate_row') {
-        const fromValid = !!getZoneById(a.fromZoneId);
-        const toValid = !!getZoneById(a.toZoneId);
-        if (!fromValid || !toValid) {
-          logger.warn('Reconfig', `Filtering invalid reallocate_row: fromZoneId="${a.fromZoneId}" (valid=${fromValid}), toZoneId="${a.toZoneId}" (valid=${toValid})`);
-          return false;
-        }
-
-        const fromRows = zoneRowMap.get(a.fromZoneId) || [];
-        const rowId = typeof a.rowNumber === 'number' ? `R${a.rowNumber}` : String(a.rowNumber);
-        if (!fromRows.includes(rowId)) {
-          logger.warn('Reconfig', `Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
-          return false;
-        }
-
-        // Warn (but don't filter) if this would create a color adjacency violation
-        if (wouldCreateColorViolation(a, zoneRowMap)) {
-          logger.warn('Reconfig', `reallocate_row ${rowId} from ${a.fromZoneId} to ${a.toZoneId} would create color adjacency violation`);
-          a._colorViolationWarning = true;
-        }
-
-        return true;
-      }
-      if (a.type === 'expand_zone') {
-        const valid = !!getZoneById(a.zoneId);
-        if (!valid) logger.warn('Reconfig', `Filtering invalid expand_zone: zoneId="${a.zoneId}"`);
-        return valid;
-      }
-      if (a.type === 'merge_zones') {
-        if (!Array.isArray(a.sourceZones)) {
-          logger.warn('Reconfig', 'Filtering merge_zones: sourceZones is not an array');
-          return false;
-        }
-        if (!getZoneById(a.targetZoneId)) {
-          logger.warn('Reconfig', `Filtering merge_zones: invalid targetZoneId="${a.targetZoneId}"`);
-          return false;
-        }
-        const invalidSources = a.sourceZones.filter(z => !getZoneById(z));
-        if (invalidSources.length > 0) {
-          logger.warn('Reconfig', `Filtering merge_zones: invalid sourceZones=${JSON.stringify(invalidSources)}`);
-          return false;
-        }
-        return a.sourceZones.every(z => !neverMerge.has(z));
-      }
-      if (a.type === 'retire_zone') {
-        if (!getZoneById(a.zoneId)) {
-          logger.warn('Reconfig', `Filtering retire_zone: invalid zoneId="${a.zoneId}"`);
-          return false;
-        }
-        if (!getZoneById(a.mergeIntoZoneId)) {
-          logger.warn('Reconfig', `Filtering retire_zone: invalid mergeIntoZoneId="${a.mergeIntoZoneId}"`);
-          return false;
-        }
-        return !neverMerge.has(a.zoneId);
-      }
-      logger.warn('Reconfig', `Filtering unknown action type: ${a.type}`);
-      return false;
-    });
-
-    if (plan.actions.length < originalCount) {
-      logger.warn('Reconfig', `Filtered ${originalCount - plan.actions.length} invalid actions from AI response`);
-    }
-
-    if (plan.actions.length === 0 && originalCount > 0) {
-      logger.warn('Reconfig', `All ${originalCount} AI actions were invalid and filtered out`);
-      plan.reasoning = `AI suggested ${originalCount} action(s), but all were invalid (e.g., reallocating rows that zones don't own). ` +
-        'This may indicate the AI misunderstood the current zone allocations. Please try again or use manual zone management.';
-    }
-
-    planResult = {
-      source: 'anthropic',
-      reasoning: plan.reasoning,
-      actions: plan.actions
-    };
   }
 
-  if (!planResult) {
-    const actions = [];
-    const rowsReallocated = new Set();
+  // ─── Layer 3: Heuristic gap-fill ────────────────────────────
+  // Start from the best plan so far (LLM if available, else solver)
+  const baseActions = llmActions ?? [...solverActions];
+  const baseReasoning = llmActions ? llmReasoning : solverReasoning;
+  const baseSource = llmActions ? 'solver+llm' : (solverActions.length > 0 ? 'solver' : 'heuristic');
 
-    const zoneRowMapFallback = new Map();
-    for (const z of zonesWithAllocations) {
-      zoneRowMapFallback.set(z.id, z.actualAssignedRows || []);
-    }
+  const patchedActions = heuristicGapFill(
+    baseActions, capacityIssues, underutilizedZones,
+    mergeCandidates, neverMerge, zonesWithAllocations, stability
+  );
 
-    for (const issue of capacityIssues) {
-      const toZoneId = issue.overflowingZoneId;
-      if (!getZoneById(toZoneId)) continue;
-
-      for (const donor of underutilizedZones) {
-        if (donor.zoneId === toZoneId) continue;
-        if (donor.rowCount <= 1) continue;
-        if (neverMerge.has(donor.zoneId)) continue;
-
-        const donorRows = zoneRowMapFallback.get(donor.zoneId) || [];
-        const availableRow = donorRows.find(r => !rowsReallocated.has(r));
-
-        if (availableRow) {
-          rowsReallocated.add(availableRow);
-          actions.push({
-            type: 'reallocate_row',
-            priority: 2,
-            fromZoneId: donor.zoneId,
-            toZoneId,
-            rowNumber: availableRow,
-            reason: `${donor.zoneName} is ${donor.utilizationPct}% full; reallocate row ${availableRow} to ${issue.overflowingZoneName} which needs space for ${issue.affectedCount} bottle(s)`,
-            bottlesAffected: issue.affectedCount
-          });
-          break;
-        }
-      }
-    }
-
-    if (actions.length === 0 && mergeCandidates.length > 0) {
-      const best = mergeCandidates[0];
-      if (!neverMerge.has(best.sourceZone) && !neverMerge.has(best.targetZone)) {
-        actions.push({
-          type: 'merge_zones',
-          priority: 3,
-          sourceZones: [best.sourceZone],
-          targetZoneId: best.targetZone,
-          reason: `Merge ${best.sourceZone} into ${best.targetZone}: ${best.reason}`,
-          bottlesAffected: best.combinedBottles
-        });
-      }
-    }
-
-    const maxActions = stability === 'high' ? 2 : stability === 'moderate' ? 4 : 6;
-    const trimmedActions = actions.slice(0, maxActions);
-
-    planResult = {
-      source: 'heuristic',
-      reasoning: trimmedActions.length > 0
-        ? `Generated constraint-aware plan: reallocate rows within the ${TOTAL_CELLAR_ROWS}-row limit.`
-        : 'No reconfiguration actions needed or possible within current constraints.',
-      actions: trimmedActions
-    };
-  }
+  const planResult = {
+    source: patchedActions.length > baseActions.length ? `${baseSource}+heuristic` : baseSource,
+    reasoning: baseReasoning || 'No reconfiguration actions needed or possible within current constraints.',
+    actions: patchedActions
+  };
 
   const initialSummary = computeSummary(report, planResult.actions);
   const planWithSummary = { ...planResult, summary: initialSummary };
