@@ -48,6 +48,54 @@ describe('claudeResponseUtils', () => {
       expect(extractText(response)).toBe('Final answer');
     });
 
+    it('should skip leading empty text block from adaptive thinking (Opus 4.6 pattern)', () => {
+      // Opus 4.6 with adaptive thinking returns: [text("\n\n"), thinking, text(answer)]
+      const response = {
+        content: [
+          { type: 'text', text: '\n\n' },
+          { type: 'thinking', thinking: 'Let me analyze this cellar...' },
+          { type: 'text', text: '{"confirmedMoves": [], "summary": "All good"}' }
+        ]
+      };
+      expect(extractText(response)).toBe('{"confirmedMoves": [], "summary": "All good"}');
+    });
+
+    it('should skip leading whitespace-only text block with empty string', () => {
+      const response = {
+        content: [
+          { type: 'text', text: '' },
+          { type: 'thinking', thinking: 'reasoning...' },
+          { type: 'text', text: 'Actual content' }
+        ]
+      };
+      expect(extractText(response)).toBe('Actual content');
+    });
+
+    it('should skip multiple empty text blocks to find content', () => {
+      const response = {
+        content: [
+          { type: 'text', text: '  \n  ' },
+          { type: 'thinking', thinking: 'step 1' },
+          { type: 'text', text: '\t\n' },
+          { type: 'thinking', thinking: 'step 2' },
+          { type: 'text', text: '{"result": true}' }
+        ]
+      };
+      expect(extractText(response)).toBe('{"result": true}');
+    });
+
+    it('should return last text block when all are whitespace', () => {
+      const response = {
+        content: [
+          { type: 'text', text: '\n\n' },
+          { type: 'thinking', thinking: 'reasoning...' },
+          { type: 'text', text: '   ' }
+        ]
+      };
+      // All whitespace — return the last one as-is
+      expect(extractText(response)).toBe('   ');
+    });
+
     it('should throw on empty content array', () => {
       expect(() => extractText({ content: [] })).toThrow('Empty response from Claude API');
     });

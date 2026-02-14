@@ -7,8 +7,11 @@
 /**
  * Extract the text content from a Claude API response.
  * When adaptive thinking is enabled, response.content may contain thinking
- * and redacted_thinking blocks before text blocks. This function finds the
- * first text block.
+ * and redacted_thinking blocks interleaved with text blocks. With Opus 4.6
+ * adaptive thinking, the response often has the structure:
+ *   [text("\n\n"), thinking(...), text(actual_answer)]
+ * This function finds the LAST non-empty text block, which contains the
+ * actual model output rather than a leading whitespace placeholder.
  *
  * @param {Object} response - Claude messages.create() response
  * @returns {string} The text content from the response
@@ -20,12 +23,23 @@ export function extractText(response) {
     throw new Error('Empty response from Claude API');
   }
 
-  const textBlock = content.find(block => block.type === 'text');
-  if (!textBlock) {
+  // Collect all text blocks
+  const textBlocks = content.filter(block => block.type === 'text');
+  if (textBlocks.length === 0) {
     throw new Error('No text block found in Claude response');
   }
 
-  return textBlock.text;
+  // With adaptive thinking, the first text block may be empty whitespace
+  // (e.g. "\n\n") while the actual answer is in a later text block.
+  // Find the last text block with non-whitespace content.
+  for (let i = textBlocks.length - 1; i >= 0; i--) {
+    if (textBlocks[i].text && textBlocks[i].text.trim().length > 0) {
+      return textBlocks[i].text;
+    }
+  }
+
+  // All text blocks are empty/whitespace — return the last one as-is
+  return textBlocks[textBlocks.length - 1].text;
 }
 
 /**
