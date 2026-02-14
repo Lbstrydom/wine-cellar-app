@@ -29,7 +29,13 @@ export function getEffectiveDrinkByYear(wine) {
  * Styles that should be consumed young (within 2 years).
  * @type {string[]}
  */
-const YOUNG_STYLES = ['sauvignon', 'pinot grigio', 'muscadet', 'vinho verde'];
+const YOUNG_STYLE_PATTERNS = [
+  /\bsauvignon\s*blanc\b/i,
+  /\bsauv\s*blanc\b/i,
+  /\bpinot\s*grigio\b/i,
+  /\bmuscadet\b/i,
+  /\bvinho\s*verde\b/i
+];
 
 /**
  * Check if a wine matches a young-drinking style.
@@ -37,10 +43,8 @@ const YOUNG_STYLES = ['sauvignon', 'pinot grigio', 'muscadet', 'vinho verde'];
  * @returns {boolean}
  */
 function isYoungStyle(wine) {
-  return YOUNG_STYLES.some(s =>
-    (wine.style || '').toLowerCase().includes(s) ||
-    (wine.wine_name || '').toLowerCase().includes(s)
-  );
+  const text = `${wine.style || ''} ${wine.wine_name || ''}`;
+  return YOUNG_STYLE_PATTERNS.some(pattern => pattern.test(text));
 }
 
 /**

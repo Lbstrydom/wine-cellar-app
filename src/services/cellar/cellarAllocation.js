@@ -8,6 +8,31 @@ import db from '../../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
 
 /**
+ * Parse assigned_rows from DB row into a normalized string array.
+ * Supports both TEXT-stored JSON and PostgreSQL JSONB decoded values.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseAssignedRows(value) {
+  if (Array.isArray(value)) {
+    return value.map(String).filter(Boolean);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return [];
+    try {
+      const parsed = JSON.parse(trimmed);
+      return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+}
+
+/**
  * Get currently allocated rows for a zone.
  * @param {string} zoneId
  * @param {string} cellarId - Cellar ID for tenant isolation
@@ -26,7 +51,7 @@ export async function getZoneRows(zoneId, cellarId) {
     'SELECT assigned_rows FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?'
   ).get(cellarId, zoneId);
 
-  return allocation ? JSON.parse(allocation.assigned_rows) : [];
+  return allocation ? parseAssignedRows(allocation.assigned_rows) : [];
 }
 
 /**
@@ -44,7 +69,7 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
   const allocations = await db.prepare('SELECT assigned_rows FROM zone_allocations WHERE cellar_id = ?').all(cellarId);
   const usedRows = new Set();
   allocations.forEach(a => {
-    JSON.parse(a.assigned_rows).forEach(r => usedRows.add(r));
+    parseAssignedRows(a.assigned_rows).forEach(r => usedRows.add(r));
   });
 
   // Find first available row in preferred range
@@ -81,7 +106,7 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
 
   if (existing) {
     // Add to existing allocation
-    const rows = JSON.parse(existing.assigned_rows);
+    const rows = parseAssignedRows(existing.assigned_rows);
     rows.push(assignedRow);
     if (incrementWineCount) {
       await db.prepare(
@@ -151,7 +176,7 @@ export async function getActiveZoneMap(cellarId) {
   const zoneMap = {};
   for (const alloc of allocations) {
     const zone = getZoneById(alloc.zone_id);
-    const rows = JSON.parse(alloc.assigned_rows);
+    const rows = parseAssignedRows(alloc.assigned_rows);
 
     rows.forEach((rowId, index) => {
       zoneMap[rowId] = {
@@ -184,7 +209,7 @@ export async function getAllZoneAllocations(cellarId) {
     const zone = getZoneById(alloc.zone_id);
     return {
       ...alloc,
-      assigned_rows: JSON.parse(alloc.assigned_rows),
+      assigned_rows: parseAssignedRows(alloc.assigned_rows),
       displayName: zone?.displayName || alloc.zone_id,
       color: zone?.color || null
     };
@@ -213,7 +238,7 @@ export async function getZoneStatuses(cellarId) {
       isFallbackZone: zone.isFallbackZone || false,
       isCuratedZone: zone.isCuratedZone || false,
       allocated: !!alloc,
-      assignedRows: alloc ? JSON.parse(alloc.assigned_rows) : [],
+      assignedRows: alloc ? parseAssignedRows(alloc.assigned_rows) : [],
       wineCount: alloc?.wine_count || 0,
       preferredRowRange: zone.preferredRowRange || []
     };

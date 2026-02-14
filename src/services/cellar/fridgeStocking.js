@@ -36,6 +36,11 @@ export function categoriseWine(wine) {
     return 'sparkling';
   }
 
+  // Rose is reliably identified by colour metadata.
+  if (colour === 'rose') {
+    return 'rose';
+  }
+
   // Check each category in priority order
   for (const [category, config] of Object.entries(FRIDGE_PAR_LEVELS)) {
     if (category === 'flex') continue; // Flex matches everything
@@ -89,8 +94,14 @@ export function categoriseWine(wine) {
       if (hasExcluded) continue;
     }
 
-    // If we got here with colour match but no other specifics, it's a match
-    if (rules.colours && rules.colours.includes(colour)) {
+    // Only allow colour-only fallback for categories without specific matchers.
+    // Prevents broad buckets (like aromatic white) from catching all white wines.
+    const hasSpecificMatchers = Boolean(
+      (rules.grapes && rules.grapes.length > 0) ||
+      (rules.keywords && rules.keywords.length > 0) ||
+      (rules.winemaking && rules.winemaking.length > 0)
+    );
+    if (!hasSpecificMatchers && rules.colours && rules.colours.includes(colour)) {
       return category;
     }
   }
@@ -469,15 +480,26 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
       ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
       : [];
 
-    // Detect which gaps weren't filled (no suitable wines in cellar)
+    // Detect which gaps weren't fully filled (none or insufficient suitable wines)
     if (status.hasGaps) {
-      const filledCategories = new Set(candidates.map(c => c.category));
+      const filledCounts = candidates.reduce((acc, candidate) => {
+        acc[candidate.category] = (acc[candidate.category] || 0) + 1;
+        return acc;
+      }, {});
+
       for (const [category, gap] of Object.entries(status.parLevelGaps)) {
-        if (!filledCategories.has(category)) {
+        const filled = filledCounts[category] || 0;
+        if (filled < gap.need) {
           const categoryName = formatCategoryName(category);
+          const remaining = gap.need - filled;
+          const message = filled === 0
+            ? `No ${categoryName.toLowerCase()} wines available in your cellar`
+            : `Only ${filled} ${categoryName.toLowerCase()} ${filled === 1 ? 'wine' : 'wines'} available - still need ${remaining}`;
+
           unfilledGaps[category] = {
             ...gap,
-            message: `No ${categoryName.toLowerCase()} wines available in your cellar`
+            remaining,
+            message
           };
         }
       }
@@ -490,9 +512,10 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
       );
     }
 
-    // Flex candidates for remaining empty slots after gap fills
+    // Flex candidates for remaining empty slots after gap fills.
+    // Important: only use flex when all required gap categories were filled.
     const slotsAfterGapFill = status.emptySlots - candidates.length;
-    if (slotsAfterGapFill > 0) {
+    if (slotsAfterGapFill > 0 && Object.keys(unfilledGaps).length === 0) {
       const excludeIds = new Set(candidates.map(c => c.wineId));
       // Also exclude alternatives
       for (const alts of Object.values(alternatives)) {

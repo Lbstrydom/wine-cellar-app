@@ -534,11 +534,31 @@ function inferColor(wine) {
       text.includes('cava') || text.includes('crémant')) return 'sparkling';
   if (text.includes('port') || text.includes('sherry') || text.includes('madeira')) return 'fortified';
 
-  const whiteGrapes = ['chardonnay', 'sauvignon', 'riesling', 'chenin', 'pinot grigio', 'gewürz', 'viognier'];
-  const redGrapes = ['cabernet', 'merlot', 'shiraz', 'syrah', 'pinot noir', 'tempranillo', 'sangiovese', 'nebbiolo', 'primitivo'];
+  const redPatterns = [
+    /\bcabernet(\s+sauvignon)?\b/,
+    /\bmerlot\b/,
+    /\bshiraz\b/,
+    /\bsyrah\b/,
+    /\bpinot\s+noir\b/,
+    /\btempranillo\b/,
+    /\bsangiovese\b/,
+    /\bnebbiolo\b/,
+    /\bprimitivo\b/
+  ];
+  const whitePatterns = [
+    /\bchardonnay\b/,
+    /\bsauvignon\s+blanc\b/,
+    /\bsauv\s+blanc\b/,
+    /\briesling\b/,
+    /\bchenin\b/,
+    /\bpinot\s+grigio\b/,
+    /\bgew(?:u|ü)rz/,
+    /\bviognier\b/
+  ];
 
-  if (whiteGrapes.some(g => text.includes(g))) return 'white';
-  if (redGrapes.some(g => text.includes(g))) return 'red';
+  // Check reds first so "Cabernet Sauvignon" is never inferred as white.
+  if (redPatterns.some(pattern => pattern.test(text))) return 'red';
+  if (whitePatterns.some(pattern => pattern.test(text))) return 'white';
 
   return null;
 }
@@ -572,4 +592,3 @@ function extractWinemakingFromText(wine) {
   const text = `${wine.wine_name || ''} ${wine.style || ''}`.toLowerCase();
   return wmPatterns.filter(wm => text.includes(wm));
 }
-

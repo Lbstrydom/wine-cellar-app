@@ -5,7 +5,7 @@
 
 import express from 'express';
 import db from '../db/index.js';
-import { CELLAR_ZONES } from '../config/cellarZones.js';
+import { CELLAR_ZONES, getZoneById } from '../config/cellarZones.js';
 import { findBestZone, findAvailableSlot } from '../services/cellar/cellarPlacement.js';
 import {
   getActiveZoneMap,
@@ -15,7 +15,7 @@ import {
   updateZoneWineCount
 } from '../services/cellar/cellarAllocation.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
-import { asyncHandler } from '../utils/errorResponse.js';
+import { asyncHandler, AppError } from '../utils/errorResponse.js';
 import { reassignWineZone } from '../services/zone/zoneChat.js';
 
 const router = express.Router();
@@ -64,6 +64,22 @@ async function getOccupiedSlots(cellarId) {
     'SELECT location_code FROM slots WHERE cellar_id = $1 AND wine_id IS NOT NULL'
   ).all(cellarId);
   return new Set(slots.map(s => s.location_code));
+}
+
+/**
+ * Parse assigned_rows column from TEXT JSON or JSONB to a normalized string array.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseAssignedRows(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
 }
 
 // ============================================================
@@ -182,12 +198,34 @@ router.get('/suggest-placement/:wineId', asyncHandler(async (req, res) => {
  * Assign an additional row to an existing zone.
  */
 router.post('/zones/allocate-row', asyncHandler(async (req, res) => {
-  const { zoneId } = req.body || {};
+  const zoneIdRaw = req.body?.zoneId;
+  const zoneId = typeof zoneIdRaw === 'string' ? zoneIdRaw.trim() : zoneIdRaw;
   if (!zoneId) {
     return res.status(400).json({ success: false, error: 'zoneId required' });
   }
 
-  const row = await allocateRowToZone(zoneId, req.cellarId, { incrementWineCount: false });
+  const zone = getZoneById(zoneId);
+  if (!zone) {
+    throw AppError.badRequest(`Unknown zone: ${zoneId}`);
+  }
+  if (zone.isBufferZone || zone.isFallbackZone || zone.isCuratedZone) {
+    throw AppError.badRequest(`Cannot allocate rows to zone: ${zoneId}`);
+  }
+
+  let row;
+  try {
+    row = await allocateRowToZone(zoneId, req.cellarId, { incrementWineCount: false });
+  } catch (err) {
+    const message = err?.message || 'Failed to allocate row';
+    if (message.includes('No available rows')) {
+      throw AppError.conflict(message);
+    }
+    if (message.includes('Unknown zone')) {
+      throw AppError.badRequest(message);
+    }
+    throw err;
+  }
+
   await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
@@ -228,8 +266,8 @@ router.post('/zones/merge', asyncHandler(async (req, res) => {
     'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2'
   ).get(req.cellarId, targetZoneId);
 
-  const sourceRows = sourceAlloc ? JSON.parse(sourceAlloc.assigned_rows) : [];
-  const targetRows = targetAlloc ? JSON.parse(targetAlloc.assigned_rows) : [];
+  const sourceRows = sourceAlloc ? parseAssignedRows(sourceAlloc.assigned_rows) : [];
+  const targetRows = targetAlloc ? parseAssignedRows(targetAlloc.assigned_rows) : [];
 
   const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
 
