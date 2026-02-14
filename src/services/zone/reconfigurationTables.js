@@ -13,13 +13,14 @@ import db from '../../db/index.js';
 export async function ensureReconfigurationTables() {
 	await db.exec(`
 		CREATE TABLE IF NOT EXISTS zone_pins (
+			cellar_id UUID NOT NULL,
 			zone_id TEXT NOT NULL,
 			pin_type TEXT NOT NULL,
 			minimum_rows INTEGER,
 			notes TEXT,
 			created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-			PRIMARY KEY (zone_id, pin_type)
+			PRIMARY KEY (cellar_id, zone_id, pin_type)
 		);
 	`);
 
@@ -31,6 +32,7 @@ export async function ensureReconfigurationTables() {
 	await db.exec(`
 		CREATE TABLE IF NOT EXISTS zone_reconfigurations (
 			id BIGSERIAL PRIMARY KEY,
+			cellar_id UUID NOT NULL,
 			applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 			plan_json JSONB NOT NULL,
 			changes_summary TEXT,

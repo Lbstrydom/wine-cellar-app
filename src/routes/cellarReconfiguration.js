@@ -389,10 +389,11 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
 
     const insert = await client.query(
       `INSERT INTO zone_reconfigurations
-       (plan_json, changes_summary, bottles_affected, misplaced_before, misplaced_after)
-       VALUES ($1::jsonb, $2, $3, $4, $5)
+       (cellar_id, plan_json, changes_summary, bottles_affected, misplaced_before, misplaced_after)
+       VALUES ($1, $2::jsonb, $3, $4, $5, $6)
        RETURNING id`,
       [
+        req.cellarId,
         JSON.stringify(planJson),
         plan.reasoning || null,
         plan.summary?.bottlesAffected ?? null,
