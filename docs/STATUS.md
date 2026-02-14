@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 12 February 2026
+## 14 February 2026
 
 ---
 
@@ -9,7 +9,22 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 12 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 14 Feb 2026**:
+- **Claude Opus 4.6 Adaptive Thinking — COMPLETE** ✅:
+  - Complex AI tasks (cellar analysis, zone reconfiguration, zone capacity advice, award extraction) upgraded from Opus 4.5 to **Opus 4.6 with adaptive thinking** (`thinking: { type: 'adaptive' }` + `output_config: { effort }`)
+  - Simpler tasks (sommelier, parsing, ratings, menu parsing, restaurant pairing) remain on Sonnet 4.5; classification tasks remain on Haiku 4.5
+  - New `src/config/aiModels.js`: Opus 4.6 in model registry with `TASK_THINKING` effort mapping (cellarAnalysis=high, zoneReconfigurationPlan=high, zoneCapacityAdvice=medium, awardExtraction=medium), `getThinkingConfig()` helper, startup validation
+  - New `src/services/ai/claudeResponseUtils.js`: `extractText()` (skips thinking/redacted_thinking blocks), `extractStreamText()` (collects text_delta, ignores thinking_delta)
+  - Refactored 5 service files to use shared `claudeClient.js` (was creating local `new Anthropic()` instances): `cellarAI.js`, `zoneCapacityAdvisor.js`, `zoneReconfigurationPlanner.js`, `awardExtractorWeb.js`, `awardExtractorPDF.js`
+  - Increased `max_tokens` (32K for cellar/zone/awards, 16K for capacity advice) — thinking tokens count against max_tokens
+  - Shared client timeout increased to 180s for thinking latency; removed `temperature: 0.2` (incompatible with thinking)
+  - `@anthropic-ai/sdk` upgraded from ^0.72.1 to ^0.74.0
+  - **Zone reconfiguration planner refactored** to 3-layer pipeline: deterministic solver → LLM refinement → heuristic gap-fill
+  - **Production hardening** (8 follow-up commits): extractText returns last non-empty text block, zone parsing hardened for mixed types, allocation/classification fixes, color adjacency violation detection, grape name overlap prevention, cellar analysis reliability improvements
+  - **Test count**: 1591 unit tests passing across 58 files
+  - Plan document: `.claude/plans/greedy-snacking-dijkstra.md`
+
+**Previous Enhancements** (12 Feb 2026):
 - **Codebase Fix-Plan (All 6 Phases) — COMPLETE** ✅:
   - **Phases 1-3 (Security + Bugs + Dead Files)**: Added requireAuth to admin route, cellar_id filtering to bottles queries, replaced raw fetch() with auth-imported fetch, fixed Zod v4 .errors→.issues bug, renamed shadowed wineRatings route, removed 14 dead service files (rateLimiter, robotsParser, provenance, searchMetrics, etc.) and 5 dead test files (~3,500 LOC removed)
   - **Phase 4 (Dead Export Cleanup)**: Un-exported internal constants/functions from `noiseTerms.js` (4 items), deleted dead `isMarketingNoise()`, un-exported `resetZoneChatState` from `cellarAnalysis.js` + `state.js`. All other Phase 4 items verified already done from prior sessions. 19 tests removed (tested un-exported internals).
@@ -234,7 +249,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 |-----------|------------|---------|
 | **Backend** | Node.js + Express | 5.2.1 |
 | **Database** | PostgreSQL (Supabase) | 15+ |
-| **AI** | Claude API (Anthropic SDK) | 0.71.2 |
+| **AI** | Claude API (Anthropic SDK) | 0.74.0 |
 | **AI (Optional)** | OpenAI SDK | 4.x |
 | **Frontend** | Vanilla JavaScript (ES6 Modules) | - |
 | **Testing** | Vitest | 2.1.8 |
@@ -1140,7 +1155,7 @@ public/js/
 
 | Subdirectory | Files | Purpose |
 |-------------|-------|---------|
-| `ai/` | 4 | Claude/OpenAI/Gemini API integration, AI drink recommendations |
+| `ai/` | 5 | Claude/OpenAI/Gemini API integration, response utilities, AI drink recommendations |
 | `awards/` | 8 | Award import, PDF/web extraction, matching |
 | `cellar/` | 10 | Allocation, placement, health, metrics, narratives, analysis |
 | `pairing/` | 6 | Food-wine pairing engine, sommelier, restaurant pairing |
@@ -1149,7 +1164,7 @@ public/js/
 | `search/` | 13 | Google/Gemini search, query building, URL/relevance scoring |
 | `shared/` | 9 | Cache, circuit breaker, encryption, fetch utils, job queue |
 | `wine/` | 12 | Identity, fingerprint, name parsing, drinking windows |
-| `zone/` | 8 | Zone chat, metadata, pins, capacity, reconfiguration |
+| `zone/` | 9 | Zone chat, metadata, pins, capacity, reconfiguration, row allocation solver |
 | _(root)_ | 5 | Cross-domain orchestrators (acquisitionWorkflow, palateProfile, tastingExtractor, tastingNotesV2, vocabularyNormaliser) |
 
 **Configuration Layer** (`src/config/`):
@@ -1157,6 +1172,7 @@ public/js/
 | Config | Purpose |
 |--------|---------|
 | `unifiedSources.js` | **✨ NEW** 50+ source definitions (merged) |
+| `aiModels.js` | Claude model registry (Opus 4.6/4.5, Sonnet 4.5, Haiku 4.5), task→model mapping, adaptive thinking config |
 | `cellarZones.js` | 40+ zone definitions |
 | `tastingVocabulary.js` | **✨ NEW** Controlled vocabulary (170+ terms) |
 | `vintageSensitivity.js` | Vintage importance by style |
@@ -1470,7 +1486,7 @@ Fixed critical issues with AI-generated zone reconfiguration plans and improved 
 ### GPT-5.2 AI Reviewer - 9 January 2026
 Implemented a GPT-5.2 review layer to validate and patch AI-generated plans from Claude across three domains:
 
-**Architecture**: Planner (Claude Opus 4.5) → Reviewer (GPT-5.2) → Validator (deterministic)
+**Architecture**: Planner (Claude Opus 4.6 with adaptive thinking) → Reviewer (GPT-5.2) → Validator (deterministic)
 
 **Coverage**:
 1. **Zone Reconfiguration** - Reviews cellar-wide restructuring plans

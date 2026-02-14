@@ -798,6 +798,8 @@ refactor/modular-structure
 | `SUPABASE_URL` | Supabase project URL (e.g., `https://xxx.supabase.co`) | For multi-user auth |
 | `SUPABASE_ANON_KEY` | Supabase anonymous/public key (frontend) | For multi-user auth |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
+| `CLAUDE_MODEL` | Override Claude model for ALL tasks | No (default: per-task mapping) |
+| `CLAUDE_MODEL_<TASK>` | Override model for specific task (e.g., `CLAUDE_MODEL_CELLARANALYSIS`) | No |
 | `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
 | `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
 | `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
@@ -1014,6 +1016,113 @@ When updating frontend files, bump the cache version in two places:
 2. `public/sw.js` - Update `CACHE_VERSION` constant
 
 This forces browsers to reload fresh assets instead of using cached versions
+
+---
+
+## Claude API Integration
+
+### Shared Client (`claudeClient.js`)
+
+All Claude API calls use a shared Anthropic client singleton (`src/services/ai/claudeClient.js`) with 180s timeout. **Do NOT create `new Anthropic()` instances in service files.**
+
+```javascript
+// ✅ CORRECT: Import shared client
+import anthropic from '../ai/claudeClient.js';
+
+// ❌ WRONG: Creating a new client per file
+import Anthropic from '@anthropic-ai/sdk';
+const anthropic = new Anthropic({ timeout: 120000 });
+```
+
+### Model Registry (`aiModels.js`)
+
+All model selection is centralized in `src/config/aiModels.js`. Tasks map to models via `TASK_MODELS`:
+
+| Task | Model | Thinking Effort |
+|------|-------|-----------------|
+| `cellarAnalysis` | Opus 4.6 | high |
+| `zoneCapacityAdvice` | Opus 4.6 | medium |
+| `awardExtraction` | Opus 4.6 | medium |
+| `zoneReconfigurationPlan` | Sonnet 4.5 | low |
+| `sommelier`, `parsing`, `ratings` | Sonnet 4.5 | none |
+| `wineClassification` | Haiku 4.5 | none |
+
+```javascript
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+
+const modelId = getModelForTask('cellarAnalysis');  // 'claude-opus-4-6'
+const thinking = getThinkingConfig('cellarAnalysis');
+// { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
+
+const thinking2 = getThinkingConfig('sommelier');
+// null (no thinking for this task)
+```
+
+**Environment overrides** (checked in order):
+1. `CLAUDE_MODEL` — overrides ALL tasks
+2. `CLAUDE_MODEL_<TASK>` — overrides specific task (e.g., `CLAUDE_MODEL_CELLARANALYSIS`)
+3. `TASK_MODELS[task]` — default mapping
+
+### Adaptive Thinking API Pattern
+
+Claude Opus 4.6 supports adaptive thinking via `thinking: { type: 'adaptive' }` + `output_config: { effort }`. The `getThinkingConfig()` helper returns a flat object to spread into API calls:
+
+```javascript
+// ✅ CORRECT: Spread thinking config into API call
+const response = await anthropic.messages.create({
+  model: modelId,
+  max_tokens: 32000,
+  system: systemPrompt,
+  messages: [{ role: 'user', content: userPrompt }],
+  ...(getThinkingConfig('cellarAnalysis') || {})
+});
+
+// ❌ WRONG: Using temperature with thinking (API rejects this)
+const response = await anthropic.messages.create({
+  model: modelId,
+  temperature: 0.2,  // INCOMPATIBLE with thinking!
+  ...(getThinkingConfig('cellarAnalysis') || {})
+});
+```
+
+**Key constraints:**
+- `temperature` is **incompatible** with adaptive thinking — the API will reject the request
+- Thinking tokens count against `max_tokens` — use 32000 for complex tasks, 16000 for simpler tasks
+- Non-thinking tasks (Sonnet/Haiku) return `null` from `getThinkingConfig()`, so the spread is a no-op
+
+### Response Handling (`claudeResponseUtils.js`)
+
+When thinking is enabled, `response.content` contains `thinking`, `redacted_thinking`, and `text` blocks interleaved. **Never use `response.content[0].text`** — use the utility functions:
+
+```javascript
+import { extractText } from '../ai/claudeResponseUtils.js';
+import { extractStreamText } from '../ai/claudeResponseUtils.js';
+
+// Non-streaming: extracts last non-empty text block (skips thinking blocks)
+const text = extractText(response);
+
+// Streaming: collects only text_delta events (ignores thinking_delta)
+const stream = await anthropic.messages.create({ ...params, stream: true });
+const text = await extractStreamText(stream);
+```
+
+**Streaming event filtering** — `extractStreamText()` uses the exact condition:
+```javascript
+event.type === 'content_block_delta' && event.delta.type === 'text_delta'
+```
+This ignores `thinking_delta`, `content_block_start`, `content_block_stop`, and other event types.
+
+### Token Limits by Task
+
+Thinking tokens count against `max_tokens`. Set limits high enough for thinking + output:
+
+| Task | `max_tokens` | Reason |
+|------|-------------|--------|
+| Cellar analysis | 32000 | ~2K JSON output + up to 20K thinking |
+| Zone reconfiguration | 8000 | Algorithmic solver does primary planning; LLM refines |
+| Zone capacity advice | 16000 | ~1.2K JSON output + up to 5K thinking |
+| Award extraction | 32000 | Large JSON output + thinking |
+| Sommelier (no thinking) | 8192 | Standard Sonnet limit |
 
 ---
 
