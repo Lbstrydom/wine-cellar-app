@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260208a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260214a">
 </head>
 <body>
   <header>
@@ -47,7 +47,7 @@
       </div>
       <div class="stat">
         <div class="stat-value" id="stat-reduce">-</div>
-        <div class="stat-label">Reduce Now</div>
+        <div class="stat-label">Drink Soon</div>
       </div>
       <div class="stat">
         <div class="stat-value" id="stat-empty">-</div>
@@ -229,12 +229,6 @@
       </div>
     </div>
 
-    <!-- Fridge Status Section -->
-    <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
-      <h3>Fridge Status</h3>
-      <div class="fridge-status-content" id="fridge-status-content"></div>
-    </div>
-
     <!-- Zone Narratives Section -->
     <div class="analysis-zones" id="analysis-zones" style="display: none;">
       <h3>Zone Overview</h3>
@@ -250,11 +244,17 @@
       </div>
     </div>
 
+    <!-- Fridge Status Section -->
+    <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
+      <h3>Fridge Status</h3>
+      <div class="fridge-status-content" id="fridge-status-content"></div>
+    </div>
+
     <!-- AI Advice Section -->
     <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
   </div>
 
-  <!-- Wine List View (merged Reduce Now + All Wines) -->
+  <!-- Wine List View (merged Drink Soon + All Wines) -->
   <div class="view" id="view-wines" role="tabpanel" aria-labelledby="tab-wines" hidden>
     <div class="wine-list-header">
       <h2>Wine List</h2>
@@ -322,7 +322,7 @@
         <div class="filter-group">
           <span class="filter-label">Source:</span>
           <label><input type="radio" name="source" value="all" checked> All wines</label>
-          <label><input type="radio" name="source" value="reduce_now"> Reduce-now only</label>
+          <label><input type="radio" name="source" value="reduce_now"> Drink Soon only</label>
         </div>
         <div class="filter-group">
           <span class="filter-label">Colour:</span>
@@ -485,10 +485,10 @@
       </fieldset>
     </div>
 
-    <!-- Reduce-Now Auto Rules Section -->
+    <!-- Drink Soon Auto Rules Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Reduce-Now Auto Rules</h3>
-      <p class="settings-section-desc">Automatically suggest wines to add to your reduce-now list based on criteria.</p>
+      <h3 class="settings-section-title">Drink Soon Auto Rules</h3>
+      <p class="settings-section-desc">Automatically suggest wines to add to your drink-soon list based on criteria.</p>
 
       <div class="settings-toggle-row">
         <label class="toggle-switch">
@@ -550,7 +550,7 @@
         <h4 class="section-label mt-1">Matching Wines</h4>
         <div id="reduce-candidates-list"></div>
         <div class="reduce-candidates-actions">
-          <button class="btn btn-primary btn-small" id="add-all-candidates-btn">Add All to Reduce-Now</button>
+          <button class="btn btn-primary btn-small" id="add-all-candidates-btn">Add All to Drink Soon</button>
           <button class="btn btn-secondary btn-small" id="clear-candidates-btn">Dismiss</button>
         </div>
       </div>
@@ -880,7 +880,7 @@
         <span id="modal-price">-</span>
       </div>
       <div class="modal-field" id="modal-reduce-field" style="display: none;">
-        <label>Reduce Reason</label>
+        <label>Drink Soon Reason</label>
         <span id="modal-reduce-reason">-</span>
       </div>
       <!-- Tasting & Service Card (consolidated) -->

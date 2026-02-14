@@ -37,6 +37,22 @@ export async function loadAnalysis(forceRefresh = false, options = {}) {
   movesActionsEl.style.display = 'none';
   if (cacheStatusEl) cacheStatusEl.textContent = '';
 
+  // Pre-check offline state
+  if (!navigator.onLine) {
+    const cachedAnalysis = getCurrentAnalysis();
+    if (cachedAnalysis) {
+      const onRenderAnalysis = (report) => {
+        setCurrentAnalysis(report);
+        renderAnalysis(report, onRenderAnalysis);
+      };
+      renderAnalysis(cachedAnalysis, onRenderAnalysis);
+      if (cacheStatusEl) cacheStatusEl.textContent = 'Offline — showing cached analysis';
+      return;
+    }
+    renderOfflineState(summaryEl);
+    return;
+  }
+
   try {
     const response = await analyseCellar(forceRefresh, options);
     setCurrentAnalysis(response.report);
@@ -66,8 +82,60 @@ export async function loadAnalysis(forceRefresh = false, options = {}) {
       }
     }
   } catch (err) {
-    summaryEl.innerHTML = `<div class="analysis-loading">Error: ${err.message}</div>`;
+    // Detect offline/network errors — fall back to cached analysis if available
+    const isOffline = !navigator.onLine ||
+      err.message === 'Offline' ||
+      err.message?.includes('fetch') ||
+      err.message?.includes('network') ||
+      err.name === 'TypeError';
+
+    if (isOffline) {
+      const cachedAnalysis = getCurrentAnalysis();
+      if (cachedAnalysis) {
+        const onRenderAnalysis = (report) => {
+          setCurrentAnalysis(report);
+          renderAnalysis(report, onRenderAnalysis);
+        };
+        renderAnalysis(cachedAnalysis, onRenderAnalysis);
+        if (cacheStatusEl) cacheStatusEl.textContent = 'Offline — showing cached analysis';
+        return;
+      }
+      renderOfflineState(summaryEl);
+    } else {
+      summaryEl.innerHTML = `<div class="analysis-loading">Error: ${err.message}</div>`;
+    }
   }
+}
+
+/**
+ * Render offline state — clear stale sections and show friendly banner.
+ * @param {HTMLElement} summaryEl - Summary element to show banner in
+ */
+function renderOfflineState(summaryEl) {
+  summaryEl.innerHTML = `
+    <div class="analysis-offline-banner">
+      You're offline. Connect to the internet to load cellar analysis.
+    </div>
+  `;
+  // Clear all analysis subsections to avoid stale data
+  const sectionIds = [
+    'analysis-alerts', 'zone-cards-grid', 'moves-list',
+    'fridge-status-content', 'analysis-ai-advice'
+  ];
+  for (const id of sectionIds) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  }
+  const movesActions = document.getElementById('moves-actions');
+  if (movesActions) movesActions.style.display = 'none';
+  const fridgeEl = document.getElementById('analysis-fridge');
+  if (fridgeEl) fridgeEl.style.display = 'none';
+  const zonesEl = document.getElementById('analysis-zones');
+  if (zonesEl) zonesEl.style.display = 'none';
+  const aiAdviceEl = document.getElementById('analysis-ai-advice');
+  if (aiAdviceEl) aiAdviceEl.style.display = 'none';
+  const wizardEl = document.getElementById('zone-setup-wizard');
+  if (wizardEl) wizardEl.style.display = 'none';
 }
 
 /**

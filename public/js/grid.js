@@ -150,8 +150,8 @@ export async function renderCellar() {
     grid.appendChild(legend);
   }
 
-  // Calculate row heights for zone labels alignment
-  const rowHeight = 55; // slot height (52px) + gap (3px)
+  // Row height will be measured from rendered rows after grid is built
+  let rowHeight = 55; // fallback
 
   // Build zone spans - group consecutive rows with same zone
   const zoneSpans = [];
@@ -193,10 +193,19 @@ export async function renderCellar() {
     const rowNum = row.row ?? row.row_num;
     const rowId = `R${rowNum}`;
 
-    // Add row label inside the row
+    // Add row label inside the row (with inline zone name when available)
     const label = document.createElement('div');
     label.className = 'row-label';
-    label.textContent = rowId;
+    const zoneInfo = zoneMapCache[rowId];
+    if (zoneInfo && hasZoneConfig) {
+      label.appendChild(document.createTextNode(rowId));
+      const zoneName = document.createElement('span');
+      zoneName.className = 'zone-name';
+      zoneName.textContent = zoneInfo.displayName;
+      label.appendChild(zoneName);
+    } else {
+      label.textContent = rowId;
+    }
     rowEl.appendChild(label);
 
     const slots = row.slots || [];
@@ -207,8 +216,22 @@ export async function renderCellar() {
     grid.appendChild(rowEl);
   });
 
+  // Measure actual row height from rendered rows
+  const firstRow = grid.querySelector('.cellar-row:not(.col-headers):not(.grid-legend)');
+  if (firstRow) {
+    rowHeight = firstRow.offsetHeight;
+  }
+
   // Render zone labels spanning multiple rows
   if (zoneLabelsEl) {
+    // Compute top offset from column headers + legend
+    const colHeaders = grid.querySelector('.col-headers');
+    const legendEl = grid.querySelector('.grid-legend');
+    const headerOffset = (colHeaders?.offsetHeight || 0) + (legendEl?.offsetHeight || 0);
+    if (headerOffset > 0) {
+      zoneLabelsEl.style.paddingTop = `${headerOffset + 4}px`;
+    }
+
     zoneSpans.forEach(span => {
       const zoneLabel = document.createElement('div');
       zoneLabel.className = 'zone-label';

@@ -95,18 +95,39 @@ export function renderFridgeStatus(fridgeStatus) {
         `;
       }
       // Empty slot available — simple "Add" button with target slot
-      const targetSlot = findEmptyFridgeSlot(fridgeStatus);
+      const targetSlot = c.targetSlot || findEmptyFridgeSlot(fridgeStatus);
+      const hasSource = !!c.fromSlot;
+      // Build alternatives HTML for this candidate's category
+      const categoryAlts = fridgeStatus.alternatives?.[c.category] || [];
+      const altsHtml = categoryAlts.length > 0 ? `
+        <div class="fridge-alternatives">
+          <div class="fridge-alternatives-label">Other options:</div>
+          ${categoryAlts.map((alt, ai) => `
+            <div class="fridge-alternative">
+              <div class="fridge-alternative-info">
+                <span class="fridge-alternative-name">${escapeHtml(alt.wineName)} ${alt.vintage || ''}</span>
+                ${alt.fromSlot ? `<span class="fridge-alternative-slot">in ${escapeHtml(alt.fromSlot)}</span>` : ''}
+              </div>
+              <button class="btn btn-small fridge-alt-btn" data-alt-category="${escapeHtml(c.category)}" data-alt-index="${ai}">
+                Use this instead
+              </button>
+            </div>
+          `).join('')}
+        </div>
+      ` : '';
       return `
         <div class="fridge-candidate">
           <div class="fridge-candidate-info">
-            <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}</div>
+            <div class="fridge-candidate-name">${escapeHtml(c.wineName)} ${c.vintage || ''}${c.isFlex ? ' <span class="fridge-flex-tag">flex</span>' : ''}</div>
             <div class="fridge-candidate-reason">${escapeHtml(c.reason)}</div>
+            ${hasSource ? `<div class="fridge-source-slot">Currently in <strong>${escapeHtml(c.fromSlot)}</strong></div>` : ''}
             ${targetSlot ? `<div class="fridge-target-slot">Add to ${escapeHtml(targetSlot)}</div>` : ''}
           </div>
-          <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="${i}">
+          <button class="btn btn-secondary btn-small fridge-add-btn" data-candidate-index="${i}" ${!hasSource ? 'disabled title="Source location unknown"' : ''}>
             ${targetSlot ? `Add to ${escapeHtml(targetSlot)}` : 'Add'}
           </button>
         </div>
+        ${altsHtml}
       `;
     }).join('');
 
@@ -150,6 +171,15 @@ export function renderFridgeStatus(fridgeStatus) {
     });
   });
 
+  // Attach alternative button handlers
+  contentEl.querySelectorAll('.fridge-alt-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const category = btn.dataset.altCategory;
+      const altIndex = Number.parseInt(btn.dataset.altIndex, 10);
+      moveAlternativeCandidate(category, altIndex);
+    });
+  });
+
   // Attach organize fridge button handler
   const organizeButton = contentEl.querySelector('.organize-fridge-btn');
   if (organizeButton) {
@@ -176,10 +206,12 @@ async function moveFridgeCandidate(index) {
     return;
   }
 
-  // Find an empty fridge slot
-  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
-  const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
-  const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
+  // Use pre-assigned targetSlot from backend, fallback to finding one
+  const targetSlot = candidate.targetSlot || (() => {
+    const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+    const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
+    return fridgeSlots.find(s => !occupiedSlots.has(s));
+  })();
 
   if (!targetSlot) {
     showToast('No empty fridge slots available');
@@ -200,6 +232,48 @@ async function moveFridgeCandidate(index) {
     showToast(`Moved ${candidate.wineName} to ${targetSlot}`);
 
     // Re-analyse to show updated state
+    await loadAnalysis();
+    refreshLayout();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+/**
+ * Move an alternative candidate to the fridge (replaces the primary).
+ * @param {string} category - Fridge category
+ * @param {number} altIndex - Index in the alternatives array
+ */
+async function moveAlternativeCandidate(category, altIndex) {
+  const currentAnalysis = getCurrentAnalysis();
+  const alt = currentAnalysis?.fridgeStatus?.alternatives?.[category]?.[altIndex];
+  if (!alt) {
+    showToast('Error: Alternative not found');
+    return;
+  }
+
+  if (!alt.fromSlot) {
+    showToast('Error: Wine location unknown');
+    return;
+  }
+
+  // Find an empty fridge slot
+  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+  const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
+  const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
+
+  if (!targetSlot) {
+    showToast('No empty fridge slots available');
+    return;
+  }
+
+  try {
+    await executeCellarMoves([{
+      wineId: alt.wineId,
+      from: alt.fromSlot,
+      to: targetSlot
+    }]);
+    showToast(`Moved ${alt.wineName} to ${targetSlot}`);
     await loadAnalysis();
     refreshLayout();
   } catch (err) {

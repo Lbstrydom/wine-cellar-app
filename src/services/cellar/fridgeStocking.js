@@ -263,6 +263,32 @@ export async function findSuitableWines(cellarWines, category, count, reduceNowI
 }
 
 /**
+ * Build a candidate object from a wine.
+ * @param {Object} wine - Wine object from findSuitableWines
+ * @param {string} category - Fridge category
+ * @param {Set<number>} reduceNowIds - Wine IDs in reduce-now list
+ * @returns {Object} Candidate object
+ */
+function buildCandidateObject(wine, category, reduceNowIds) {
+  const drinkByYear = getEffectiveDrinkByYear(wine);
+  const reason = wine._suggestReason
+    ? `${wine._suggestReason} • ${buildFillReason(wine, category, drinkByYear)}`
+    : buildFillReason(wine, category, drinkByYear);
+
+  return {
+    wineId: wine.id,
+    wineName: wine.wine_name,
+    vintage: wine.vintage,
+    category,
+    categoryDescription: FRIDGE_PAR_LEVELS[category]?.description || category,
+    drinkByYear,
+    fromSlot: wine.slot_id || wine.location_code,
+    reason,
+    isReduceNow: reduceNowIds.has(wine.id)
+  };
+}
+
+/**
  * Select wines to fill fridge gaps.
  * @param {Array} cellarWines - Available wines in cellar
  * @param {Object} gaps - Par level gaps from calculateParLevelGaps
@@ -289,30 +315,89 @@ export async function selectFridgeFillCandidates(cellarWines, gaps, emptySlots, 
 
     for (const wine of suitable) {
       if (slotsRemaining <= 0) break;
-
-      const drinkByYear = getEffectiveDrinkByYear(wine);
-      // Use the reason from scoring if available, otherwise build one
-      const reason = wine._suggestReason
-        ? `${wine._suggestReason} • ${buildFillReason(wine, category, drinkByYear)}`
-        : buildFillReason(wine, category, drinkByYear);
-
-      candidates.push({
-        wineId: wine.id,
-        wineName: wine.wine_name,
-        vintage: wine.vintage,
-        category,
-        categoryDescription: FRIDGE_PAR_LEVELS[category].description,
-        drinkByYear,
-        fromSlot: wine.slot_id || wine.location_code,
-        reason,
-        isReduceNow: reduceNowIds.has(wine.id)
-      });
-
+      candidates.push(buildCandidateObject(wine, category, reduceNowIds));
       slotsRemaining--;
     }
   }
 
   return candidates;
+}
+
+/**
+ * Select alternative wines for each gap category (up to 2 per category).
+ * Excludes wines already selected as primary candidates.
+ * @param {Array} cellarWines - Available wines in cellar
+ * @param {Object} gaps - Par level gaps
+ * @param {Array} primaryCandidates - Already-selected primary candidates
+ * @param {Set<number>} reduceNowIds - Reduce-now wine IDs
+ * @returns {Promise<Object>} Alternatives keyed by category
+ */
+async function selectFridgeAlternatives(cellarWines, gaps, primaryCandidates, reduceNowIds) {
+  const alternatives = {};
+  const primaryIds = new Set(primaryCandidates.map(c => c.wineId));
+
+  for (const [category] of Object.entries(gaps)) {
+    // Get more candidates than needed, then exclude primaries
+    const suitable = await findSuitableWines(cellarWines, category, 5, reduceNowIds);
+    const alts = suitable
+      .filter(w => !primaryIds.has(w.id))
+      .slice(0, 2)
+      .map(w => buildCandidateObject(w, category, reduceNowIds));
+
+    if (alts.length > 0) {
+      alternatives[category] = alts;
+    }
+  }
+
+  return alternatives;
+}
+
+/**
+ * Select flex candidates for remaining empty slots after gap fills.
+ * Picks drink-soon wines of any fridge-suitable category.
+ * @param {Array} cellarWines - Available wines in cellar
+ * @param {number} slotsNeeded - Number of additional slots to fill
+ * @param {Set<number>} excludeIds - Wine IDs to exclude (already selected)
+ * @param {Set<number>} reduceNowIds - Reduce-now wine IDs
+ * @returns {Promise<Array>} Flex candidate objects
+ */
+async function selectFlexCandidates(cellarWines, slotsNeeded, excludeIds, reduceNowIds) {
+  if (slotsNeeded <= 0) return [];
+
+  const categories = Object.keys(FRIDGE_PAR_LEVELS);
+  const allSuitable = [];
+
+  for (const category of categories) {
+    const suitable = await findSuitableWines(cellarWines, category, 3, reduceNowIds);
+    for (const wine of suitable) {
+      if (!excludeIds.has(wine.id)) {
+        allSuitable.push({ wine, category });
+      }
+    }
+  }
+
+  // Deduplicate by wine ID (a wine may match multiple categories)
+  const seen = new Set();
+  const unique = allSuitable.filter(({ wine }) => {
+    if (seen.has(wine.id)) return false;
+    seen.add(wine.id);
+    return true;
+  });
+
+  // Sort by score (highest first — findSuitableWines already scored them)
+  // We use the _suggestReason presence as a proxy for high score
+  unique.sort((a, b) => {
+    const aUrgent = a.wine._suggestReason ? 1 : 0;
+    const bUrgent = b.wine._suggestReason ? 1 : 0;
+    return bUrgent - aUrgent;
+  });
+
+  return unique
+    .slice(0, slotsNeeded)
+    .map(({ wine, category }) => ({
+      ...buildCandidateObject(wine, category, reduceNowIds),
+      isFlex: true
+    }));
 }
 
 /**
@@ -360,15 +445,61 @@ function buildFillReason(wine, category, drinkByYear) {
  */
 export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
   const status = getFridgeStatus(fridgeWines);
-  // Generate candidates when gaps exist — even when fridge is full (for swap suggestions)
-  const maxCandidates = status.emptySlots > 0 ? status.emptySlots : 3;
-  const candidates = status.hasGaps
-    ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
-    : [];
+  const reduceNowIds = await getReduceNowWineIds(cellarId);
+
+  let candidates = [];
+  let alternatives = {};
+  const shouldGenerateCandidates = status.hasGaps || status.emptySlots > 0;
+
+  if (shouldGenerateCandidates) {
+    // Primary gap-fill candidates
+    const maxCandidates = status.emptySlots > 0 ? status.emptySlots : 3;
+    candidates = status.hasGaps
+      ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
+      : [];
+
+    // Alternatives (up to 2 per gap category)
+    if (status.hasGaps) {
+      alternatives = await selectFridgeAlternatives(
+        cellarWines, status.parLevelGaps, candidates, reduceNowIds
+      );
+    }
+
+    // Flex candidates for remaining empty slots after gap fills
+    const slotsAfterGapFill = status.emptySlots - candidates.length;
+    if (slotsAfterGapFill > 0) {
+      const excludeIds = new Set(candidates.map(c => c.wineId));
+      // Also exclude alternatives
+      for (const alts of Object.values(alternatives)) {
+        for (const a of alts) excludeIds.add(a.wineId);
+      }
+      const flexCandidates = await selectFlexCandidates(
+        cellarWines, slotsAfterGapFill, excludeIds, reduceNowIds
+      );
+      candidates.push(...flexCandidates);
+    }
+
+    // Assign deterministic targetSlot values to candidates
+    const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+    const occupiedSlots = new Set(fridgeWines.map(w => w.slot_id || w.location_code));
+    const emptySlotsList = fridgeSlots.filter(s => !occupiedSlots.has(s));
+    candidates.forEach((c, i) => {
+      c.targetSlot = emptySlotsList[i] || null;
+    });
+  } else if (status.hasGaps) {
+    // Fridge is full but has gaps — swap suggestions
+    candidates = await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, 3, cellarId);
+    if (Object.keys(status.parLevelGaps).length > 0) {
+      alternatives = await selectFridgeAlternatives(
+        cellarWines, status.parLevelGaps, candidates, reduceNowIds
+      );
+    }
+  }
 
   return {
     ...status,
     candidates,
+    alternatives,
     wines: fridgeWines.map(w => ({
       wineId: w.id,
       wineName: w.wine_name,

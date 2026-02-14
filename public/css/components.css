@@ -574,6 +574,16 @@
   font-style: italic;
 }
 
+.analysis-offline-banner {
+  padding: 1rem 1.25rem;
+  background: rgba(var(--color-warning-rgb), 0.15);
+  border: 1px solid var(--color-warning);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
 .analysis-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -1191,10 +1201,73 @@
   margin-top: 0.15rem;
 }
 
+.fridge-source-slot {
+  font-size: 0.8rem;
+  color: var(--text);
+  margin-top: 0.2rem;
+}
+
 .fridge-target-slot {
   font-size: 0.75rem;
   color: var(--text-muted);
   margin-top: 0.15rem;
+}
+
+.fridge-flex-tag {
+  font-size: 0.65rem;
+  background: var(--border);
+  color: var(--text-muted);
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.fridge-alternatives {
+  margin: 0.25rem 0 0.5rem 1rem;
+  padding: 0.4rem 0.6rem;
+  background: rgba(var(--accent-rgb), 0.05);
+  border-left: 2px solid var(--border);
+  border-radius: 0 4px 4px 0;
+}
+
+.fridge-alternatives-label {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+  font-weight: 500;
+}
+
+.fridge-alternative {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.25rem 0;
+  font-size: 0.8rem;
+}
+
+.fridge-alternative + .fridge-alternative {
+  border-top: 1px solid var(--border);
+}
+
+.fridge-alternative-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.fridge-alternative-name {
+  font-weight: 500;
+}
+
+.fridge-alternative-slot {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+}
+
+.fridge-alt-btn {
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+  font-size: 0.7rem;
 }
 
 /* Zone Narratives Section */
@@ -7202,6 +7275,24 @@ body.move-guide-active #view-grid {
     flex-direction: column;
     align-items: flex-start;
     border-radius: 12px;
+  }
+
+  /* Analysis header — stack vertically on mobile */
+  .analysis-view-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+  }
+
+  .analysis-actions {
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .analysis-cache-status,
+  .analysis-status {
+    width: 100%;
   }
 
   /* Move guide panel — compact on mobile */
