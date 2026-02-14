@@ -4,10 +4,11 @@
  * @module services/zone/zoneReconfigurationPlanner
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from '../ai/claudeClient.js';
 import { getZoneById, CELLAR_ZONES } from '../../config/cellarZones.js';
 import { getNeverMergeZones } from './zonePins.js';
-import { getModelForTask, getMaxTokens } from '../../config/aiModels.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
@@ -18,11 +19,6 @@ import {
   hashPlan,
   calculateStabilityScore
 } from '../ai/openaiReviewer.js';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  timeout: 120000
-});
 
 // Physical cellar constraints
 const TOTAL_CELLAR_ROWS = 19;
@@ -395,17 +391,16 @@ Constraints:
 `;
 
     const modelId = getModelForTask('zoneReconfigurationPlan');
-    const maxTokens = Math.min(getMaxTokens(modelId), 2000);
 
     const response = await anthropic.messages.create({
       model: modelId,
-      max_tokens: maxTokens,
-      temperature: 0.2,
+      max_tokens: 32000,
       system,
-      messages: [{ role: 'user', content: user }]
+      messages: [{ role: 'user', content: user }],
+      ...(getThinkingConfig('zoneReconfigurationPlan') || {})
     });
 
-    const text = response?.content?.[0]?.text || '';
+    const text = extractText(response);
     const json = parseJsonObject(text);
     if (!json) throw new Error('Invalid AI response (not JSON)');
     const plan = validatePlanShape(json);

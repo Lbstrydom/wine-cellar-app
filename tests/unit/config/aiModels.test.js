@@ -1,6 +1,6 @@
 /**
  * @fileoverview Unit tests for AI model configuration.
- * Tests task-to-model mapping, env overrides, and startup validation.
+ * Tests task-to-model mapping, env overrides, thinking config, and startup validation.
  */
 
 // Mock the logger before importing the module under test
@@ -16,9 +16,11 @@ vi.mock('../../../src/utils/logger.js', () => ({
 import {
   MODELS,
   TASK_MODELS,
+  TASK_THINKING,
   getModelForTask,
   getModelConfig,
   getMaxTokens,
+  getThinkingConfig,
   hasCapability,
   listModels,
   getModelsWithCapability
@@ -29,8 +31,9 @@ import logger from '../../../src/utils/logger.js';
 describe('aiModels', () => {
 
   describe('MODELS registry', () => {
-    it('should contain Opus, Sonnet, and Haiku', () => {
+    it('should contain Opus 4.6, Opus 4.5, Sonnet, and Haiku', () => {
       const names = Object.values(MODELS).map(m => m.name);
+      expect(names).toContain('Claude Opus 4.6');
       expect(names).toContain('Claude Opus 4.5');
       expect(names).toContain('Claude Sonnet 4.5');
       expect(names).toContain('Claude Haiku 4.5');
@@ -49,6 +52,13 @@ describe('aiModels', () => {
         expect(Array.isArray(config.capabilities)).toBe(true);
         expect(config.capabilities.length).toBeGreaterThan(0);
       }
+    });
+
+    it('should have thinking capability only on Opus 4.6', () => {
+      expect(hasCapability('claude-opus-4-6', 'thinking')).toBe(true);
+      expect(hasCapability('claude-opus-4-5-20251101', 'thinking')).toBe(false);
+      expect(hasCapability('claude-sonnet-4-5-20250929', 'thinking')).toBe(false);
+      expect(hasCapability('claude-haiku-4-5-20251001', 'thinking')).toBe(false);
     });
   });
 
@@ -77,6 +87,33 @@ describe('aiModels', () => {
         expect(TASK_MODELS[task], `Missing task: ${task}`).toBeDefined();
       }
     });
+
+    it('should map complex tasks to Opus 4.6', () => {
+      expect(TASK_MODELS.cellarAnalysis).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.zoneReconfigurationPlan).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.awardExtraction).toBe('claude-opus-4-6');
+    });
+
+    it('should map conversational tasks to Sonnet 4.5', () => {
+      expect(TASK_MODELS.sommelier).toBe('claude-sonnet-4-5-20250929');
+      expect(TASK_MODELS.menuParsing).toBe('claude-sonnet-4-5-20250929');
+    });
+  });
+
+  describe('TASK_THINKING mapping', () => {
+    it('should only map tasks that exist in TASK_MODELS', () => {
+      for (const task of Object.keys(TASK_THINKING)) {
+        expect(TASK_MODELS[task], `TASK_THINKING["${task}"] has no corresponding TASK_MODELS entry`).toBeDefined();
+      }
+    });
+
+    it('should use valid effort levels', () => {
+      const validEfforts = ['low', 'medium', 'high', 'max'];
+      for (const [task, effort] of Object.entries(TASK_THINKING)) {
+        expect(validEfforts, `Invalid effort "${effort}" for task "${task}"`).toContain(effort);
+      }
+    });
   });
 
   describe('getModelForTask()', () => {
@@ -93,7 +130,7 @@ describe('aiModels', () => {
 
     it('should return mapped model for known tasks', () => {
       expect(getModelForTask('menuParsing')).toBe('claude-sonnet-4-5-20250929');
-      expect(getModelForTask('cellarAnalysis')).toBe('claude-opus-4-5-20251101');
+      expect(getModelForTask('cellarAnalysis')).toBe('claude-opus-4-6');
       expect(getModelForTask('wineClassification')).toBe('claude-haiku-4-5-20251001');
     });
 
@@ -152,6 +189,47 @@ describe('aiModels', () => {
     });
   });
 
+  describe('getThinkingConfig()', () => {
+    it('should return adaptive thinking with high effort for cellarAnalysis', () => {
+      expect(getThinkingConfig('cellarAnalysis')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' }
+      });
+    });
+
+    it('should return adaptive thinking with high effort for zoneReconfigurationPlan', () => {
+      expect(getThinkingConfig('zoneReconfigurationPlan')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'high' }
+      });
+    });
+
+    it('should return adaptive thinking with medium effort for zoneCapacityAdvice', () => {
+      expect(getThinkingConfig('zoneCapacityAdvice')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' }
+      });
+    });
+
+    it('should return adaptive thinking with medium effort for awardExtraction', () => {
+      expect(getThinkingConfig('awardExtraction')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' }
+      });
+    });
+
+    it('should return null for tasks without thinking', () => {
+      expect(getThinkingConfig('sommelier')).toBeNull();
+      expect(getThinkingConfig('menuParsing')).toBeNull();
+      expect(getThinkingConfig('wineClassification')).toBeNull();
+      expect(getThinkingConfig('ratings')).toBeNull();
+    });
+
+    it('should return null for unknown tasks', () => {
+      expect(getThinkingConfig('nonexistentTask')).toBeNull();
+    });
+  });
+
   describe('getModelConfig()', () => {
     it('should return config for known model', () => {
       const config = getModelConfig('claude-sonnet-4-5-20250929');
@@ -165,7 +243,11 @@ describe('aiModels', () => {
   });
 
   describe('getMaxTokens()', () => {
-    it('should return correct max tokens for Opus', () => {
+    it('should return correct max tokens for Opus 4.6', () => {
+      expect(getMaxTokens('claude-opus-4-6')).toBe(128000);
+    });
+
+    it('should return correct max tokens for Opus 4.5', () => {
       expect(getMaxTokens('claude-opus-4-5-20251101')).toBe(32000);
     });
 
@@ -180,12 +262,14 @@ describe('aiModels', () => {
 
   describe('hasCapability()', () => {
     it('should return true for existing capability', () => {
-      expect(hasCapability('claude-opus-4-5-20251101', 'complex')).toBe(true);
+      expect(hasCapability('claude-opus-4-6', 'complex')).toBe(true);
+      expect(hasCapability('claude-opus-4-6', 'thinking')).toBe(true);
       expect(hasCapability('claude-sonnet-4-5-20250929', 'pairing')).toBe(true);
     });
 
     it('should return false for missing capability', () => {
       expect(hasCapability('claude-haiku-4-5-20251001', 'complex')).toBe(false);
+      expect(hasCapability('claude-opus-4-5-20251101', 'thinking')).toBe(false);
     });
 
     it('should return false for unknown model', () => {
@@ -206,6 +290,12 @@ describe('aiModels', () => {
       expect(fastModels).toContain('claude-sonnet-4-5-20250929');
       expect(fastModels).toContain('claude-haiku-4-5-20251001');
       expect(fastModels).not.toContain('claude-opus-4-5-20251101');
+      expect(fastModels).not.toContain('claude-opus-4-6');
+    });
+
+    it('should return models with thinking capability', () => {
+      const thinkingModels = getModelsWithCapability('thinking');
+      expect(thinkingModels).toEqual(['claude-opus-4-6']);
     });
 
     it('should return empty array for nonexistent capability', () => {

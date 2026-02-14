@@ -4,23 +4,19 @@
  * @module services/awards/awardExtractorPDF
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractStreamText } from '../ai/claudeResponseUtils.js';
 import logger from '../../utils/logger.js';
 import * as ocrService from './ocrService.js';
 import { buildExtractionPrompt, buildPDFExtractionPrompt, parseAwardsResponse } from './awardParser.js';
 import { extractFromTextChunked } from './awardExtractorWeb.js';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
-
 // Configuration for PDF extraction method
 const PDF_EXTRACTION_METHOD = process.env.PDF_OCR_METHOD || 'auto';
 
-// Claude Opus 4.5 for award extraction
-const AWARDS_MODEL = 'claude-opus-4-5-20251101';
-const MAX_TOKENS_PDF = 16000;
-const MAX_TOKENS_TEXT = 16000;
+const MAX_TOKENS_PDF = 32000;
+const MAX_TOKENS_TEXT = 32000;
 
 /**
  * Extract awards from PDF content using Claude (direct PDF).
@@ -37,11 +33,11 @@ async function extractFromPDFWithClaude(pdfBase64, competitionId, year) {
   logger.info('Awards', `Extracting awards from PDF using Claude API for ${competitionId} ${year}`);
 
   const prompt = buildPDFExtractionPrompt(competitionId, year);
+  const modelId = getModelForTask('awardExtraction');
 
   // Use streaming to avoid timeout errors for long-running requests
-  let responseText = '';
   const stream = await anthropic.messages.create({
-    model: AWARDS_MODEL,
+    model: modelId,
     max_tokens: MAX_TOKENS_PDF,
     messages: [
       {
@@ -62,15 +58,11 @@ async function extractFromPDFWithClaude(pdfBase64, competitionId, year) {
         ]
       }
     ],
-    stream: true
+    stream: true,
+    ...(getThinkingConfig('awardExtraction') || {})
   });
 
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      responseText += event.delta.text;
-    }
-  }
-
+  const responseText = await extractStreamText(stream);
   const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
@@ -113,22 +105,18 @@ async function extractFromPDFWithLocalOCR(pdfBase64, competitionId, year) {
   }
 
   const prompt = buildExtractionPrompt(ocrResult.text, competitionId, year);
+  const modelId = getModelForTask('awardExtraction');
 
   // Use streaming to avoid timeout errors for long-running requests
-  let responseText = '';
   const stream = await anthropic.messages.create({
-    model: AWARDS_MODEL,
+    model: modelId,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
-    stream: true
+    stream: true,
+    ...(getThinkingConfig('awardExtraction') || {})
   });
 
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      responseText += event.delta.text;
-    }
-  }
-
+  const responseText = await extractStreamText(stream);
   const parsed = parseAwardsResponse(responseText);
   parsed.extraction_method = 'local_ocr';
   parsed.ocr_pages = ocrResult.totalPages;

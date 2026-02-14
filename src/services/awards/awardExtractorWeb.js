@@ -4,19 +4,15 @@
  * @module services/awards/awardExtractorWeb
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractStreamText } from '../ai/claudeResponseUtils.js';
 import logger from '../../utils/logger.js';
 import { fetchPageContent } from '../search/searchProviders.js';
 import { buildExtractionPrompt, parseAwardsResponse } from './awardParser.js';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
-
-// Claude Opus 4.5 for award extraction
-const AWARDS_MODEL = 'claude-opus-4-5-20251101';
-const MAX_TOKENS_TEXT = 16000;
-const MAX_TOKENS_CHUNK = 16000;
+const MAX_TOKENS_TEXT = 32000;
+const MAX_TOKENS_CHUNK = 32000;
 
 /**
  * Extract awards from webpage content using Claude.
@@ -41,22 +37,18 @@ export async function extractFromWebpage(url, competitionId, year) {
   logger.info('Awards', `Fetched ${fetched.content.length} chars, extracting awards...`);
 
   const prompt = buildExtractionPrompt(fetched.content, competitionId, year);
+  const modelId = getModelForTask('awardExtraction');
 
   // Use streaming to avoid timeout errors for long-running requests
-  let responseText = '';
   const stream = await anthropic.messages.create({
-    model: AWARDS_MODEL,
+    model: modelId,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
-    stream: true
+    stream: true,
+    ...(getThinkingConfig('awardExtraction') || {})
   });
 
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      responseText += event.delta.text;
-    }
-  }
-
+  const responseText = await extractStreamText(stream);
   const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
@@ -84,22 +76,18 @@ export async function extractFromText(text, competitionId, year) {
   }
 
   const prompt = buildExtractionPrompt(text, competitionId, year);
+  const modelId = getModelForTask('awardExtraction');
 
   // Use streaming to avoid timeout errors for long-running requests
-  let responseText = '';
   const stream = await anthropic.messages.create({
-    model: AWARDS_MODEL,
+    model: modelId,
     max_tokens: MAX_TOKENS_TEXT,
     messages: [{ role: 'user', content: prompt }],
-    stream: true
+    stream: true,
+    ...(getThinkingConfig('awardExtraction') || {})
   });
 
-  for await (const event of stream) {
-    if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-      responseText += event.delta.text;
-    }
-  }
-
+  const responseText = await extractStreamText(stream);
   const parsed = parseAwardsResponse(responseText);
   return parsed;
 }
@@ -151,20 +139,17 @@ export async function extractFromTextChunked(text, competitionId, year, chunkSiz
     while (retryCount <= MAX_RETRIES && !parsed?.awards?.length) {
       try {
         const prompt = buildExtractionPrompt(chunks[i], competitionId, year);
+        const chunkModelId = getModelForTask('awardExtraction');
 
-        let responseText = '';
         const stream = await anthropic.messages.create({
-          model: AWARDS_MODEL,
+          model: chunkModelId,
           max_tokens: currentMaxTokens,
           messages: [{ role: 'user', content: prompt }],
-          stream: true
+          stream: true,
+          ...(getThinkingConfig('awardExtraction') || {})
         });
 
-        for await (const event of stream) {
-          if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
-            responseText += event.delta.text;
-          }
-        }
+        const responseText = await extractStreamText(stream);
         parsed = parseAwardsResponse(responseText);
 
         if (!parsed?.awards?.length && retryCount < MAX_RETRIES) {

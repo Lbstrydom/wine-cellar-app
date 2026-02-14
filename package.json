@@ -24,7 +24,7 @@
     "lint:fix": "eslint src/ public/js/ --fix"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.72.1",
+    "@anthropic-ai/sdk": "^0.74.0",
     "@supabase/supabase-js": "^2.94.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

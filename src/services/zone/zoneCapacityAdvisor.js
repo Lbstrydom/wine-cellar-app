@@ -3,15 +3,11 @@
  * @module services/zone/zoneCapacityAdvisor
  */
 
-import Anthropic from '@anthropic-ai/sdk';
-import { getModelForTask, getMaxTokens } from '../../config/aiModels.js';
-import { getZoneById } from '../../config/cellarZones.js';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
+import { getZoneById, CELLAR_ZONES } from '../../config/cellarZones.js';
 import { reviewZoneCapacityAdvice, isZoneCapacityReviewEnabled } from '../ai/openaiReviewer.js';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-  timeout: 120000
-});
 
 /**
  * Get zone capacity advice from Claude.
@@ -77,17 +73,17 @@ Consider:
 Return only valid JSON.`;
 
   const modelId = getModelForTask('zoneCapacityAdvice');
-  const maxTokens = Math.min(getMaxTokens(modelId), 1200);
 
   try {
     const message = await anthropic.messages.create({
       model: modelId,
-      max_tokens: maxTokens,
+      max_tokens: 16000,
       system: systemPrompt,
-      messages: [{ role: 'user', content: userPrompt }]
+      messages: [{ role: 'user', content: userPrompt }],
+      ...(getThinkingConfig('zoneCapacityAdvice') || {})
     });
 
-    const responseText = message.content?.[0]?.text || '';
+    const responseText = extractText(message);
     const parsed = parseJsonObject(responseText);
     const validated = validateAdvice(parsed);
 
@@ -166,28 +162,31 @@ function validateAdvice(advice) {
     if (!action || typeof action !== 'object') continue;
 
     if (action.type === 'allocate_row') {
-      if (typeof action.row !== 'string' || !/^R\d+$/.test(action.row)) continue;
-      if (typeof action.toZone !== 'string' || action.toZone.trim() === '') continue;
-      normalizedActions.push({ type: 'allocate_row', row: action.row, toZone: action.toZone });
+      const row = normalizeRowId(action.row);
+      const toZone = normalizeZoneId(action.toZone);
+      if (!row || !toZone) continue;
+      normalizedActions.push({ type: 'allocate_row', row, toZone });
       continue;
     }
 
     if (action.type === 'merge_zones') {
-      if (typeof action.sourceZone !== 'string' || action.sourceZone.trim() === '') continue;
-      if (typeof action.targetZone !== 'string' || action.targetZone.trim() === '') continue;
-      normalizedActions.push({ type: 'merge_zones', sourceZone: action.sourceZone, targetZone: action.targetZone });
+      const sourceZone = normalizeZoneId(action.sourceZone);
+      const targetZone = normalizeZoneId(action.targetZone);
+      if (!sourceZone || !targetZone) continue;
+      normalizedActions.push({ type: 'merge_zones', sourceZone, targetZone });
       continue;
     }
 
     if (action.type === 'move_wine') {
       if (typeof action.wineId !== 'number') continue;
-      if (typeof action.fromZone !== 'string' || action.fromZone.trim() === '') continue;
-      if (typeof action.toZone !== 'string' || action.toZone.trim() === '') continue;
+      const fromZone = normalizeZoneId(action.fromZone);
+      const toZone = normalizeZoneId(action.toZone);
+      if (!fromZone || !toZone) continue;
       normalizedActions.push({
         type: 'move_wine',
         wineId: action.wineId,
-        fromZone: action.fromZone,
-        toZone: action.toZone,
+        fromZone,
+        toZone,
         reason: typeof action.reason === 'string' ? action.reason : ''
       });
       continue;
@@ -202,4 +201,37 @@ function validateAdvice(advice) {
       actions: normalizedActions
     }
   };
+}
+
+/**
+ * Normalize row id to canonical R{n} format.
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function normalizeRowId(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim().toUpperCase();
+  return /^R\d+$/.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Normalize an AI-provided zone identifier to a known zone id.
+ * Accepts exact ids, slug-like variants, and display names.
+ * @param {unknown} value
+ * @returns {string|null}
+ */
+function normalizeZoneId(value) {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+
+  if (getZoneById(trimmed)) return trimmed;
+
+  const slug = trimmed.toLowerCase().replace(/[\s-]+/g, '_');
+  if (getZoneById(slug)) return slug;
+
+  const byDisplayName = CELLAR_ZONES.zones.find(z => z.displayName.toLowerCase() === trimmed.toLowerCase());
+  if (byDisplayName) return byDisplayName.id;
+
+  return null;
 }

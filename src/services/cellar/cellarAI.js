@@ -5,7 +5,8 @@
  */
 
 import anthropic from '../ai/claudeClient.js';
-import { getModelForTask } from '../../config/aiModels.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
 import { reviewCellarAdvice, isCellarAnalysisReviewEnabled } from '../ai/openaiReviewer.js';
 import logger from '../../utils/logger.js';
 
@@ -33,11 +34,12 @@ export async function getCellarOrganisationAdvice(analysisReport) {
       const modelId = getModelForTask('cellarAnalysis');
       const response = await anthropic.messages.create({
         model: modelId,
-        max_tokens: 2000,
-        messages: [{ role: 'user', content: prompt }]
+        max_tokens: 32000,
+        messages: [{ role: 'user', content: prompt }],
+        ...(getThinkingConfig('cellarAnalysis') || {})
       });
 
-      const text = response.content[0].text;
+      const text = extractText(response);
       const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
 
       if (!jsonMatch) throw new Error('No JSON found in response');

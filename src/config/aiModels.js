@@ -12,13 +12,21 @@ import logger from '../utils/logger.js';
  * @type {Object.<string, Object>}
  */
 export const MODELS = {
+  'claude-opus-4-6': {
+    id: 'claude-opus-4-6',
+    name: 'Claude Opus 4.6',
+    maxTokens: 128000,
+    costTier: 'premium',
+    capabilities: ['complex', 'awards', 'analysis', 'high-accuracy', 'planning', 'thinking'],
+    description: 'Most capable model with adaptive thinking for complex reasoning'
+  },
   'claude-opus-4-5-20251101': {
     id: 'claude-opus-4-5-20251101',
     name: 'Claude Opus 4.5',
     maxTokens: 32000,
     costTier: 'premium',
     capabilities: ['complex', 'awards', 'analysis', 'high-accuracy', 'planning'],
-    description: 'Most capable model for complex planning and extraction'
+    description: 'Previous generation Opus for complex planning and extraction'
   },
   'claude-sonnet-4-5-20250929': {
     id: 'claude-sonnet-4-5-20250929',
@@ -56,13 +64,13 @@ export const TASK_MODELS = {
   menuParsing: 'claude-sonnet-4-5-20250929',
   restaurantPairing: 'claude-sonnet-4-5-20250929',
 
-  // Complex planning tasks use Opus 4.5 (with GPT-5.2 review)
-  cellarAnalysis: 'claude-opus-4-5-20251101',
-  zoneCapacityAdvice: 'claude-opus-4-5-20251101',
-  zoneReconfigurationPlan: 'claude-opus-4-5-20251101',
+  // Complex planning tasks use Opus 4.6 with adaptive thinking
+  cellarAnalysis: 'claude-opus-4-6',
+  zoneCapacityAdvice: 'claude-opus-4-6',
+  zoneReconfigurationPlan: 'claude-opus-4-6',
 
-  // Complex extraction tasks use Opus 4.5
-  awardExtraction: 'claude-opus-4-5-20251101',
+  // Complex extraction tasks use Opus 4.6 with adaptive thinking
+  awardExtraction: 'claude-opus-4-6',
 
   // Simple classification tasks use Haiku 4.5
   wineClassification: 'claude-haiku-4-5-20251001',
@@ -73,6 +81,36 @@ export const TASK_MODELS = {
 for (const [task, modelId] of Object.entries(TASK_MODELS)) {
   if (!MODELS[modelId]) {
     throw new Error(`TASK_MODELS["${task}"] references unknown model "${modelId}"`);
+  }
+}
+
+/**
+ * Valid effort levels for adaptive thinking.
+ * @type {Set<string>}
+ */
+const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'max']);
+
+/**
+ * Task-to-thinking-effort mapping.
+ * Only tasks that benefit from extended thinking are listed.
+ * @internal — exported for unit tests only
+ * @type {Object.<string, string>}
+ */
+export const TASK_THINKING = {
+  cellarAnalysis: 'high',
+  zoneReconfigurationPlan: 'high',
+  zoneCapacityAdvice: 'medium',
+  awardExtraction: 'medium'
+};
+
+// Startup validation: every TASK_THINKING key must exist in TASK_MODELS
+// and effort must be a valid level
+for (const [task, effort] of Object.entries(TASK_THINKING)) {
+  if (!TASK_MODELS[task]) {
+    throw new Error(`TASK_THINKING["${task}"] has no corresponding TASK_MODELS entry`);
+  }
+  if (!VALID_EFFORTS.has(effort)) {
+    throw new Error(`TASK_THINKING["${task}"] has invalid effort "${effort}"`);
   }
 }
 
@@ -104,6 +142,30 @@ export function getModelForTask(task) {
 
   // Use task mapping or default to Sonnet
   return TASK_MODELS[task] || 'claude-sonnet-4-5-20250929';
+}
+
+/**
+ * Get thinking configuration for a task.
+ * Returns adaptive thinking params for tasks that benefit from extended thinking,
+ * or null for tasks that don't need it.
+ *
+ * The return value is a flat object meant to be spread directly into
+ * anthropic.messages.create() params.
+ *
+ * Note: output_config spread may conflict if a caller ever sets
+ * output_config.format — currently none of the affected callers do.
+ *
+ * @param {string} task - Task identifier
+ * @returns {{ thinking: {type: string}, output_config: {effort: string} } | null}
+ */
+export function getThinkingConfig(task) {
+  const effort = TASK_THINKING[task];
+  if (!effort) return null;
+
+  return {
+    thinking: { type: 'adaptive' },
+    output_config: { effort }
+  };
 }
 
 /**
