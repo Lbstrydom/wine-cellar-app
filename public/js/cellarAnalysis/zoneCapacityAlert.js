@@ -135,6 +135,13 @@ function renderAdviceMarkup(advice) {
   const recommendation = escapeHtml(advice?.recommendation || '');
   const reasoning = escapeHtml(advice?.reasoning || '');
   const actions = Array.isArray(advice?.actions) ? advice.actions : [];
+  const warnings = Array.isArray(advice?.warnings) ? advice.warnings : [];
+
+  const warningsHtml = warnings.length
+    ? `<div class="zone-capacity-warnings">${warnings.map(w =>
+      `<div class="zone-capacity-warning">${escapeHtml(w)}</div>`
+    ).join('')}</div>`
+    : '';
 
   const actionsHtml = actions.length
     ? actions.map((a, idx) => renderActionMarkup(a, idx)).join('')
@@ -145,6 +152,7 @@ function renderAdviceMarkup(advice) {
       <div class="zone-capacity-advice-header">🍷 Sommelier Zone Recommendation</div>
       ${recommendation ? `<div class="zone-capacity-advice-recommendation">Suggested: <strong>${recommendation}</strong></div>` : ''}
       ${reasoning ? `<div class="zone-capacity-advice-reasoning">${reasoning}</div>` : ''}
+      ${warningsHtml}
       <div class="zone-capacity-advice-actions">
         ${actionsHtml}
       </div>

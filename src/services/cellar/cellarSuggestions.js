@@ -6,7 +6,7 @@
 
 import { getZoneById } from '../../config/cellarZones.js';
 import { findAvailableSlot } from './cellarPlacement.js';
-import { getActiveZoneMap } from './cellarAllocation.js';
+import { getActiveZoneMap, getAllocatedRowMap } from './cellarAllocation.js';
 
 // ───────────────────────────────────────────────────────────
 // Zone allocation queries
@@ -52,12 +52,14 @@ export async function getCurrentZoneAllocation(cellarId) {
 
 /**
  * Get cellar rows not currently allocated to any zone.
+ * Checks ALL allocations (not just active ones with wine_count > 0)
+ * to match the same logic used by allocateRowToZone().
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string[]>} Available row IDs
  */
 export async function getAvailableCellarRows(cellarId) {
-  const zoneMap = await getActiveZoneMap(cellarId);
-  const used = new Set(Object.keys(zoneMap));
+  const allRows = await getAllocatedRowMap(cellarId);
+  const used = new Set(Object.keys(allRows));
   const available = [];
   for (let rowNum = 1; rowNum <= 19; rowNum++) {
     const rowId = `R${rowNum}`;

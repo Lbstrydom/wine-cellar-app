@@ -713,6 +713,22 @@
   font-weight: 500;
 }
 
+.zone-capacity-warnings {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.zone-capacity-warning {
+  padding: 0.5rem 0.75rem;
+  background: rgba(var(--color-warning-rgb, 255, 193, 7), 0.15);
+  border: 1px solid rgba(var(--color-warning-rgb, 255, 193, 7), 0.4);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+}
+
 /* Holistic Zone Reconfiguration */
 .zone-reconfig-banner {
   padding: 1rem;

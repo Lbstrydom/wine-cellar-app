@@ -85,7 +85,7 @@ Return only valid JSON.`;
 
     const responseText = extractText(message);
     const parsed = parseJsonObject(responseText);
-    const validated = validateAdvice(parsed);
+    const validated = validateAdvice(parsed, availableRows);
 
     if (!validated.success) {
       return { success: false, error: validated.error };
@@ -141,7 +141,7 @@ function parseJsonObject(text) {
   }
 }
 
-function validateAdvice(advice) {
+function validateAdvice(advice, availableRows = []) {
   if (!advice || typeof advice !== 'object') {
     return { success: false, error: 'Invalid AI response (not JSON object)' };
   }
@@ -155,8 +155,10 @@ function validateAdvice(advice) {
     return { success: false, error: 'Invalid AI response (reasoning required)' };
   }
 
+  const availableSet = new Set(availableRows);
   const actions = Array.isArray(advice.actions) ? advice.actions : [];
   const normalizedActions = [];
+  const warnings = [];
 
   for (const action of actions) {
     if (!action || typeof action !== 'object') continue;
@@ -165,6 +167,17 @@ function validateAdvice(advice) {
       const row = normalizeRowId(action.row);
       const toZone = normalizeZoneId(action.toZone);
       if (!row || !toZone) continue;
+
+      // Validate row is actually available
+      if (availableSet.size === 0) {
+        warnings.push(`Cannot allocate ${row} to ${toZone} — all 19 rows are already assigned. Consider merging zones to free rows.`);
+        continue; // Drop this action
+      }
+      if (!availableSet.has(row)) {
+        warnings.push(`Row ${row} is already allocated. Skipping.`);
+        continue; // Drop this action
+      }
+
       normalizedActions.push({ type: 'allocate_row', row, toZone });
       continue;
     }
@@ -198,7 +211,8 @@ function validateAdvice(advice) {
     advice: {
       recommendation,
       reasoning: advice.reasoning,
-      actions: normalizedActions
+      actions: normalizedActions,
+      ...(warnings.length > 0 ? { warnings } : {})
     }
   };
 }

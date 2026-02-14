@@ -164,7 +164,34 @@ export async function updateZoneWineCount(zoneId, cellarId, delta) {
 }
 
 /**
+ * Get map of ALL allocated rows (regardless of wine_count).
+ * Use this for availability checks — mirrors what allocateRowToZone() uses.
+ * @param {string} cellarId - Cellar ID for tenant isolation
+ * @returns {Promise<Object>} Map of rowId -> { zoneId, wineCount }
+ */
+export async function getAllocatedRowMap(cellarId) {
+  const allocations = await db.prepare(
+    'SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = ?'
+  ).all(cellarId);
+
+  const map = {};
+  for (const alloc of allocations) {
+    const zone = getZoneById(alloc.zone_id);
+    const rows = parseAssignedRows(alloc.assigned_rows);
+    rows.forEach(rowId => {
+      map[rowId] = {
+        zoneId: alloc.zone_id,
+        displayName: zone?.displayName || alloc.zone_id,
+        wineCount: alloc.wine_count
+      };
+    });
+  }
+  return map;
+}
+
+/**
  * Get current zone → row mapping for UI display.
+ * Only includes zones with bottles (wine_count > 0).
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Map of rowId -> zone info
  */
