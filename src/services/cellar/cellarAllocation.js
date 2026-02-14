@@ -209,13 +209,14 @@ export async function getAllocatedRowMap(cellarId) {
 
 /**
  * Get current zone → row mapping for UI display.
- * Only includes zones with bottles (wine_count > 0).
+ * Includes all confirmed zones (even if empty) so zone labels
+ * appear on the grid immediately after setup.
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Map of rowId -> zone info
  */
 export async function getActiveZoneMap(cellarId) {
   const allocations = await db.prepare(
-    `SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = ? AND wine_count > 0`
+    `SELECT zone_id, assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = ?`
   ).all(cellarId);
 
   const zoneMap = {};

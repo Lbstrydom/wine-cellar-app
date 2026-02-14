@@ -49,6 +49,25 @@ function renderLoading(message) {
   setApplyReadyState(false);
 }
 
+/**
+ * Show an error state in the modal instead of infinite spinner.
+ * @param {string} message - Error message to display
+ */
+function renderError(message) {
+  const { body, subtitle } = getEls();
+  if (subtitle) subtitle.textContent = 'Plan generation failed';
+  if (body) {
+    body.innerHTML = `
+      <div class="reconfig-error">
+        <div class="reconfig-error-icon">⚠️</div>
+        <p>${escapeHtml(message)}</p>
+        <p class="reconfig-error-hint">Close this dialog and try again, or use the Expert Review for analysis.</p>
+      </div>
+    `;
+  }
+  setApplyReadyState(false);
+}
+
 function renderPlan(plan) {
   const { subtitle, body } = getEls();
   if (!body) return;
@@ -181,7 +200,7 @@ async function handleApply(onRenderAnalysis) {
  */
 export async function openReconfigurationModal({ onRenderAnalysis } = {}) {
   openOverlay();
-  renderLoading('Generating reconfiguration plan...');
+  renderLoading('Generating reconfiguration plan... This may take 2-3 minutes.');
 
   const { closeBtn, cancelBtn, applyBtn, overlay } = getEls();
 
@@ -194,24 +213,29 @@ export async function openReconfigurationModal({ onRenderAnalysis } = {}) {
     if (e.target === overlay) closeOverlay();
   }, { once: true });
 
-  const planResult = await getReconfigurationPlan({
-    includeRetirements: true,
-    includeNewZones: true,
-    stabilityBias: 'moderate'
-  });
+  try {
+    const planResult = await getReconfigurationPlan({
+      includeRetirements: true,
+      includeNewZones: true,
+      stabilityBias: 'moderate'
+    });
 
-  if (planResult?.success !== true) {
-    throw new Error(planResult?.error || 'Failed to generate plan');
-  }
-
-  current = { planId: planResult.planId, plan: planResult.plan };
-  renderPlan(planResult.plan);
-
-  applyBtn?.addEventListener('click', async () => {
-    try {
-      await handleApply(onRenderAnalysis);
-    } catch (err) {
-      showToast(`Error: ${err.message}`);
+    if (planResult?.success !== true) {
+      renderError(planResult?.error || 'Failed to generate plan');
+      return;
     }
-  }, { once: true });
+
+    current = { planId: planResult.planId, plan: planResult.plan };
+    renderPlan(planResult.plan);
+
+    applyBtn?.addEventListener('click', async () => {
+      try {
+        await handleApply(onRenderAnalysis);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    }, { once: true });
+  } catch (err) {
+    renderError(err.message || 'An unexpected error occurred');
+  }
 }

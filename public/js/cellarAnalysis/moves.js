@@ -83,7 +83,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   listEl.innerHTML = swapWarning + moves.map((move, index) => {
     if (move.type === 'manual') {
       return `
-        <div class="move-item priority-3">
+        <div class="move-item move-item-manual priority-3" data-move-index="${index}">
           <div class="move-details">
             <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
             <div class="move-path">
@@ -94,6 +94,9 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
             <div class="move-reason">${escapeHtml(move.reason)}</div>
           </div>
           <span class="move-confidence ${move.confidence}">${move.confidence}</span>
+          <div class="move-actions">
+            <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}" title="Dismiss this suggestion">Dismiss</button>
+          </div>
         </div>
       `;
     }
@@ -145,21 +148,50 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   // Attach event listeners for move buttons (CSP-compliant)
   // Only enabled buttons exist in the DOM (locked items render no button)
   listEl.querySelectorAll('.move-execute-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
       executeMove(index);
     });
   });
   listEl.querySelectorAll('.move-swap-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
       executeSwap(index);
     });
   });
   listEl.querySelectorAll('.move-dismiss-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
       dismissMove(index);
+    });
+  });
+
+  // Make move item card bodies clickable (triggers primary action)
+  listEl.querySelectorAll('.move-item[data-move-index]').forEach(item => {
+    item.addEventListener('click', (e) => {
+      // Don't trigger if they clicked a button inside
+      if (e.target.closest('button')) return;
+      const index = Number.parseInt(item.dataset.moveIndex, 10);
+      const move = moves[index];
+      if (!move) return;
+
+      if (move.type === 'manual') {
+        // For manual items, dismiss on tap
+        dismissMove(index);
+      } else if (move.type === 'move') {
+        // For actionable moves, trigger the primary action
+        const swapBtn = item.querySelector('.move-swap-btn');
+        const moveBtn = item.querySelector('.move-execute-btn');
+        if (swapBtn) {
+          executeSwap(index);
+        } else if (moveBtn) {
+          executeMove(index);
+        }
+        // If locked, do nothing (user needs to use Execute All)
+      }
     });
   });
 

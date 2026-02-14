@@ -114,16 +114,30 @@ export async function mergeZones(sourceZoneId, targetZoneId) {
 
 /**
  * Generate a holistic reconfiguration plan.
+ * Plan generation involves AI calls that can take 2-3 minutes.
  * @param {{includeRetirements?: boolean, includeNewZones?: boolean, stabilityBias?: 'low'|'moderate'|'high'}} options
  * @returns {Promise<Object>}
  */
 export async function getReconfigurationPlan(options = {}) {
-  const res = await fetch(`${API_BASE}/api/cellar/reconfiguration-plan`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(options)
-  });
-  return handleResponse(res, 'Failed to generate reconfiguration plan');
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 240000); // 4 minute timeout
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cellar/reconfiguration-plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options),
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return handleResponse(res, 'Failed to generate reconfiguration plan');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Reconfiguration plan timed out after 4 minutes. Please try again.');
+    }
+    throw err;
+  }
 }
 
 /**
