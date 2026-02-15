@@ -14,6 +14,20 @@ const selectedSignals = new Set();
 let currentChatId = null;
 
 /**
+ * Convert transport/runtime failures into user-friendly messages.
+ * @param {unknown} err - Thrown error
+ * @param {string} fallback - Fallback message
+ * @returns {string}
+ */
+function getFriendlyErrorMessage(err, fallback) {
+  const message = err instanceof Error ? err.message : '';
+  if (message && !/failed to fetch|networkerror|load failed/i.test(message)) {
+    return message;
+  }
+  return fallback;
+}
+
+/**
  * Handle Ask Sommelier button click.
  */
 export async function handleAskSommelier() {
@@ -43,11 +57,13 @@ export async function handleAskSommelier() {
 
     renderSommelierResponse(data);
   } catch (err) {
+    const message = getFriendlyErrorMessage(err, 'Unable to reach the sommelier service. Please try again.');
     resultsContainer.innerHTML = `
       <div class="sommelier-response">
-        <p style="color: var(--priority-1);">Error: ${err.message}</p>
+        <p style="color: var(--priority-1);">Error: ${escapeHtml(message)}</p>
       </div>
     `;
+    showToast(message, 'error');
     currentChatId = null;
   } finally {
     btn.disabled = false;
@@ -359,8 +375,30 @@ export async function handleGetPairing() {
     return;
   }
 
-  const data = await getPairingSuggestions(Array.from(selectedSignals));
-  renderManualPairingResults(data);
+  const button = document.getElementById('get-pairing');
+  const container = document.getElementById('pairing-results');
+  const originalLabel = button?.textContent || 'Find Pairing';
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Finding...';
+  }
+
+  try {
+    const data = await getPairingSuggestions(Array.from(selectedSignals));
+    renderManualPairingResults(data);
+  } catch (err) {
+    const message = getFriendlyErrorMessage(err, 'Unable to fetch pairing suggestions. Please try again.');
+    if (container) {
+      container.innerHTML = `<p style="color: var(--priority-1);">Error: ${escapeHtml(message)}</p>`;
+    }
+    showToast(message, 'error');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = originalLabel;
+    }
+  }
 }
 
 /**

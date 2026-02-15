@@ -11,9 +11,10 @@ import { stringAgg } from '../../db/helpers.js';
  * @param {string[]} signals - Food signals
  * @param {boolean} preferReduceNow - Prioritise reduce-now wines
  * @param {number} limit - Max suggestions to return
+ * @param {number|string} cellarId - Active cellar ID
  * @returns {Promise<Object>} Pairing suggestions
  */
-export async function scorePairing(db, signals, preferReduceNow, limit) {
+export async function scorePairing(db, signals, preferReduceNow, limit, cellarId) {
   const placeholders = signals.map(() => '?').join(',');
 
   const styleScoresSql = [
@@ -51,11 +52,12 @@ export async function scorePairing(db, signals, preferReduceNow, limit) {
     'FROM wines w',
     'JOIN slots s ON s.wine_id = w.id',
     'LEFT JOIN reduce_now rn ON w.id = rn.wine_id',
+    'WHERE w.cellar_id = ?',
     'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating',
     'HAVING COUNT(s.id) > 0',
     'ORDER BY ' + orderByClause + ' w.vivino_rating DESC'
   ].join('\n');
-  const wines = await db.prepare(winesSql).all();
+  const wines = await db.prepare(winesSql).all(cellarId);
 
   // Match wines to scored styles
   const suggestions = [];
