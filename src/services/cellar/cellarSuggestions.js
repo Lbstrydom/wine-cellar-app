@@ -329,7 +329,9 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
         wineName: wine.name,
         currentSlot: wine.currentSlot,
         suggestedZone: wine.suggestedZone,
-        reason: `${wine.reason} - zone full, manual intervention needed`,
+        suggestedZoneId: wine.suggestedZoneId,
+        reason: wine.reason,
+        zoneFullReason: `The ${wine.suggestedZone} zone has no empty slots. Run AI Zone Structuring to rebalance rows across zones, or use Find Slot to search overflow areas.`,
         confidence: wine.confidence,
         priority: 3
       });

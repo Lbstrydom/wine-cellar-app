@@ -8,6 +8,7 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { reviewCellarAdvice, isCellarAnalysisReviewEnabled } from '../ai/openaiReviewer.js';
+import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -230,11 +231,53 @@ function sanitizeForPrompt(str) {
 }
 
 /**
+ * Check if a zone reference is valid (exact ID, display name, or fuzzy match).
+ * @param {string} ref - Zone reference to validate
+ * @returns {boolean}
+ */
+function isValidZoneRef(ref) {
+  if (!ref || typeof ref !== 'string') return false;
+  const lower = ref.toLowerCase().trim();
+
+  // Exact zone ID
+  if (getZoneById(lower)) return true;
+
+  // Special zones
+  if (['white_buffer', 'red_buffer', 'unclassified'].includes(lower)) return true;
+
+  // Display name match
+  if (CELLAR_ZONES.zones.some(z => z.displayName.toLowerCase() === lower)) return true;
+
+  // Fuzzy: strip common prefixes/suffixes and check containment
+  const prefixes = ['new_', 'old_', 'main_', 'primary_', 'secondary_'];
+  const suffixes = ['_new', '_main', '_zone', '_primary', '_secondary'];
+  let stripped = lower;
+  for (const p of prefixes) { if (stripped.startsWith(p)) { stripped = stripped.slice(p.length); break; } }
+  for (const s of suffixes) { if (stripped.endsWith(s)) { stripped = stripped.slice(0, -s.length); break; } }
+  if (stripped !== lower && getZoneById(stripped)) return true;
+
+  // Substring containment (e.g. "new_shiraz" contains "shiraz")
+  if (CELLAR_ZONES.zones.some(z => lower.includes(z.id))) return true;
+
+  return false;
+}
+
+/**
  * Validate advice schema.
  * @param {Object} parsed
  * @returns {Object} Validated advice
  */
 function validateAdviceSchema(parsed) {
+  // Sanitise ambiguousWines: strip options that don't match any real zone
+  const validatedAmbiguous = Array.isArray(parsed.ambiguousWines)
+    ? parsed.ambiguousWines
+      .map(w => ({
+        ...w,
+        options: (w.options || []).filter(opt => isValidZoneRef(opt))
+      }))
+      .filter(w => w.options.length > 0) // Drop wines with zero valid options
+    : [];
+
   return {
     zonesNeedReconfiguration: parsed.zonesNeedReconfiguration === true,
     zoneVerdict: typeof parsed.zoneVerdict === 'string' ? parsed.zoneVerdict : null,
@@ -242,7 +285,7 @@ function validateAdviceSchema(parsed) {
     confirmedMoves: Array.isArray(parsed.confirmedMoves) ? parsed.confirmedMoves : [],
     modifiedMoves: Array.isArray(parsed.modifiedMoves) ? parsed.modifiedMoves : [],
     rejectedMoves: Array.isArray(parsed.rejectedMoves) ? parsed.rejectedMoves : [],
-    ambiguousWines: Array.isArray(parsed.ambiguousWines) ? parsed.ambiguousWines : [],
+    ambiguousWines: validatedAmbiguous,
     zoneAdjustments: Array.isArray(parsed.zoneAdjustments) ? parsed.zoneAdjustments : [],
     zoneHealth: Array.isArray(parsed.zoneHealth) ? parsed.zoneHealth : [],
     fridgeCandidates: Array.isArray(parsed.fridgeCandidates) ? parsed.fridgeCandidates : [],

@@ -101,6 +101,9 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     if (renderedAsSwapGroup.has(index)) return '';
 
     if (move.type === 'manual') {
+      const zoneFullMsg = move.zoneFullReason
+        ? escapeHtml(move.zoneFullReason)
+        : `The ${escapeHtml(move.suggestedZone)} zone is full. Use Find Slot to search overflow areas, or run AI Zone Structuring to rebalance.`;
       return `
         <div class="move-item move-item-manual priority-3" data-move-index="${index}">
           <div class="move-details">
@@ -108,9 +111,10 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
             <div class="move-path">
               <span class="from">${move.currentSlot}</span>
               <span class="arrow">→</span>
-              <span class="to">${move.suggestedZone} (full)</span>
+              <span class="to">${escapeHtml(move.suggestedZone)}</span>
             </div>
             <div class="move-reason">${escapeHtml(move.reason)}</div>
+            <div class="move-zone-full-hint">${zoneFullMsg}</div>
           </div>
           <span class="move-confidence ${move.confidence}">${move.confidence}</span>
           <div class="move-actions">

@@ -1008,6 +1008,17 @@
   margin-top: 0.25rem;
 }
 
+.move-zone-full-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0.4rem 0.6rem;
+  background: rgba(var(--color-warning-rgb, 255, 193, 7), 0.08);
+  border-radius: 4px;
+  border-left: 3px solid var(--color-warning);
+  margin-top: 0.35rem;
+  line-height: 1.4;
+}
+
 .move-confidence {
   font-size: 0.7rem;
   padding: 0.2rem 0.4rem;

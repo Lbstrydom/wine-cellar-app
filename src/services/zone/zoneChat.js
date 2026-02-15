@@ -120,10 +120,10 @@ For reclassification suggestions, include a JSON block:
  * @returns {Promise<Object>} Result
  */
 export async function reassignWineZone(wineId, newZoneId, reason = '', cellarId) {
-  // Validate zone exists (accept both zone ID and display name)
+  // Validate zone exists (accept zone ID, display name, or fuzzy match)
   let zone = getZoneById(newZoneId);
   if (!zone && !['white_buffer', 'red_buffer', 'unclassified'].includes(newZoneId)) {
-    // Fallback: AI may return display name ("Sauvignon Blanc") instead of ID ("sauvignon_blanc")
+    // Fallback 1: AI may return display name ("Sauvignon Blanc") instead of ID ("sauvignon_blanc")
     const byName = CELLAR_ZONES.zones.find(
       z => z.displayName.toLowerCase() === newZoneId.toLowerCase()
     );
@@ -131,7 +131,14 @@ export async function reassignWineZone(wineId, newZoneId, reason = '', cellarId)
       zone = byName;
       newZoneId = byName.id;
     } else {
-      throw new Error(`Invalid zone: ${newZoneId}`);
+      // Fallback 2: Fuzzy match — AI may invent IDs like "new_shiraz" when "shiraz" exists
+      const resolved = resolveZoneIdFuzzy(newZoneId);
+      if (resolved) {
+        zone = resolved;
+        newZoneId = resolved.id;
+      } else {
+        throw new Error(`Invalid zone: ${newZoneId}. Available zones: ${CELLAR_ZONES.zones.map(z => z.id).join(', ')}`);
+      }
     }
   }
 
@@ -157,6 +164,49 @@ export async function reassignWineZone(wineId, newZoneId, reason = '', cellarId)
     newZone: newZoneId,
     reason
   };
+}
+
+/**
+ * Fuzzy-match a zone ID that the AI may have invented.
+ * Strips common prefixes (new_, old_, main_) and checks if the remainder matches a real zone ID.
+ * @param {string} input - The zone ID to resolve
+ * @returns {Object|null} Matching zone object or null
+ */
+function resolveZoneIdFuzzy(input) {
+  if (!input || typeof input !== 'string') return null;
+  const normalised = input.toLowerCase().trim();
+
+  // Strip common AI-invented prefixes/suffixes
+  const prefixes = ['new_', 'old_', 'main_', 'primary_', 'secondary_'];
+  const suffixes = ['_new', '_main', '_zone', '_primary', '_secondary'];
+
+  let stripped = normalised;
+  for (const prefix of prefixes) {
+    if (stripped.startsWith(prefix)) {
+      stripped = stripped.slice(prefix.length);
+      break;
+    }
+  }
+  for (const suffix of suffixes) {
+    if (stripped.endsWith(suffix)) {
+      stripped = stripped.slice(0, -suffix.length);
+      break;
+    }
+  }
+
+  // Try exact match on stripped value
+  const exact = CELLAR_ZONES.zones.find(z => z.id === stripped);
+  if (exact) return exact;
+
+  // Try matching stripped value against display names
+  const byName = CELLAR_ZONES.zones.find(
+    z => z.displayName.toLowerCase().replace(/[\s\/]/g, '_') === stripped
+  );
+  if (byName) return byName;
+
+  // Try substring containment (e.g. "new_shiraz" contains "shiraz")
+  const byContains = CELLAR_ZONES.zones.find(z => normalised.includes(z.id));
+  return byContains || null;
 }
 
 /**
