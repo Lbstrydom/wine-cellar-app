@@ -10,6 +10,26 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 15 Feb 2026**:
+- **Colour-Order-Aware Reconfiguration Pipeline** ✅:
+  - `rowAllocationSolver.js`: new `colourOrder` param (`'whites-top'`/`'reds-top'`), colour boundary fix respects user setting
+  - `zoneLayoutProposal.js`: reads `colourOrder` from `cellarLayoutSettings`, reverses zone order for reds-top
+  - `zoneReconfigurationPlanner.js`: passes `colourOrder` to solver and LLM refinement, colour boundary rule in prompt adapts dynamically
+  - `cellarAllocation.js`: `allocateRowToZone()` uses dynamic colour row ranges from settings instead of hardcoded 1-7/8-19 split
+  - `cellarReconfiguration` route: `allocateRowTransactional()` uses dynamic colour ranges with fallback
+  - `cellarPlacement.js`: `findAvailableSlot()` filters zone rows against dynamic colour ranges to prevent cross-colour moves
+  - `zoneCapacityAdvisor.js`: LLM prompt includes colour region constraint for zone-specific advice
+  - 7 new tests: 3 colourOrder solver tests, 4 colour-region placement filter tests
+
+- **Resilient Layout Settings + Find Slot Button** ✅:
+  - Exported `LAYOUT_DEFAULTS` from `cellarLayoutSettings.js` as universal fallback constant
+  - `cellarAnalysis.js`: wrapped `getCellarLayoutSettings`/`getDynamicColourRowRanges` in try/catch with default fallbacks
+  - `cellarPlacement.js`: wrapped layout settings load in try/catch, falls back to `LAYOUT_DEFAULTS`
+  - `cellarSuggestions.js`: wrapped `findAvailableSlot` call in try/catch, treats errors as null slot
+  - `moves.js`: "Find Slot" button on manual/zone-full moves (re-analyses with overflow), manual move card tap triggers Find Slot instead of dismiss
+  - `moves.js`: extracted `recheckSwapsAndRerender()` to DRY 4 duplicate swap-recheck blocks
+  - `moves.js`: fixed compaction move execution missing `wineId` in `executeCellarMoves` call
+  - CSS: scrollable compaction list, mobile side padding for analysis view
+
 - **Actionable AI Recommendations UX Redesign** ✅:
   - Reordered CTA buttons: "AI Recommendations" now appears before "Reconfigure Zones" (assess first, then act)
   - Renamed "Expert Review" → "AI Recommendations" and "Reorganise Cellar" → "Reconfigure Zones" across all UI surfaces
@@ -53,7 +73,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - Wrapped `startAuthenticatedApp()` and `onAuthStateChange` callback in try/catch to prevent unhandled promise rejections
   - Auth errors now show user-friendly toast + redirect to sign-in screen instead of raw error boundary
 
-- **Test count**: 1669 unit tests passing across 62 files
+- **Test count**: 1676 unit tests passing across 62 files
 
 - **Claude Opus 4.6 Adaptive Thinking — COMPLETE** ✅:
   - Complex AI tasks (cellar analysis, zone reconfiguration, zone capacity advice, award extraction) upgraded from Opus 4.5 to **Opus 4.6 with adaptive thinking** (`thinking: { type: 'adaptive' }` + `output_config: { effort }`)
@@ -281,7 +301,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (1700+ tests, 62 test files, 85% coverage)
+- Comprehensive testing infrastructure (1725+ tests, 62 test files, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
@@ -363,7 +383,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **1700+ tests passing** (1644 unit + 21 integration + 30 benchmark)
+- **1725+ tests passing** (1676 unit + 21 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -372,7 +392,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1644 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1676 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
