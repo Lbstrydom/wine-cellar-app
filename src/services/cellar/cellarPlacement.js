@@ -8,6 +8,7 @@ import { ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../../config/cellarThresholds.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
+import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -258,13 +259,32 @@ function calculateConfidence(bestScore, allMatches) {
 export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   let options = arguments.length > 3 ? arguments[3] : undefined;
   if (!options) options = {};
-  const {
+  let {
     allowFallback = true,
     enforceAffinity = false,
     rootZoneId = zoneId,
     cellarId,
+    fillDirection,
+    colourOrder,
     _visited = new Set()
   } = options;
+
+  // Resolve layout settings + dynamic row ranges on top-level call
+  let whiteRows, redRows;
+  if (cellarId && fillDirection === undefined && colourOrder === undefined) {
+    const layoutSettings = await getCellarLayoutSettings(cellarId);
+    fillDirection = layoutSettings.fillDirection;
+    colourOrder = layoutSettings.colourOrder;
+    const dynamic = await getDynamicColourRowRanges(cellarId, colourOrder);
+    whiteRows = dynamic.whiteRows;
+    redRows = dynamic.redRows;
+    options = { ...options, fillDirection, colourOrder, whiteRows, redRows };
+  } else {
+    whiteRows = options.whiteRows;
+    redRows = options.redRows;
+  }
+  if (!fillDirection) fillDirection = 'left';
+  if (!colourOrder) colourOrder = 'whites-top';
 
   const zone = getZoneById(zoneId);
   if (!zone) return null;
@@ -289,7 +309,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
     }
 
     if (rows.length > 0) {
-      const slot = findSlotInRows(rows, occupied);
+      const slot = findSlotInRows(rows, occupied, fillDirection);
       if (slot) {
         return { slotId: slot, zoneId, isOverflow: false, requiresSwap: false };
       }
@@ -310,7 +330,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
         continue;
       }
 
-      const slot = findSlotInRows([rowId], occupied);
+      const slot = findSlotInRows([rowId], occupied, fillDirection);
       if (slot) {
         return { slotId: slot, zoneId, isOverflow: true, requiresSwap: false };
       }
@@ -320,7 +340,7 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   // Fallback/curated zones - search entire cellar
   if (zone.isFallbackZone || zone.isCuratedZone) {
     if (!allowFallback) return null;
-    const slot = findAnyAvailableSlot(occupied, wine);
+    const slot = findAnyAvailableSlot(occupied, wine, fillDirection, colourOrder, whiteRows, redRows);
     if (slot) {
       return { slotId: slot, zoneId, isOverflow: true, requiresSwap: false };
     }
@@ -436,9 +456,10 @@ function addTokens(tokenSet, values, prefix) {
  * Find first available slot in given rows.
  * @param {string[]} rows - Row IDs to search
  * @param {Set} occupiedSet - Set of occupied slot IDs
+ * @param {string} [fillDirection='left'] - Fill from 'left' or 'right'
  * @returns {string|null} Slot ID or null
  */
-function findSlotInRows(rows, occupiedSet) {
+function findSlotInRows(rows, occupiedSet, fillDirection = 'left') {
   const sortedRows = [...rows].sort((a, b) => {
     const numA = parseInt(a.replace('R', ''));
     const numB = parseInt(b.replace('R', ''));
@@ -446,10 +467,20 @@ function findSlotInRows(rows, occupiedSet) {
   });
 
   for (const row of sortedRows) {
-    for (let col = 1; col <= 9; col++) {
-      const slotId = `${row}C${col}`;
-      if (!occupiedSet.has(slotId)) {
-        return slotId;
+    const maxCol = row === 'R1' ? 7 : 9;
+    if (fillDirection === 'right') {
+      for (let col = maxCol; col >= 1; col--) {
+        const slotId = `${row}C${col}`;
+        if (!occupiedSet.has(slotId)) {
+          return slotId;
+        }
+      }
+    } else {
+      for (let col = 1; col <= maxCol; col++) {
+        const slotId = `${row}C${col}`;
+        if (!occupiedSet.has(slotId)) {
+          return slotId;
+        }
       }
     }
   }
@@ -458,27 +489,52 @@ function findSlotInRows(rows, occupiedSet) {
 
 /**
  * Find any available slot in entire cellar (for fallback zones).
+ * Uses dynamic row ranges when provided, falling back to even 50/50 split.
  * @param {Set} occupiedSet
  * @param {Object} wine - Wine object for color preference
+ * @param {string} [fillDirection='left'] - Fill from 'left' or 'right'
+ * @param {string} [colourOrder='whites-top'] - Colour ordering preference
+ * @param {number[]} [dynWhiteRows] - Dynamic white-family row numbers
+ * @param {number[]} [dynRedRows] - Dynamic red-family row numbers
  * @returns {string|null} Slot ID or null
  */
-function findAnyAvailableSlot(occupiedSet, wine = null) {
-  let preferredRows, fallbackRows;
+function findAnyAvailableSlot(occupiedSet, wine = null, fillDirection = 'left', colourOrder = 'whites-top', dynWhiteRows, dynRedRows) {
+  // Use dynamic ranges if provided, otherwise fallback to full range split
+  const allRows = Array.from({ length: 19 }, (_, i) => i + 1);
+  let wRows = dynWhiteRows && dynWhiteRows.length > 0 ? dynWhiteRows : null;
+  let rRows = dynRedRows && dynRedRows.length > 0 ? dynRedRows : null;
+  if (!wRows || !rRows) {
+    // Fallback: even split
+    wRows = colourOrder === 'reds-top' ? allRows.slice(10) : allRows.slice(0, 10);
+    rRows = colourOrder === 'reds-top' ? allRows.slice(0, 10) : allRows.slice(10);
+  }
 
-  if (wine?.color === 'white' || wine?.color === 'rose' || wine?.color === 'sparkling' ||
-      wine?.color === 'dessert' || wine?.color === 'fortified') {
-    preferredRows = [1, 2, 3, 4, 5, 6, 7];
-    fallbackRows = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+  let preferredRows, fallbackRows;
+  const wineColour = wine?.color || wine?.colour || '';
+
+  if (isWhiteFamily(wineColour)) {
+    preferredRows = wRows;
+    fallbackRows = rRows;
   } else {
-    preferredRows = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-    fallbackRows = [1, 2, 3, 4, 5, 6, 7];
+    preferredRows = rRows;
+    fallbackRows = wRows;
   }
 
   for (const rowNum of [...preferredRows, ...fallbackRows]) {
-    for (let col = 1; col <= 9; col++) {
-      const slotId = `R${rowNum}C${col}`;
-      if (!occupiedSet.has(slotId)) {
-        return slotId;
+    const maxCol = rowNum === 1 ? 7 : 9;
+    if (fillDirection === 'right') {
+      for (let col = maxCol; col >= 1; col--) {
+        const slotId = `R${rowNum}C${col}`;
+        if (!occupiedSet.has(slotId)) {
+          return slotId;
+        }
+      }
+    } else {
+      for (let col = 1; col <= maxCol; col++) {
+        const slotId = `R${rowNum}C${col}`;
+        if (!occupiedSet.has(slotId)) {
+          return slotId;
+        }
       }
     }
   }

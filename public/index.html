@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260215b">
+  <link rel="stylesheet" href="/css/styles.css?v=20260215d">
 </head>
 <body>
   <header>
@@ -244,6 +244,14 @@
       <div class="moves-actions" id="moves-actions" style="display: none;">
         <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
       </div>
+    </div>
+
+    <!-- Row Compaction Section -->
+    <div class="analysis-compaction" id="analysis-compaction" style="display: none;">
+      <h3>Row Compaction</h3>
+      <p class="section-desc">Fill gaps to keep rows packed neatly.</p>
+      <div class="row-allocation-info" id="row-allocation-info" style="display: none;"></div>
+      <div class="compaction-list" id="compaction-list"></div>
     </div>
 
     <!-- Fridge Status Section -->
@@ -597,6 +605,55 @@
           <span class="toggle-label">Heat risk - Wines exposed to 30°C+ temps (adds warning flag)</span>
         </div>
       </div>
+    </div>
+
+    <!-- Cellar Layout Section -->
+    <div class="settings-section">
+      <h3 class="settings-section-title">Cellar Layout</h3>
+      <p class="settings-section-desc">Control how bottles are arranged in your cellar grid.</p>
+
+      <fieldset class="layout-selector">
+        <legend class="settings-label">Colour Ordering</legend>
+        <p class="settings-rule-desc">Choose whether white-family wines (white, rosé, orange, sparkling) go at the top or bottom of the cellar.</p>
+        <p class="settings-rule-desc row-alloc-hint" id="row-alloc-hint" style="font-style: italic; opacity: 0.7;">Row allocation adjusts dynamically based on your inventory.</p>
+        <div class="layout-options">
+          <label class="layout-option">
+            <input type="radio" name="colour-order" value="whites-top" checked />
+            <span class="layout-btn">
+              <span class="layout-name">Whites at top</span>
+              <span class="layout-desc">Reds below</span>
+            </span>
+          </label>
+          <label class="layout-option">
+            <input type="radio" name="colour-order" value="reds-top" />
+            <span class="layout-btn">
+              <span class="layout-name">Reds at top</span>
+              <span class="layout-desc">Whites below</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
+
+      <fieldset class="layout-selector">
+        <legend class="settings-label">Fill Direction</legend>
+        <p class="settings-rule-desc">Rows are filled from this side when placing new bottles. Gap compaction will also pack towards this side.</p>
+        <div class="layout-options">
+          <label class="layout-option">
+            <input type="radio" name="fill-direction" value="left" checked />
+            <span class="layout-btn">
+              <span class="layout-name">Fill from left</span>
+              <span class="layout-desc">← Pack left</span>
+            </span>
+          </label>
+          <label class="layout-option">
+            <input type="radio" name="fill-direction" value="right" />
+            <span class="layout-btn">
+              <span class="layout-name">Fill from right</span>
+              <span class="layout-desc">Pack right →</span>
+            </span>
+          </label>
+        </div>
+      </fieldset>
     </div>
     </div><!-- /settings-group: Preferences -->
 

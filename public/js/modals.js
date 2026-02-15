@@ -272,6 +272,10 @@ export async function handleDrinkBottle() {
     const data = await drinkBottle(location);
     closeWineModal();
     showToast(`Enjoyed! ${data.remaining_bottles} bottles remaining`);
+    if (data.compaction_suggestions?.length > 0) {
+      const count = data.compaction_suggestions.length;
+      showToast(`${count} gap${count > 1 ? 's' : ''} detected — check Analysis for compaction suggestions`, 4000);
+    }
     await refreshData();
   } catch (err) {
     showToast('Error: ' + err.message);

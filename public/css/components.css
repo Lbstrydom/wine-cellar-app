@@ -947,6 +947,36 @@
 .move-item.priority-1 { border-left: 3px solid var(--priority-1); }
 .move-item.priority-2 { border-left: 3px solid var(--priority-2); }
 .move-item.priority-3 { border-left: 3px solid var(--priority-3); }
+.move-item.priority-4 { border-left: 3px solid var(--accent); }
+
+/* Compaction section */
+.analysis-compaction {
+  margin-top: 1rem;
+}
+
+.row-allocation-info {
+  margin-bottom: 0.75rem;
+}
+
+.row-alloc-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  padding: 0.4rem 0.75rem;
+  background: var(--bg-surface, rgba(255,255,255,0.04));
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+}
+
+.row-alloc-sep {
+  opacity: 0.4;
+}
+
+.compaction-item {
+  opacity: 0.9;
+}
 
 .move-details {
   flex: 1;
@@ -6440,6 +6470,68 @@ body.slot-picker-mode .slot.picker-placed::after {
 }
 
 .theme-option input[type="radio"]:focus-visible + .theme-btn {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);
+}
+
+/* Cellar layout selector styles (reuses theme patterns) */
+.layout-selector {
+  border: none;
+  padding: 0;
+  margin: 0 0 1rem;
+}
+
+.layout-options {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  flex-wrap: wrap;
+}
+
+.layout-option {
+  cursor: pointer;
+}
+
+.layout-option input[type="radio"] {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.layout-option .layout-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  min-width: 140px;
+  min-height: 60px;
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border: 2px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-weight: 600;
+  transition: all 0.2s;
+  gap: 0.25rem;
+}
+
+.layout-option .layout-name {
+  font-size: 0.85rem;
+}
+
+.layout-option .layout-desc {
+  font-size: 0.7rem;
+  font-weight: 400;
+  color: var(--text-muted);
+}
+
+.layout-option input[type="radio"]:checked + .layout-btn {
+  border-color: var(--accent);
+  background: var(--bg-card);
+}
+
+.layout-option input[type="radio"]:focus-visible + .layout-btn {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
   box-shadow: 0 0 0 4px rgba(var(--accent-rgb), 0.25);

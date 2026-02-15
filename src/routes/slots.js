@@ -16,6 +16,8 @@ import {
 } from '../schemas/slot.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { parseSlot, detectRowGaps } from '../services/cellar/cellarMetrics.js';
+import { getCellarLayoutSettings } from '../services/shared/cellarLayoutSettings.js';
 
 const router = Router();
 
@@ -184,9 +186,13 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
 
+  // Compute compaction suggestions for the affected row
+  const compactionSuggestions = await getRowCompactionSuggestions(location, req.cellarId);
+
   res.json({
     message: 'Bottle consumed and logged',
-    remaining_bottles: remainingCount
+    remaining_bottles: remainingCount,
+    compaction_suggestions: compactionSuggestions
   });
 }));
 
@@ -234,7 +240,13 @@ router.delete('/:location/remove', validateParams(locationParamSchema), asyncHan
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
 
-  res.json({ message: `Bottle removed from ${location}` });
+  // Compute compaction suggestions for the affected row
+  const compactionSuggestions = await getRowCompactionSuggestions(location, req.cellarId);
+
+  res.json({
+    message: `Bottle removed from ${location}`,
+    compaction_suggestions: compactionSuggestions
+  });
 }));
 
 /**
@@ -311,3 +323,46 @@ router.get('/open', asyncHandler(async (req, res) => {
 }));
 
 export default router;
+
+/**
+ * Get compaction suggestions for the row of a removed slot.
+ * Checks if removing a bottle created a gap and suggests shifting to fill it.
+ * @param {string} location - Slot that was just vacated (e.g. "R3C4")
+ * @param {string} cellarId - Cellar ID
+ * @returns {Promise<Array>} Compact move suggestions for that row
+ */
+async function getRowCompactionSuggestions(location, cellarId) {
+  const parsed = parseSlot(location);
+  if (!parsed) return [];
+
+  const { fillDirection } = await getCellarLayoutSettings(cellarId);
+
+  // Get all occupied slots in this row
+  const rowSlots = await db.prepare(
+    `SELECT s.location_code, s.wine_id, w.wine_name
+     FROM slots s
+     LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+     WHERE s.cellar_id = $1 AND s.location_code LIKE $2`
+  ).all(cellarId, `R${parsed.row}C%`);
+
+  const slotToWine = new Map();
+  for (const slot of rowSlots) {
+    if (slot.wine_id) {
+      slotToWine.set(slot.location_code, {
+        id: slot.wine_id,
+        wine_name: slot.wine_name
+      });
+    }
+  }
+
+  return detectRowGaps(slotToWine, fillDirection)
+    .filter(gap => gap.row === parsed.row)
+    .map(gap => ({
+      type: 'compaction',
+      from: gap.shiftFrom,
+      to: gap.gapSlot,
+      wineId: gap.wineId,
+      wineName: gap.wineName,
+      reason: `Fill gap — keep row ${gap.row} packed from the ${fillDirection}`
+    }));
+}

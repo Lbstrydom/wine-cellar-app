@@ -7,6 +7,7 @@
 import { getZoneById } from '../../config/cellarZones.js';
 import { findAvailableSlot } from './cellarPlacement.js';
 import { getActiveZoneMap, getAllocatedRowMap } from './cellarAllocation.js';
+import { detectRowGaps } from './cellarMetrics.js';
 
 // ───────────────────────────────────────────────────────────
 // Zone allocation queries
@@ -344,4 +345,30 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
   sortedSuggestions._zoneCapacityIssues = zoneCapacityIssues;
 
   return sortedSuggestions;
+}
+
+// ───────────────────────────────────────────────────────────
+// Compaction move generation
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Generate compaction moves to fill gaps in rows.
+ * Each move shifts a bottle into an empty slot to keep rows tightly packed.
+ * @param {Map} slotToWine - Slot to wine mapping
+ * @param {string} fillDirection - 'left' or 'right'
+ * @returns {Array<Object>} Compaction move suggestions
+ */
+export function generateCompactionMoves(slotToWine, fillDirection = 'left') {
+  const gaps = detectRowGaps(slotToWine, fillDirection);
+
+  return gaps.map(gap => ({
+    type: 'compaction',
+    wineId: gap.wineId,
+    wineName: gap.wineName,
+    from: gap.shiftFrom,
+    to: gap.gapSlot,
+    reason: `Fill gap — keep row ${gap.row} packed from the ${fillDirection}`,
+    confidence: 'high',
+    priority: 4 // Lower priority than zone moves (1-3)
+  }));
 }

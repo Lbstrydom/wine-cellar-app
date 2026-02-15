@@ -426,6 +426,10 @@ async function handleDeleteBottle() {
   try {
     const result = await removeBottle(bottleState.editingLocation);
     showToast(result.message);
+    if (result.compaction_suggestions?.length > 0) {
+      const count = result.compaction_suggestions.length;
+      showToast(`${count} gap${count > 1 ? 's' : ''} detected — check Analysis for compaction suggestions`, 4000);
+    }
     closeBottleModal();
     await refreshData();
   } catch (err) {

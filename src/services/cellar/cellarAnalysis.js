@@ -20,8 +20,10 @@ import { generateZoneNarratives } from './cellarNarratives.js';
 import {
   generateMoveSuggestions,
   buildZoneCapacityAlerts,
-  getCurrentZoneAllocation
+  getCurrentZoneAllocation,
+  generateCompactionMoves
 } from './cellarSuggestions.js';
+import { getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
 // ───────────────────────────────────────────────────────────
@@ -115,6 +117,31 @@ export async function analyseCellar(wines) {
 
   const capacityAlerts = await buildZoneCapacityAlerts(zoneCapacityIssues, report.needsZoneSetup, allowFallback, cellarId);
   report.alerts.unshift(...capacityAlerts);
+
+  // Generate compaction moves (fill gaps in rows)
+  const layoutSettings = await getCellarLayoutSettings(cellarId);
+  const compactionMoves = generateCompactionMoves(slotToWine, layoutSettings.fillDirection);
+  report.compactionMoves = compactionMoves;
+  report.summary.gapCount = compactionMoves.length;
+
+  // Dynamic row allocation based on current inventory
+  const dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+  report.layoutSettings = {
+    colourOrder: layoutSettings.colourOrder,
+    fillDirection: layoutSettings.fillDirection,
+    whiteRows: dynamicRanges.whiteRowCount,
+    redRows: dynamicRanges.redRowCount,
+    whiteCount: dynamicRanges.whiteCount,
+    redCount: dynamicRanges.redCount
+  };
+
+  if (compactionMoves.length > 0) {
+    report.alerts.push({
+      type: 'row_gaps',
+      severity: 'info',
+      message: `${compactionMoves.length} gap(s) detected in rows. Bottles can be shifted ${layoutSettings.fillDirection === 'left' ? 'left' : 'right'} to keep rows tidy.`
+    });
+  }
 
   // Detect scattered wines (same wine in non-contiguous rows)
   const scatteredWines = detectScatteredWines(wines);

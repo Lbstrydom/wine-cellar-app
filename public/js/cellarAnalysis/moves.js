@@ -602,3 +602,104 @@ export function showValidationErrorModal(validation) {
     }
   });
 }
+
+/**
+ * Render the dynamic row allocation info bar.
+ * @param {Object} layoutSettings - Layout settings from analysis report
+ */
+export function renderRowAllocationInfo(layoutSettings) {
+  const el = document.getElementById('row-allocation-info');
+  if (!el) return;
+
+  if (!layoutSettings || typeof layoutSettings.whiteRows !== 'number') {
+    el.style.display = 'none';
+    return;
+  }
+
+  const { whiteRows, redRows, whiteCount, redCount, colourOrder } = layoutSettings;
+  const topLabel = colourOrder === 'reds-top' ? 'Red' : 'White-family';
+  const bottomLabel = colourOrder === 'reds-top' ? 'White-family' : 'Red';
+  const topRows = colourOrder === 'reds-top' ? redRows : whiteRows;
+  const bottomRows = colourOrder === 'reds-top' ? whiteRows : redRows;
+  const topCount = colourOrder === 'reds-top' ? redCount : whiteCount;
+  const bottomCount = colourOrder === 'reds-top' ? whiteCount : redCount;
+
+  el.style.display = 'block';
+  el.innerHTML = `
+    <div class="row-alloc-bar">
+      <span class="row-alloc-label">${topLabel}: ${topRows} rows (${topCount} bottles)</span>
+      <span class="row-alloc-sep">|</span>
+      <span class="row-alloc-label">${bottomLabel}: ${bottomRows} rows (${bottomCount} bottles)</span>
+    </div>
+  `;
+}
+
+/**
+ * Render compaction moves (row gap fills).
+ * @param {Array} compactionMoves - Array of compaction move objects
+ */
+export function renderCompactionMoves(compactionMoves) {
+  const container = document.getElementById('analysis-compaction');
+  const listEl = document.getElementById('compaction-list');
+  if (!container || !listEl) return;
+
+  if (!compactionMoves || compactionMoves.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+
+  listEl.innerHTML = compactionMoves.map((move, index) => `
+    <div class="move-item compaction-item priority-4" data-compaction-index="${index}">
+      <div class="move-details">
+        <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
+        <div class="move-path">
+          <span class="from">${move.from}</span>
+          <span class="arrow">→</span>
+          <span class="to">${move.to}</span>
+        </div>
+        <div class="move-reason">${escapeHtml(move.reason || 'Fill gap')}</div>
+      </div>
+      <div class="move-actions">
+        <button class="btn btn-primary btn-small compaction-execute-btn" data-compaction-index="${index}" title="Move this bottle to fill the gap">Move</button>
+        <button class="btn btn-secondary btn-small compaction-dismiss-btn" data-compaction-index="${index}" title="Ignore">Ignore</button>
+      </div>
+    </div>
+  `).join('');
+
+  // Wire up execute buttons
+  listEl.querySelectorAll('.compaction-execute-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const idx = Number.parseInt(btn.dataset.compactionIndex, 10);
+      const move = compactionMoves[idx];
+      if (!move) return;
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Moving...';
+        await executeCellarMoves([{ from: move.from, to: move.to }]);
+        showToast(`Moved to ${move.to}`);
+        await refreshLayout();
+        await loadAnalysis(true);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Move';
+      }
+    });
+  });
+
+  // Wire up dismiss buttons
+  listEl.querySelectorAll('.compaction-dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = btn.closest('.compaction-item');
+      if (item) item.remove();
+      // Hide section if all dismissed
+      if (listEl.querySelectorAll('.compaction-item').length === 0) {
+        container.style.display = 'none';
+      }
+    });
+  });
+}

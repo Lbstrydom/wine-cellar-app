@@ -301,3 +301,88 @@ export function analyseZone(zone, zoneWines, rowId) {
   analysis.fragmentationScore = calculateFragmentation([analysis.row], zoneWines);
   return analysis;
 }
+
+// ───────────────────────────────────────────────────────────
+// Row gap detection
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Detect gaps within rows (empty slots between or before occupied slots).
+ * A "gap" is an empty slot to the left of an occupied slot (fill-from-left)
+ * or to the right (fill-from-right).
+ * @param {Map} slotToWine - Slot to wine mapping
+ * @param {string} fillDirection - 'left' or 'right'
+ * @returns {Array<{row: number, gapSlot: string, shiftFrom: string, wineId: number, wineName: string}>}
+ */
+export function detectRowGaps(slotToWine, fillDirection = 'left') {
+  const gaps = [];
+
+  for (let row = 1; row <= 19; row++) {
+    const maxCol = row === 1 ? 7 : 9;
+    const occupied = [];
+    const empty = [];
+
+    for (let col = 1; col <= maxCol; col++) {
+      const slotId = `R${row}C${col}`;
+      const wine = slotToWine.get(slotId);
+      if (wine) {
+        occupied.push({ col, slotId, wine });
+      } else {
+        empty.push({ col, slotId });
+      }
+    }
+
+    // No gaps possible if row is empty or full
+    if (occupied.length === 0 || empty.length === 0) continue;
+
+    if (fillDirection === 'left') {
+      // Bottles should be packed to the left
+      // Expected: columns 1..N occupied, rest empty
+      const expectedOccupied = occupied.length;
+      for (const occ of occupied) {
+        if (occ.col > expectedOccupied) {
+          // This bottle is in a position that should be empty if packed left
+          // Find the leftmost empty slot
+          const targetEmpty = empty.find(e => e.col < occ.col);
+          if (targetEmpty) {
+            gaps.push({
+              row,
+              gapSlot: targetEmpty.slotId,
+              shiftFrom: occ.slotId,
+              wineId: occ.wine.id,
+              wineName: occ.wine.wine_name
+            });
+            // Mark this empty slot as now "taken" and add the old slot as empty
+            empty.splice(empty.indexOf(targetEmpty), 1);
+            empty.push({ col: occ.col, slotId: occ.slotId });
+            empty.sort((a, b) => a.col - b.col);
+          }
+        }
+      }
+    } else {
+      // Bottles should be packed to the right
+      // Expected: columns (maxCol-N+1)..maxCol occupied, rest empty
+      const startCol = maxCol - occupied.length + 1;
+      for (const occ of occupied) {
+        if (occ.col < startCol) {
+          // This bottle should be further right
+          const targetEmpty = empty.findLast(e => e.col > occ.col);
+          if (targetEmpty) {
+            gaps.push({
+              row,
+              gapSlot: targetEmpty.slotId,
+              shiftFrom: occ.slotId,
+              wineId: occ.wine.id,
+              wineName: occ.wine.wine_name
+            });
+            empty.splice(empty.indexOf(targetEmpty), 1);
+            empty.push({ col: occ.col, slotId: occ.slotId });
+            empty.sort((a, b) => a.col - b.col);
+          }
+        }
+      }
+    }
+  }
+
+  return gaps;
+}

@@ -5,7 +5,7 @@
 
 import { analyseCellar } from '../api.js';
 import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis } from './state.js';
-import { renderMoves } from './moves.js';
+import { renderMoves, renderCompactionMoves, renderRowAllocationInfo } from './moves.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
@@ -163,6 +163,8 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
+  renderCompactionMoves(analysis.compactionMoves);
+  renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
 }
 

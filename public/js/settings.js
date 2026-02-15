@@ -355,6 +355,9 @@ export async function loadSettings() {
     // Load storage conditions settings
     loadStorageSettings(settings);
 
+    // Load cellar layout settings
+    loadLayoutSettings(settings);
+
     // Load credentials status
     await loadCredentialsStatus();
 
@@ -723,6 +726,9 @@ export function initSettings() {
   // Storage conditions settings
   initStorageSettings();
 
+  // Cellar layout settings
+  initLayoutSettings();
+
   // Evaluate rules button
   document.getElementById('evaluate-rules-btn')?.addEventListener('click', handleEvaluateRules);
 
@@ -848,6 +854,57 @@ function updateTempDescription(bucket) {
   const desc = document.getElementById('storage-temp-description');
   if (desc) {
     desc.textContent = descriptions[bucket] || '';
+  }
+}
+
+// ============================================
+// Cellar Layout Settings
+// ============================================
+
+/**
+ * Initialize cellar layout settings event listeners.
+ */
+function initLayoutSettings() {
+  // Colour order radio buttons
+  const colourInputs = document.querySelectorAll('input[name="colour-order"]');
+  for (const input of colourInputs) {
+    input.addEventListener('change', async () => {
+      try {
+        await updateSetting('cellar_colour_order', input.value);
+        showToast(`Colour order set to ${input.value === 'whites-top' ? 'whites at top' : 'reds at top'}`);
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+
+  // Fill direction radio buttons
+  const fillInputs = document.querySelectorAll('input[name="fill-direction"]');
+  for (const input of fillInputs) {
+    input.addEventListener('change', async () => {
+      try {
+        await updateSetting('cellar_fill_direction', input.value);
+        showToast(`Fill direction set to ${input.value}`);
+      } catch (_err) {
+        showToast('Error saving setting');
+      }
+    });
+  }
+}
+
+/**
+ * Load cellar layout settings into UI.
+ * @param {object} settings - Settings object from API
+ */
+function loadLayoutSettings(settings) {
+  if (settings.cellar_colour_order) {
+    const radio = document.querySelector(`input[name="colour-order"][value="${settings.cellar_colour_order}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  if (settings.cellar_fill_direction) {
+    const radio = document.querySelector(`input[name="fill-direction"][value="${settings.cellar_fill_direction}"]`);
+    if (radio) radio.checked = true;
   }
 }
 
