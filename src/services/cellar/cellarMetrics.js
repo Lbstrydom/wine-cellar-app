@@ -287,6 +287,7 @@ export function analyseZone(zone, zoneWines, rowId) {
         name: wine.wine_name,
         currentSlot: wine.slot_id || wine.location_code,
         currentZone: zone.displayName,
+        currentZoneId: zone.id,
         suggestedZone: bestZone.displayName,
         suggestedZoneId: bestZone.zoneId,
         confidence: bestZone.confidence,

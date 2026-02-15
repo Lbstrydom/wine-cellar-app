@@ -145,6 +145,45 @@ export async function buildZoneCapacityAlerts(zoneCapacityIssues, needsZoneSetup
 }
 
 // ───────────────────────────────────────────────────────────
+// Swap pair detection
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Detect natural swap pairs among misplaced wines.
+ * Two misplaced wines form a natural swap when each currently sits
+ * in the other's target zone — swapping them places both correctly.
+ * @param {Array} misplacedWines - Sorted misplaced wine entries (must have currentZoneId & suggestedZoneId)
+ * @returns {Array<[number, number]>} Array of [indexA, indexB] swap pairs
+ */
+export function detectNaturalSwapPairs(misplacedWines) {
+  const pairs = [];
+  const used = new Set();
+
+  for (let i = 0; i < misplacedWines.length; i++) {
+    if (used.has(i)) continue;
+    const wineA = misplacedWines[i];
+    if (!wineA.currentZoneId || !wineA.suggestedZoneId) continue;
+
+    for (let j = i + 1; j < misplacedWines.length; j++) {
+      if (used.has(j)) continue;
+      const wineB = misplacedWines[j];
+      if (!wineB.currentZoneId || !wineB.suggestedZoneId) continue;
+
+      // Natural swap: each wine is sitting in the other's target zone
+      if (wineA.currentZoneId === wineB.suggestedZoneId &&
+          wineB.currentZoneId === wineA.suggestedZoneId) {
+        pairs.push([i, j]);
+        used.add(i);
+        used.add(j);
+        break; // Wine A is paired, move to next
+      }
+    }
+  }
+
+  return pairs;
+}
+
+// ───────────────────────────────────────────────────────────
 // Move suggestion generation
 // ───────────────────────────────────────────────────────────
 
@@ -181,7 +220,60 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
     return aConf - bConf;
   });
 
-  for (const wine of sortedMisplaced) {
+  // ── Pre-detect natural swap pairs ─────────────────────────
+  // Two misplaced wines form a natural swap when each currently sits
+  // in the other's target zone (A→B, B→A).  Detecting them upfront
+  // avoids the sequential loop routing them into chain dependencies.
+  const swapPairsDetected = detectNaturalSwapPairs(sortedMisplaced);
+  const usedInSwaps = new Set();
+
+  for (const [i, j] of swapPairsDetected) {
+    usedInSwaps.add(i);
+    usedInSwaps.add(j);
+
+    const wineA = sortedMisplaced[i];
+    const wineB = sortedMisplaced[j];
+
+    const higherPriority = Math.min(
+      wineA.confidence === 'high' ? 1 : wineA.confidence === 'medium' ? 2 : 3,
+      wineB.confidence === 'high' ? 1 : wineB.confidence === 'medium' ? 2 : 3
+    );
+
+    suggestions.push({
+      type: 'move',
+      wineId: wineA.wineId,
+      wineName: wineA.name,
+      from: wineA.currentSlot,
+      to: wineB.currentSlot,
+      toZone: wineA.suggestedZone,
+      reason: wineA.reason,
+      confidence: wineA.confidence,
+      isOverflow: false,
+      priority: higherPriority
+    });
+
+    suggestions.push({
+      type: 'move',
+      wineId: wineB.wineId,
+      wineName: wineB.name,
+      from: wineB.currentSlot,
+      to: wineA.currentSlot,
+      toZone: wineB.suggestedZone,
+      reason: wineB.reason,
+      confidence: wineB.confidence,
+      isOverflow: false,
+      priority: higherPriority
+    });
+
+    // Both slots stay occupied (swapped contents), mark as allocated
+    allocatedTargets.add(wineA.currentSlot);
+    allocatedTargets.add(wineB.currentSlot);
+  }
+
+  // ── Sequential processing for remaining wines ─────────────
+  for (let idx = 0; idx < sortedMisplaced.length; idx++) {
+    if (usedInSwaps.has(idx)) continue;
+    const wine = sortedMisplaced[idx];
     // Calculate currently available slots (accounting for pending moves AND allocated targets)
     const currentlyOccupied = new Set(occupiedSlots);
     pendingMoves.forEach((toSlot, fromSlot) => {

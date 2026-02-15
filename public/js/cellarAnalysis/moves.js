@@ -67,20 +67,27 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   // If moves depend on each other, show warning and lock only the dependent ones
   let swapWarning = '';
   if (hasSwaps) {
+    if (swapPairs > 0) {
+      swapWarning += `<div class="swap-warning swap-info-notice">
+        <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected — paired bottles shown together for easy swapping.
+        Use the <strong>Swap</strong> buttons to execute each pair safely, or use <strong>Execute All</strong>.
+      </div>`;
+    }
     if (dependentNonSwapCount > 0) {
-      swapWarning = `<div class="swap-warning">
+      swapWarning += `<div class="swap-warning">
         <strong>Note:</strong> Some moves depend on other moves (${dependentNonSwapCount} move${dependentPlural} target occupied slots that are being vacated).
         Execute all moves together to avoid losing bottles.
-      </div>`;
-    } else if (swapPairs > 0) {
-      swapWarning = `<div class="swap-warning">
-        <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected (marked with <span class="swap-badge">SWAP</span>).
-        Use the <strong>Swap</strong> buttons to execute each pair safely, or use <strong>Execute All</strong>.
       </div>`;
     }
   }
 
+  // Track swap partners already rendered as grouped cards
+  const renderedAsSwapGroup = new Set();
+
   listEl.innerHTML = swapWarning + moves.map((move, index) => {
+    // Skip moves already rendered as part of a swap group
+    if (renderedAsSwapGroup.has(index)) return '';
+
     if (move.type === 'manual') {
       return `
         <div class="move-item move-item-manual priority-3" data-move-index="${index}">
@@ -107,33 +114,58 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     const isLocked = hasSwaps && !isSwap && isDependent;
     const lockTitle = 'This target slot is occupied by a bottle that is also being moved — execute all moves together to avoid losing bottles';
 
-    let primaryAction = '';
+    // ── Grouped swap card ─────────────────────────────────
     if (isSwap) {
-      primaryAction = `<button class="btn btn-primary btn-small move-swap-btn" data-move-index="${index}" title="Swap these two bottles safely">Swap</button>`;
-    } else if (isLocked) {
+      const partner = moves[partnerIndex];
+      renderedAsSwapGroup.add(partnerIndex); // Skip partner in later iteration
+
+      let bestConf = 'low';
+      if (move.confidence === 'high' || partner.confidence === 'high') bestConf = 'high';
+      else if (move.confidence === 'medium' || partner.confidence === 'medium') bestConf = 'medium';
+
+      return `
+        <div class="move-item is-swap-group priority-${move.priority}" data-move-index="${index}" data-swap-partner="${partnerIndex}">
+          <div class="move-details">
+            <span class="swap-badge">SWAP</span>
+            <div class="swap-pair-wines">
+              <div class="swap-wine-info">
+                <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
+                <div class="move-slot"><span class="from">${move.from}</span>  →  ${move.toZone}</div>
+              </div>
+              <span class="swap-arrow">↔</span>
+              <div class="swap-wine-info">
+                <div class="move-wine-name">${escapeHtml(partner.wineName)}</div>
+                <div class="move-slot"><span class="from">${partner.from}</span>  →  ${partner.toZone}</div>
+              </div>
+            </div>
+            <div class="move-reason">${escapeHtml(move.reason)}</div>
+          </div>
+          <span class="move-confidence ${bestConf}">${bestConf}</span>
+          <div class="move-actions">
+            <button class="btn btn-primary btn-small move-swap-btn" data-move-index="${index}" title="Swap these two bottles safely">Swap</button>
+            <button class="btn btn-secondary btn-small move-dismiss-swap-btn" data-move-index="${index}" title="Dismiss both moves">Ignore</button>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── Individual move card ──────────────────────────────
+    let primaryAction = '';
+    if (isLocked) {
       primaryAction = `<span class="move-locked" title="${escapeHtml(lockTitle)}">🔒</span>`;
     } else {
       primaryAction = `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}" title="Move this bottle now">Move</button>`;
     }
 
-    // Show swap indicator and bidirectional arrow for swaps
-    const arrow = isSwap ? '↔' : '→';
-    const swapBadge = isSwap ? '<span class="swap-badge">SWAP</span>' : '';
-    const swapPartner = isSwap ? moves[partnerIndex] : null;
-    const swapInfo = isSwap && swapPartner?.wineName
-      ? `<div class="swap-info">Swapping with: ${escapeHtml(swapPartner.wineName)} (${swapPartner.from})</div>`
-      : '';
-
     return `
-      <div class="move-item priority-${move.priority}${isSwap ? ' is-swap' : ''}" data-move-index="${index}">
+      <div class="move-item priority-${move.priority}" data-move-index="${index}">
         <div class="move-details">
-          <div class="move-wine-name">${escapeHtml(move.wineName)}${swapBadge}</div>
+          <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
           <div class="move-path">
             <span class="from">${move.from}</span>
-            <span class="arrow${isSwap ? ' swap-arrow' : ''}">${arrow}</span>
+            <span class="arrow">→</span>
             <span class="to">${move.to}</span>
           </div>
-          ${swapInfo}
           <div class="move-reason">${escapeHtml(move.reason)}</div>
         </div>
         <span class="move-confidence ${move.confidence}">${move.confidence}</span>
@@ -166,6 +198,13 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       e.stopPropagation();
       const index = Number.parseInt(btn.dataset.moveIndex, 10);
       dismissMove(index);
+    });
+  });
+  listEl.querySelectorAll('.move-dismiss-swap-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const index = Number.parseInt(btn.dataset.moveIndex, 10);
+      dismissSwapGroup(index);
     });
   });
 
@@ -304,6 +343,33 @@ function dismissMove(index) {
 
   currentAnalysis.suggestedMoves.splice(index, 1);
   // Re-check if remaining moves have swaps
+  const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
+  const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
+  currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
+  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+}
+
+/**
+ * Dismiss both moves in a swap group.
+ * @param {number} index - Move index of one swap partner
+ */
+function dismissSwapGroup(index) {
+  const currentAnalysis = getCurrentAnalysis();
+  if (!currentAnalysis?.suggestedMoves?.[index]) return;
+
+  const moveA = currentAnalysis.suggestedMoves[index];
+  const partnerIndex = currentAnalysis.suggestedMoves.findIndex((m, idx) => {
+    if (idx === index) return false;
+    return m?.type === 'move' && m.from === moveA.to && m.to === moveA.from;
+  });
+
+  // Remove both — splice higher index first to avoid shifting
+  const indices = [index];
+  if (partnerIndex !== -1) indices.push(partnerIndex);
+  indices.sort((a, b) => b - a);
+  indices.forEach(i => currentAnalysis.suggestedMoves.splice(i, 1));
+
+  // Re-check swap flags
   const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
   const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
   currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
