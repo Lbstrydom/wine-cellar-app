@@ -152,6 +152,16 @@ try {
 } catch (err) {
   showToast(`Error: ${err.message}`);
 }
+
+// Async callbacks: ALWAYS wrap in try/catch to prevent unhandled rejections
+supabase.auth.onAuthStateChange(async (event, session) => {
+  try {
+    // ... async operations
+  } catch (err) {
+    console.error('[Auth] callback error:', err);
+    // Show user-friendly error + recover gracefully
+  }
+});
 ```
 
 ### Database Queries
@@ -690,7 +700,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1475 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1644 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |

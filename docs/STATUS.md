@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 14 February 2026
+## 15 February 2026
 
 ---
 
@@ -9,7 +9,35 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 14 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 15 Feb 2026**:
+- **Dynamic Colour Row Allocation** ✅:
+  - New `cellarLayoutSettings.js` service: stores per-cellar colour→row mappings (red/white/rosé/sparkling/other → specific rows)
+  - Settings UI: colour row assignment dropdowns in Settings page, saved per-cellar to localStorage
+  - Placement engine (`cellarPlacement.js`) respects colour row allocations — bottles placed in assigned rows first, overflow to unassigned
+  - Cellar analysis (`cellarMetrics.js`) detects row gap violations — wines placed outside their colour allocation
+  - Move suggestions include colour-based corrections alongside zone-based corrections
+  - 2 new test files: `detectRowGaps.test.js` (row gap detection), `cellarLayoutSettings.test.js` (settings service)
+
+- **Grouped Swap Bottle Cards** ✅:
+  - New `detectNaturalSwapPairs()` in `cellarSuggestions.js`: finds wines sitting in each other's target zones (mutual misplacement)
+  - Pre-detects swap pairs before sequential move generation for clean AB pairs
+  - Renders swap pairs as grouped cards (both wines side-by-side with bidirectional arrow) in cellar analysis UI
+  - `dismissSwapGroup()` to ignore both swap moves atomically
+  - Shows both swap info and dependency warnings when applicable
+  - 10 unit tests for `detectNaturalSwapPairs`
+
+- **Iterative 3-Layer Reconfiguration Pipeline** ✅:
+  - New `rowAllocationSolver.js`: deterministic greedy best-first solver (<10ms) — allocates rows to zones by bottle count before any LLM call
+  - Rewritten planner as iterative pipeline: **solver → LLM refinement → heuristic gap-fill** (each layer builds on previous output additively)
+  - Downgraded reconfiguration LLM from Opus 4.6 (high effort) to Sonnet 4.5 (low effort) — solver handles the heavy lifting
+  - 13 solver unit tests, `data-plan.md` for future category-led configuration strategy
+
+- **Sign-In Promise Rejection Fix** ✅:
+  - Wrapped `startAuthenticatedApp()` and `onAuthStateChange` callback in try/catch to prevent unhandled promise rejections
+  - Auth errors now show user-friendly toast + redirect to sign-in screen instead of raw error boundary
+
+- **Test count**: 1644 unit tests passing across 61 files
+
 - **Claude Opus 4.6 Adaptive Thinking — COMPLETE** ✅:
   - Complex AI tasks (cellar analysis, zone reconfiguration, zone capacity advice, award extraction) upgraded from Opus 4.5 to **Opus 4.6 with adaptive thinking** (`thinking: { type: 'adaptive' }` + `output_config: { effort }`)
   - Simpler tasks (sommelier, parsing, ratings, menu parsing, restaurant pairing) remain on Sonnet 4.5; classification tasks remain on Haiku 4.5
@@ -21,7 +49,6 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - `@anthropic-ai/sdk` upgraded from ^0.72.1 to ^0.74.0
   - **Zone reconfiguration planner refactored** to 3-layer pipeline: deterministic solver → LLM refinement → heuristic gap-fill
   - **Production hardening** (8 follow-up commits): extractText returns last non-empty text block, zone parsing hardened for mixed types, allocation/classification fixes, color adjacency violation detection, grape name overlap prevention, cellar analysis reliability improvements
-  - **Test count**: 1591 unit tests passing across 58 files
   - Plan document: `.claude/plans/greedy-snacking-dijkstra.md`
 
 **Previous Enhancements** (12 Feb 2026):
@@ -237,7 +264,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (1400+ tests, 85% coverage)
+- Comprehensive testing infrastructure (1700+ tests, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 
@@ -262,7 +289,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 {
   "dependencies": {
     "express": "^5.2.1",
-    "@anthropic-ai/sdk": "^0.71.2",
+    "@anthropic-ai/sdk": "^0.74.0",
     "openai": "^6.15.0",
     "pg": "^8.16.3",
     "puppeteer": "^24.0.0",
@@ -319,7 +346,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **1500+ tests passing** (1462 unit + 21 integration + 30 benchmark)
+- **1700+ tests passing** (1644 unit + 21 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -328,7 +355,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1475 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1644 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
@@ -736,6 +763,13 @@ The wine detail modal now features a single consolidated card combining:
 - Execute single moves or batch
 - Preview move outcomes
 - Rollback capability via history
+- **Swap pair grouping** ✨ NEW: Detects mutual misplacements and renders as grouped cards
+
+**Dynamic Colour Row Allocation** ✨ NEW (15 Feb 2026):
+- Per-cellar colour→row mappings (red/white/rosé/sparkling/other)
+- Settings UI with colour assignment dropdowns
+- Placement engine respects colour allocations (assigned rows first, overflow to unassigned)
+- Row gap detection in cellar analysis (wines outside their colour allocation)
 
 **Zone Capacity Management** ✨ NEW (8 Jan 2026):
 - **Proactive Detection**: Alerts when zone reaches capacity and wines would fall back to unrelated zones
@@ -750,7 +784,7 @@ The wine detail modal now features a single consolidated card combining:
 **Holistic Zone Reconfiguration** ✨ NEW (8 Jan 2026):
 - **Grouped Banner**: When ≥3 zones overflow OR ≥10% bottles misplaced, shows single grouped banner instead of multiple alerts
 - **Two-Path UX**: "Quick Fix Individual Zones" for minor issues vs "Full Reconfiguration" for systemic issues
-- **AI-Powered Plan**: Claude generates cellar-wide restructuring plan with expand/merge/retire actions
+- **3-Layer Iterative Pipeline** ✨ UPDATED: Deterministic solver → LLM refinement (Sonnet 4.5) → heuristic gap-fill
 - **Skip Individual Actions**: User can uncheck specific actions before applying
 - **Plan Preview Modal**: Shows summary (zones changed, bottles affected, misplaced reduction estimate)
 - **Heuristic Fallback**: Conservative row expansion when Claude not configured
@@ -1162,9 +1196,9 @@ public/js/
 | `ratings/` | 5 | Score normalization, source selection, structured parsers |
 | `scraping/` | 6 | Page fetching, authenticated scraping, Vivino/Decanter |
 | `search/` | 13 | Google/Gemini search, query building, URL/relevance scoring |
-| `shared/` | 9 | Cache, circuit breaker, encryption, fetch utils, job queue |
+| `shared/` | 10 | Cache, circuit breaker, encryption, fetch utils, job queue, cellar layout settings |
 | `wine/` | 12 | Identity, fingerprint, name parsing, drinking windows |
-| `zone/` | 9 | Zone chat, metadata, pins, capacity, reconfiguration, row allocation solver |
+| `zone/` | 10 | Zone chat, metadata, pins, capacity, reconfiguration, row allocation solver |
 | _(root)_ | 5 | Cross-domain orchestrators (acquisitionWorkflow, palateProfile, tastingExtractor, tastingNotesV2, vocabularyNormaliser) |
 
 **Configuration Layer** (`src/config/`):
