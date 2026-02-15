@@ -176,17 +176,22 @@ ${JSON.stringify(fridgeContext, null, 2)}
 </FRIDGE_STATUS>` : ''}
 
 <TASK>
-1. Review layout and confirm zones match their intent
+1. FIRST: Assess whether the current zone labels and boundaries are appropriate for the collection.
+   - If zones are well-suited: set zonesNeedReconfiguration to false and explain why they work.
+   - If zones should change: set zonesNeedReconfiguration to true, explain why in zoneVerdict,
+     and provide specific proposed changes in proposedZoneChanges.
 2. Review suggested moves - confirm, modify, or reject each
 3. Flag ambiguous wines that could fit multiple categories
-4. Suggest zone boundary adjustments if collection has shifted
-5. Create fridge stocking plan with diverse coverage
-6. Explain the cellar organization in 2-3 sentences for the owner
+4. Create fridge stocking plan with diverse coverage
+5. Explain the cellar organization in 2-3 sentences for the owner
 </TASK>
 
 <OUTPUT_FORMAT>
 Respond ONLY with valid JSON matching this exact structure:
 {
+  "zonesNeedReconfiguration": false,
+  "zoneVerdict": "Brief assessment of whether current zones suit the collection (1-2 sentences)",
+  "proposedZoneChanges": [{ "zoneId": "string", "currentLabel": "string", "proposedLabel": "string", "reason": "string" }],
   "confirmedMoves": [{ "wineId": number, "from": "slot", "to": "slot" }],
   "modifiedMoves": [{ "wineId": number, "from": "slot", "to": "slot", "reason": "string" }],
   "rejectedMoves": [{ "wineId": number, "reason": "string" }],
@@ -230,6 +235,9 @@ function sanitizeForPrompt(str) {
  */
 function validateAdviceSchema(parsed) {
   return {
+    zonesNeedReconfiguration: parsed.zonesNeedReconfiguration === true,
+    zoneVerdict: typeof parsed.zoneVerdict === 'string' ? parsed.zoneVerdict : null,
+    proposedZoneChanges: Array.isArray(parsed.proposedZoneChanges) ? parsed.proposedZoneChanges : [],
     confirmedMoves: Array.isArray(parsed.confirmedMoves) ? parsed.confirmedMoves : [],
     modifiedMoves: Array.isArray(parsed.modifiedMoves) ? parsed.modifiedMoves : [],
     rejectedMoves: Array.isArray(parsed.rejectedMoves) ? parsed.rejectedMoves : [],
@@ -265,6 +273,9 @@ function generateFallbackAdvice(report) {
   } : null;
 
   return {
+    zonesNeedReconfiguration: false,
+    zoneVerdict: 'AI analysis unavailable — zone assessment skipped.',
+    proposedZoneChanges: [],
     confirmedMoves: report.suggestedMoves
       .filter(m => m.type === 'move' && m.confidence === 'high')
       .map(m => ({ wineId: m.wineId, from: m.from, to: m.to })),

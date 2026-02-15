@@ -46,8 +46,8 @@ vi.mock('../../../public/js/utils.js', () => ({
 
 // Mock labels.js
 vi.mock('../../../public/js/cellarAnalysis/labels.js', () => ({
-  CTA_AI_RECOMMENDATIONS: 'AI Recommendations',
-  CTA_RECONFIGURE_ZONES: 'Reconfigure Zones',
+  CTA_AI_RECOMMENDATIONS: 'AI Zone Structure',
+  CTA_RECONFIGURE_ZONES: 'Reorganise Zones',
   CTA_SETUP_ZONES: 'Setup Zones',
   CTA_GUIDE_MOVES: 'Guide Me Through Moves',
 }));
@@ -76,6 +76,9 @@ const mockAnalysis = {
 const mockAdvice = {
   summary: 'Your cellar is well-organized.',
   layoutNarrative: 'The zones follow logical groupings.',
+  zonesNeedReconfiguration: false,
+  zoneVerdict: 'Your zones are well-suited to your collection.',
+  proposedZoneChanges: [],
   zoneHealth: [{ zone: 'SA Reds', status: 'healthy', recommendation: 'No changes needed.' }],
   zoneAdjustments: [{ zoneId: 'italian', suggestion: 'Consider splitting into sub-regions.' }],
   confirmedMoves: [{ wineId: 1, wineName: 'Kanonkop Pinotage 2019', from: 'R3C1', to: 'R5C2' }],
@@ -107,6 +110,20 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('zone-health-item good');
     expect(html).toContain('zone-health-item warning');
     expect(html).toContain('zone-health-item bad');
+  });
+
+  it('renders zone verdict with correct class for healthy zones', () => {
+    const html = formatAIAdvice(mockAdvice);
+    expect(html).toContain('ai-zone-verdict--good');
+    expect(html).toContain('Your zones are well-suited to your collection.');
+    expect(html).toContain('Zone Assessment');
+  });
+
+  it('renders zone verdict with reconfig class when zonesNeedReconfiguration=true', () => {
+    const advice = { ...mockAdvice, zonesNeedReconfiguration: true, zoneVerdict: 'Zones should be updated.' };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('ai-zone-verdict--reconfig');
+    expect(html).toContain('Zones should be updated.');
   });
 
   it('renders zone adjustments as list items', () => {
@@ -162,12 +179,65 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Ready to drink');
   });
 
-  it('renders bottom CTAs (Reconfigure Zones + Scroll to Moves)', () => {
+  it('renders bottom CTAs when zones do NOT need reconfiguration', () => {
     const html = formatAIAdvice(mockAdvice);
     expect(html).toContain('data-action="ai-reconfigure-zones"');
-    expect(html).toContain('Reconfigure Zones');
+    expect(html).toContain('Reorganise Zones');
     expect(html).toContain('data-action="ai-scroll-to-moves"');
     expect(html).toContain('Scroll to Moves');
+  });
+
+  it('gates moves behind zone acceptance when zonesNeedReconfiguration=true', () => {
+    const advice = { ...mockAdvice, zonesNeedReconfiguration: true, zoneVerdict: 'Zones need updating.' };
+    const html = formatAIAdvice(advice);
+    // Should have a gate with accept button
+    expect(html).toContain('ai-zone-gate');
+    expect(html).toContain('data-action="ai-accept-zones"');
+    expect(html).toContain('Accept Zones');
+    // Moves container should be hidden
+    expect(html).toContain('id="ai-moves-gated"');
+    expect(html).toContain('display:none');
+    // Bottom CTAs should NOT be shown while gated
+    expect(html).not.toContain('data-action="ai-scroll-to-moves"');
+  });
+
+  it('shows moves immediately when zonesNeedReconfiguration=false', () => {
+    const html = formatAIAdvice(mockAdvice);
+    // No gate
+    expect(html).not.toContain('ai-zone-gate');
+    expect(html).not.toContain('data-action="ai-accept-zones"');
+    // Moves should be visible (no display:none on the container)
+    expect(html).toContain('id="ai-moves-gated"');
+    expect(html).not.toMatch(/id="ai-moves-gated"[^>]*display:none/);
+  });
+
+  it('renders proposedZoneChanges with labels and reasons', () => {
+    const advice = {
+      ...mockAdvice,
+      zonesNeedReconfiguration: true,
+      proposedZoneChanges: [
+        { zoneId: 'zone-1', currentLabel: 'SA Reds', proposedLabel: 'Premium Reds', reason: 'Better reflects collection' }
+      ],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('ai-proposed-zone-changes');
+    expect(html).toContain('Proposed Zone Changes');
+    expect(html).toContain('SA Reds');
+    expect(html).toContain('Premium Reds');
+    expect(html).toContain('Better reflects collection');
+  });
+
+  it('does not render zone adjustments when proposedZoneChanges are present', () => {
+    const advice = {
+      ...mockAdvice,
+      zonesNeedReconfiguration: true,
+      proposedZoneChanges: [
+        { zoneId: 'zone-1', currentLabel: 'SA Reds', proposedLabel: 'Premium Reds', reason: 'test' }
+      ],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('ai-proposed-zone-changes');
+    expect(html).not.toContain('ai-zone-adjustments');
   });
 
   it('skips move sections when needsZoneSetup=true (R1-7)', () => {
@@ -180,10 +250,10 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Your cellar is well-organized.');
   });
 
-  it('skips Reconfigure Zones CTA when needsZoneSetup=true', () => {
+  it('skips Reorganise Zones CTA and zone gate when needsZoneSetup=true', () => {
     const html = formatAIAdvice(mockAdvice, true);
-    expect(html).not.toContain('data-action="ai-reconfigure-zones"');
     expect(html).not.toContain('data-action="ai-scroll-to-moves"');
+    expect(html).not.toContain('ai-zone-gate');
   });
 
   it('escapes HTML in all AI-provided text fields (R1-2)', () => {

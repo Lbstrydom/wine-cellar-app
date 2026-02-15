@@ -4,7 +4,7 @@
  * @module cellarAnalysis/labels
  */
 
-export const CTA_RECONFIGURE_ZONES = 'Reconfigure Zones';
-export const CTA_AI_RECOMMENDATIONS = 'AI Recommendations';
+export const CTA_RECONFIGURE_ZONES = 'Reorganise Zones';
+export const CTA_AI_RECOMMENDATIONS = 'AI Zone Structure';
 export const CTA_SETUP_ZONES = 'Setup Zones';
 export const CTA_GUIDE_MOVES = 'Guide Me Through Moves';

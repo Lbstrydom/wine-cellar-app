@@ -1,5 +1,5 @@
 /**
- * @fileoverview Action handlers for AI Recommendations section.
+ * @fileoverview Action handlers for AI Zone Structure section.
  * Wires event listeners and handles move execution, zone reassignment,
  * and navigation actions. Separated from aiAdvice.js (view) for SRP.
  * @module cellarAnalysis/aiAdviceActions
@@ -9,6 +9,7 @@ import { executeCellarMoves, reassignWineZone } from '../api.js';
 import { showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { getCurrentAnalysis } from './state.js';
+import { CTA_RECONFIGURE_ZONES } from './labels.js';
 import { getOnRenderAnalysis } from './analysis.js';
 import { renderMoves } from './moves.js';
 import { refreshLayout } from '../app.js';
@@ -20,10 +21,17 @@ import { refreshLayout } from '../app.js';
  * @param {Object} advice - The enriched AI advice object
  */
 function wireAdviceActions(container, advice) {
-  // Reconfigure Zones CTA
-  container.querySelector('[data-action="ai-reconfigure-zones"]')?.addEventListener('click', () => {
-    const callback = getOnRenderAnalysis();
-    openReconfigurationModal({ onRenderAnalysis: callback });
+  // Accept Zones CTA — reveals gated move sections
+  container.querySelector('[data-action="ai-accept-zones"]')?.addEventListener('click', () => {
+    handleAcceptZones(container);
+  });
+
+  // Reorganise Zones CTA (multiple possible — use querySelectorAll)
+  container.querySelectorAll('[data-action="ai-reconfigure-zones"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const callback = getOnRenderAnalysis();
+      openReconfigurationModal({ onRenderAnalysis: callback });
+    });
   });
 
   // Scroll to Moves CTA
@@ -45,6 +53,43 @@ function wireAdviceActions(container, advice) {
   container.querySelectorAll('.ai-zone-choice-btn').forEach(btn => {
     btn.addEventListener('click', () => handleZoneChoice(btn, container));
   });
+}
+
+/**
+ * Handle "Accept Zones" — reveal the gated move sections and
+ * replace the zone gate with bottom CTAs.
+ * @param {HTMLElement} container - The AI advice container
+ */
+function handleAcceptZones(container) {
+  // Reveal the hidden moves container
+  const movesContainer = container.querySelector('#ai-moves-gated');
+  if (movesContainer) {
+    movesContainer.style.display = '';
+    movesContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+
+  // Hide the zone gate
+  const gate = container.querySelector('.ai-zone-gate');
+  if (gate) gate.style.display = 'none';
+
+  // Show bottom CTAs now that moves are visible
+  const ctaHtml = `<div class="ai-advice-cta">
+    <button class="btn btn-primary" data-action="ai-reconfigure-zones">${CTA_RECONFIGURE_ZONES}</button>
+    <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Moves</button>
+  </div>`;
+  container.querySelector('.ai-advice-structured')?.insertAdjacentHTML('beforeend', ctaHtml);
+
+  // Wire the newly added CTA buttons
+  const newCta = container.querySelector('.ai-advice-cta');
+  if (newCta) {
+    newCta.querySelector('[data-action="ai-reconfigure-zones"]')?.addEventListener('click', () => {
+      const callback = getOnRenderAnalysis();
+      openReconfigurationModal({ onRenderAnalysis: callback });
+    });
+    newCta.querySelector('[data-action="ai-scroll-to-moves"]')?.addEventListener('click', () => {
+      document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  }
 }
 
 /**

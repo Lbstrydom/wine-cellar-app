@@ -1,5 +1,5 @@
 /**
- * @fileoverview AI Recommendations view layer.
+ * @fileoverview AI Zone Structure view layer.
  * Handles API call, spinner UI, HTML rendering for AI advice.
  * Action wiring is delegated to aiAdviceActions.js (controller).
  * @module cellarAnalysis/aiAdvice
@@ -53,7 +53,7 @@ export async function handleGetAIAdvice() {
 
   // Inline button spinner — no page jump
   if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Analysing\u2026'; }
-  if (statusEl) statusEl.textContent = 'AI recommendations in progress (may take up to 2 minutes)...';
+  if (statusEl) statusEl.textContent = 'AI zone structure analysis in progress (may take up to 2 minutes)...';
 
   try {
     const result = await analyseCellarAI();
@@ -114,6 +114,8 @@ function enrichMovesWithNames(moves) {
 
 /**
  * Format AI advice object into HTML.
+ * Implements zone-first flow: if zones need reconfiguration, the user must
+ * accept or reorganise zones before move sections are revealed.
  * @param {Object} advice - AI advice object (enriched)
  * @param {boolean} needsZoneSetup - Whether zones need setup
  * @returns {string} HTML formatted advice
@@ -129,6 +131,9 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     return `<div class="ai-advice-content">${paragraphs}</div>`;
   }
 
+  const zonesNeedReconfig = advice.zonesNeedReconfiguration === true;
+  const hasProposedChanges = advice.proposedZoneChanges?.length > 0;
+
   let html = '<div class="ai-advice-structured">';
 
   // 1. Summary
@@ -141,7 +146,17 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += `<div class="ai-narrative"><h4>Cellar Layout</h4><p>${escapeHtml(advice.layoutNarrative)}</p></div>`;
   }
 
-  // 3. Zone Health
+  // 3. Zone Verdict — always shown when present
+  if (advice.zoneVerdict) {
+    const verdictClass = zonesNeedReconfig ? 'ai-zone-verdict--reconfig' : 'ai-zone-verdict--good';
+    const verdictIcon = zonesNeedReconfig ? '⚠️' : '✅';
+    html += `<div class="ai-zone-verdict ${verdictClass}">
+      <h4>${verdictIcon} Zone Assessment</h4>
+      <p>${escapeHtml(advice.zoneVerdict)}</p>
+    </div>`;
+  }
+
+  // 4. Zone Health
   if (advice.zoneHealth?.length > 0) {
     html += '<details class="ai-zone-health" open>';
     html += `<summary><h4>Zone Health <span class="ai-count-badge">${advice.zoneHealth.length}</span></h4></summary>`;
@@ -158,8 +173,25 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += '</details>';
   }
 
-  // 4. Zone Adjustments
-  if (advice.zoneAdjustments?.length > 0) {
+  // 5. Proposed Zone Changes (zone-first gate)
+  if (hasProposedChanges) {
+    html += '<details class="ai-proposed-zone-changes" open>';
+    html += `<summary><h4>Proposed Zone Changes <span class="ai-count-badge">${advice.proposedZoneChanges.length}</span></h4></summary>`;
+    html += '<p class="ai-section-hint">The AI recommends updating these zones before moving bottles.</p>';
+    advice.proposedZoneChanges.forEach(change => {
+      html += `<div class="zone-change-item">
+        <span class="zone-change-id">${escapeHtml(change.zoneId)}</span>`;
+      if (change.currentLabel && change.proposedLabel) {
+        html += ` <span class="zone-change-arrow">${escapeHtml(change.currentLabel)} &rarr; ${escapeHtml(change.proposedLabel)}</span>`;
+      }
+      html += `<p class="zone-change-reason">${escapeHtml(change.reason || '')}</p>
+      </div>`;
+    });
+    html += '</details>';
+  }
+
+  // 5b. Zone Adjustments (legacy format — when no proposedZoneChanges)
+  if (!hasProposedChanges && advice.zoneAdjustments?.length > 0) {
     html += '<details class="ai-zone-adjustments" open>';
     html += `<summary><h4>Suggested Zone Changes <span class="ai-count-badge">${advice.zoneAdjustments.length}</span></h4></summary>`;
     html += '<ul>';
@@ -169,18 +201,35 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += '</ul></details>';
   }
 
-  // Sections 5-8: Only when needsZoneSetup is false (R1-7)
+  // Zone gate: if zones need reconfiguration, show accept/reconfigure CTAs
+  // and hide moves until user decides
+  const showZoneGate = zonesNeedReconfig && !needsZoneSetup;
+  if (showZoneGate) {
+    html += `<div class="ai-zone-gate">
+      <p class="ai-zone-gate-message">Review the zone recommendations above before proceeding to bottle moves.</p>
+      <div class="ai-zone-gate-actions">
+        <button class="btn btn-primary" data-action="ai-accept-zones">Accept Zones — Show Moves</button>
+        <button class="btn btn-secondary" data-action="ai-reconfigure-zones">Reorganise Instead</button>
+      </div>
+    </div>`;
+  }
+
+  // Move sections: gated behind zone acceptance when zonesNeedReconfiguration
+  const movesHiddenClass = showZoneGate ? ' style="display:none"' : '';
+
   if (!needsZoneSetup) {
-    // 5. Confirmed Moves
+    html += `<div class="ai-moves-container" id="ai-moves-gated"${movesHiddenClass}>`;
+
+    // 6. Confirmed Moves
     html += renderMoveSection(advice.confirmedMoves, SECTION_CONFIG.confirmed);
 
-    // 6. Modified Moves
+    // 7. Modified Moves
     html += renderMoveSection(advice.modifiedMoves, SECTION_CONFIG.modified);
 
-    // 7. Rejected Moves
+    // 8. Rejected Moves
     html += renderMoveSection(advice.rejectedMoves, SECTION_CONFIG.rejected);
 
-    // 8. Ambiguous Wines
+    // 9. Ambiguous Wines
     if (advice.ambiguousWines?.length > 0) {
       html += '<details class="ai-ambiguous-wines" open>';
       html += `<summary><h4>Needs Your Input <span class="ai-count-badge">${advice.ambiguousWines.length}</span></h4></summary>`;
@@ -198,9 +247,11 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
       });
       html += '</details>';
     }
+
+    html += '</div>'; // close ai-moves-container
   }
 
-  // 9. Fridge Plan (always rendered)
+  // 10. Fridge Plan (always rendered)
   if (advice.fridgePlan?.toAdd?.length > 0) {
     html += '<details class="ai-fridge-plan">';
     html += `<summary><h4>Fridge Recommendations <span class="ai-count-badge">${advice.fridgePlan.toAdd.length}</span></h4></summary>`;
@@ -211,8 +262,8 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += '</ul></details>';
   }
 
-  // Bottom CTAs — only when needsZoneSetup is false (R1-7)
-  if (!needsZoneSetup) {
+  // Bottom CTAs — only when move sections are visible (not gated) and not needsZoneSetup
+  if (!needsZoneSetup && !showZoneGate) {
     html += `<div class="ai-advice-cta">
       <button class="btn btn-primary" data-action="ai-reconfigure-zones">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
       <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Moves</button>

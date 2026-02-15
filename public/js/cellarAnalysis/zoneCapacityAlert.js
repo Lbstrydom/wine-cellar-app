@@ -106,7 +106,7 @@ async function handleGetAi(alert, rootEl, onRenderAnalysis) {
 
   const data = alert.data || {};
 
-  adviceEl.innerHTML = '<div class="analysis-loading">Getting AI recommendations...</div>';
+  adviceEl.innerHTML = '<div class="analysis-loading">Getting AI zone structure analysis...</div>';
 
   try {
     const payload = {
