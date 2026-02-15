@@ -10,6 +10,19 @@ import { getCurrentAnalysis } from './state.js';
 import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
 
 /**
+ * Recalculate swap flags on current analysis and re-render moves.
+ * Centralised to avoid duplicating the swap-recheck pattern.
+ */
+function recheckSwapsAndRerender() {
+  const currentAnalysis = getCurrentAnalysis();
+  if (!currentAnalysis?.suggestedMoves) return;
+  const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
+  const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
+  currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
+  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+}
+
+/**
  * Render suggested moves.
  * @param {Array} moves
  * @param {boolean} needsZoneSetup
@@ -101,6 +114,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
           </div>
           <span class="move-confidence ${move.confidence}">${move.confidence}</span>
           <div class="move-actions">
+            <button class="btn btn-primary btn-small move-findslot-btn" data-move-index="${index}" title="Re-analyse with overflow to find a slot">Find Slot</button>
             <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}" title="Dismiss this suggestion">Dismiss</button>
           </div>
         </div>
@@ -207,6 +221,24 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     });
   });
 
+  // "Find Slot" button on manual (zone-full) moves → re-analyse with overflow
+  listEl.querySelectorAll('.move-findslot-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      btn.disabled = true;
+      btn.textContent = 'Searching...';
+      try {
+        const { loadAnalysis } = await import('./analysis.js');
+        await loadAnalysis(true, { allowFallback: true });
+        showToast('Re-analysed with overflow slots enabled');
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Find Slot';
+      }
+    });
+  });
+
   // Make move item card bodies clickable (triggers primary action)
   listEl.querySelectorAll('.move-item[data-move-index]').forEach(item => {
     item.addEventListener('click', (e) => {
@@ -217,8 +249,10 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       if (!move) return;
 
       if (move.type === 'manual') {
-        // For manual items, dismiss on tap
-        dismissMove(index);
+        // For manual items, trigger Find Slot (re-analyse with fallback)
+        const findSlotBtn = item.querySelector('.move-findslot-btn');
+        if (findSlotBtn) findSlotBtn.click();
+        else dismissMove(index);
       } else if (move.type === 'move') {
         // For actionable moves, trigger the primary action
         const swapBtn = item.querySelector('.move-swap-btn');
@@ -290,10 +324,7 @@ async function executeSwap(index) {
     indices.forEach(i => currentAnalysis.suggestedMoves.splice(i, 1));
 
     // Re-check if remaining moves have swaps/dependencies
-    const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
-    const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
-    currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
-    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+    recheckSwapsAndRerender();
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -321,11 +352,7 @@ async function executeMove(index) {
 
     // Remove move from list and refresh
     currentAnalysis.suggestedMoves.splice(index, 1);
-    // Re-check if remaining moves have swaps
-    const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
-    const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
-    currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
-    renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+    recheckSwapsAndRerender();
     refreshLayout();
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -341,11 +368,7 @@ function dismissMove(index) {
   if (!currentAnalysis?.suggestedMoves?.[index]) return;
 
   currentAnalysis.suggestedMoves.splice(index, 1);
-  // Re-check if remaining moves have swaps
-  const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
-  const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
-  currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
-  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+  recheckSwapsAndRerender();
 }
 
 /**
@@ -368,11 +391,7 @@ function dismissSwapGroup(index) {
   indices.sort((a, b) => b - a);
   indices.forEach(i => currentAnalysis.suggestedMoves.splice(i, 1));
 
-  // Re-check swap flags
-  const sources = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
-  const targets = new Set(currentAnalysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
-  currentAnalysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
-  renderMoves(currentAnalysis.suggestedMoves, currentAnalysis.needsZoneSetup, currentAnalysis.movesHaveSwaps);
+  recheckSwapsAndRerender();
 }
 
 /**
@@ -678,7 +697,7 @@ export function renderCompactionMoves(compactionMoves) {
       try {
         btn.disabled = true;
         btn.textContent = 'Moving...';
-        await executeCellarMoves([{ from: move.from, to: move.to }]);
+        await executeCellarMoves([{ wineId: move.wineId, from: move.from, to: move.to }]);
         showToast(`Moved to ${move.to}`);
         await refreshLayout();
         const { loadAnalysis } = await import('./analysis.js');

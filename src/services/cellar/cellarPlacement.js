@@ -8,7 +8,7 @@ import { ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../../config/cellarThresholds.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
-import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
+import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -272,13 +272,20 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   // Resolve layout settings + dynamic row ranges on top-level call
   let whiteRows, redRows;
   if (cellarId && fillDirection === undefined && colourOrder === undefined) {
-    const layoutSettings = await getCellarLayoutSettings(cellarId);
-    fillDirection = layoutSettings.fillDirection;
-    colourOrder = layoutSettings.colourOrder;
-    const dynamic = await getDynamicColourRowRanges(cellarId, colourOrder);
-    whiteRows = dynamic.whiteRows;
-    redRows = dynamic.redRows;
-    options = { ...options, fillDirection, colourOrder, whiteRows, redRows };
+    try {
+      const layoutSettings = await getCellarLayoutSettings(cellarId);
+      fillDirection = layoutSettings.fillDirection;
+      colourOrder = layoutSettings.colourOrder;
+      const dynamic = await getDynamicColourRowRanges(cellarId, colourOrder);
+      whiteRows = dynamic.whiteRows;
+      redRows = dynamic.redRows;
+      options = { ...options, fillDirection, colourOrder, whiteRows, redRows };
+    } catch (err) {
+      console.error('[findAvailableSlot] Failed to load layout settings, using defaults:', err.message);
+      fillDirection = LAYOUT_DEFAULTS.fillDirection;
+      colourOrder = LAYOUT_DEFAULTS.colourOrder;
+      options = { ...options, fillDirection, colourOrder };
+    }
   } else {
     whiteRows = options.whiteRows;
     redRows = options.redRows;

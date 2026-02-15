@@ -24,7 +24,7 @@ const TOTAL_ROWS = 19;
 const MIN_ROWS_WHEN_PRESENT = 2;
 
 /** Default layout settings */
-const DEFAULTS = {
+export const LAYOUT_DEFAULTS = {
   colourOrder: 'whites-top',
   fillDirection: 'left'
 };
@@ -35,14 +35,14 @@ const DEFAULTS = {
  * @returns {Promise<CellarLayoutSettings>}
  */
 export async function getCellarLayoutSettings(cellarId) {
-  if (!cellarId) return { ...DEFAULTS };
+  if (!cellarId) return { ...LAYOUT_DEFAULTS };
 
   const rows = await db.prepare(
     `SELECT key, value FROM user_settings
      WHERE cellar_id = $1 AND key IN ('cellar_colour_order', 'cellar_fill_direction')`
   ).all(cellarId);
 
-  const settings = { ...DEFAULTS };
+  const settings = { ...LAYOUT_DEFAULTS };
   for (const row of rows) {
     if (row.key === 'cellar_colour_order' && (row.value === 'whites-top' || row.value === 'reds-top')) {
       settings.colourOrder = row.value;

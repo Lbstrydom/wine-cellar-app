@@ -285,11 +285,17 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
     // Add already-allocated targets to the occupied set
     allocatedTargets.forEach(target => currentlyOccupied.add(target));
 
-    const slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine, {
-      allowFallback,
-      enforceAffinity: true,
-      cellarId
-    });
+    let slot;
+    try {
+      slot = await findAvailableSlot(wine.suggestedZoneId, currentlyOccupied, wine, {
+        allowFallback,
+        enforceAffinity: true,
+        cellarId
+      });
+    } catch (err) {
+      console.error(`[MoveSuggestions] findAvailableSlot failed for wine ${wine.wineId}:`, err.message);
+      slot = null;
+    }
 
     if (slot) {
       suggestions.push({

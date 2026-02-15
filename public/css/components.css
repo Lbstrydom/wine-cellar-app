@@ -954,6 +954,11 @@
   margin-top: 1rem;
 }
 
+#compaction-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
 .row-allocation-info {
   margin-bottom: 0.75rem;
 }
@@ -7712,6 +7717,12 @@ body.move-guide-active #view-grid {
   /* Move guide panel — compact on mobile */
   .move-guide-panel {
     padding: 0.5rem 0.75rem;
+  }
+
+  /* Analysis sections — add side padding on mobile for edge clearance */
+  #view-analysis {
+    padding-left: 0.25rem;
+    padding-right: 0.25rem;
   }
 
   .move-guide-actions {

@@ -16,6 +16,7 @@ vi.mock('../../../../src/services/cellar/cellarAllocation.js', () => ({
 }));
 
 vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
+  LAYOUT_DEFAULTS: { colourOrder: 'whites-top', fillDirection: 'left' },
   isWhiteFamily: vi.fn((colour) => {
     const whiteFamilyColours = ['white', 'rose', 'rosé', 'orange', 'sparkling', 'dessert', 'fortified'];
     return whiteFamilyColours.includes((colour || '').toLowerCase());

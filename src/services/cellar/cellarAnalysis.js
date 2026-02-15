@@ -23,7 +23,7 @@ import {
   getCurrentZoneAllocation,
   generateCompactionMoves
 } from './cellarSuggestions.js';
-import { getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
+import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
 // ───────────────────────────────────────────────────────────
@@ -119,13 +119,25 @@ export async function analyseCellar(wines) {
   report.alerts.unshift(...capacityAlerts);
 
   // Generate compaction moves (fill gaps in rows)
-  const layoutSettings = await getCellarLayoutSettings(cellarId);
+  let layoutSettings;
+  try {
+    layoutSettings = await getCellarLayoutSettings(cellarId);
+  } catch (err) {
+    console.error('[CellarAnalysis] Failed to load layout settings, using defaults:', err.message);
+    layoutSettings = { ...LAYOUT_DEFAULTS };
+  }
   const compactionMoves = generateCompactionMoves(slotToWine, layoutSettings.fillDirection);
   report.compactionMoves = compactionMoves;
   report.summary.gapCount = compactionMoves.length;
 
   // Dynamic row allocation based on current inventory
-  const dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+  let dynamicRanges;
+  try {
+    dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+  } catch (err) {
+    console.error('[CellarAnalysis] Failed to load dynamic row ranges, using defaults:', err.message);
+    dynamicRanges = { whiteRowCount: 0, redRowCount: 0, whiteCount: 0, redCount: 0 };
+  }
   report.layoutSettings = {
     colourOrder: layoutSettings.colourOrder,
     fillDirection: layoutSettings.fillDirection,
