@@ -64,8 +64,8 @@ export const TASK_MODELS = {
   menuParsing: 'claude-sonnet-4-5-20250929',
   restaurantPairing: 'claude-sonnet-4-5-20250929',
 
-  // Complex planning tasks use Opus 4.6 with adaptive thinking
-  cellarAnalysis: 'claude-opus-4-6',
+  // Cellar analysis uses Sonnet — classification + review, not deep planning
+  cellarAnalysis: 'claude-sonnet-4-5-20250929',
   zoneCapacityAdvice: 'claude-opus-4-6',
   // Reconfiguration uses Sonnet — primary planning is done by algorithmic solver
   zoneReconfigurationPlan: 'claude-sonnet-4-5-20250929',
@@ -98,7 +98,6 @@ const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'max']);
  * @type {Object.<string, string>}
  */
 export const TASK_THINKING = {
-  cellarAnalysis: 'high',
   zoneReconfigurationPlan: 'low',
   zoneCapacityAdvice: 'medium',
   awardExtraction: 'medium'

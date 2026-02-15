@@ -202,15 +202,36 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
     await cacheAnalysis('full', report, wineCount, req.cellarId);
   }
 
+  // Check for cached AI advice (keyed to same slot hash as report)
+  const cachedAI = await getCachedAnalysis('ai_advice', req.cellarId);
+  if (cachedAI) {
+    return res.json({
+      success: true,
+      report,
+      aiAdvice: cachedAI.data.advice,
+      aiSuccess: cachedAI.data.aiSuccess,
+      aiError: cachedAI.data.aiError || null,
+      reportFromCache: fromCache,
+      aiFromCache: true
+    });
+  }
+
   const aiResult = await getCellarOrganisationAdvice(report);
+
+  // Cache AI advice alongside report (same TTL)
+  const advice = aiResult.success ? aiResult.advice : aiResult.fallback;
+  const aiCacheData = { advice, aiSuccess: aiResult.success, aiError: aiResult.error || null };
+  const bottleCount = report.summary?.totalBottles || 0;
+  await cacheAnalysis('ai_advice', aiCacheData, bottleCount, req.cellarId);
 
   res.json({
     success: true,
     report,
-    aiAdvice: aiResult.success ? aiResult.advice : aiResult.fallback,
+    aiAdvice: advice,
     aiSuccess: aiResult.success,
     aiError: aiResult.error || null,
-    reportFromCache: fromCache
+    reportFromCache: fromCache,
+    aiFromCache: false
   });
 }));
 

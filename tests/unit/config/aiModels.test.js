@@ -89,9 +89,12 @@ describe('aiModels', () => {
     });
 
     it('should map complex tasks to Opus 4.6', () => {
-      expect(TASK_MODELS.cellarAnalysis).toBe('claude-opus-4-6');
       expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-opus-4-6');
       expect(TASK_MODELS.awardExtraction).toBe('claude-opus-4-6');
+    });
+
+    it('should map cellarAnalysis to Sonnet (classification, not deep planning)', () => {
+      expect(TASK_MODELS.cellarAnalysis).toBe('claude-sonnet-4-5-20250929');
     });
 
     it('should map zoneReconfigurationPlan to Sonnet (solver handles primary planning)', () => {
@@ -133,7 +136,7 @@ describe('aiModels', () => {
 
     it('should return mapped model for known tasks', () => {
       expect(getModelForTask('menuParsing')).toBe('claude-sonnet-4-5-20250929');
-      expect(getModelForTask('cellarAnalysis')).toBe('claude-opus-4-6');
+      expect(getModelForTask('cellarAnalysis')).toBe('claude-sonnet-4-5-20250929');
       expect(getModelForTask('wineClassification')).toBe('claude-haiku-4-5-20251001');
     });
 
@@ -193,11 +196,8 @@ describe('aiModels', () => {
   });
 
   describe('getThinkingConfig()', () => {
-    it('should return adaptive thinking with high effort for cellarAnalysis', () => {
-      expect(getThinkingConfig('cellarAnalysis')).toEqual({
-        thinking: { type: 'adaptive' },
-        output_config: { effort: 'high' }
-      });
+    it('should return null for cellarAnalysis (no thinking for classification)', () => {
+      expect(getThinkingConfig('cellarAnalysis')).toBeNull();
     });
 
     it('should return adaptive thinking with low effort for zoneReconfigurationPlan (solver handles primary planning)', () => {

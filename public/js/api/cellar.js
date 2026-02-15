@@ -176,7 +176,7 @@ export async function undoReconfiguration(reconfigurationId) {
 export async function analyseCellarAI() {
   // Use cache: 'no-store' to bypass service worker caching
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 minute timeout
+  const timeoutId = setTimeout(() => controller.abort(), 240000); // 4 minute timeout
 
   try {
     const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`, {
