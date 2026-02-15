@@ -469,4 +469,75 @@ describe('rowAllocationSolver', () => {
       expect(result).toHaveProperty('reasoning');
     });
   });
+
+  describe('colourOrder support', () => {
+    it('fixes white zones in red region for whites-top (default)', () => {
+      // White zone (chenin_blanc) at R15, red zone (cabernet) at R1 → both violated
+      // boundary = countColorRows('white') = 1, so white region = R1, red region = R2-19
+      const zones = [
+        makeZone('chenin_blanc', ['R15'], 5),
+        makeZone('cabernet', ['R1'], 8)
+      ];
+      const utilization = {
+        chenin_blanc: makeUtil(5, 1),
+        cabernet: makeUtil(8, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        colourOrder: 'whites-top'
+      });
+
+      // Should produce swap actions to fix colour boundary
+      const reallocateActions = result.actions.filter(a => a.type === 'reallocate_row');
+      expect(reallocateActions.length).toBeGreaterThanOrEqual(2);
+      expect(reallocateActions.some(a => a.reason.includes('color boundary'))).toBe(true);
+    });
+
+    it('fixes red zones in white region for reds-top', () => {
+      // reds-top: red zones should be in low rows (1..redBoundary), white in high rows
+      // redBoundary = TOTAL_ROWS - whiteRowCount = 19 - 1 = 18
+      // cabernet at R19 (> 18, red in white region), chenin at R1 (≤ 18, white in red region)
+      const zones = [
+        makeZone('cabernet', ['R19'], 8),
+        makeZone('chenin_blanc', ['R1'], 5)
+      ];
+      const utilization = {
+        cabernet: makeUtil(8, 1),
+        chenin_blanc: makeUtil(5, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        colourOrder: 'reds-top'
+      });
+
+      // Should produce swap actions since both are in wrong regions for reds-top
+      const reallocateActions = result.actions.filter(a => a.type === 'reallocate_row');
+      expect(reallocateActions.length).toBeGreaterThanOrEqual(2);
+    });
+
+    it('does not generate swaps when colours are already correct for whites-top', () => {
+      // whites-top: white in R1-R3, red in R10-R12 → no violations
+      const zones = [
+        makeZone('chenin_blanc', ['R1', 'R2', 'R3'], 20),
+        makeZone('cabernet', ['R10', 'R11', 'R12'], 25)
+      ];
+      const utilization = {
+        chenin_blanc: makeUtil(20, 3),
+        cabernet: makeUtil(25, 3)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        colourOrder: 'whites-top'
+      });
+
+      const reallocateActions = result.actions.filter(a => a.type === 'reallocate_row');
+      expect(reallocateActions).toHaveLength(0);
+    });
+  });
 });

@@ -11,6 +11,7 @@ import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
 import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
+import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import {
@@ -293,7 +294,8 @@ async function refinePlanWithLLM(ctx) {
     capacityIssues, underutilizedZones, mergeCandidates,
     neverMerge, stability, includeRetirements,
     totalBottles, misplacedBottles, misplacementPct,
-    report, zoneRowMap
+    report, zoneRowMap,
+    colourOrder = 'whites-top'
   } = ctx;
 
   const statePayload = {
@@ -347,7 +349,7 @@ A solver has already produced a draft plan. Your job is to:
 4. REMOVE actions that are counterproductive
 5. Write a concise reasoning narrative explaining the strategic vision
 
-COLOR BOUNDARY RULE: White wines in lower rows, red wines in higher rows. Never adjacent.
+COLOR BOUNDARY RULE: ${colourOrder === 'reds-top' ? 'Red wines in lower rows, white wines in higher rows' : 'White wines in lower rows, red wines in higher rows'}. Never adjacent.
 CONSOLIDATION RULE: Same wine type should be physically near each other.
 
 You MUST respond with valid JSON only. Be concise.`;
@@ -645,6 +647,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
   let solverReasoning = '';
   try {
     const solverStart = Date.now();
+    const layoutSettings = await getCellarLayoutSettings(cellarId);
     const solverResult = solveRowAllocation({
       zones: zonesWithAllocations,
       utilization,
@@ -654,7 +657,8 @@ export async function generateReconfigurationPlan(report, options = {}) {
       neverMerge,
       stabilityBias: stability,
       scatteredWines: report.scatteredWines || [],
-      colorAdjacencyIssues: report.colorAdjacencyIssues || []
+      colorAdjacencyIssues: report.colorAdjacencyIssues || [],
+      colourOrder: layoutSettings.colourOrder
     });
     const solverMs = Date.now() - solverStart;
     logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s)`);
@@ -685,7 +689,8 @@ export async function generateReconfigurationPlan(report, options = {}) {
         misplacedBottles,
         misplacementPct,
         report,
-        zoneRowMap
+        zoneRowMap,
+        colourOrder: layoutSettings.colourOrder
       });
       llmActions = llmResult.actions;
       llmReasoning = llmResult.reasoning;

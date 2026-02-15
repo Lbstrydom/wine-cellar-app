@@ -6,6 +6,7 @@
 
 import db from '../../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
+import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 
 /**
  * Parse assigned_rows from DB row into a normalized string array.
@@ -84,13 +85,24 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
     }
   }
 
-  // If no preferred row available, try color-compatible rows first, then any row
+  // If no preferred row available, try color-compatible rows using dynamic ranges
   if (!assignedRow) {
     const zoneColor = zone.color;
-    const isRed = zoneColor === 'red' || (Array.isArray(zoneColor) && zoneColor.includes('red'));
-    const colorRange = isRed
-      ? [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-      : [1, 2, 3, 4, 5, 6, 7];
+    const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
+    const zoneIsWhite = isWhiteFamily(primaryColor);
+
+    // Use dynamic colour ranges that respect colourOrder setting
+    let colorRange;
+    try {
+      const layoutSettings = await getCellarLayoutSettings(cellarId);
+      const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+      colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
+    } catch (_err) {
+      // Fallback to static ranges if settings unavailable
+      colorRange = zoneIsWhite
+        ? [1, 2, 3, 4, 5, 6, 7]
+        : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    }
 
     // Try color-compatible rows first
     for (const rowNum of colorRange) {

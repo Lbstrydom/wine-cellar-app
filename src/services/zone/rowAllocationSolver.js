@@ -37,6 +37,7 @@ const SLOTS_PER_ROW = 9;
  * @param {string} params.stabilityBias - 'low'|'moderate'|'high'
  * @param {Array} params.scatteredWines - Wines scattered across rows [{wineName, bottleCount, rows}]
  * @param {Array} params.colorAdjacencyIssues - Color boundary violations
+ * @param {string} [params.colourOrder='whites-top'] - 'whites-top' or 'reds-top'
  * @returns {{ actions: Array, reasoning: string }}
  */
 export function solveRowAllocation(params) {
@@ -49,7 +50,8 @@ export function solveRowAllocation(params) {
     neverMerge = new Set(),
     stabilityBias = 'moderate',
     scatteredWines = [],
-    colorAdjacencyIssues = []
+    colorAdjacencyIssues = [],
+    colourOrder = 'whites-top'
   } = params;
 
   // ───────────────────────────────────────────
@@ -63,12 +65,14 @@ export function solveRowAllocation(params) {
   // ───────────────────────────────────────────
   // Phase 2: Fix color boundary violations
   // ───────────────────────────────────────────
-  const colorFixActions = fixColorBoundaryViolations(zoneRowMap, zones, neverMerge);
+  const colorFixActions = fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder);
   if (colorFixActions.length > 0) {
     actions.push(...colorFixActions);
+    const topLabel = colourOrder === 'reds-top' ? 'red' : 'white/rosé/sparkling';
+    const bottomLabel = colourOrder === 'reds-top' ? 'white/rosé/sparkling' : 'red';
     reasoningParts.push(
       `Fixed ${colorFixActions.length} color boundary violation(s) — ` +
-      'white/rosé/sparkling zones must be in lower rows and red zones in higher rows.'
+      `${topLabel} zones must be in lower rows and ${bottomLabel} zones in higher rows.`
     );
   }
 
@@ -199,7 +203,8 @@ function rowNum(rowId) {
 
 /**
  * Fix color boundary violations by swapping misplaced rows.
- * White zones should be in lower rows, red zones in higher rows.
+ * Respects colourOrder setting: 'whites-top' = white zones in lower row numbers,
+ * 'reds-top' = red zones in lower row numbers.
  *
  * Strategy: Find row pairs where a white-zone row is in the red region
  * and a red-zone row is in the white region, then swap them.
@@ -207,10 +212,12 @@ function rowNum(rowId) {
  * @param {Map} zoneRowMap - Mutable zone→rows map
  * @param {Array} zones - Zone metadata
  * @param {Set} neverMerge - Protected zones
+ * @param {string} [colourOrder='whites-top'] - 'whites-top' or 'reds-top'
  * @returns {Array} Actions to fix color violations
  */
-function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge) {
+function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder = 'whites-top') {
   const actions = [];
+  const whitesOnTop = colourOrder !== 'reds-top';
 
   // Build row→zone map
   const rowToZone = new Map();
@@ -220,14 +227,13 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge) {
     }
   }
 
-  // Find the natural color boundary: last row that should be white
+  // Find the natural color boundary: last row that should be white (or red if reds-top)
   // Based on actual bottle distribution
   const whiteRowCount = countColorRows('white', zoneRowMap);
   const boundary = Math.max(whiteRowCount, 1);
 
-  // Find white-zone rows that are above the boundary (should be lower)
+  // Identify misplaced rows based on colourOrder
   const whiteRowsInRedRegion = [];
-  // Find red-zone rows that are below the boundary (should be higher)
   const redRowsInWhiteRegion = [];
 
   for (let r = 1; r <= TOTAL_ROWS; r++) {
@@ -237,10 +243,23 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge) {
     const color = getZoneColor(zoneId);
     if (color === 'any') continue;
 
-    if (color === 'white' && r > boundary) {
-      whiteRowsInRedRegion.push({ rowId: rId, rowNumber: r, zoneId });
-    } else if (color === 'red' && r <= boundary) {
-      redRowsInWhiteRegion.push({ rowId: rId, rowNumber: r, zoneId });
+    if (whitesOnTop) {
+      // whites-top: white zones should be in rows 1..boundary, red in boundary+1..19
+      if (color === 'white' && r > boundary) {
+        whiteRowsInRedRegion.push({ rowId: rId, rowNumber: r, zoneId });
+      } else if (color === 'red' && r <= boundary) {
+        redRowsInWhiteRegion.push({ rowId: rId, rowNumber: r, zoneId });
+      }
+    } else {
+      // reds-top: red zones should be in rows 1..redBoundary, white in redBoundary+1..19
+      const redBoundary = TOTAL_ROWS - boundary;
+      if (color === 'red' && r > redBoundary) {
+        // Red zone in white region (reds-top: reds should be low numbers)
+        whiteRowsInRedRegion.push({ rowId: rId, rowNumber: r, zoneId });
+      } else if (color === 'white' && r <= redBoundary) {
+        // White zone in red region (reds-top: whites should be high numbers)
+        redRowsInWhiteRegion.push({ rowId: rId, rowNumber: r, zoneId });
+      }
     }
   }
 

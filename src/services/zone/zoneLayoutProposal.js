@@ -6,6 +6,7 @@
 
 import db from '../../db/index.js';
 import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
+import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
 
 // Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
@@ -221,25 +222,27 @@ function classifyWine(wine) {
  */
 export async function proposeZoneLayout(cellarId) {
   const bottlesByZone = await getBottlesByZone(cellarId);
+  const layoutSettings = await getCellarLayoutSettings(cellarId);
+  const isRedsTop = layoutSettings.colourOrder === 'reds-top';
 
-  // Sort zones by preferred row order (whites first, then reds)
-  const zoneOrder = [
-    // Whites (rows 1-7)
+  // Zone groups by colour family
+  const whiteZones = [
     'sauvignon_blanc', 'chenin_blanc', 'aromatic_whites', 'chardonnay',
     'loire_light', 'rose_sparkling', 'dessert_fortified',
-    // Transitional (rows 8-9)
-    'white_buffer',
-    // Reds - Iberian (rows 10-11)
+    'white_buffer'
+  ];
+  const redZones = [
     'iberian_fresh', 'rioja_ribera', 'portugal',
-    // Reds - French (rows 12-13)
     'southern_france', 'pinot_noir',
-    // Reds - Italian (rows 14-16)
     'romagna_tuscany', 'piedmont', 'puglia_primitivo', 'appassimento',
-    // Reds - New World (rows 17-19)
     'cabernet', 'sa_blends', 'shiraz', 'chile_argentina',
-    // Overflow
     'red_buffer', 'curiosities', 'unclassified'
   ];
+
+  // Respect colourOrder setting: whites-top or reds-top
+  const zoneOrder = isRedsTop
+    ? [...redZones, ...whiteZones]
+    : [...whiteZones, ...redZones];
 
   // Calculate required rows per zone
   const proposals = [];

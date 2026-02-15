@@ -68,6 +68,7 @@ Context (JSON):\n${JSON.stringify(userPayload, null, 2)}\n
 Consider:
 - Wine style compatibility (e.g., winemaking method, grape, region)
 - Physical adjacency (adjacent rows/zones preferred)
+- Colour region rule: ${zone?.color === 'red' || (Array.isArray(zone?.color) && zone?.color.includes('red')) ? 'red zones must stay in red-region rows' : 'white-family zones must stay in white-region rows'}. Do not suggest allocating rows from the wrong colour region.
 - Keep recommendations minimal and practical
 
 Return only valid JSON.`;

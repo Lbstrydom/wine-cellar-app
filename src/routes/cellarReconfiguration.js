@@ -6,6 +6,7 @@
 import express from 'express';
 import db from '../db/index.js';
 import { getZoneById } from '../config/cellarZones.js';
+import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges } from '../services/shared/cellarLayoutSettings.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { validateMovePlan } from '../services/cellar/movePlanner.js';
 import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
@@ -126,12 +127,39 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
     }
   }
 
+  // If no preferred row available, try colour-compatible rows using dynamic ranges
   if (!assignedRow) {
-    for (let rowNum = 1; rowNum <= 19; rowNum++) {
+    const zoneColor = zone.color;
+    const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
+    const zoneIsWhite = isWhiteFamily(primaryColor);
+
+    let colorRange;
+    try {
+      const layoutSettings = await getCellarLayoutSettings(cellarId);
+      const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+      colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
+    } catch (_err) {
+      colorRange = zoneIsWhite
+        ? [1, 2, 3, 4, 5, 6, 7]
+        : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+    }
+
+    for (const rowNum of colorRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
         assignedRow = rowId;
         break;
+      }
+    }
+
+    // Last resort: any available row
+    if (!assignedRow) {
+      for (let rowNum = 1; rowNum <= 19; rowNum++) {
+        const rowId = `R${rowNum}`;
+        if (!usedRows.has(rowId)) {
+          assignedRow = rowId;
+          break;
+        }
       }
     }
   }

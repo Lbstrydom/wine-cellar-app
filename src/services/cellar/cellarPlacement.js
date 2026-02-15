@@ -298,6 +298,20 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   if (!zone.isBufferZone && !zone.isFallbackZone && !zone.isCuratedZone) {
     let rows = await getZoneRows(zoneId, cellarId);
 
+    // Filter zone rows against dynamic colour ranges to prevent
+    // cross-colour-boundary moves (e.g., whites moving to red-region rows)
+    if (rows.length > 0 && whiteRows && redRows) {
+      const zoneColor = zone.color;
+      const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
+      const zoneIsWhite = isWhiteFamily(primaryColor);
+      const validRowNums = new Set(zoneIsWhite ? whiteRows : redRows);
+      const filtered = rows.filter(r => {
+        const num = parseInt(r.replace('R', ''), 10);
+        return validRowNums.has(num);
+      });
+      rows = filtered; // Empty forces new allocation or overflow
+    }
+
     // If zone has no rows yet, allocate one
     if (rows.length === 0) {
       try {
