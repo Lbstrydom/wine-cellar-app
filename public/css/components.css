@@ -1127,6 +1127,88 @@
   padding: 1rem;
 }
 
+/* AI Recommendations — progressive disclosure via <details> */
+.ai-advice-structured details {
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color, #333);
+  padding-bottom: 0.75rem;
+}
+.ai-advice-structured details summary {
+  cursor: pointer;
+  user-select: none;
+  padding: 0.5rem 0;
+}
+.ai-advice-structured details summary h4 {
+  display: inline;
+  margin: 0;
+}
+
+/* Count badge (inline pill) */
+.ai-count-badge {
+  display: inline-block;
+  background: var(--accent, #8b5cf6);
+  color: #fff;
+  font-size: 0.75rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  margin-left: 0.5rem;
+  vertical-align: middle;
+}
+
+/* Section hint text */
+.ai-section-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted, #888);
+  margin: 0.25rem 0 0.75rem;
+}
+
+/* Move badge (status label on each card) */
+.ai-move-badge {
+  display: inline-block;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  margin-right: 0.5rem;
+}
+.ai-move-badge--confirmed { background: #166534; color: #bbf7d0; }
+.ai-move-badge--modified { background: #854d0e; color: #fef08a; }
+.ai-move-badge--rejected { background: #374151; color: #9ca3af; }
+.ai-move-badge--ambiguous { background: var(--accent, #8b5cf6); color: #fff; }
+
+/* Card left-border variants */
+.move-item--ai-confirmed { border-left: 3px solid #22c55e; }
+.move-item--ai-modified { border-left: 3px solid #eab308; }
+.move-item--ai-rejected { border-left: 3px solid #6b7280; opacity: 0.7; }
+.move-item--ai-ambiguous { border-left: 3px solid var(--accent, #8b5cf6); }
+
+/* Zone choice buttons (ambiguous wines) */
+.ai-zone-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Bottom CTA container */
+.ai-advice-cta {
+  display: flex;
+  gap: 0.75rem;
+  padding-top: 1rem;
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-color, #333);
+}
+
+/* Flash-highlight animation (visual sync cue after AI move execution) */
+@keyframes flash-highlight {
+  0% { background-color: var(--accent-light, #fff3cd); }
+  100% { background-color: transparent; }
+}
+.flash-highlight {
+  animation: flash-highlight 1.5s ease-out;
+}
+
 .analysis-loading {
   text-align: center;
   padding: 2rem;

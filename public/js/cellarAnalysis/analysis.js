@@ -14,6 +14,18 @@ import { deriveState, AnalysisState } from './analysisState.js';
 import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
+import { CTA_RECONFIGURE_ZONES } from './labels.js';
+
+let _onRenderAnalysis = null;
+
+/**
+ * Get the current render-analysis callback.
+ * Called by aiAdviceActions.js at action time — always returns fresh callback.
+ * @returns {Function|null} Current render-analysis callback
+ */
+export function getOnRenderAnalysis() {
+  return _onRenderAnalysis;
+}
 
 /**
  * Load analysis when tab is opened.
@@ -166,6 +178,8 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
+
+  _onRenderAnalysis = () => loadAnalysis(true);
 }
 
 /**
@@ -180,8 +194,8 @@ function updateActionButton(analysis, onRenderAnalysis) {
   const state = deriveState(analysis);
   const config = {
     [AnalysisState.NO_ZONES]:          { label: 'Setup Zones',    handler: () => startZoneSetup() },
-    [AnalysisState.ZONES_DEGRADED]:    { label: 'Reorganise Cellar', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
-    [AnalysisState.ZONES_HEALTHY]:     { label: 'Reorganise Cellar',   handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.JUST_RECONFIGURED]: {
       label: 'Guide Me Through Moves',
       handler: () => {

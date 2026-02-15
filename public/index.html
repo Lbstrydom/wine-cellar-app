@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260215d">
+  <link rel="stylesheet" href="/css/styles.css?v=20260216a">
 </head>
 <body>
   <header>
@@ -156,10 +156,11 @@
     <div class="analysis-view-header">
       <h2>Cellar Analysis</h2>
       <div class="analysis-actions">
-        <!-- Single primary CTA — text/action driven by state machine -->
+        <!-- Recommendations first (logical sequence: assess -> act) -->
+        <button class="btn btn-secondary" id="get-ai-advice-btn">AI Recommendations</button>
+        <!-- Primary CTA - text/action driven by state machine -->
         <button class="btn btn-primary" id="cellar-action-btn">Setup Zones</button>
-        <!-- Secondary actions -->
-        <button class="btn btn-secondary" id="get-ai-advice-btn">Expert Review</button>
+        <!-- Refresh icon -->
         <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn" title="Refresh analysis" aria-label="Refresh analysis">↻</button>
         <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
         <span class="analysis-cache-status" id="analysis-cache-status"></span>
@@ -170,6 +171,9 @@
       <div class="analysis-loading">Loading analysis...</div>
     </div>
     <div class="analysis-alerts" id="analysis-alerts"></div>
+
+    <!-- AI Recommendations Section (moved up from bottom) -->
+    <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
 
     <!-- Zone Setup Wizard -->
     <div class="zone-setup-wizard" id="zone-setup-wizard" style="display: none;">
@@ -261,8 +265,6 @@
       <div class="fridge-status-content" id="fridge-status-content"></div>
     </div>
 
-    <!-- AI Advice Section -->
-    <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
   </div>
 
   <!-- Wine List View (merged Drink Soon + All Wines) -->
