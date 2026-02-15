@@ -132,20 +132,28 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Consider splitting into sub-regions.');
   });
 
-  it('renders confirmed moves using SECTION_CONFIG with CONFIRMED badge + Move/Dismiss buttons', () => {
+  it('renders confirmed moves with proper move-path structure showing from and to', () => {
     const html = formatAIAdvice(mockAdvice);
     expect(html).toContain('ai-confirmed-moves');
     expect(html).toContain('ai-move-badge--confirmed');
     expect(html).toContain('CONFIRMED');
     expect(html).toContain('ai-move-execute-btn');
     expect(html).toContain('ai-move-dismiss-btn');
+    // Move cards should use the structured move-path layout
+    expect(html).toContain('move-details');
+    expect(html).toContain('move-path');
+    expect(html).toContain('<span class="from">R3C1</span>');
+    expect(html).toContain('<span class="to">R5C2</span>');
   });
 
-  it('renders modified moves with reason text and MODIFIED badge', () => {
+  it('renders modified moves with reason, from/to path, and MODIFIED badge', () => {
     const html = formatAIAdvice(mockAdvice);
     expect(html).toContain('ai-modified-moves');
     expect(html).toContain('MODIFIED');
     expect(html).toContain('Better proximity to Italian zone');
+    // Modified moves should show both source and destination
+    expect(html).toContain('<span class="from">R1C4</span>');
+    expect(html).toContain('<span class="to">R8C3</span>');
   });
 
   it('renders rejected moves in collapsed <details> without action buttons', () => {
@@ -163,7 +171,7 @@ describe('formatAIAdvice', () => {
 
   it('renders ambiguous wines with zone choice buttons per option', () => {
     const html = formatAIAdvice(mockAdvice);
-    expect(html).toContain('ai-ambiguous-wines');
+    expect(html).toContain('ai-input-card');
     expect(html).toContain('ai-zone-choice-btn');
     expect(html).toContain('Grenache Blend');
     expect(html).toContain('rhone');
@@ -179,12 +187,13 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Ready to drink');
   });
 
-  it('renders bottom CTAs when zones do NOT need reconfiguration', () => {
-    const html = formatAIAdvice(mockAdvice);
+  it('renders bottom CTAs when zones do NOT need reconfiguration and no ambiguous wines', () => {
+    const advice = { ...mockAdvice, ambiguousWines: [] };
+    const html = formatAIAdvice(advice);
     expect(html).toContain('data-action="ai-reconfigure-zones"');
     expect(html).toContain('Reorganise Zones');
     expect(html).toContain('data-action="ai-scroll-to-moves"');
-    expect(html).toContain('Scroll to Moves');
+    expect(html).toContain('Scroll to Suggested Moves');
   });
 
   it('gates moves behind zone acceptance when zonesNeedReconfiguration=true', () => {
@@ -201,14 +210,45 @@ describe('formatAIAdvice', () => {
     expect(html).not.toContain('data-action="ai-scroll-to-moves"');
   });
 
-  it('shows moves immediately when zonesNeedReconfiguration=false', () => {
-    const html = formatAIAdvice(mockAdvice);
+  it('shows moves immediately when zonesNeedReconfiguration=false and no ambiguous wines', () => {
+    const advice = { ...mockAdvice, ambiguousWines: [] };
+    const html = formatAIAdvice(advice);
     // No gate
     expect(html).not.toContain('ai-zone-gate');
     expect(html).not.toContain('data-action="ai-accept-zones"');
     // Moves should be visible (no display:none on the container)
     expect(html).toContain('id="ai-moves-gated"');
     expect(html).not.toMatch(/id="ai-moves-gated"[^>]*display:none/);
+  });
+
+  it('renders Stage headers with numbered badges', () => {
+    const advice = {
+      ...mockAdvice,
+      zonesNeedReconfiguration: true,
+      proposedZoneChanges: [
+        { zoneId: 'zone-1', currentLabel: 'SA Reds', proposedLabel: 'Premium Reds', reason: 'test' }
+      ],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('ai-stage-header');
+    expect(html).toContain('ai-stage-number');
+    expect(html).toContain('Zone Structure');
+    expect(html).toContain('Needs Your Input');
+    expect(html).toContain('Tactical Moves');
+  });
+
+  it('gates ambiguous wines behind zone acceptance when zonesNeedReconfiguration=true', () => {
+    const advice = { ...mockAdvice, zonesNeedReconfiguration: true, zoneVerdict: 'Zones need updating.' };
+    const html = formatAIAdvice(advice);
+    // Input container should be hidden
+    expect(html).toContain('id="ai-input-gated"');
+    expect(html).toMatch(/id="ai-input-gated"[^>]*display:none/);
+  });
+
+  it('renders "Continue to Moves" button in Stage 2 when ambiguous wines present', () => {
+    const html = formatAIAdvice(mockAdvice);
+    expect(html).toContain('data-action="ai-show-moves"');
+    expect(html).toContain('Continue to Moves');
   });
 
   it('renders proposedZoneChanges with labels and reasons', () => {
@@ -245,7 +285,7 @@ describe('formatAIAdvice', () => {
     expect(html).not.toContain('ai-confirmed-moves');
     expect(html).not.toContain('ai-modified-moves');
     expect(html).not.toContain('ai-rejected-moves');
-    expect(html).not.toContain('ai-ambiguous-wines');
+    expect(html).not.toContain('ai-input-card');
     // Summary/narrative should still be present
     expect(html).toContain('Your cellar is well-organized.');
   });

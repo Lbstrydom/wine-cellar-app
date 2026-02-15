@@ -1253,6 +1253,104 @@
 .move-item--ai-rejected { border-left: 3px solid #6b7280; opacity: 0.7; }
 .move-item--ai-ambiguous { border-left: 3px solid var(--accent, #8b5cf6); }
 
+/* AI move cards — stacked layout for readability */
+.ai-confirmed-moves .move-item,
+.ai-modified-moves .move-item,
+.ai-rejected-moves .move-item {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.ai-confirmed-moves .move-item .move-details,
+.ai-modified-moves .move-item .move-details,
+.ai-rejected-moves .move-item .move-details {
+  width: 100%;
+}
+
+.ai-confirmed-moves .move-item .move-actions,
+.ai-modified-moves .move-item .move-actions {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border, #333);
+}
+
+/* Move header row within AI cards */
+.move-header {
+  margin-bottom: 0.25rem;
+}
+
+/* --- Stage headers and navigation --- */
+.ai-stage-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 2px solid var(--accent, #8b5cf6);
+}
+
+.ai-stage-header h4 {
+  margin: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+}
+
+.ai-stage-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  background: var(--accent, #8b5cf6);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.ai-stage-nav {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border, #333);
+  text-align: center;
+}
+
+/* --- Stage 2: User Input cards --- */
+.ai-input-container {
+  padding-top: 0.5rem;
+}
+
+.ai-input-card {
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent, #8b5cf6);
+}
+
+.ai-input-card-body {
+  margin-bottom: 0.5rem;
+}
+
+.ai-input-wine-name {
+  display: block;
+  margin: 0.25rem 0 0.5rem;
+  font-size: 1rem;
+}
+
+.ai-input-recommendation {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  line-height: 1.5;
+  margin: 0 0 0.5rem;
+}
+
+.ai-input-card .ai-zone-choices {
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--border, #333);
+}
+
 /* Zone choice buttons (ambiguous wines) */
 .ai-zone-choices {
   display: flex;

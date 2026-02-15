@@ -21,9 +21,14 @@ import { refreshLayout } from '../app.js';
  * @param {Object} advice - The enriched AI advice object
  */
 function wireAdviceActions(container, advice) {
-  // Accept Zones CTA — reveals gated move sections
+  // Accept Zones CTA — reveals Stage 2 (user input) or Stage 3 (moves)
   container.querySelector('[data-action="ai-accept-zones"]')?.addEventListener('click', () => {
     handleAcceptZones(container);
+  });
+
+  // "Continue to Moves" CTA — reveals Stage 3 (moves) from Stage 2
+  container.querySelector('[data-action="ai-show-moves"]')?.addEventListener('click', () => {
+    handleShowMoves(container);
   });
 
   // Reorganise Zones CTA (multiple possible — use querySelectorAll)
@@ -56,31 +61,49 @@ function wireAdviceActions(container, advice) {
 }
 
 /**
- * Handle "Accept Zones" — reveal the gated move sections and
- * replace the zone gate with bottom CTAs.
+ * Handle "Accept Zones" — reveal Stage 2 (Needs Your Input) if present,
+ * otherwise skip to Stage 3 (Tactical Moves).
  * @param {HTMLElement} container - The AI advice container
  */
 function handleAcceptZones(container) {
-  // Reveal the hidden moves container
+  // Hide the zone gate
+  const gate = container.querySelector('.ai-zone-gate');
+  if (gate) gate.style.display = 'none';
+
+  // Stage 2: reveal user input section if present
+  const inputContainer = container.querySelector('#ai-input-gated');
+  if (inputContainer) {
+    inputContainer.style.display = '';
+    inputContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    return; // Don't show moves yet — user must complete input or click "Continue"
+  }
+
+  // No Stage 2 — go directly to Stage 3 (Tactical Moves)
+  handleShowMoves(container);
+}
+
+/**
+ * Handle "Continue to Moves" — reveal Stage 3 (Tactical Moves) and
+ * add bottom CTAs.
+ * @param {HTMLElement} container - The AI advice container
+ */
+function handleShowMoves(container) {
+  // Reveal the hidden moves container (Stage 3)
   const movesContainer = container.querySelector('#ai-moves-gated');
   if (movesContainer) {
     movesContainer.style.display = '';
     movesContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
-  // Hide the zone gate
-  const gate = container.querySelector('.ai-zone-gate');
-  if (gate) gate.style.display = 'none';
-
   // Show bottom CTAs now that moves are visible
   const ctaHtml = `<div class="ai-advice-cta">
     <button class="btn btn-primary" data-action="ai-reconfigure-zones">${CTA_RECONFIGURE_ZONES}</button>
-    <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Moves</button>
+    <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Suggested Moves</button>
   </div>`;
   container.querySelector('.ai-advice-structured')?.insertAdjacentHTML('beforeend', ctaHtml);
 
   // Wire the newly added CTA buttons
-  const newCta = container.querySelector('.ai-advice-cta');
+  const newCta = container.querySelector('.ai-advice-cta:last-of-type');
   if (newCta) {
     newCta.querySelector('[data-action="ai-reconfigure-zones"]')?.addEventListener('click', () => {
       const callback = getOnRenderAnalysis();
@@ -180,6 +203,7 @@ async function handleAIMoveExecute(btn, container) {
 /**
  * Handle zone choice for an ambiguous wine.
  * Persists zone assignment via API, removes card on success.
+ * Auto-advances to Stage 3 when all ambiguous wines are resolved.
  * @param {HTMLElement} btn - The clicked zone choice button
  * @param {HTMLElement} container - The AI advice container
  */
@@ -194,11 +218,17 @@ async function handleZoneChoice(btn, container) {
     await reassignWineZone(wineId, zone, 'AI recommendation');
     showToast(`Assigned ${wineName} to ${zone}`);
 
-    // Remove card from AI section
-    const card = btn.closest('.move-item');
-    const detailsEl = card?.closest('details');
+    // Remove card from input section
+    const card = btn.closest('.ai-input-card');
     if (card) card.remove();
-    updateSectionCount(container, detailsEl);
+
+    // Check if all ambiguous wines are resolved
+    const inputContainer = container.querySelector('#ai-input-gated');
+    const remaining = inputContainer?.querySelectorAll('.ai-input-card')?.length ?? 0;
+    if (remaining === 0) {
+      // All resolved — auto-advance to Stage 3
+      handleShowMoves(container);
+    }
   } catch (err) {
     // R2-9: error handling matching zoneChat.js:184 pattern
     showToast(`Error: ${err.message}`);

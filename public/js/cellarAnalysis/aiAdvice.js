@@ -173,8 +173,10 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += '</details>';
   }
 
+  // ─── STAGE 1: Zone Structure ───────────────────────────────────────
   // 5. Proposed Zone Changes (zone-first gate)
   if (hasProposedChanges) {
+    html += `<div class="ai-stage-header"><span class="ai-stage-number">1</span><h4>Zone Structure</h4></div>`;
     html += '<details class="ai-proposed-zone-changes" open>';
     html += `<summary><h4>Proposed Zone Changes <span class="ai-count-badge">${advice.proposedZoneChanges.length}</span></h4></summary>`;
     html += '<p class="ai-section-hint">The AI recommends updating these zones before moving bottles.</p>';
@@ -206,19 +208,47 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
   const showZoneGate = zonesNeedReconfig && !needsZoneSetup;
   if (showZoneGate) {
     html += `<div class="ai-zone-gate">
-      <p class="ai-zone-gate-message">Review the zone recommendations above before proceeding to bottle moves.</p>
+      <p class="ai-zone-gate-message">Review the proposed zone changes above, then accept or reorganise before proceeding.</p>
       <div class="ai-zone-gate-actions">
-        <button class="btn btn-primary" data-action="ai-accept-zones">Accept Zones — Show Moves</button>
+        <button class="btn btn-primary" data-action="ai-accept-zones">Accept Zones \u2014 Continue</button>
         <button class="btn btn-secondary" data-action="ai-reconfigure-zones">Reorganise Instead</button>
       </div>
     </div>`;
   }
 
-  // Move sections: gated behind zone acceptance when zonesNeedReconfiguration
-  const movesHiddenClass = showZoneGate ? ' style="display:none"' : '';
+  // ─── STAGE 2: Needs Your Input (ambiguous wines) ─────────────────
+  // Gated behind zone acceptance when zonesNeedReconfiguration
+  const inputHiddenClass = showZoneGate ? ' style="display:none"' : '';
+
+  if (!needsZoneSetup && advice.ambiguousWines?.length > 0) {
+    html += `<div class="ai-input-container" id="ai-input-gated"${inputHiddenClass}>`;
+    html += `<div class="ai-stage-header"><span class="ai-stage-number">2</span><h4>Needs Your Input</h4></div>`;
+    html += '<p class="ai-section-hint">These wines could belong to multiple zones. Choose the best fit.</p>';
+    advice.ambiguousWines.forEach(w => {
+      html += `<div class="ai-input-card" data-wine-id="${w.wineId}">`;
+      html += `<div class="ai-input-card-body">`;
+      html += `<span class="ai-move-badge ai-move-badge--ambiguous">REVIEW</span>`;
+      html += `<strong class="ai-input-wine-name">${escapeHtml(w.name)}</strong>`;
+      if (w.recommendation) html += `<p class="ai-input-recommendation">${escapeHtml(w.recommendation)}</p>`;
+      html += '</div>';
+      html += '<div class="ai-zone-choices">';
+      (w.options || []).forEach(zone => {
+        html += `<button class="btn btn-small btn-secondary ai-zone-choice-btn" data-wine-id="${w.wineId}" data-zone="${escapeHtml(zone)}" data-wine-name="${escapeHtml(w.name)}">${escapeHtml(zone)}</button>`;
+      });
+      html += '</div></div>';
+    });
+    html += `<div class="ai-stage-nav"><button class="btn btn-primary" data-action="ai-show-moves">Continue to Moves</button></div>`;
+    html += '</div>';
+  }
+
+  // ─── STAGE 3: Tactical Moves ───────────────────────────────────────
+  // Gated: hidden until zones accepted (and optionally user input done)
+  const movesHiddenClass = (showZoneGate || (advice.ambiguousWines?.length > 0)) ? ' style="display:none"' : '';
 
   if (!needsZoneSetup) {
     html += `<div class="ai-moves-container" id="ai-moves-gated"${movesHiddenClass}>`;
+    html += `<div class="ai-stage-header"><span class="ai-stage-number">3</span><h4>Tactical Moves</h4></div>`;
+    html += '<p class="ai-section-hint">Confirmed and adjusted bottle moves based on the zone structure above.</p>';
 
     // 6. Confirmed Moves
     html += renderMoveSection(advice.confirmedMoves, SECTION_CONFIG.confirmed);
@@ -228,25 +258,6 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
 
     // 8. Rejected Moves
     html += renderMoveSection(advice.rejectedMoves, SECTION_CONFIG.rejected);
-
-    // 9. Ambiguous Wines
-    if (advice.ambiguousWines?.length > 0) {
-      html += '<details class="ai-ambiguous-wines" open>';
-      html += `<summary><h4>Needs Your Input <span class="ai-count-badge">${advice.ambiguousWines.length}</span></h4></summary>`;
-      html += '<p class="ai-section-hint">These wines could belong to multiple zones. Choose the best fit.</p>';
-      advice.ambiguousWines.forEach(w => {
-        html += `<div class="move-item move-item--ai-ambiguous" data-wine-id="${w.wineId}">`;
-        html += `<span class="ai-move-badge ai-move-badge--ambiguous">REVIEW</span>`;
-        html += `<strong>${escapeHtml(w.name)}</strong>`;
-        if (w.recommendation) html += `<p class="move-reason">${escapeHtml(w.recommendation)}</p>`;
-        html += '<div class="ai-zone-choices">';
-        (w.options || []).forEach(zone => {
-          html += `<button class="btn btn-small btn-secondary ai-zone-choice-btn" data-wine-id="${w.wineId}" data-zone="${escapeHtml(zone)}" data-wine-name="${escapeHtml(w.name)}">${escapeHtml(zone)}</button>`;
-        });
-        html += '</div></div>';
-      });
-      html += '</details>';
-    }
 
     html += '</div>'; // close ai-moves-container
   }
@@ -262,11 +273,11 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += '</ul></details>';
   }
 
-  // Bottom CTAs — only when move sections are visible (not gated) and not needsZoneSetup
-  if (!needsZoneSetup && !showZoneGate) {
+  // Bottom CTAs — only when all stages are visible (not gated) and not needsZoneSetup
+  if (!needsZoneSetup && !showZoneGate && !(advice.ambiguousWines?.length > 0)) {
     html += `<div class="ai-advice-cta">
       <button class="btn btn-primary" data-action="ai-reconfigure-zones">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
-      <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Moves</button>
+      <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Suggested Moves</button>
     </div>`;
   }
 
@@ -288,12 +299,20 @@ function renderMoveSection(moves, config) {
   html += `<p class="ai-section-hint">${config.hint}</p>`;
 
   moves.forEach(m => {
+    const hasLocation = m.from || m.to;
     html += `<div class="move-item move-item--${config.cardVariant}" data-wine-id="${m.wineId}">`;
-    html += `<span class="ai-move-badge ai-move-badge--${config.badgeVariant}">${config.badge}</span>`;
-    html += `<strong>${escapeHtml(m.wineName)}</strong>`;
-    if (m.from) html += ` <span class="move-from">${escapeHtml(m.from)}</span>`;
-    if (m.to) html += ` &rarr; <span class="move-to">${escapeHtml(m.to)}</span>`;
-    if (m.reason) html += `<p class="move-reason">${escapeHtml(m.reason)}</p>`;
+    html += '<div class="move-details">';
+    html += `<div class="move-header"><span class="ai-move-badge ai-move-badge--${config.badgeVariant}">${config.badge}</span></div>`;
+    html += `<div class="move-wine-name">${escapeHtml(m.wineName)}</div>`;
+    if (hasLocation) {
+      html += '<div class="move-path">';
+      html += `<span class="from">${escapeHtml(m.from || '?')}</span>`;
+      html += '<span class="arrow">→</span>';
+      html += `<span class="to">${escapeHtml(m.to || '?')}</span>`;
+      html += '</div>';
+    }
+    if (m.reason) html += `<div class="move-reason">${escapeHtml(m.reason)}</div>`;
+    html += '</div>'; // close move-details
     if (config.showActions) {
       html += '<div class="move-actions">';
       html += `<button class="btn btn-small btn-primary ai-move-execute-btn" data-wine-id="${m.wineId}" data-from="${escapeHtml(m.from || '')}" data-to="${escapeHtml(m.to || '')}">Move</button>`;
