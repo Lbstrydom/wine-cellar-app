@@ -7,7 +7,6 @@ import { executeCellarMoves } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { refreshLayout } from '../app.js';
 import { getCurrentAnalysis } from './state.js';
-import { loadAnalysis } from './analysis.js';
 import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
 
 /**
@@ -414,7 +413,8 @@ export async function handleExecuteAllMoves() {
     
     showToast(`Successfully executed ${result.moved} moves`);
 
-    // Re-analyse to show updated state
+    // Re-analyse to show updated state (dynamic import breaks analysis↔moves cycle)
+    const { loadAnalysis } = await import('./analysis.js');
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
@@ -681,6 +681,7 @@ export function renderCompactionMoves(compactionMoves) {
         await executeCellarMoves([{ from: move.from, to: move.to }]);
         showToast(`Moved to ${move.to}`);
         await refreshLayout();
+        const { loadAnalysis } = await import('./analysis.js');
         await loadAnalysis(true);
       } catch (err) {
         showToast(`Error: ${err.message}`);

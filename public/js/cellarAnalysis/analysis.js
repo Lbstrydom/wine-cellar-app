@@ -14,7 +14,7 @@ import { deriveState, AnalysisState } from './analysisState.js';
 import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
-import { CTA_RECONFIGURE_ZONES } from './labels.js';
+import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './labels.js';
 
 let _onRenderAnalysis = null;
 
@@ -179,7 +179,17 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
 
-  _onRenderAnalysis = () => loadAnalysis(true);
+  // Accept an optional report parameter so callers (e.g. zone reconfig modal)
+  // can pass a report with flags like __justReconfigured and skip a redundant
+  // API call.  When called without an argument, do a full refresh.
+  _onRenderAnalysis = (report) => {
+    if (report && typeof report === 'object') {
+      setCurrentAnalysis(report);
+      renderAnalysis(report, _onRenderAnalysis);
+    } else {
+      loadAnalysis(true);
+    }
+  };
 }
 
 /**
@@ -193,11 +203,11 @@ function updateActionButton(analysis, onRenderAnalysis) {
 
   const state = deriveState(analysis);
   const config = {
-    [AnalysisState.NO_ZONES]:          { label: 'Setup Zones',    handler: () => startZoneSetup() },
+    [AnalysisState.NO_ZONES]:          { label: CTA_SETUP_ZONES,    handler: () => startZoneSetup() },
     [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.JUST_RECONFIGURED]: {
-      label: 'Guide Me Through Moves',
+      label: CTA_GUIDE_MOVES,
       handler: () => {
         const currentAnalysis = getCurrentAnalysis();
         if (currentAnalysis?.suggestedMoves?.some(m => m.type === 'move')) {

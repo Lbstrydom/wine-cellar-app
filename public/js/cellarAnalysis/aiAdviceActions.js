@@ -6,7 +6,7 @@
  */
 
 import { executeCellarMoves, reassignWineZone } from '../api.js';
-import { escapeHtml, showToast } from '../utils.js';
+import { showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { getCurrentAnalysis } from './state.js';
 import { getOnRenderAnalysis } from './analysis.js';
@@ -88,7 +88,7 @@ async function handleAIMoveExecute(btn, container) {
   try {
     const result = await executeCellarMoves([{ wineId, from, to }]);
     if (result?.success === false) {
-      showToast(`Move failed: ${escapeHtml(result.error || 'validation error')}`);
+      showToast(`Move failed: ${result.error || 'validation error'}`);
       return;
     }
 
@@ -126,7 +126,7 @@ async function handleAIMoveExecute(btn, container) {
     // 5. Flash-highlight Suggested Moves section (R2-6: visual sync cue)
     flashSuggestedMoves();
   } catch (err) {
-    showToast(`Error: ${escapeHtml(err.message)}`);
+    showToast(`Error: ${err.message}`);
   } finally {
     btn.disabled = false;
   }
@@ -147,7 +147,7 @@ async function handleZoneChoice(btn, container) {
   try {
     // Persist zone assignment via existing API (R1-3: real action)
     await reassignWineZone(wineId, zone, 'AI recommendation');
-    showToast(`Assigned ${escapeHtml(wineName)} to ${escapeHtml(zone)}`);
+    showToast(`Assigned ${wineName} to ${zone}`);
 
     // Remove card from AI section
     const card = btn.closest('.move-item');
@@ -156,7 +156,7 @@ async function handleZoneChoice(btn, container) {
     updateSectionCount(container, detailsEl);
   } catch (err) {
     // R2-9: error handling matching zoneChat.js:184 pattern
-    showToast(`Error: ${escapeHtml(err.message)}`);
+    showToast(`Error: ${err.message}`);
   } finally {
     btn.disabled = false;
   }

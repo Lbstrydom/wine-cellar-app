@@ -1,5 +1,25 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest';
 
+/**
+ * Recursively scan a directory for .js files containing a regex pattern.
+ * Cross-platform replacement for grep -r (which doesn't exist on Windows).
+ * @returns {string[]} List of relative file paths that match
+ */
+function scanDirForPattern(fs, path, dir, pattern) {
+  const matches = [];
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      matches.push(...scanDirForPattern(fs, path, full, pattern));
+    } else if (entry.isFile() && entry.name.endsWith('.js')) {
+      const content = fs.readFileSync(full, 'utf-8');
+      if (pattern.test(content)) matches.push(full);
+    }
+  }
+  return matches;
+}
+
 // Mock state.js before importing the module under test
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn(),
@@ -259,32 +279,18 @@ describe('enrichMovesWithNames', () => {
 
 describe('label consistency', () => {
   it('no "Reorganise Cellar" text in any public/js/ file', async () => {
-    const { execSync } = await import('child_process');
-    try {
-      const result = execSync(
-        'grep -r "Reorganise Cellar" public/js/ --include="*.js" -l',
-        { cwd: process.cwd(), encoding: 'utf-8' }
-      );
-      // If grep finds matches, it returns them; fail the test
-      expect(result.trim()).toBe('');
-    } catch (e) {
-      // grep returns exit code 1 when no matches found — that's success
-      if (e.status === 1) return;
-      throw e;
-    }
+    const fs = await import('fs');
+    const path = await import('path');
+    const jsDir = path.resolve(process.cwd(), 'public', 'js');
+    const matches = scanDirForPattern(fs, path, jsDir, /Reorganise Cellar/);
+    expect(matches).toEqual([]);
   });
 
   it('no "Expert Review" text in any public/js/ file', async () => {
-    const { execSync } = await import('child_process');
-    try {
-      const result = execSync(
-        'grep -r "Expert Review" public/js/ --include="*.js" -l',
-        { cwd: process.cwd(), encoding: 'utf-8' }
-      );
-      expect(result.trim()).toBe('');
-    } catch (e) {
-      if (e.status === 1) return;
-      throw e;
-    }
+    const fs = await import('fs');
+    const path = await import('path');
+    const jsDir = path.resolve(process.cwd(), 'public', 'js');
+    const matches = scanDirForPattern(fs, path, jsDir, /Expert Review/);
+    expect(matches).toEqual([]);
   });
 });

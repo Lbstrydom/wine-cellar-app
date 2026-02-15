@@ -2,7 +2,7 @@
 
 **Date**: 15 February 2026
 **Priority**: High
-**Status**: PLANNED (pending implementation)
+**Status**: IMPLEMENTED
 
 ---
 

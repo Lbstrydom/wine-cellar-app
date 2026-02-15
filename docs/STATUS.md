@@ -10,6 +10,23 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 15 Feb 2026**:
+- **Actionable AI Recommendations UX Redesign** ✅:
+  - Reordered CTA buttons: "AI Recommendations" now appears before "Reconfigure Zones" (assess first, then act)
+  - Renamed "Expert Review" → "AI Recommendations" and "Reorganise Cellar" → "Reconfigure Zones" across all UI surfaces
+  - New shared `labels.js` module: single source of truth for 4 CTA label constants (zero-coupling leaf module)
+  - Full AI response rendering: confirmed moves, modified moves, rejected moves (collapsed `<details>`), ambiguous wines with zone choice buttons, fridge plan, zone health cards, zone adjustments
+  - `SECTION_CONFIG` map + `renderMoveSection()` for DRY rendering of 3 move section types with per-type badges (CONFIRMED/MODIFIED/KEEP), card styling, and action buttons
+  - `enrichMovesWithNames()`: resolves wineName from misplacedWines → suggestedMoves → fallback `Wine #ID`; fills missing from/to for rejectedMoves
+  - SRP file split: `aiAdvice.js` (view, ~260 lines) + `aiAdviceActions.js` (controller, ~155 lines)
+  - Controller actions: move execution via `executeCellarMoves()`, zone reassignment via `reassignWineZone()`, dismiss, scroll-to-moves, reconfigure zones CTA
+  - State sync after AI move: splice from `suggestedMoves`, recalculate swap flags, re-render moves section, refresh grid, flash-highlight animation
+  - `getOnRenderAnalysis()` getter pattern replaces fragile setter for callback threading
+  - Progressive disclosure via native `<details>` elements (confirmed/modified open by default, rejected/fridge collapsed)
+  - XSS protection: `escapeHtml()` on all AI-provided text including error paths
+  - ~80 lines new CSS: count badges, section hints, move badge variants, card border variants, zone choice buttons, flash-highlight animation
+  - 25 new unit tests: `formatAIAdvice()` (14 tests), `enrichMovesWithNames()` (8 tests), label consistency grep (2 tests), empty section handling (1 test)
+  - Plan document: `docs/exp-plan.md` (2 review rounds, 22 findings all addressed)
+
 - **Dynamic Colour Row Allocation** ✅:
   - New `cellarLayoutSettings.js` service: stores per-cellar colour→row mappings (red/white/rosé/sparkling/other → specific rows)
   - Settings UI: colour row assignment dropdowns in Settings page, saved per-cellar to localStorage
@@ -36,7 +53,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - Wrapped `startAuthenticatedApp()` and `onAuthStateChange` callback in try/catch to prevent unhandled promise rejections
   - Auth errors now show user-friendly toast + redirect to sign-in screen instead of raw error boundary
 
-- **Test count**: 1644 unit tests passing across 61 files
+- **Test count**: 1669 unit tests passing across 62 files
 
 - **Claude Opus 4.6 Adaptive Thinking — COMPLETE** ✅:
   - Complex AI tasks (cellar analysis, zone reconfiguration, zone capacity advice, award extraction) upgraded from Opus 4.5 to **Opus 4.6 with adaptive thinking** (`thinking: { type: 'adaptive' }` + `output_config: { effort }`)
@@ -264,7 +281,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (1700+ tests, 85% coverage)
+- Comprehensive testing infrastructure (1700+ tests, 62 test files, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 

@@ -192,7 +192,7 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
         if (w.recommendation) html += `<p class="move-reason">${escapeHtml(w.recommendation)}</p>`;
         html += '<div class="ai-zone-choices">';
         (w.options || []).forEach(zone => {
-          html += `<button class="btn btn-sm btn-secondary ai-zone-choice-btn" data-wine-id="${w.wineId}" data-zone="${escapeHtml(zone)}" data-wine-name="${escapeHtml(w.name)}">${escapeHtml(zone)}</button>`;
+          html += `<button class="btn btn-small btn-secondary ai-zone-choice-btn" data-wine-id="${w.wineId}" data-zone="${escapeHtml(zone)}" data-wine-name="${escapeHtml(w.name)}">${escapeHtml(zone)}</button>`;
         });
         html += '</div></div>';
       });
@@ -245,8 +245,8 @@ function renderMoveSection(moves, config) {
     if (m.reason) html += `<p class="move-reason">${escapeHtml(m.reason)}</p>`;
     if (config.showActions) {
       html += '<div class="move-actions">';
-      html += `<button class="btn btn-sm btn-primary ai-move-execute-btn" data-wine-id="${m.wineId}" data-from="${escapeHtml(m.from || '')}" data-to="${escapeHtml(m.to || '')}">Move</button>`;
-      html += '<button class="btn btn-sm btn-secondary ai-move-dismiss-btn">Dismiss</button>';
+      html += `<button class="btn btn-small btn-primary ai-move-execute-btn" data-wine-id="${m.wineId}" data-from="${escapeHtml(m.from || '')}" data-to="${escapeHtml(m.to || '')}">Move</button>`;
+      html += '<button class="btn btn-small btn-secondary ai-move-dismiss-btn">Dismiss</button>';
       html += '</div>';
     }
     html += '</div>';

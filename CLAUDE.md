@@ -63,6 +63,20 @@ public/
     ├── sommelier.js       # Claude pairing UI
     ├── bottles.js         # Bottle add/edit functionality
     ├── utils.js           # Shared utility functions
+    ├── cellarAnalysis/    # Cellar analysis & AI recommendations UI
+    │   ├── state.js       # Shared analysis state (currentAnalysis, proposal, etc.)
+    │   ├── analysis.js    # Main analysis rendering & CTA logic
+    │   ├── labels.js      # Shared CTA label constants (single source of truth)
+    │   ├── aiAdvice.js    # AI Recommendations view (HTML rendering)
+    │   ├── aiAdviceActions.js # AI Recommendations controller (event wiring, execution)
+    │   ├── moves.js       # Suggested moves rendering & execution
+    │   ├── zones.js       # Zone grouping display
+    │   ├── fridge.js      # Fridge analysis section
+    │   ├── moveGuide.js   # Visual move guide wizard
+    │   ├── zoneChat.js    # Zone-specific AI chat
+    │   ├── zoneCapacityAlert.js    # Zone capacity issue alerts
+    │   ├── zoneReconfigurationBanner.js  # Grouped zone reconfig banner
+    │   └── zoneReconfigurationModal.js   # Zone reconfiguration dialog
     └── restaurantPairing/ # Restaurant pairing assistant UI
         ├── state.js       # Session state management
         ├── imageCapture.js # Multi-image capture widget
@@ -700,7 +714,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1644 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1669 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -737,6 +751,7 @@ tests/
     │   ├── search/          # Search service tests
     │   ├── shared/          # Shared service tests
     │   └── wine/            # Wine service tests
+    ├── cellarAnalysis/      # Frontend cellar analysis tests
     └── utils/               # Utility tests
 ```
 
