@@ -289,33 +289,38 @@ async function startAuthenticatedApp() {
   if (appStarted) return;
   appStarted = true;
 
-  // Setup navigation
-  document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', () => switchView(tab.dataset.view));
-  });
+  try {
+    // Setup navigation
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => switchView(tab.dataset.view));
+    });
 
-  // Initialize mobile menu
-  initMobileMenu();
+    // Initialize mobile menu
+    initMobileMenu();
 
-  // Initialize wine list filters
-  initWineListFilters();
+    // Initialize wine list filters
+    initWineListFilters();
 
-  // Initialise modules
-  initModals();
-  initSommelier();
-  initRestaurantPairing();
-  initSettings();
-  initCellarAnalysis();
-  initGlobalSearch();
-  initAccessibility();
-  initRecommendations();
-  await initBottles();
+    // Initialise modules
+    initModals();
+    initSommelier();
+    initRestaurantPairing();
+    initSettings();
+    initCellarAnalysis();
+    initGlobalSearch();
+    initAccessibility();
+    initRecommendations();
+    await initBottles();
 
-  // Load initial data with error handling to prevent PWA freeze
-  await loadInitialData();
+    // Load initial data with error handling to prevent PWA freeze
+    await loadInitialData();
 
-  // Initialize zoom controls after grid is rendered
-  initZoomControls();
+    // Initialize zoom controls after grid is rendered
+    initZoomControls();
+  } catch (err) {
+    console.error('[App] startAuthenticatedApp error:', err);
+    showToast('Some features failed to load. Please refresh.');
+  }
 }
 
 /**
@@ -582,28 +587,34 @@ async function initAuth() {
     supabase.auth.onAuthStateChange(async (event, session) => {
       if (DEBUG) console.log('[Auth] State change:', event);
 
-      if (event === 'TOKEN_REFRESHED') {
-        // Silent token refresh - just update stored token, no UI changes needed
-        setAccessToken(session?.access_token || null);
-        if (DEBUG) console.log('[Auth] Token refreshed silently');
-        return;
-      }
+      try {
+        if (event === 'TOKEN_REFRESHED') {
+          // Silent token refresh - just update stored token, no UI changes needed
+          setAccessToken(session?.access_token || null);
+          if (DEBUG) console.log('[Auth] Token refreshed silently');
+          return;
+        }
 
-      // Handle both INITIAL_SESSION (OAuth callbacks) and SIGNED_IN (social login)
-      if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-        setAccessToken(session?.access_token || null);
-        const ok = await loadUserContext();
-        if (ok) {
-          toggleAuthScreen(false);
-          await startAuthenticatedApp();
-        } else {
+        // Handle both INITIAL_SESSION (OAuth callbacks) and SIGNED_IN (social login)
+        if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
+          setAccessToken(session?.access_token || null);
+          const ok = await loadUserContext();
+          if (ok) {
+            toggleAuthScreen(false);
+            await startAuthenticatedApp();
+          } else {
+            toggleAuthScreen(true);
+          }
+        }
+
+        if (event === 'SIGNED_OUT') {
+          clearAuthState();
           toggleAuthScreen(true);
         }
-      }
-
-      if (event === 'SIGNED_OUT') {
-        clearAuthState();
+      } catch (authErr) {
+        console.error('[Auth] onAuthStateChange error:', authErr);
         toggleAuthScreen(true);
+        setAuthError(authErr.message || 'Authentication failed. Please try again.');
       }
     });
   } catch (err) {
@@ -1042,8 +1053,10 @@ function startApp() {
   // Initialize error boundary first
   initErrorBoundary();
 
-  // Then initialize app
-  init();
+  // Then initialize app (catch unhandled rejections from async init)
+  init().catch(err => {
+    console.error('[App] Initialization failed:', err);
+  });
   registerServiceWorker();
 }
 
