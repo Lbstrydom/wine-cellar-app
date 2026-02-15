@@ -181,7 +181,8 @@ ${JSON.stringify(fridgeContext, null, 2)}
    - If zones should change: set zonesNeedReconfiguration to true, explain why in zoneVerdict,
      and provide specific proposed changes in proposedZoneChanges.
 2. Review suggested moves - confirm, modify, or reject each
-3. Flag ambiguous wines that could fit multiple categories
+3. Flag ambiguous wines that could fit multiple categories.
+   Use zone IDs from ZONE_DEFINITIONS (e.g. "sauvignon_blanc"), NOT display names, in the options array.
 4. Create fridge stocking plan with diverse coverage
 5. Explain the cellar organization in 2-3 sentences for the owner
 </TASK>
@@ -195,7 +196,7 @@ Respond ONLY with valid JSON matching this exact structure:
   "confirmedMoves": [{ "wineId": number, "from": "slot", "to": "slot" }],
   "modifiedMoves": [{ "wineId": number, "from": "slot", "to": "slot", "reason": "string" }],
   "rejectedMoves": [{ "wineId": number, "reason": "string" }],
-  "ambiguousWines": [{ "wineId": number, "name": "string", "options": ["zone1", "zone2"], "recommendation": "string" }],
+  "ambiguousWines": [{ "wineId": number, "name": "string", "options": ["zone_id_1", "zone_id_2"], "recommendation": "string" }],
   "zoneAdjustments": [{ "zoneId": "string", "suggestion": "string" }],
   "zoneHealth": [{ "zone": "string", "status": "string", "recommendation": "string" }],
   "fridgePlan": {

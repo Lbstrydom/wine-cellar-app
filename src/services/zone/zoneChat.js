@@ -120,10 +120,19 @@ For reclassification suggestions, include a JSON block:
  * @returns {Promise<Object>} Result
  */
 export async function reassignWineZone(wineId, newZoneId, reason = '', cellarId) {
-  // Validate zone exists
-  const zone = getZoneById(newZoneId);
+  // Validate zone exists (accept both zone ID and display name)
+  let zone = getZoneById(newZoneId);
   if (!zone && !['white_buffer', 'red_buffer', 'unclassified'].includes(newZoneId)) {
-    throw new Error(`Invalid zone: ${newZoneId}`);
+    // Fallback: AI may return display name ("Sauvignon Blanc") instead of ID ("sauvignon_blanc")
+    const byName = CELLAR_ZONES.zones.find(
+      z => z.displayName.toLowerCase() === newZoneId.toLowerCase()
+    );
+    if (byName) {
+      zone = byName;
+      newZoneId = byName.id;
+    } else {
+      throw new Error(`Invalid zone: ${newZoneId}`);
+    }
   }
 
   // Get current wine scoped to cellar
