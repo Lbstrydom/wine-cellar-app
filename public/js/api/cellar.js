@@ -141,6 +141,33 @@ export async function getReconfigurationPlan(options = {}) {
 }
 
 /**
+ * Generate a zone reconfiguration plan scoped to a single overflowing zone.
+ * Uses the full 3-layer pipeline but filters output to relevant actions.
+ * @param {string} zoneId - The overflowing zone to fix
+ * @returns {Promise<Object>} { success, planId, plan }
+ */
+export async function getZoneReconfigurationPlan(zoneId) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 240000);
+
+  try {
+    const res = await fetch(`${API_BASE}/api/cellar/reconfiguration-plan/zone/${encodeURIComponent(zoneId)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal
+    });
+    clearTimeout(timeoutId);
+    return handleResponse(res, 'Failed to generate zone fix plan');
+  } catch (err) {
+    clearTimeout(timeoutId);
+    if (err.name === 'AbortError') {
+      throw new Error('Zone fix plan timed out. Please try again.');
+    }
+    throw err;
+  }
+}
+
+/**
  * Apply a previously generated reconfiguration plan.
  * @param {string} planId
  * @param {number[]} [skipActions]

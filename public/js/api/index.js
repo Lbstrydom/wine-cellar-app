@@ -110,6 +110,7 @@ export {
   allocateZoneRow,
   mergeZones,
   getReconfigurationPlan,
+  getZoneReconfigurationPlan,
   applyReconfigurationPlan,
   undoReconfiguration,
   analyseCellarAI,

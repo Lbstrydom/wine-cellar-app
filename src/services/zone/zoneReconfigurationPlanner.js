@@ -33,6 +33,34 @@ function clampStabilityBias(value) {
 }
 
 /**
+ * Check if a reconfiguration action involves a specific zone.
+ * Used to filter plan actions when scoped to a single zone (focusZoneId).
+ * @param {Object} action - A reconfiguration action
+ * @param {string} zoneId - The zone to check involvement for
+ * @returns {boolean}
+ */
+function actionInvolvesZone(action, zoneId) {
+  if (!action || !zoneId) return false;
+  const type = action.type;
+
+  if (type === 'reallocate_row') {
+    return action.fromZoneId === zoneId || action.toZoneId === zoneId;
+  }
+  if (type === 'expand_zone') {
+    return action.zoneId === zoneId;
+  }
+  if (type === 'merge_zones') {
+    if (action.targetZoneId === zoneId) return true;
+    if (Array.isArray(action.sourceZones) && action.sourceZones.includes(zoneId)) return true;
+    return false;
+  }
+  if (type === 'retire_zone') {
+    return action.zoneId === zoneId || action.targetZoneId === zoneId;
+  }
+  return false;
+}
+
+/**
  * Build a comprehensive picture of current zone utilization.
  * Aggregates per-row analysis entries into per-zone totals.
  */
@@ -604,7 +632,8 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const {
     includeRetirements = true,
     stabilityBias = 'moderate',
-    cellarId
+    cellarId,
+    focusZoneId = null
   } = options;
 
   const stability = clampStabilityBias(stabilityBias);
@@ -765,6 +794,11 @@ export async function generateReconfigurationPlan(report, options = {}) {
     } catch (err) {
       logger.error('Reconfig', 'Failed to save telemetry: ' + err.message);
     }
+  }
+
+  // If scoped to a single zone, filter actions to only those involving that zone
+  if (focusZoneId) {
+    finalPlan.actions = (finalPlan.actions || []).filter(a => actionInvolvesZone(a, focusZoneId));
   }
 
   const finalSummary = computeSummary(report, finalPlan.actions);

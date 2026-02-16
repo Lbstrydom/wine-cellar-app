@@ -896,17 +896,50 @@
 
 .zone-capacity-action {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+  flex-direction: column;
+  gap: 0.25rem;
   padding: 0.75rem;
   background: var(--bg-card);
   border-radius: 6px;
   border: 1px solid var(--border);
 }
 
+.zone-capacity-action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 .zone-capacity-action-title {
   font-weight: 500;
+}
+
+.zone-capacity-action-reason {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.zone-capacity-action-meta {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.zone-capacity-skip {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.zone-capacity-reconfig-footer {
+  margin-top: 0.75rem;
+  display: flex;
+  justify-content: flex-end;
 }
 
 .zone-capacity-warnings {

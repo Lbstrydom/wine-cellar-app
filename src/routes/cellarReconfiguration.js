@@ -74,6 +74,41 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * POST /api/cellar/reconfiguration-plan/zone/:zoneId
+ * Generate a zone reconfiguration plan scoped to a single overflowing zone.
+ * Uses the same 3-layer pipeline but filters output to relevant actions.
+ */
+router.post('/reconfiguration-plan/zone/:zoneId', asyncHandler(async (req, res) => {
+  const { zoneId } = req.params;
+  const zone = getZoneById(zoneId);
+  if (!zone) {
+    return res.status(400).json({ success: false, error: `Unknown zone: ${zoneId}` });
+  }
+
+  const wines = await getAllWinesWithSlots(req.cellarId);
+  const report = await runAnalysis(wines, req.cellarId);
+
+  const plan = await generateReconfigurationPlan(report, {
+    stabilityBias: 'high',
+    includeRetirements: false,
+    cellarId: req.cellarId,
+    focusZoneId: zoneId
+  });
+
+  const planId = putPlan({
+    generatedAt: new Date().toISOString(),
+    options: { stabilityBias: 'high', includeRetirements: false, focusZoneId: zoneId },
+    plan
+  });
+
+  res.json({
+    success: true,
+    planId,
+    plan
+  });
+}));
+
+/**
  * Extract affected zone IDs from a reconfiguration plan.
  * @param {Object} plan - Reconfiguration plan
  * @returns {string[]} Array of zone IDs
