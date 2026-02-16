@@ -189,6 +189,12 @@ header .search-trigger {
   max-width: 75px;
 }
 
+/* When sidebar is present (cellar-container layout), hide inline zone names to avoid duplication.
+   Mobile ≤480px hides .zone-labels sidebar and re-shows .zone-name via the breakpoint below. */
+.cellar-container .row-label .zone-name {
+  display: none;
+}
+
 /* Column headers — spreadsheet-style location signifier */
 .col-headers {
   align-items: flex-end;
@@ -608,6 +614,11 @@ header .search-trigger {
     display: none;
   }
 
+  /* Re-show inline zone name when sidebar is hidden on mobile */
+  .cellar-container .row-label .zone-name {
+    display: block;
+  }
+
   /* Zone headers */
   .zone-title {
     font-size: 1rem;
@@ -805,7 +816,8 @@ header .search-trigger {
   .col-header { width: 70px; font-size: var(--font-2xs); }
   .grid-legend { margin-left: 40px; font-size: var(--font-2xs); }
 
-  .row-label .zone-name {
+  .row-label .zone-name,
+  .cellar-container .row-label .zone-name {
     display: none;
   }
 

@@ -240,6 +240,8 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   // sees the moves they need to execute.
   if (analysis?.__justReconfigured) {
     switchWorkspace('placement');
+    const panel = document.getElementById('workspace-placement');
+    if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   // Accept an optional report parameter so callers (e.g. zone reconfig modal)

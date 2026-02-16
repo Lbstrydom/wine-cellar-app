@@ -252,6 +252,11 @@ export function renderIssueDigest(analysis) {
 
     if (workspace) {
       switchWorkspace(workspace);
+      // Scroll the target workspace panel into view
+      const panel = document.getElementById(`workspace-${workspace}`);
+      if (panel) {
+        panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
   });
 }

@@ -37,10 +37,12 @@ function wireAdviceActions(container, advice) {
     });
   });
 
-  // "View Moves" CTA — switch to placement workspace
+  // "View Moves" CTA — switch to placement workspace and scroll
   container.querySelectorAll('[data-action="ai-view-moves"]').forEach(btn => {
     btn.addEventListener('click', () => {
       switchWorkspace('placement');
+      const panel = document.getElementById('workspace-placement');
+      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
 
@@ -72,8 +74,10 @@ function handleAcceptZones(container) {
     return; // Don't show moves yet — user must complete input or click "Continue"
   }
 
-  // No Stage 2 — switch to placement workspace
+  // No Stage 2 — switch to placement workspace and scroll
   switchWorkspace('placement');
+  const panel = document.getElementById('workspace-placement');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 /**
@@ -82,6 +86,8 @@ function handleAcceptZones(container) {
  */
 function handleShowMoves() {
   switchWorkspace('placement');
+  const panel = document.getElementById('workspace-placement');
+  if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 
