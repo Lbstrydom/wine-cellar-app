@@ -646,12 +646,12 @@ function parseTextArray(value) {
 }
 
 /**
- * Infer wine color from name and style.
+ * Infer wine color from name, style and grapes.
  * @param {Object} wine
  * @returns {string|null}
  */
 export function inferColor(wine) {
-  const text = `${wine.wine_name || ''} ${wine.style || ''}`.toLowerCase();
+  const text = `${wine.wine_name || ''} ${wine.style || ''} ${wine.grapes || ''}`.toLowerCase();
 
   if (text.includes('rosé') || text.includes('rose') || text.includes('rosado')) return 'rose';
   if (text.includes('sparkling') || text.includes('champagne') || text.includes('prosecco') ||
@@ -667,7 +667,23 @@ export function inferColor(wine) {
     /\btempranillo\b/,
     /\bsangiovese\b/,
     /\bnebbiolo\b/,
-    /\bprimitivo\b/
+    /\bprimitivo\b/,
+    /\btouriga\b/,
+    /\bgarnacha\b/,
+    /\bgrenache\b/,
+    /\bmalbec\b/,
+    /\bcarmen[eè]re\b/,
+    /\bbarbera\b/,
+    /\bpinotage\b/,
+    /\bzinfandel\b/,
+    /\bpetit\s+verdot\b/,
+    /\bcabernet\s+franc\b/,
+    /\bmourvèdre\b/,
+    /\bmonastrell\b/,
+    /\bnegroamaro\b/,
+    /\bmontepulciano\b/,
+    /\bdolcetto\b/,
+    /\bcinsault\b/
   ];
   const whitePatterns = [
     /\bchardonnay\b/,
@@ -676,8 +692,21 @@ export function inferColor(wine) {
     /\briesling\b/,
     /\bchenin\b/,
     /\bpinot\s+grigio\b/,
+    /\bpinot\s+gris\b/,
     /\bgew(?:u|ü)rz/,
-    /\bviognier\b/
+    /\bviognier\b/,
+    /\bmalvasia\b/,
+    /\balbarino\b/,
+    /\balbariño\b/,
+    /\bverdejo\b/,
+    /\bvermentino\b/,
+    /\bmoscato\b/,
+    /\bmuscat\b/,
+    /\bsémillon\b/,
+    /\bsemillon\b/,
+    /\btorrontés\b/,
+    /\bgruner\s+veltliner\b/,
+    /\bgrüner\s+veltliner\b/
   ];
 
   // Check reds first so "Cabernet Sauvignon" is never inferred as white.

@@ -187,13 +187,21 @@ export function detectColorAdjacencyIssues(rowToZoneId) {
 
 /**
  * Check if wine is legitimately in a buffer zone.
+ * A wine with a buffer/fallback zone_id is legitimate UNLESS it violates the
+ * colour constraint of the physical zone it sits in (e.g. a red wine with
+ * zone_id='unclassified' sitting in a white zone row).
  * @param {Object} wine
+ * @param {Object} [physicalZone] - Zone where wine physically sits
  * @returns {boolean}
  */
-export function isLegitimateBufferPlacement(wine) {
+export function isLegitimateBufferPlacement(wine, physicalZone) {
   if (!wine.zone_id) return false;
   const bufferZones = ['white_buffer', 'red_buffer', 'unclassified', 'curiosities'];
-  return bufferZones.includes(wine.zone_id);
+  if (!bufferZones.includes(wine.zone_id)) return false;
+  // Even buffer-assigned wines are misplaced if they violate the physical
+  // zone's colour constraint — a red in a white zone should still be flagged.
+  if (physicalZone && wineViolatesZoneColour(wine, physicalZone)) return false;
+  return true;
 }
 
 /**
@@ -299,7 +307,7 @@ export function analyseZone(zone, zoneWines, rowId) {
 
   for (const wine of zoneWines) {
     // Check if wine is legitimately placed via buffer system
-    if (isLegitimateBufferPlacement(wine)) {
+    if (isLegitimateBufferPlacement(wine, zone)) {
       analysis.bufferOccupants.push({
         wineId: wine.id,
         name: wine.wine_name,

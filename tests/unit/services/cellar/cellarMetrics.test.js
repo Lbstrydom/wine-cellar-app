@@ -15,7 +15,8 @@ import {
   parseSlot,
   calculateFragmentation,
   wineViolatesZoneColour,
-  isCorrectlyPlaced
+  isCorrectlyPlaced,
+  isLegitimateBufferPlacement
 } from '../../../../src/services/cellar/cellarMetrics.js';
 
 // ─── parseSlot ────────────────────────────────────────────
@@ -413,5 +414,66 @@ describe('isCorrectlyPlaced', () => {
     const bestZone = { zoneId: 'shiraz', displayName: 'Shiraz / Syrah' };
     // Wine is red, zone is white, and nothing else matches
     expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(false);
+  });
+});
+
+// ─── isLegitimateBufferPlacement with physicalZone colour guard ──
+
+describe('isLegitimateBufferPlacement', () => {
+  const whiteZone = { id: 'chenin_blanc', color: 'white' };
+  const redZone = { id: 'shiraz', color: 'red' };
+  const bufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+
+  it('returns false when wine has no zone_id', () => {
+    expect(isLegitimateBufferPlacement({ zone_id: null })).toBe(false);
+  });
+
+  it('returns false when wine zone_id is a standard zone', () => {
+    expect(isLegitimateBufferPlacement({ zone_id: 'shiraz' })).toBe(false);
+  });
+
+  it('returns true for unclassified wine in matching colour zone', () => {
+    const wine = { zone_id: 'unclassified', colour: 'white', wine_name: 'White Wine' };
+    expect(isLegitimateBufferPlacement(wine, whiteZone)).toBe(true);
+  });
+
+  it('returns true for buffer-assigned wine without physicalZone', () => {
+    const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Red Wine' };
+    // No physicalZone passed — legacy call without second arg
+    expect(isLegitimateBufferPlacement(wine)).toBe(true);
+  });
+
+  it('returns false for red wine with unclassified zone_id in white zone', () => {
+    const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Shiraz' };
+    expect(isLegitimateBufferPlacement(wine, whiteZone)).toBe(false);
+  });
+
+  it('returns false for white wine with red_buffer zone_id in white zone (colour mismatch is detected)', () => {
+    // red_buffer zone_id, but wine is actually white and sits in a white zone — that's fine
+    const wine = { zone_id: 'red_buffer', colour: 'white', wine_name: 'Chenin Blanc' };
+    // white wine in white zone → no colour violation → legitimate
+    expect(isLegitimateBufferPlacement(wine, whiteZone)).toBe(true);
+  });
+
+  it('returns false for red wine with curiosities zone_id in white zone', () => {
+    const wine = { zone_id: 'curiosities', colour: 'red', wine_name: 'Pinotage' };
+    expect(isLegitimateBufferPlacement(wine, whiteZone)).toBe(false);
+  });
+
+  it('returns true for red wine with unclassified zone_id in red zone', () => {
+    const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Merlot' };
+    expect(isLegitimateBufferPlacement(wine, redZone)).toBe(true);
+  });
+
+  // Real-world regression: Shiraz in Chenin Blanc row with zone_id='unclassified'
+  it('regression: Kleine Zalze Shiraz (unclassified) in Chenin Blanc row is NOT legitimate', () => {
+    const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Kleine Zalze Shiraz 2021' };
+    expect(isLegitimateBufferPlacement(wine, whiteZone)).toBe(false);
+  });
+
+  // Buffer zones are skipped by wineViolatesZoneColour → always legitimate
+  it('returns true for any wine in a buffer zone (buffers accept all colours)', () => {
+    const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Shiraz' };
+    expect(isLegitimateBufferPlacement(wine, bufferZone)).toBe(true);
   });
 });

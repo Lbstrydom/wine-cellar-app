@@ -33,8 +33,51 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
   })
 }));
 
-import { findBestZone, findAvailableSlot } from '../../../../src/services/cellar/cellarPlacement.js';
+import { findBestZone, findAvailableSlot, inferColor } from '../../../../src/services/cellar/cellarPlacement.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from '../../../../src/services/cellar/cellarAllocation.js';
+
+describe('inferColor expanded grape coverage', () => {
+  it.each([
+    ['Kleine Zalze Shiraz 2021', 'red'],
+    ['De Grendel Shiraz 2019', 'red'],
+    ['Estate Pinotage 2022', 'red'],
+    ['Touriga Nacional Reserve', 'red'],
+    ['Garnacha de Fuego', 'red'],
+    ['Malbec Reserva 2020', 'red'],
+    ['Carmenere Gran Reserva', 'red'],
+    ['Barbera d\'Alba 2021', 'red'],
+    ['Negroamaro Salento', 'red'],
+    ['Montepulciano d\'Abruzzo', 'red'],
+    ['Petit Verdot Single Vineyard', 'red'],
+    ['Cabernet Franc Reserve', 'red'],
+  ])('infers %s as %s', (wineName, expected) => {
+    expect(inferColor({ wine_name: wineName })).toBe(expected);
+  });
+
+  it.each([
+    ['Malvasia delle Lipari', 'white'],
+    ['Albariño Rias Baixas', 'white'],
+    ['Verdejo Rueda 2023', 'white'],
+    ['Vermentino di Sardegna', 'white'],
+    ['Moscato d\'Asti', 'white'],
+    ['Semillon Hunter Valley', 'white'],
+    ['Pinot Gris Reserve', 'white'],
+  ])('infers %s as %s', (wineName, expected) => {
+    expect(inferColor({ wine_name: wineName })).toBe(expected);
+  });
+
+  it('uses grapes field when wine name is ambiguous', () => {
+    // "Albert Bichot Bourgogne" has no grape in name, but grapes field has "pinot noir"
+    expect(inferColor({
+      wine_name: 'Albert Bichot Bourgogne 2023',
+      grapes: 'pinot noir'
+    })).toBe('red');
+  });
+
+  it('returns null when no colour can be determined', () => {
+    expect(inferColor({ wine_name: 'Mystery Estate Reserve 2022' })).toBeNull();
+  });
+});
 
 describe('cellarPlacement varietal disambiguation', () => {
   it('does not infer cabernet sauvignon as a white wine', () => {

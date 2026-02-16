@@ -557,9 +557,14 @@ export async function cachePublicExtraction(
 // Analysis Cache
 // =============================================================================
 
+// Bump this version when analysis logic changes to invalidate cached results.
+// The version is included in the slot hash so code changes bust the cache
+// even when slot assignments haven't changed.
+const ANALYSIS_LOGIC_VERSION = 2;  // v2: colour guard in isCorrectlyPlaced + isLegitimateBufferPlacement
+
 /**
  * Generate slot hash for cache invalidation.
- * Hash of all wine_id assignments to detect changes.
+ * Hash of all wine_id assignments + analysis logic version to detect changes.
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<string>} MD5 hash of slot assignments
  */
@@ -573,7 +578,7 @@ async function generateSlotHash(cellarId) {
     `).all(cellarId);
 
     const slotData = slots.map(s => `${s.location_code}:${s.wine_id}`).join('|');
-    return crypto.createHash('md5').update(slotData).digest('hex');
+    return crypto.createHash('md5').update(`v${ANALYSIS_LOGIC_VERSION}|${slotData}`).digest('hex');
   } catch (err) {
     logger.warn('Cache', `Slot hash generation failed: ${err.message}`);
     return '';
