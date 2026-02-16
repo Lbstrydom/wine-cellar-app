@@ -291,4 +291,4 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
   return html;
 }
 
-export { formatAIAdvice, enrichMovesWithNames, rerenderMovesWithBadges };
+export { formatAIAdvice, enrichMovesWithNames };
