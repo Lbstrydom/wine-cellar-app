@@ -387,11 +387,13 @@ You MUST respond with valid JSON only. Be concise.`;
     ? `\n\nDRAFT PLAN (from algorithmic solver — review, refine, or accept):
 ${JSON.stringify({ reasoning: solverReasoning, actions: solverActions }, null, 2)}
 
-The draft plan was generated algorithmically. It handles capacity rebalancing and color boundaries well, but may miss:
+The draft plan was generated algorithmically. It addresses capacity deficits and color boundary swaps where possible, but may miss:
 - Strategic zone restructuring (e.g., reorganizing by style instead of geography)
 - Nuanced merge candidates that improve the collection's thematic organization
 - Better prioritization of actions
+- Color boundary violations the solver couldn't resolve with simple swaps
 
+Check colorAdjacencyIssues in the state data — if any violations remain unaddressed by the draft, add actions to fix them.
 You may accept all draft actions, modify some, add new ones, or remove counterproductive ones.`
     : '\n\nNo draft plan available — generate a plan from scratch.';
 
@@ -674,9 +676,11 @@ export async function generateReconfigurationPlan(report, options = {}) {
   // ─── Layer 1: Deterministic solver ───────────────────────────
   let solverActions = [];
   let solverReasoning = '';
+  // Declare outside try block so Layer 2 (LLM) can also use it
+  let layoutSettings = { colourOrder: 'whites-top' };
   try {
     const solverStart = Date.now();
-    const layoutSettings = await getCellarLayoutSettings(cellarId);
+    layoutSettings = await getCellarLayoutSettings(cellarId);
     const solverResult = solveRowAllocation({
       zones: zonesWithAllocations,
       utilization,
@@ -741,7 +745,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
 
   const planResult = {
     source: patchedActions.length > baseActions.length ? `${baseSource}+heuristic` : baseSource,
-    reasoning: baseReasoning || 'No reconfiguration actions needed or possible within current constraints.',
+    reasoning: baseReasoning || 'No reconfiguration actions needed — the cellar layout is well-balanced within current constraints.',
     actions: patchedActions
   };
 

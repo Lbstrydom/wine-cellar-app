@@ -296,6 +296,153 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder =
     updateZoneRowMap(zoneRowMap, redRow.zoneId, redRow.rowId, whiteRow.zoneId);
   }
 
+  // ── Pass 2: Fix local adjacency violations at the boundary edge ──
+  // The bulk boundary approach above misses cases where a white zone row
+  // sits exactly at the boundary (row N) next to a red zone row (row N+1).
+  // Both are technically in their "correct" region, but the adjacency is
+  // still a color violation. Scan for these and propose swaps.
+  const localFixActions = fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge);
+  actions.push(...localFixActions);
+
+  return actions;
+}
+
+/**
+ * Fix local color adjacency violations at the boundary edge.
+ * Scans consecutive rows for color conflicts (e.g. white row N next to red row N+1
+ * in whites-top mode) and finds swap partners to separate them.
+ * @param {Map} zoneRowMap - Mutable zone→rows map
+ * @param {boolean} whitesOnTop - Whether whites should be in lower row numbers
+ * @param {Set} neverMerge - Zones that can't be changed
+ * @returns {Array} Swap actions to fix adjacency violations
+ */
+function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
+  const actions = [];
+
+  // Rebuild row→zone map from current state (after bulk swaps above)
+  const rowToZone = new Map();
+  for (const [zoneId, rows] of zoneRowMap) {
+    for (const r of rows) rowToZone.set(r, zoneId);
+  }
+
+  // Build ordered color sequence for all assigned rows
+  const rowColors = [];
+  for (let r = 1; r <= TOTAL_ROWS; r++) {
+    const rId = `R${r}`;
+    const zoneId = rowToZone.get(rId);
+    if (!zoneId) continue;
+    const color = getZoneColor(zoneId);
+    if (color === 'any') continue;
+    rowColors.push({ rowId: rId, rowNumber: r, zoneId, color });
+  }
+
+  // Find adjacent pairs with conflicting colors in wrong order
+  // In whites-top mode: violation when white row is BELOW a red row
+  // (i.e. white has higher row number than an adjacent red)
+  const alreadySwapped = new Set();
+
+  for (let i = 0; i < rowColors.length - 1; i++) {
+    const upper = rowColors[i];      // lower row number = "higher" in cellar
+    const lower = rowColors[i + 1];  // higher row number = "lower" in cellar
+
+    // Skip if not truly adjacent (gap in row numbers)
+    if (lower.rowNumber - upper.rowNumber !== 1) continue;
+
+    const isViolation = whitesOnTop
+      ? (upper.color === 'red' && lower.color === 'white')
+      : (upper.color === 'white' && lower.color === 'red');
+
+    if (!isViolation) continue;
+    if (alreadySwapped.has(upper.rowId) || alreadySwapped.has(lower.rowId)) continue;
+    if (neverMerge.has(upper.zoneId) || neverMerge.has(lower.zoneId)) continue;
+
+    // Find a swap partner: look for a red row in white region or white row
+    // in red region that we can swap with the violating row.
+    // Strategy: swap the lower-numbered row (the one that should move further up or down)
+    const violator = whitesOnTop ? lower : upper;  // the misplaced one
+    const neighbor = whitesOnTop ? upper : lower;
+
+    // Look for a row of the opposite color that's on the wrong side
+    let bestSwapPartner = null;
+    for (const rc of rowColors) {
+      if (rc.rowId === violator.rowId || rc.rowId === neighbor.rowId) continue;
+      if (alreadySwapped.has(rc.rowId)) continue;
+      if (neverMerge.has(rc.zoneId)) continue;
+
+      // We want to swap violator (white, in red region) with a red row in white region
+      // or swap violator (red, in white region) with a white row in red region
+      if (rc.color === neighbor.color) {
+        // This row has the same color as the neighbor — could take violator's place
+        // Check if it's on the "wrong side" (making it a beneficial swap)
+        if (whitesOnTop && rc.color === 'red' && rc.rowNumber < violator.rowNumber) {
+          bestSwapPartner = rc;
+          break;
+        }
+        if (!whitesOnTop && rc.color === 'white' && rc.rowNumber > violator.rowNumber) {
+          bestSwapPartner = rc;
+          break;
+        }
+      }
+    }
+
+    // If no swap partner found elsewhere, just swap the two adjacent violating rows directly
+    // This won't fix the boundary but at least puts them in better relative order
+    if (!bestSwapPartner) {
+      // Direct adjacent swap: reallocate the violator's row to the neighbor's zone
+      // and vice versa — effectively swapping their zone assignments
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: violator.zoneId,
+        toZoneId: neighbor.zoneId,
+        rowNumber: violator.rowNumber,
+        reason: `Fix color adjacency: ${violator.zoneId} (${violator.color}) in R${violator.rowNumber} ` +
+          `adjacent to ${neighbor.zoneId} (${neighbor.color}) in R${neighbor.rowNumber}`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: neighbor.zoneId,
+        toZoneId: violator.zoneId,
+        rowNumber: neighbor.rowNumber,
+        reason: `Fix color adjacency: swap R${neighbor.rowNumber} (${neighbor.zoneId}) ` +
+          `with R${violator.rowNumber} (${violator.zoneId})`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      updateZoneRowMap(zoneRowMap, violator.zoneId, violator.rowId, neighbor.zoneId);
+      updateZoneRowMap(zoneRowMap, neighbor.zoneId, neighbor.rowId, violator.zoneId);
+      alreadySwapped.add(violator.rowId);
+      alreadySwapped.add(neighbor.rowId);
+    } else {
+      // Swap violator with a row elsewhere that creates a cleaner boundary
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: violator.zoneId,
+        toZoneId: bestSwapPartner.zoneId,
+        rowNumber: violator.rowNumber,
+        reason: `Fix color adjacency: move R${violator.rowNumber} (${violator.zoneId}, ${violator.color}) ` +
+          `away from R${neighbor.rowNumber} (${neighbor.color}), swap with R${bestSwapPartner.rowNumber}`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: bestSwapPartner.zoneId,
+        toZoneId: violator.zoneId,
+        rowNumber: bestSwapPartner.rowNumber,
+        reason: `Fix color adjacency: move R${bestSwapPartner.rowNumber} ` +
+          `(${bestSwapPartner.zoneId}, ${bestSwapPartner.color}) to R${violator.rowNumber} position`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      updateZoneRowMap(zoneRowMap, violator.zoneId, violator.rowId, bestSwapPartner.zoneId);
+      updateZoneRowMap(zoneRowMap, bestSwapPartner.zoneId, bestSwapPartner.rowId, violator.zoneId);
+      alreadySwapped.add(violator.rowId);
+      alreadySwapped.add(bestSwapPartner.rowId);
+    }
+  }
+
   return actions;
 }
 
