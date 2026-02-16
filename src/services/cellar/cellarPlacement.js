@@ -644,7 +644,7 @@ function parseTextArray(value) {
  * @param {Object} wine
  * @returns {string|null}
  */
-function inferColor(wine) {
+export function inferColor(wine) {
   const text = `${wine.wine_name || ''} ${wine.style || ''}`.toLowerCase();
 
   if (text.includes('rosé') || text.includes('rose') || text.includes('rosado')) return 'rose';

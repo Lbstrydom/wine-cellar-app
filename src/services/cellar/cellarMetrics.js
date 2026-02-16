@@ -5,7 +5,8 @@
  */
 
 import { getZoneById } from '../../config/cellarZones.js';
-import { findBestZone } from './cellarPlacement.js';
+import { findBestZone, inferColor } from './cellarPlacement.js';
+import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 
 // ───────────────────────────────────────────────────────────
 // Slot parsing
@@ -196,6 +197,38 @@ export function isLegitimateBufferPlacement(wine) {
 }
 
 /**
+ * Check if a wine's colour contradicts the zone's declared colour family.
+ * A red wine in a white-only zone (or vice versa) is always misplaced,
+ * regardless of stored zone_id.
+ * @param {Object} wine - Wine record
+ * @param {Object} zone - Zone config object
+ * @returns {boolean} true if the wine violates the zone's colour constraint
+ */
+export function wineViolatesZoneColour(wine, zone) {
+  if (!zone || zone.isFallbackZone || zone.isCuratedZone || zone.isBufferZone) return false;
+
+  const zoneColor = zone.color;
+  // Zones with null/undefined colour accept anything
+  if (!zoneColor) return false;
+  // Array-typed colours (e.g. ['rose','sparkling']) — skip simple red/white guard
+  if (Array.isArray(zoneColor)) return false;
+
+  // Only enforce for the two primary colour families
+  if (zoneColor !== 'red' && zoneColor !== 'white') return false;
+
+  const wineColor = wine.colour || wine.color || inferColor(wine);
+  if (!wineColor) return false; // Can't determine colour — don't penalise
+
+  const wineIsWhiteFamily = isWhiteFamily(wineColor);
+  const wineIsRed = wineColor.toLowerCase() === 'red';
+
+  if (zoneColor === 'white' && wineIsRed) return true;
+  if (zoneColor === 'red' && wineIsWhiteFamily) return true;
+
+  return false;
+}
+
+/**
  * Check if wine is correctly placed in its current zone.
  * @param {Object} wine
  * @param {Object} physicalZone - Zone where wine physically is
@@ -203,6 +236,10 @@ export function isLegitimateBufferPlacement(wine) {
  * @returns {boolean}
  */
 export function isCorrectlyPlaced(wine, physicalZone, bestZone) {
+  // Colour guard — a red wine in a white zone (or vice versa) is ALWAYS
+  // misplaced, even if wine.zone_id matches the physical zone.
+  if (wineViolatesZoneColour(wine, physicalZone)) return false;
+
   if (bestZone.zoneId === physicalZone.id) return true;
   if (wine.zone_id === physicalZone.id) return true;
 

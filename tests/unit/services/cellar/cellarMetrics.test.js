@@ -1,5 +1,6 @@
 /**
- * @fileoverview Unit tests for cellar metrics: scattering detection and color adjacency.
+ * @fileoverview Unit tests for cellar metrics: scattering detection, color adjacency,
+ * and per-bottle colour guard.
  * @module tests/unit/services/cellar/cellarMetrics.test
  */
 
@@ -12,7 +13,9 @@ import {
   detectColorAdjacencyIssues,
   getEffectiveZoneColor,
   parseSlot,
-  calculateFragmentation
+  calculateFragmentation,
+  wineViolatesZoneColour,
+  isCorrectlyPlaced
 } from '../../../../src/services/cellar/cellarMetrics.js';
 
 // ─── parseSlot ────────────────────────────────────────────
@@ -233,5 +236,182 @@ describe('detectColorAdjacencyIssues', () => {
     const rowToZone = { R1: 'sauvignon_blanc', R3: 'cabernet' };
     // R1-R2: R2 is empty (no zone), R2-R3: R2 is empty
     expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
+  });
+});
+
+// ─── wineViolatesZoneColour ─────────────────────────────
+
+describe('wineViolatesZoneColour', () => {
+  // Helper: minimal zone object
+  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
+  const redZone = { id: 'cabernet', color: 'red' };
+  const arrayZone = { id: 'rose_sparkling', color: ['rose', 'sparkling'] };
+  const nullColorZone = { id: 'curiosities', color: null, isCuratedZone: true };
+  const fallbackZone = { id: 'unclassified', color: null, isFallbackZone: true };
+  const bufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+
+  // ── Red wine in white zone ──
+
+  it('flags red wine (explicit colour) in white zone', () => {
+    const wine = { colour: 'red', wine_name: 'Cabernet Sauvignon' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(true);
+  });
+
+  it('flags red wine (inferred from name) in white zone', () => {
+    // No explicit colour field — inferColor should detect "shiraz" as red
+    const wine = { wine_name: 'De Grendel Shiraz 2020' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(true);
+  });
+
+  it('flags red wine via .color field in white zone', () => {
+    const wine = { color: 'red', wine_name: 'Merlot 2019' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(true);
+  });
+
+  // ── White wine in red zone ──
+
+  it('flags white wine (explicit colour) in red zone', () => {
+    const wine = { colour: 'white', wine_name: 'Chenin Blanc' };
+    expect(wineViolatesZoneColour(wine, redZone)).toBe(true);
+  });
+
+  it('flags white wine (inferred from name) in red zone', () => {
+    const wine = { wine_name: 'Sauvignon Blanc 2023' };
+    expect(wineViolatesZoneColour(wine, redZone)).toBe(true);
+  });
+
+  // ── Rosé/sparkling in red zone ──
+
+  it('flags rosé wine in red zone', () => {
+    const wine = { colour: 'rose', wine_name: 'Rosé 2023' };
+    expect(wineViolatesZoneColour(wine, redZone)).toBe(true);
+  });
+
+  it('flags sparkling wine in red zone', () => {
+    const wine = { colour: 'sparkling', wine_name: 'Champagne NV' };
+    expect(wineViolatesZoneColour(wine, redZone)).toBe(true);
+  });
+
+  // ── Correct placements ──
+
+  it('allows white wine in white zone', () => {
+    const wine = { colour: 'white', wine_name: 'Chardonnay 2022' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(false);
+  });
+
+  it('allows red wine in red zone', () => {
+    const wine = { colour: 'red', wine_name: 'Cabernet 2020' };
+    expect(wineViolatesZoneColour(wine, redZone)).toBe(false);
+  });
+
+  it('allows rosé in white zone (white family)', () => {
+    const wine = { colour: 'rose', wine_name: 'Rosé 2023' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(false);
+  });
+
+  // ── Special zone types ──
+
+  it('skips check for buffer zones', () => {
+    const wine = { colour: 'red', wine_name: 'Shiraz 2020' };
+    expect(wineViolatesZoneColour(wine, bufferZone)).toBe(false);
+  });
+
+  it('skips check for fallback zones', () => {
+    const wine = { colour: 'red', wine_name: 'Shiraz 2020' };
+    expect(wineViolatesZoneColour(wine, fallbackZone)).toBe(false);
+  });
+
+  it('skips check for curated zones', () => {
+    const wine = { colour: 'red', wine_name: 'Saperavi 2019' };
+    expect(wineViolatesZoneColour(wine, nullColorZone)).toBe(false);
+  });
+
+  it('skips check for array-typed zone colours', () => {
+    const wine = { colour: 'red', wine_name: 'Cab 2020' };
+    expect(wineViolatesZoneColour(wine, arrayZone)).toBe(false);
+  });
+
+  // ── Edge cases ──
+
+  it('skips check when wine colour cannot be determined', () => {
+    const wine = { wine_name: 'Mystery Wine 2020' };
+    expect(wineViolatesZoneColour(wine, whiteZone)).toBe(false);
+  });
+
+  it('returns false for null zone', () => {
+    const wine = { colour: 'red', wine_name: 'Cab' };
+    expect(wineViolatesZoneColour(wine, null)).toBe(false);
+  });
+
+  // ── Real-world regression cases ──
+
+  it('R5C3: Cabernet Sauvignon in Sauvignon Blanc zone', () => {
+    const wine = { wine_name: 'Kleine Zalze Cabernet Sauvignon 2021', colour: 'red' };
+    const zone = { id: 'sauvignon_blanc', color: 'white' };
+    expect(wineViolatesZoneColour(wine, zone)).toBe(true);
+  });
+
+  it('R8: Shiraz in Chenin Blanc zone', () => {
+    const wine = { wine_name: 'De Grendel Shiraz 2020', colour: 'red' };
+    const zone = { id: 'chenin_blanc', color: 'white' };
+    expect(wineViolatesZoneColour(wine, zone)).toBe(true);
+  });
+
+  it('R9: Pinot Noir in Aromatic Whites zone', () => {
+    const wine = { wine_name: 'Albert Bichot Bourgogne Pinot Noir 2020' };
+    const zone = { id: 'aromatic_whites', color: 'white' };
+    expect(wineViolatesZoneColour(wine, zone)).toBe(true);
+  });
+
+  it('R9: Malvasia (white) in Aromatic Whites zone stays allowed', () => {
+    const wine = { wine_name: 'Onna Malvasia 2022', colour: 'white' };
+    const zone = { id: 'aromatic_whites', color: 'white' };
+    expect(wineViolatesZoneColour(wine, zone)).toBe(false);
+  });
+});
+
+// ─── isCorrectlyPlaced (colour guard integration) ───────
+
+describe('isCorrectlyPlaced', () => {
+  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
+  const redZone = { id: 'cabernet', color: 'red' };
+
+  it('returns false for red wine in white zone even when zone_id matches', () => {
+    const wine = { colour: 'red', zone_id: 'sauvignon_blanc', wine_name: 'Cab Sauv' };
+    const bestZone = { zoneId: 'cabernet', displayName: 'Cabernet Sauvignon' };
+    expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(false);
+  });
+
+  it('returns false for white wine in red zone even when zone_id matches', () => {
+    const wine = { colour: 'white', zone_id: 'cabernet', wine_name: 'Chenin Blanc' };
+    const bestZone = { zoneId: 'chenin_blanc', displayName: 'Chenin Blanc' };
+    expect(isCorrectlyPlaced(wine, redZone, bestZone)).toBe(false);
+  });
+
+  it('returns true when bestZone matches physical zone and colour is correct', () => {
+    const wine = { colour: 'white', zone_id: 'sauvignon_blanc', wine_name: 'Sauvignon Blanc' };
+    const bestZone = { zoneId: 'sauvignon_blanc', displayName: 'Sauvignon Blanc' };
+    expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(true);
+  });
+
+  it('returns true via zone_id match when colour is correct', () => {
+    const wine = { colour: 'white', zone_id: 'sauvignon_blanc', wine_name: 'Loire Blend' };
+    const bestZone = { zoneId: 'loire_light', displayName: 'Loire & Light' };
+    expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(true);
+  });
+
+  it('returns true via overflow zone match when colour is correct', () => {
+    const wine = { colour: 'white', zone_id: 'other', wine_name: 'Mystery White' };
+    const whiteBufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+    // sauvignon_blanc has overflowZoneId: 'white_buffer'
+    const bestZone = { zoneId: 'sauvignon_blanc', displayName: 'Sauvignon Blanc' };
+    expect(isCorrectlyPlaced(wine, whiteBufferZone, bestZone)).toBe(true);
+  });
+
+  it('returns false when nothing matches', () => {
+    const wine = { colour: 'red', zone_id: 'shiraz', wine_name: 'Shiraz' };
+    const bestZone = { zoneId: 'shiraz', displayName: 'Shiraz / Syrah' };
+    // Wine is red, zone is white, and nothing else matches
+    expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(false);
   });
 });
