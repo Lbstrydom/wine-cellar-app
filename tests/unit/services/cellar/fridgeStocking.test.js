@@ -10,7 +10,7 @@ vi.mock('../../../../src/db/index.js', () => ({
 }));
 
 import db from '../../../../src/db/index.js';
-import { analyseFridge } from '../../../../src/services/cellar/fridgeStocking.js';
+import { analyseFridge, categoriseWine } from '../../../../src/services/cellar/fridgeStocking.js';
 
 function makeWine({
   id,
@@ -139,6 +139,58 @@ describe('analyseFridge gap vs flex prioritization', () => {
     expect(analysis.candidates[0].wineId).toBe(301);
     expect(analysis.candidates[0].category).toBe('crispWhite');
     expect(analysis.candidates.every(c => !c.isFlex)).toBe(true);
+  });
+});
+
+describe('categoriseWine sparkling keyword matching', () => {
+  it('correctly identifies prosecco as sparkling', () => {
+    const wine = makeWine({ id: 1, name: 'Bottega Gold Prosecco', slot: 'F1', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('sparkling');
+  });
+
+  it('correctly identifies Brut MCC as sparkling', () => {
+    const wine = makeWine({ id: 2, name: 'Steenberg Brut MCC', slot: 'F1', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('sparkling');
+  });
+
+  it('correctly identifies MCC at start of name as sparkling', () => {
+    const wine = makeWine({ id: 3, name: 'MCC Blanc de Blancs', slot: 'F1', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('sparkling');
+  });
+
+  it('correctly identifies Cap Classique as sparkling', () => {
+    const wine = makeWine({ id: 4, name: 'Graham Beck Cap Classique', slot: 'F1', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('sparkling');
+  });
+
+  it('does NOT classify Constantia wine as sparkling (asti substring)', () => {
+    const wine = makeWine({ id: 10, name: 'Steenberg Constantia Sauvignon Blanc', slot: 'F1', colour: 'white', grapes: 'sauvignon blanc' });
+    expect(categoriseWine(wine)).not.toBe('sparkling');
+  });
+
+  it('does NOT classify Coastal Region wine as sparkling (asti substring)', () => {
+    const wine = makeWine({ id: 11, name: 'Coastal Region Chenin Blanc', slot: 'F1', colour: 'white', grapes: 'chenin blanc' });
+    expect(categoriseWine(wine)).not.toBe('sparkling');
+  });
+
+  it('does NOT classify wine with "dynasty" in name as sparkling (asti substring)', () => {
+    const wine = makeWine({ id: 12, name: 'Dynasty Red Blend', slot: 'F1', colour: 'red' });
+    expect(categoriseWine(wine)).not.toBe('sparkling');
+  });
+
+  it('does NOT classify wine with "basket press" in style as sparkling (sekt substring)', () => {
+    const wine = makeWine({ id: 13, name: 'Old Vine Shiraz', slot: 'F1', colour: 'red', style: 'basket press fermentation' });
+    expect(categoriseWine(wine)).not.toBe('sparkling');
+  });
+
+  it('correctly identifies Asti as sparkling when it is the whole name', () => {
+    const wine = makeWine({ id: 14, name: 'Martini Asti', slot: 'F1', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('sparkling');
+  });
+
+  it('correctly identifies sparkling by colour field', () => {
+    const wine = makeWine({ id: 15, name: 'Generic Wine', slot: 'F1', colour: 'sparkling' });
+    expect(categoriseWine(wine)).toBe('sparkling');
   });
 });
 

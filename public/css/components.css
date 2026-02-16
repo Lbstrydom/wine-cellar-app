@@ -925,6 +925,46 @@
   color: var(--text-primary);
 }
 
+/* Zone issue actions panel (inside Cellar Review workspace) */
+#zone-issue-actions {
+  margin-bottom: 1rem;
+}
+#zone-issue-actions:empty {
+  display: none;
+}
+
+/* Color adjacency violation banner */
+.zone-adjacency-banner {
+  padding: 1rem;
+  border-radius: 6px;
+  background: rgba(var(--color-warning-rgb), 0.15);
+  border-left: 3px solid var(--color-warning);
+  margin-top: 0.75rem;
+}
+
+.zone-adjacency-banner-header {
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+.zone-adjacency-banner-body p {
+  color: var(--text);
+  line-height: 1.4;
+  margin: 0 0 0.5rem;
+}
+
+.zone-adjacency-list {
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 1.25rem;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  line-height: 1.6;
+}
+
+.zone-adjacency-list li {
+  margin-bottom: 0.25rem;
+}
+
 /* Holistic Zone Reconfiguration */
 .zone-reconfig-banner {
   padding: 1rem;

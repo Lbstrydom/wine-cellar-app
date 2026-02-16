@@ -8,7 +8,7 @@ import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../../config/fridgeParLevels
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
-import { grapeMatchesText } from '../../utils/wineNormalization.js';
+import { grapeMatchesText, keywordMatchesText } from '../../utils/wineNormalization.js';
 
 /**
  * Categorise a wine into a fridge par-level category.
@@ -31,7 +31,7 @@ export function categoriseWine(wine) {
     'methode cap classique', 'mousseux', 'franciacorta', 'asti'
   ];
   const isSparklingByKeyword = sparklingKeywords.some(k =>
-    wineName.includes(k) || style.includes(k)
+    keywordMatchesText(wineName, k) || keywordMatchesText(style, k)
   );
   if (isSparklingByKeyword || colour === 'sparkling') {
     return 'sparkling';

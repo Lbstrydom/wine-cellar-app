@@ -17,10 +17,11 @@ import { showToast, escapeHtml } from '../utils.js';
  * @param {Object} analysis - Analysis report
  * @param {Object} handlers
  * @param {(analysis: Object) => void} handlers.onRenderAnalysis - Callback to re-render analysis
- * @returns {{ remainingAlerts: Array }}
+ * @param {HTMLElement} [handlers.targetEl] - Optional target element (defaults to #analysis-alerts)
+ * @returns {{ remainingAlerts: Array, rendered: boolean }}
  */
-export function renderZoneCapacityAlert(analysis, { onRenderAnalysis }) {
-  const el = document.getElementById('analysis-alerts');
+export function renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl = null }) {
+  const el = targetEl || document.getElementById('analysis-alerts');
   const alerts = Array.isArray(analysis.alerts) ? analysis.alerts : [];
 
     const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');

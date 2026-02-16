@@ -268,3 +268,18 @@ export function findGrapeMatch(text, keywords) {
   if (!text || !keywords) return undefined;
   return keywords.find(k => grapeMatchesText(text, k));
 }
+
+/**
+ * Check whether text contains a keyword using word-boundary-aware matching.
+ * Unlike `grapeMatchesText`, this skips compound-grape guards — suitable for
+ * sparkling/method keywords, region names, etc.
+ * @param {string} text - Text to search in (wine name, style, etc.)
+ * @param {string} keyword - Keyword to look for (e.g. 'brut', 'asti', 'mcc')
+ * @returns {boolean} True if keyword appears as a distinct word match
+ */
+export function keywordMatchesText(text, keyword) {
+  if (!text || !keyword) return false;
+  const lower = text.toLowerCase();
+  if (!lower.includes(keyword)) return false; // fast bail
+  return getGrapeRegex(keyword).test(lower);
+}

@@ -4,7 +4,7 @@
  * @module services/shared/consistencyChecker
  */
 
-import { normalizeColour, normalizeGrape, parseGrapesField } from '../../utils/wineNormalization.js';
+import { normalizeColour, normalizeGrape, parseGrapesField, keywordMatchesText } from '../../utils/wineNormalization.js';
 import { getExpectedColours, findException } from '../../config/grapeColourMap.js';
 import db from '../../db/index.js';
 
@@ -56,7 +56,7 @@ export function checkWineConsistency(wine) {
     const searchText = (wineName + ' ' + style).toLowerCase();
 
     // Method keyword bypass — catches "sparkling stored as white" etc.
-    if (METHOD_KEYWORDS.some(k => searchText.includes(k))) return null;
+    if (METHOD_KEYWORDS.some(k => keywordMatchesText(searchText, k))) return null;
 
     // Known exception bypass (Blanc de Noirs, orange wine, skin contact, etc.)
     if (findException(wineName, style)) return null;

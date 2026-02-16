@@ -16,6 +16,7 @@ import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
 import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './labels.js';
+import { escapeHtml } from '../utils.js';
 
 let _onRenderAnalysis = null;
 
@@ -159,6 +160,54 @@ export async function refreshAnalysis() {
 }
 
 /**
+ * Render actionable zone issue alerts inside the Cellar Review workspace.
+ * Surfaces capacity alerts and color adjacency violations so the Cellar Review
+ * tab has actionable content — not just the read-only Zone Overview.
+ * @param {Object} analysis - Analysis report
+ * @param {Function} onRenderAnalysis - Re-render callback
+ */
+function renderZoneIssueActions(analysis, onRenderAnalysis) {
+  const el = document.getElementById('zone-issue-actions');
+  if (!el) return;
+
+  el.innerHTML = '';
+
+  const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
+  const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
+  const adjacencyAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
+
+  if (capacityAlerts.length === 0 && adjacencyAlerts.length === 0) return;
+
+  // Capacity alerts — reuse the full interactive component
+  if (capacityAlerts.length > 0) {
+    renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl: el });
+  }
+
+  // Color adjacency violations — simple banner with Reorganise Zones CTA
+  if (adjacencyAlerts.length > 0) {
+    const count = adjacencyAlerts.length;
+    const bannerHtml = `
+      <div class="zone-adjacency-banner">
+        <div class="zone-adjacency-banner-header">⚠️ Color Boundary ${count === 1 ? 'Issue' : 'Issues'}</div>
+        <div class="zone-adjacency-banner-body">
+          <p>${count} color adjacency ${count === 1 ? 'violation' : 'violations'} detected — zones should group wines by style to keep reds and whites separated.</p>
+          <ul class="zone-adjacency-list">
+            ${adjacencyAlerts.map(a => `<li>${escapeHtml(a.message || 'Color boundary issue')}</li>`).join('')}
+          </ul>
+          <button class="btn btn-primary zone-adjacency-reconfig-btn">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
+        </div>
+      </div>
+    `;
+    el.insertAdjacentHTML('beforeend', bannerHtml);
+
+    // Wire Reorganise Zones button
+    el.querySelector('.zone-adjacency-reconfig-btn')?.addEventListener('click', () => {
+      openReconfigurationModal(analysis, onRenderAnalysis);
+    });
+  }
+}
+
+/**
  * Render analysis results.
  * @param {Object} analysis - Analysis report from API
  */
@@ -181,6 +230,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
 
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
+  renderZoneIssueActions(analysis, onRenderAnalysis);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);
