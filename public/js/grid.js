@@ -282,17 +282,27 @@ function getCellarRows(layout) {
 }
 
 /**
- * Render dynamic storage areas (experimental).
+ * Render dynamic storage areas.
  * Expects state.layout.areas = [{ name, storage_type, temp_zone, rows: [{row_num,col_count}], slots? }]
  * If slots are not provided (lite mode), renders empty placeholders.
+ * @returns {Promise<void>}
  */
-export function renderStorageAreas() {
+export async function renderStorageAreas() {
   const container = document.getElementById('storage-areas-container');
   if (!container || !state.layout?.areas) return;
+
+  // Fetch zone map for cellar row labels
+  try {
+    zoneMapCache = await getZoneMap();
+  } catch (_err) {
+    zoneMapCache = {};
+  }
+  const hasZoneConfig = Object.keys(zoneMapCache).length > 0;
 
   container.innerHTML = '';
 
   for (const area of state.layout.areas) {
+    const isCellar = area.storage_type === 'cellar' || area.name === 'Main Cellar';
     const zoneWrap = document.createElement('div');
     zoneWrap.className = 'zone';
 
@@ -303,6 +313,20 @@ export function renderStorageAreas() {
     title.textContent = area.name;
     header.appendChild(title);
     zoneWrap.appendChild(header);
+
+    // For cellar areas with zone config, wrap grid + zone-labels in a flex container
+    const gridContainer = document.createElement('div');
+    if (isCellar && hasZoneConfig) {
+      gridContainer.className = 'cellar-container';
+    }
+
+    const zoneLabelsEl = (isCellar && hasZoneConfig)
+      ? document.createElement('div')
+      : null;
+    if (zoneLabelsEl) {
+      zoneLabelsEl.className = 'zone-labels';
+      gridContainer.appendChild(zoneLabelsEl);
+    }
 
     const grid = document.createElement('div');
     grid.className = 'cellar-grid';
@@ -342,15 +366,43 @@ export function renderStorageAreas() {
       grid.appendChild(legend);
     }
 
+    // Build zone spans for cellar areas (group consecutive rows with same zone)
+    const zoneSpans = [];
+    if (isCellar && hasZoneConfig) {
+      let currentSpan = null;
+      areaRows.forEach((row, index) => {
+        const rowId = `R${row.row_num}`;
+        const zoneInfo = zoneMapCache[rowId];
+        const zoneId = zoneInfo?.zoneId || 'not-configured';
+        if (currentSpan && currentSpan.zoneId === zoneId) {
+          currentSpan.rowCount++;
+        } else {
+          if (currentSpan) zoneSpans.push(currentSpan);
+          currentSpan = { zoneId, zoneInfo, rowCount: 1, startIndex: index };
+        }
+      });
+      if (currentSpan) zoneSpans.push(currentSpan);
+    }
+
     // Render rows using col_count; use slots if provided
     for (const row of areaRows) {
       const rowEl = document.createElement('div');
       rowEl.className = 'cellar-row';
 
-      // Optional row label
+      // Row label with inline zone name for cellar areas
       const label = document.createElement('div');
       label.className = 'row-label';
-      label.textContent = `R${row.row_num}`;
+      const rowId = `R${row.row_num}`;
+      const zoneInfo = zoneMapCache[rowId];
+      if (isCellar && zoneInfo && hasZoneConfig) {
+        label.appendChild(document.createTextNode(rowId));
+        const zoneName = document.createElement('span');
+        zoneName.className = 'zone-name';
+        zoneName.textContent = zoneInfo.displayName;
+        label.appendChild(zoneName);
+      } else {
+        label.textContent = rowId;
+      }
       rowEl.appendChild(label);
 
       if (Array.isArray(row.slots)) {
@@ -370,8 +422,54 @@ export function renderStorageAreas() {
       grid.appendChild(rowEl);
     }
 
-    zoneWrap.appendChild(grid);
+    // Add grid to container (with or without zone-labels flex wrapper)
+    if (isCellar && hasZoneConfig) {
+      gridContainer.appendChild(grid);
+      zoneWrap.appendChild(gridContainer);
+    } else {
+      zoneWrap.appendChild(grid);
+    }
+
+    // Append to DOM first so we can measure row height
     container.appendChild(zoneWrap);
+
+    // Render zone label sidebar for cellar areas
+    if (zoneLabelsEl && zoneSpans.length > 0) {
+      const GRID_GAP = 3; // must match .cellar-grid { gap: 3px }
+      let rowHeight = 55; // fallback
+      const firstRow = grid.querySelector('.cellar-row:not(.col-headers):not(.grid-legend)');
+      if (firstRow) {
+        rowHeight = firstRow.offsetHeight;
+      }
+
+      // Align with grid rows (offset past col-headers + legend)
+      const colHeaders = grid.querySelector('.col-headers');
+      const legendEl = grid.querySelector('.grid-legend');
+      const headerOffset = (colHeaders?.offsetHeight || 0) + (legendEl?.offsetHeight || 0);
+      if (headerOffset > 0) {
+        zoneLabelsEl.style.paddingTop = `${headerOffset + 4}px`;
+      }
+
+      zoneSpans.forEach(span => {
+        const zoneLabel = document.createElement('div');
+        zoneLabel.className = 'zone-label';
+        const spanHeight = (rowHeight * span.rowCount) + (GRID_GAP * (span.rowCount - 1));
+        zoneLabel.style.height = `${spanHeight}px`;
+
+        if (span.zoneInfo && hasZoneConfig) {
+          zoneLabel.textContent = span.zoneInfo.displayName;
+          zoneLabel.title = `${span.zoneInfo.displayName} (${span.zoneInfo.wineCount || 0} bottles)`;
+          if (span.zoneInfo.status) {
+            zoneLabel.classList.add(span.zoneInfo.status);
+          }
+        } else {
+          zoneLabel.textContent = 'Not configured';
+          zoneLabel.classList.add('not-configured');
+        }
+
+        zoneLabelsEl.appendChild(zoneLabel);
+      });
+    }
   }
 
   setupInteractions();

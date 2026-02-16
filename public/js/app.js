@@ -640,7 +640,7 @@ export async function loadLayout() {
     if (fridgeSection) fridgeSection.style.display = 'none';
     if (cellarZone) cellarZone.style.display = 'none';
 
-    renderStorageAreas();
+    await renderStorageAreas();
   } else {
     // Show legacy fridge/cellar
     if (areasContainer) areasContainer.style.display = 'none';
