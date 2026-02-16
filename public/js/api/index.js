@@ -106,7 +106,6 @@ export {
   getSuggestedPlacement,
   suggestPlacement,
   analyseCellar,
-  getZoneCapacityAdvice,
   allocateZoneRow,
   mergeZones,
   getReconfigurationPlan,

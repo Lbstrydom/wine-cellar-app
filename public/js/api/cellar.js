@@ -69,19 +69,6 @@ export async function analyseCellar(forceRefresh = false, options = {}) {
   return handleResponse(res, 'Failed to analyse cellar');
 }
 
-/**
- * Get AI advice for a zone capacity issue.
- * @param {Object} payload
- * @returns {Promise<Object>}
- */
-export async function getZoneCapacityAdvice(payload) {
-  const res = await fetch(`${API_BASE}/api/cellar/zone-capacity-advice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(res, 'Failed to get zone capacity advice');
-}
 
 /**
  * Allocate a new row to a zone.

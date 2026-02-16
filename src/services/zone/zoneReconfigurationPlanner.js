@@ -552,12 +552,16 @@ function heuristicGapFill(
       const availableRow = donorRows.find(r => !rowsAlreadyMoved.has(r));
       if (availableRow) {
         rowsAlreadyMoved.add(availableRow);
+        // Normalize rowNumber to numeric (donorRows stores strings like "R5")
+        const rowNum = typeof availableRow === 'string'
+          ? parseInt(availableRow.replace(/^R/i, ''), 10)
+          : availableRow;
         newActions.push({
           type: 'reallocate_row',
           priority: 3,
           fromZoneId: donor.zoneId,
           toZoneId,
-          rowNumber: availableRow,
+          rowNumber: rowNum,
           reason: `[heuristic] ${donor.zoneName} is ${donor.utilizationPct}% full; reallocate row ${availableRow} to ${issue.overflowingZoneName}`,
           bottlesAffected: issue.affectedCount
         });
@@ -748,17 +752,12 @@ export async function generateReconfigurationPlan(report, options = {}) {
       a.priority === 1 && a.reason?.includes('color')
     );
     if (solverColorFixes.length > 0) {
-      const llmColorFixes = llmActions.filter(a =>
-        a.reason?.toLowerCase().includes('color') || a.reason?.toLowerCase().includes('boundary')
-      );
-      if (llmColorFixes.length < solverColorFixes.length) {
-        // LLM dropped some or all color fixes — merge solver's back in
-        const llmRowNumbers = new Set(llmActions.map(a => a.rowNumber).filter(Boolean));
-        const missingColorFixes = solverColorFixes.filter(a => !llmRowNumbers.has(a.rowNumber));
-        if (missingColorFixes.length > 0) {
-          llmActions.unshift(...missingColorFixes);
-          logger.info('Reconfig', `Restored ${missingColorFixes.length} solver color-fix action(s) dropped by LLM`);
-        }
+      // Check by row number (robust) rather than keyword matching on LLM reasoning
+      const llmRowNumbers = new Set(llmActions.map(a => a.rowNumber).filter(n => n != null));
+      const missingColorFixes = solverColorFixes.filter(a => !llmRowNumbers.has(a.rowNumber));
+      if (missingColorFixes.length > 0) {
+        llmActions.unshift(...missingColorFixes);
+        logger.info('Reconfig', `Restored ${missingColorFixes.length} solver color-fix action(s) dropped by LLM`);
       }
     }
   }

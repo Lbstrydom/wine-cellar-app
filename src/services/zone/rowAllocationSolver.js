@@ -490,17 +490,15 @@ function identifyOutlier(upper, lower, rowColors, idx, whitesOnTop) {
   }
 
   // Fall back to positional heuristic: which row's color doesn't match its region?
+  const mid = Math.ceil(TOTAL_ROWS / 2);
   if (whitesOnTop) {
     // White should be in lower row numbers. If a white row has a high number,
     // or a red row has a low number, that's the outlier.
-    // Use the midpoint of total rows as approximate boundary
-    const mid = Math.ceil(TOTAL_ROWS / 2);
     if (upper.color === 'white' && upper.rowNumber > mid) return upper;
     if (lower.color === 'red' && lower.rowNumber < mid) return lower;
     // Default: the row that's deeper into the "wrong" region is the outlier
     return upper.color === 'red' ? upper : lower;
   } else {
-    const mid = Math.ceil(TOTAL_ROWS / 2);
     if (upper.color === 'red' && upper.rowNumber > mid) return upper;
     if (lower.color === 'white' && lower.rowNumber < mid) return lower;
     return upper.color === 'white' ? upper : lower;
@@ -788,17 +786,14 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
  * @param {string} stabilityBias
  * @returns {Array} Actions
  */
-function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias) {
+function consolidateScatteredWines(zoneRowMap, scatteredWines, _zones, _neverMerge, stabilityBias) {
   // Only consolidate when stability allows
   if (stabilityBias === 'high') return [];
   if (!scatteredWines || scatteredWines.length === 0) return [];
 
-  // This is a lower-priority optimization — limit to top 3 scattered wines
-  const topScattered = scatteredWines.slice(0, 3);
-
-  // For now, scattered wine consolidation is handled by the capacity rebalancing
-  // (moving rows to zones with more bottles). Additional scatter-specific logic
-  // could be added here as row-swap heuristics.
+  // Scattered wine consolidation is handled by capacity rebalancing (moving
+  // rows to zones with more bottles). Additional scatter-specific heuristics
+  // could be added here in the future.
   return [];
 }
 

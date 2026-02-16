@@ -12,7 +12,7 @@ import {
   analyseCellar
 } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
-import { switchWorkspace } from './state.js';
+
 
 /**
  * Render a prominent zone capacity alert (if present) and return remaining alerts.
@@ -36,7 +36,12 @@ export function renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl =
   el.innerHTML = capacityAlerts.map((a, idx) => renderAlertMarkup(a, idx)).join('');
 
   // Event delegation: handle clicks for any alert panel.
-  el.addEventListener('click', async (event) => {
+  // Remove previous listener to prevent stacking on re-render (can happen
+  // when __showQuickFixZones re-renders the same el multiple times).
+  if (el._capacityClickHandler) {
+    el.removeEventListener('click', el._capacityClickHandler);
+  }
+  el._capacityClickHandler = async (event) => {
     const target = event.target.closest('[data-action]');
     if (!target) return;
 
@@ -48,6 +53,7 @@ export function renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl =
     if (!alert || !alertRoot) return;
 
     if (action === 'zone-capacity-get-ai') {
+      if (target.disabled) return; // Guard against duplicate invocations
       target.disabled = true;
       try {
         await handleSuggestFix(alert, alertRoot, onRenderAnalysis);
@@ -69,7 +75,8 @@ export function renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl =
         target.disabled = false;
       }
     }
-  });
+  };
+  el.addEventListener('click', el._capacityClickHandler);
 
   return { remainingAlerts, rendered: true };
 }
@@ -234,6 +241,7 @@ function wireReconfigActions(containerEl, plan, planId, onRenderAnalysis) {
   if (!applyBtn) return;
 
   applyBtn.addEventListener('click', async () => {
+    if (applyBtn.disabled) return; // Guard against duplicate listener invocations
     applyBtn.disabled = true;
     applyBtn.textContent = 'Applying...';
 
@@ -261,11 +269,8 @@ function wireReconfigActions(containerEl, plan, planId, onRenderAnalysis) {
         report.__justReconfigured = true;
         report.__reconfigResult = result.applied || {};
         onRenderAnalysis(report);
-
-        // Navigate to Cellar Placement so user can see bottle moves
-        switchWorkspace('placement');
-        const panel = document.getElementById('workspace-placement');
-        if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        // switchWorkspace('placement') + scrollIntoView handled inside
+        // renderAnalysis when __justReconfigured is set — no need to repeat here.
       }
     } catch (err) {
       applyBtn.disabled = false;
