@@ -204,7 +204,7 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
 
     // Wire Reorganise Zones button
     el.querySelector('.zone-adjacency-reconfig-btn')?.addEventListener('click', () => {
-      openReconfigurationModal(analysis, onRenderAnalysis);
+      openReconfigurationModal({ onRenderAnalysis });
     });
   }
 }
