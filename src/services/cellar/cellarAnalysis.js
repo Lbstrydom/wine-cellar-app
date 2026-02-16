@@ -15,7 +15,7 @@ import { getActiveZoneMap } from './cellarAllocation.js';
 import {
   parseSlot, analyseZone, getWinesInRows,
   detectScatteredWines, detectColorAdjacencyIssues,
-  detectDuplicatePlacements, wineViolatesZoneColour
+  detectDuplicatePlacements
 } from './cellarMetrics.js';
 import { generateZoneNarratives } from './cellarNarratives.js';
 import {

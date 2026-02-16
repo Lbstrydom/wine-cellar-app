@@ -5,7 +5,7 @@
  */
 
 import db from '../../db/index.js';
-import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
+import { CELLAR_ZONES } from '../../config/cellarZones.js';
 import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 import { findBestZone } from '../cellar/cellarPlacement.js';
 
@@ -15,42 +15,6 @@ const CELLAR_LAYOUT = {
   getRowCapacity: (rowNum) => rowNum === 1 ? 7 : 9,
   getTotalCapacity: () => 7 + (18 * 9) // 169 slots
 };
-
-/**
- * Normalize text-ish values (string, array, JSON-string) into lowercase searchable text.
- * @param {unknown} value
- * @returns {string}
- */
-function toSearchableText(value) {
-  if (Array.isArray(value)) {
-    return value.map(v => String(v)).join(' ').toLowerCase();
-  }
-
-  if (typeof value === 'string') {
-    const trimmed = value.trim();
-    if (!trimmed) return '';
-
-    if ((trimmed.startsWith('[') && trimmed.endsWith(']')) ||
-        (trimmed.startsWith('"') && trimmed.endsWith('"'))) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.map(v => String(v)).join(' ').toLowerCase();
-        }
-        if (typeof parsed === 'string') {
-          return parsed.toLowerCase();
-        }
-      } catch {
-        // Fall through to raw string normalization.
-      }
-    }
-
-    return trimmed.toLowerCase();
-  }
-
-  if (value == null) return '';
-  return String(value).toLowerCase();
-}
 
 /**
  * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
