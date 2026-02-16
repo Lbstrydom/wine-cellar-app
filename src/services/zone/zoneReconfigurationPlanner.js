@@ -694,7 +694,14 @@ export async function generateReconfigurationPlan(report, options = {}) {
       colourOrder: layoutSettings.colourOrder
     });
     const solverMs = Date.now() - solverStart;
-    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s)`);
+    const colorFixCount = solverResult.actions.filter(a => a.priority === 1 && a.reason?.includes('color')).length;
+    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s) (${colorFixCount} color fixes)`);
+    if (colorFixCount > 0) {
+      const colorActions = solverResult.actions.filter(a => a.reason?.includes('color'));
+      for (const ca of colorActions) {
+        logger.info('Reconfig', `  Color fix: R${ca.rowNumber} ${ca.fromZoneId} → ${ca.toZoneId}: ${ca.reason}`);
+      }
+    }
     solverActions = solverResult.actions;
     solverReasoning = solverResult.reasoning;
   } catch (solverErr) {
@@ -727,8 +734,32 @@ export async function generateReconfigurationPlan(report, options = {}) {
       });
       llmActions = llmResult.actions;
       llmReasoning = llmResult.reasoning;
+      logger.info('Reconfig', `LLM returned ${llmActions.length} action(s) (solver had ${solverActions.length})`);
     } catch (llmErr) {
       logger.warn('Reconfig', `LLM refinement failed: ${llmErr.message} — using solver output`);
+    }
+  }
+
+  // ─── Layer 2b: Preserve solver color-fix actions ──────────
+  // The LLM can override solver actions, but color-boundary fixes are
+  // deterministically correct. If the LLM dropped them, merge them back.
+  if (llmActions && solverActions.length > 0) {
+    const solverColorFixes = solverActions.filter(a =>
+      a.priority === 1 && a.reason?.includes('color')
+    );
+    if (solverColorFixes.length > 0) {
+      const llmColorFixes = llmActions.filter(a =>
+        a.reason?.toLowerCase().includes('color') || a.reason?.toLowerCase().includes('boundary')
+      );
+      if (llmColorFixes.length < solverColorFixes.length) {
+        // LLM dropped some or all color fixes — merge solver's back in
+        const llmRowNumbers = new Set(llmActions.map(a => a.rowNumber).filter(Boolean));
+        const missingColorFixes = solverColorFixes.filter(a => !llmRowNumbers.has(a.rowNumber));
+        if (missingColorFixes.length > 0) {
+          llmActions.unshift(...missingColorFixes);
+          logger.info('Reconfig', `Restored ${missingColorFixes.length} solver color-fix action(s) dropped by LLM`);
+        }
+      }
     }
   }
 

@@ -374,17 +374,11 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
       if (rc.rowId === outlier.rowId || rc.rowId === neighbor.rowId) continue;
       if (alreadySwapped.has(rc.rowId)) continue;
       if (neverMerge.has(rc.zoneId)) continue;
-      // We want a row of the opposite color that's on the "wrong side"
-      // e.g. if outlier is white in the red region, find a red row in the white region
-      if (rc.color !== outlier.color) continue; // Must be same color as neighbor, not outlier... wait
-      // Actually: we want to replace the outlier's position with a row of the neighbor's color,
-      // and send the outlier to where the swap partner was.
-      // So swap partner must be the SAME color as neighbor (to take outlier's spot)
-      // and must be in a position where the outlier's color would fit better.
-
-      // Let me reconsider: the outlier has color X in a region of color Y.
-      // We need to find a row of color Y that's in a region of color X.
-      // Then swap them: outlier goes to color-X region, Y-row goes to color-Y region.
+      // Swap partner must be the SAME color as the neighbor (so it fits in the
+      // outlier's position) and must currently be on the "wrong side" for its own
+      // color (so the outlier would fit better in the partner's current position).
+      // Example: outlier=white in red region, neighbor=red. We need a red row
+      // that's currently in the white region — swap them so both land correctly.
       if (rc.color !== neighbor.color) continue;
 
       // Check if this swap partner is on the "wrong side" for its own color
