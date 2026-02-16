@@ -4,11 +4,8 @@
  */
 
 import express from 'express';
-import db from '../db/index.js';
 import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellar/cellarAnalysis.js';
-import { findAvailableSlot } from '../services/cellar/cellarPlacement.js';
 import { getCellarOrganisationAdvice } from '../services/cellar/cellarAI.js';
-import { getZoneCapacityAdvice } from '../services/zone/zoneCapacityAdvisor.js';
 import { analyseFridge, suggestFridgeOrganization } from '../services/cellar/fridgeStocking.js';
 import {
   getCachedAnalysis,
@@ -234,124 +231,5 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
     aiFromCache: false
   });
 }));
-
-// ============================================================
-// Zone Capacity Advice (AI)
-// ============================================================
-
-/**
- * POST /api/cellar/zone-capacity-advice
- * Get AI recommendations when a zone is at capacity.
- */
-router.post('/zone-capacity-advice', asyncHandler(async (req, res) => {
-  const {
-    overflowingZoneId,
-    winesNeedingPlacement,
-    currentZoneAllocation,
-    availableRows,
-    adjacentZones
-  } = req.body || {};
-
-  const result = await getZoneCapacityAdvice({
-    overflowingZoneId,
-    winesNeedingPlacement,
-    currentZoneAllocation,
-    availableRows,
-    adjacentZones
-  });
-
-  if (!result.success) {
-    const status = result.error?.includes('ANTHROPIC_API_KEY') ? 503 : 400;
-    return res.status(status).json({
-      success: false,
-      error: result.error
-    });
-  }
-
-  const advice = result.advice;
-
-  // Enrich move_wine actions with concrete slot targets (best-effort)
-  if (Array.isArray(advice?.actions) && advice.actions.some(a => a?.type === 'move_wine')) {
-    const occupiedSlots = await getOccupiedSlots(req.cellarId);
-
-    // Pre-fetch wine record + all slots per wine to handle multiple bottles.
-    // Track which source slots have already been assigned to avoid duplicates.
-    const wineCache = new Map();     // wineId → { wine, slots: [slot_code, ...] }
-    const assignedSources = new Set();
-
-    for (const action of advice.actions) {
-      if (action?.type !== 'move_wine') continue;
-
-      const wineId = action.wineId;
-      const toZoneId = action.toZone;
-      if (!wineId || !toZoneId) {
-        action.error = 'Missing wineId or toZone';
-        continue;
-      }
-
-      // Fetch wine record + all its slots if not already cached
-      if (!wineCache.has(wineId)) {
-        const wine = await db.prepare(
-          'SELECT * FROM wines WHERE cellar_id = $1 AND id = $2'
-        ).get(req.cellarId, wineId);
-        const slotRows = wine ? await db.prepare(
-          'SELECT location_code FROM slots WHERE wine_id = $1 AND cellar_id = $2'
-        ).all(wineId, req.cellarId) : [];
-        wineCache.set(wineId, {
-          wine,
-          slots: slotRows.map(r => r.location_code)
-        });
-      }
-
-      const cached = wineCache.get(wineId);
-      if (!cached.wine) {
-        action.error = 'Wine not found';
-        continue;
-      }
-
-      // Pick the first unassigned slot for this wine
-      const from = cached.slots.find(s => !assignedSources.has(s));
-      if (!from) {
-        action.error = 'Wine location unknown';
-        continue;
-      }
-      assignedSources.add(from);
-
-      const slotResult = await findAvailableSlot(toZoneId, occupiedSlots, cached.wine, {
-        allowFallback: false,
-        enforceAffinity: false,
-        cellarId: req.cellarId
-      });
-
-      if (!slotResult?.slotId) {
-        action.error = `No available slot in ${toZoneId}`;
-        continue;
-      }
-
-      action.from = from;
-      action.to = slotResult.slotId;
-      action.zoneId = toZoneId;
-      action.wineName = cached.wine.wine_name || `Wine #${wineId}`;
-
-      // Update occupied set so subsequent moves don't collide
-      occupiedSlots.delete(from);
-      occupiedSlots.add(slotResult.slotId);
-    }
-  }
-
-  res.json({ success: true, advice });
-}));
-
-/**
- * Get currently occupied slots.
- * @param {string} cellarId - Cellar ID to filter by
- * @returns {Promise<Set<string>>} Set of occupied slot IDs
- */
-async function getOccupiedSlots(cellarId) {
-  const slots = await db.prepare(
-    'SELECT location_code FROM slots WHERE cellar_id = $1 AND wine_id IS NOT NULL'
-  ).all(cellarId);
-  return new Set(slots.map(s => s.location_code));
-}
 
 export default router;

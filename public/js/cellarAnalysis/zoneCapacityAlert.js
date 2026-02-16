@@ -88,7 +88,7 @@ function renderAlertMarkup(alert, index) {
 
   const wineList = wines.length
     ? `<ul class="zone-capacity-wines">${wines.map(w => (
-      `<li>• ${escapeHtml(w.wineName || w.wine_name || 'Wine')} (${escapeHtml(w.currentSlot || 'Unknown')})</li>`
+      `<li>${escapeHtml(w.wineName || w.wine_name || 'Wine')} (${escapeHtml(w.currentSlot || 'Unknown')})</li>`
     )).join('')}</ul>`
     : '';
 

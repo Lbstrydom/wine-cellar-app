@@ -232,9 +232,11 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder =
   const whiteRowCount = countColorRows('white', zoneRowMap);
   const boundary = Math.max(whiteRowCount, 1);
 
-  // Identify misplaced rows based on colourOrder
-  const whiteRowsInRedRegion = [];
-  const redRowsInWhiteRegion = [];
+  // Identify misplaced rows based on colourOrder.
+  // "rowsTooHigh" = rows whose color means they belong in the LOWER region but sit too high.
+  // "rowsTooLow"  = rows whose color means they belong in the HIGHER region but sit too low.
+  const rowsTooHigh = [];
+  const rowsTooLow = [];
 
   for (let r = 1; r <= TOTAL_ROWS; r++) {
     const rId = `R${r}`;
@@ -246,54 +248,52 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder =
     if (whitesOnTop) {
       // whites-top: white zones should be in rows 1..boundary, red in boundary+1..19
       if (color === 'white' && r > boundary) {
-        whiteRowsInRedRegion.push({ rowId: rId, rowNumber: r, zoneId });
+        rowsTooHigh.push({ rowId: rId, rowNumber: r, zoneId });
       } else if (color === 'red' && r <= boundary) {
-        redRowsInWhiteRegion.push({ rowId: rId, rowNumber: r, zoneId });
+        rowsTooLow.push({ rowId: rId, rowNumber: r, zoneId });
       }
     } else {
       // reds-top: red zones should be in rows 1..redBoundary, white in redBoundary+1..19
       const redBoundary = TOTAL_ROWS - boundary;
       if (color === 'red' && r > redBoundary) {
-        // Red zone in white region (reds-top: reds should be low numbers)
-        whiteRowsInRedRegion.push({ rowId: rId, rowNumber: r, zoneId });
+        rowsTooHigh.push({ rowId: rId, rowNumber: r, zoneId });
       } else if (color === 'white' && r <= redBoundary) {
-        // White zone in red region (reds-top: whites should be high numbers)
-        redRowsInWhiteRegion.push({ rowId: rId, rowNumber: r, zoneId });
+        rowsTooLow.push({ rowId: rId, rowNumber: r, zoneId });
       }
     }
   }
 
-  // Generate swap actions — pair misplaced white rows with misplaced red rows
-  const swapCount = Math.min(whiteRowsInRedRegion.length, redRowsInWhiteRegion.length);
+  // Generate swap actions — pair misplaced rows from each side
+  const swapCount = Math.min(rowsTooHigh.length, rowsTooLow.length);
   for (let i = 0; i < swapCount; i++) {
-    const whiteRow = whiteRowsInRedRegion[i];
-    const redRow = redRowsInWhiteRegion[i];
+    const highRow = rowsTooHigh[i];
+    const lowRow = rowsTooLow[i];
 
     // Two reallocate_row actions simulate a swap
     actions.push({
       type: 'reallocate_row',
       priority: 1,
-      fromZoneId: whiteRow.zoneId,
-      toZoneId: redRow.zoneId,
-      rowNumber: whiteRow.rowNumber,
-      reason: `Fix color boundary: move row ${whiteRow.rowNumber} (${whiteRow.zoneId}, white) ` +
-        `to make room for red zone, swap with row ${redRow.rowNumber}`,
+      fromZoneId: highRow.zoneId,
+      toZoneId: lowRow.zoneId,
+      rowNumber: highRow.rowNumber,
+      reason: `Fix color boundary: move row ${highRow.rowNumber} (${highRow.zoneId}) ` +
+        `to lower region, swap with row ${lowRow.rowNumber}`,
       bottlesAffected: SLOTS_PER_ROW
     });
     actions.push({
       type: 'reallocate_row',
       priority: 1,
-      fromZoneId: redRow.zoneId,
-      toZoneId: whiteRow.zoneId,
-      rowNumber: redRow.rowNumber,
-      reason: `Fix color boundary: move row ${redRow.rowNumber} (${redRow.zoneId}, red) ` +
-        `to white region, swap with row ${whiteRow.rowNumber}`,
+      fromZoneId: lowRow.zoneId,
+      toZoneId: highRow.zoneId,
+      rowNumber: lowRow.rowNumber,
+      reason: `Fix color boundary: move row ${lowRow.rowNumber} (${lowRow.zoneId}) ` +
+        `to higher region, swap with row ${highRow.rowNumber}`,
       bottlesAffected: SLOTS_PER_ROW
     });
 
     // Update mutable state
-    updateZoneRowMap(zoneRowMap, whiteRow.zoneId, whiteRow.rowId, redRow.zoneId);
-    updateZoneRowMap(zoneRowMap, redRow.zoneId, redRow.rowId, whiteRow.zoneId);
+    updateZoneRowMap(zoneRowMap, highRow.zoneId, highRow.rowId, lowRow.zoneId);
+    updateZoneRowMap(zoneRowMap, lowRow.zoneId, lowRow.rowId, highRow.zoneId);
   }
 
   // ── Pass 2: Fix local adjacency violations at the boundary edge ──

@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v135';
+const CACHE_VERSION = 'v136';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -163,8 +163,7 @@ self.addEventListener('fetch', (event) => {
     // Long-running AI endpoints: pass through directly without SW timeout.
     // These have their own AbortController timeouts on the client side.
     if (url.pathname.includes('/analyse/ai') ||
-        url.pathname.includes('/reconfiguration-plan') ||
-        url.pathname.includes('/zone-capacity-advice')) {
+        url.pathname.includes('/reconfiguration-plan')) {
       return;
     }
     event.respondWith(networkFirstWithCache(request));

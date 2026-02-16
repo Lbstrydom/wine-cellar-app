@@ -4,6 +4,11 @@
  * @module cellarAnalysis/analysisState
  */
 
+import {
+  CAPACITY_ALERT_HOLISTIC_THRESHOLD,
+  MISPLACEMENT_RATE_THRESHOLD
+} from './labels.js';
+
 export const AnalysisState = {
   NO_ZONES: 'NO_ZONES',
   ZONES_DEGRADED: 'ZONES_DEGRADED',
@@ -26,6 +31,6 @@ export function deriveState(analysis) {
   const misplaced = analysis?.summary?.misplacedBottles ?? 0;
   const misplacementRate = total > 0 ? misplaced / total : 0;
 
-  if (capacityAlerts >= 3 || misplacementRate >= 0.10) return AnalysisState.ZONES_DEGRADED;
+  if (capacityAlerts >= CAPACITY_ALERT_HOLISTIC_THRESHOLD || misplacementRate >= MISPLACEMENT_RATE_THRESHOLD) return AnalysisState.ZONES_DEGRADED;
   return AnalysisState.ZONES_HEALTHY;
 }

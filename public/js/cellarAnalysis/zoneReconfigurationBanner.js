@@ -7,7 +7,11 @@ import { escapeHtml, showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
 import { getCurrentAnalysis } from './state.js';
-import { CTA_RECONFIGURE_ZONES } from './labels.js';
+import {
+  CTA_RECONFIGURE_ZONES,
+  CAPACITY_ALERT_HOLISTIC_THRESHOLD,
+  MISPLACEMENT_RATE_THRESHOLD
+} from './labels.js';
 
 function shouldShowHolisticBanner(analysis) {
   const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
@@ -17,8 +21,7 @@ function shouldShowHolisticBanner(analysis) {
   const misplaced = analysis?.summary?.misplacedBottles ?? 0;
   const misplacementRate = total > 0 ? misplaced / total : 0;
 
-  // Spec thresholds: alert spam (>=3) OR misplacement >=10-15%
-  return capacityAlerts.length >= 3 || misplacementRate >= 0.10;
+  return capacityAlerts.length >= CAPACITY_ALERT_HOLISTIC_THRESHOLD || misplacementRate >= MISPLACEMENT_RATE_THRESHOLD;
 }
 
 function summarizeCapacityAlerts(analysis) {

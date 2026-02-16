@@ -8,7 +8,12 @@
 import { escapeHtml } from '../utils.js';
 import { startZoneSetup } from './zones.js';
 import { switchWorkspace } from './state.js';
-import { TAB_CELLAR_REVIEW, TAB_CELLAR_PLACEMENT, TAB_FRIDGE } from './labels.js';
+import {
+  TAB_CELLAR_REVIEW,
+  TAB_CELLAR_PLACEMENT,
+  TAB_FRIDGE,
+  CAPACITY_ALERT_HOLISTIC_THRESHOLD
+} from './labels.js';
 
 /**
  * @typedef {Object} DigestItem
@@ -158,8 +163,8 @@ function buildDigestGroups(analysis) {
     }
   }
 
-  // Consolidate capacity issues when >= 3 (holistic summary)
-  if (groups.structure.filter(i => i.sourceAlert?.type === 'zone_capacity_issue').length >= 3) {
+  // Consolidate capacity issues when threshold met (holistic summary)
+  if (groups.structure.filter(i => i.sourceAlert?.type === 'zone_capacity_issue').length >= CAPACITY_ALERT_HOLISTIC_THRESHOLD) {
     const capacityItems = groups.structure.filter(i => i.sourceAlert?.type === 'zone_capacity_issue');
     const totalAffected = capacityItems.reduce((sum, i) => {
       const data = i.sourceAlert?.data || {};
