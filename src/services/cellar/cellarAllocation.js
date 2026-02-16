@@ -113,15 +113,11 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
       }
     }
 
-    // Last resort: any available row (logs a warning)
+    // No cross-colour fallback — throw so the caller uses the overflow chain
+    // (buffer zone → unclassified) rather than placing wines in wrong-colour rows
     if (!assignedRow) {
-      for (let rowNum = 1; rowNum <= 19; rowNum++) {
-        const rowId = `R${rowNum}`;
-        if (!usedRows.has(rowId)) {
-          assignedRow = rowId;
-          break;
-        }
-      }
+      console.warn(`[allocateRowToZone] No colour-compatible rows available for zone ${zoneId}`);
+      throw new Error(`No colour-compatible rows available for zone ${zoneId}`);
     }
   }
 

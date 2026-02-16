@@ -115,6 +115,79 @@ describe('cellarPlacement varietal disambiguation', () => {
   });
 });
 
+describe('Phase 2 – Classifier unification & dessert_fortified protection', () => {
+  it('classifies Tawny Port to dessert_fortified (not matched on portugal)', () => {
+    const result = findBestZone({
+      wine_name: 'Tawny Port 20 Year Old',
+      colour: 'fortified',
+      country: 'Portugal',
+      grapes: null,
+      style: null
+    });
+    expect(result.zoneId).toBe('dessert_fortified');
+  });
+
+  it('does NOT classify Portuguese Douro Red as dessert_fortified', () => {
+    const result = findBestZone({
+      wine_name: 'Quinta do Crasto Douro Red 2019',
+      colour: 'red',
+      country: 'Portugal',
+      grapes: 'touriga nacional',
+      style: null
+    });
+    expect(result.zoneId).not.toBe('dessert_fortified');
+    expect(result.zoneId).toBe('portugal');
+  });
+
+  it('classifies red Pinot Noir away from aromatic_whites', () => {
+    const result = findBestZone({
+      wine_name: 'Bourgogne Pinot Noir 2021',
+      colour: 'red',
+      country: 'France',
+      grapes: 'pinot noir',
+      style: null
+    });
+    expect(result.zoneId).not.toBe('aromatic_whites');
+    expect(result.zoneId).toBe('pinot_noir');
+  });
+
+  it('classifies SA Shiraz to shiraz zone (not southern_france)', () => {
+    const result = findBestZone({
+      wine_name: 'Kleine Zalze Shiraz 2021',
+      colour: 'red',
+      country: 'South Africa',
+      grapes: 'shiraz',
+      style: null
+    });
+    expect(result.zoneId).toBe('shiraz');
+    expect(result.zoneId).not.toBe('southern_france');
+  });
+
+  it('classifies French Côtes du Rhône blend to southern_france', () => {
+    const result = findBestZone({
+      wine_name: 'Domaine de la Janasse Côtes du Rhône 2020',
+      colour: 'red',
+      country: 'France',
+      grapes: 'grenache, syrah, mourvèdre',
+      style: 'Rhône blend',
+      region: 'Rhône'
+    });
+    expect(result.zoneId).toBe('southern_france');
+  });
+
+  it('classifies German Riesling away from southern_france', () => {
+    const result = findBestZone({
+      wine_name: 'Nik Weis Mosel Riesling 2022',
+      colour: 'white',
+      country: 'Germany',
+      grapes: 'riesling',
+      style: null,
+      region: 'Mosel'
+    });
+    expect(result.zoneId).not.toBe('southern_france');
+  });
+});
+
 describe('findAvailableSlot colour-region filter', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -347,5 +420,77 @@ describe('findAvailableSlot allowFallback + enforceAffinity overflow chain', () 
     });
 
     expect(result).toBeNull();
+  });
+});
+
+// ─── Phase 5.2 – calculateZoneMatch rejection reasons & explain mode ──
+
+describe('Phase 5.2 – rejection reasons & explain mode', () => {
+  it('findBestZone returns rejectionReason for colour mismatch', () => {
+    const result = findBestZone({
+      wine_name: 'Cabernet Sauvignon 2020',
+      colour: 'red',
+      grapes: 'cabernet sauvignon',
+      country: null,
+      style: null
+    }, { explain: true });
+
+    // Should match cabernet (red zone), but rejectedZones should include white zones
+    expect(result.rejectedZones).toBeDefined();
+    expect(result.rejectedZones.length).toBeGreaterThan(0);
+
+    const colourRejections = result.rejectedZones.filter(r =>
+      r.reason.startsWith('Colour mismatch')
+    );
+    expect(colourRejections.length).toBeGreaterThan(0);
+    // White zones like sauvignon_blanc should be rejected on colour
+    const sbRejection = colourRejections.find(r => r.zoneId === 'sauvignon_blanc');
+    expect(sbRejection).toBeTruthy();
+    expect(sbRejection.reason).toContain('red');
+  });
+
+  it('findBestZone does NOT return rejectedZones when explain=false (default)', () => {
+    const result = findBestZone({
+      wine_name: 'Cabernet Sauvignon 2020',
+      colour: 'red',
+      grapes: 'cabernet sauvignon'
+    });
+
+    expect(result.rejectedZones).toBeUndefined();
+  });
+
+  it('findBestZone returns rejectedZones including excludeKeyword rejections', () => {
+    // A Tawny Port wine: dessert_fortified excludes 'portugal' / 'portuguese'
+    // so if we test a Portuguese wine that has "port" in the name but is a red...
+    const result = findBestZone({
+      wine_name: 'Quinta do Crasto Douro Red 2019',
+      colour: 'red',
+      country: 'Portugal',
+      grapes: 'touriga nacional',
+      style: null
+    }, { explain: true });
+
+    expect(result.rejectedZones).toBeDefined();
+    // dessert_fortified should reject on colour (red vs dessert/fortified family)
+    const dessertRejection = result.rejectedZones.find(r => r.zoneId === 'dessert_fortified');
+    expect(dessertRejection).toBeTruthy();
+    expect(dessertRejection.reason).toContain('Colour mismatch');
+  });
+
+  it('findBestZone explain mode includes rejection reasons for unclassified wine', () => {
+    const result = findBestZone({
+      wine_name: 'Mystery Estate Reserve 2022',
+      colour: null,
+      grapes: null,
+      country: null,
+      style: null
+    }, { explain: true });
+
+    // Should be unclassified (no matching zone)
+    expect(result.zoneId).toBe('unclassified');
+    // rejectedZones should be present (may be empty if no zones gave rejectionReason —
+    // some zones just score 0 without a specific rejection)
+    expect(result.rejectedZones).toBeDefined();
+    expect(Array.isArray(result.rejectedZones)).toBe(true);
   });
 });

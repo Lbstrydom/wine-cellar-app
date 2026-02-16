@@ -22,6 +22,7 @@ import { evaluateWineAdd } from '../services/wine/wineAddOrchestrator.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { normalizeColour } from '../utils/wineNormalization.js';
 
 const router = Router();
 
@@ -346,9 +347,10 @@ router.get('/:id', asyncHandler(async (req, res) => {
  */
 router.post('/', captureGrapes, validateBody(createWineSchema), asyncHandler(async (req, res) => {
   const {
-    style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+    style, colour: rawColour, wine_name, vintage, vivino_rating, price_eur, country,
     producer, region, vivino_id, vivino_url, vivino_confirmed, external_match
   } = req.body;
+  const colour = normalizeColour(rawColour) || rawColour;
 
   const fingerprintData = WineFingerprint.generateWithVersion({
     wine_name,
@@ -457,11 +459,12 @@ router.post('/', captureGrapes, validateBody(createWineSchema), asyncHandler(asy
  */
 router.put('/:id', captureGrapes, validateParams(wineIdSchema), validateBody(updateWineSchema), asyncHandler(async (req, res) => {
   const {
-    style, colour, wine_name, vintage, vivino_rating, price_eur, country,
+    style, colour: rawColour, wine_name, vintage, vivino_rating, price_eur, country,
     producer, region,
     drink_from, drink_peak, drink_until,
     vivino_id, vivino_url, vivino_confirmed
   } = req.body;
+  const colour = normalizeColour(rawColour) || rawColour;
 
   const existing = await db.prepare(`
     SELECT wine_name, producer, vintage, country, region, style, colour, grapes

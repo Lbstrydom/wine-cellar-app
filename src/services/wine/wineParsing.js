@@ -27,7 +27,7 @@ ${text}
 Extract the following fields (use null if not found):
 - wine_name: Full name of the wine (producer + wine name, exclude vintage)
 - vintage: Year as integer (null if NV or not specified)
-- colour: One of "red", "white", "rose", "sparkling" (infer from grape/style if not explicit)
+- colour: One of "red", "white", "rose", "sparkling", "orange", "dessert", "fortified" (infer from grape/style if not explicit. Use "dessert" for sweet wines like Sauternes, Tokaji, ice wine. Use "fortified" for Port, Sherry, Madeira. Use "orange" for skin-contact white wines.)
 - style: Grape variety or wine style (e.g., "Sauvignon Blanc", "Chianti", "Champagne")
 - price_eur: Price as decimal number (convert to EUR if another currency, use approximate rate)
 - vivino_rating: Rating as decimal if mentioned (null if not)
@@ -142,7 +142,7 @@ The image may be:
 Extract the following fields (use null if not found or not visible):
 - wine_name: Full name of the wine (producer + wine name, exclude vintage)
 - vintage: Year as integer (null if NV or not visible)
-- colour: One of "red", "white", "rose", "sparkling" (infer from grape/style/bottle colour if not explicit)
+- colour: One of "red", "white", "rose", "sparkling", "orange", "dessert", "fortified" (infer from grape/style/bottle colour if not explicit. Use "dessert" for sweet wines like Sauternes, Tokaji, ice wine. Use "fortified" for Port, Sherry, Madeira. Use "orange" for skin-contact white wines.)
 - style: Grape variety or wine style (e.g., "Sauvignon Blanc", "Chianti", "Champagne")
 - price_eur: Price as decimal number (convert to EUR if another currency, use approximate rate)
 - vivino_rating: Rating as decimal if visible (null if not)

@@ -16,7 +16,8 @@ import {
   calculateFragmentation,
   wineViolatesZoneColour,
   isCorrectlyPlaced,
-  isLegitimateBufferPlacement
+  isLegitimateBufferPlacement,
+  detectDuplicatePlacements
 } from '../../../../src/services/cellar/cellarMetrics.js';
 
 // ─── parseSlot ────────────────────────────────────────────
@@ -327,8 +328,43 @@ describe('wineViolatesZoneColour', () => {
     expect(wineViolatesZoneColour(wine, nullColorZone)).toBe(false);
   });
 
-  it('skips check for array-typed zone colours', () => {
+  // ── Array-typed zone colours (e.g. rose_sparkling) ──
+
+  it('flags red wine in rose_sparkling zone (all white-family accepted colours)', () => {
     const wine = { colour: 'red', wine_name: 'Cab 2020' };
+    expect(wineViolatesZoneColour(wine, arrayZone)).toBe(true);
+  });
+
+  it('allows rosé wine in rose_sparkling zone (direct match)', () => {
+    const wine = { colour: 'rose', wine_name: 'Rosé 2023' };
+    expect(wineViolatesZoneColour(wine, arrayZone)).toBe(false);
+  });
+
+  it('allows sparkling wine in rose_sparkling zone (direct match)', () => {
+    const wine = { colour: 'sparkling', wine_name: 'Champagne NV' };
+    expect(wineViolatesZoneColour(wine, arrayZone)).toBe(false);
+  });
+
+  it('flags red wine in dessert_fortified zone (array white-family colours)', () => {
+    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const wine = { colour: 'red', wine_name: 'Cabernet 2020' };
+    expect(wineViolatesZoneColour(wine, dessertZone)).toBe(true);
+  });
+
+  it('allows fortified wine in dessert_fortified zone', () => {
+    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const wine = { colour: 'fortified', wine_name: 'Tawny Port' };
+    expect(wineViolatesZoneColour(wine, dessertZone)).toBe(false);
+  });
+
+  it('allows dessert wine in dessert_fortified zone', () => {
+    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const wine = { colour: 'dessert', wine_name: 'Sauternes 2018' };
+    expect(wineViolatesZoneColour(wine, dessertZone)).toBe(false);
+  });
+
+  it('skips array-colour check when wine colour is unknown', () => {
+    const wine = { wine_name: 'Mystery Wine 2020' };
     expect(wineViolatesZoneColour(wine, arrayZone)).toBe(false);
   });
 
@@ -414,6 +450,129 @@ describe('isCorrectlyPlaced', () => {
     const bestZone = { zoneId: 'shiraz', displayName: 'Shiraz / Syrah' };
     // Wine is red, zone is white, and nothing else matches
     expect(isCorrectlyPlaced(wine, whiteZone, bestZone)).toBe(false);
+  });
+});
+
+// ─── isCorrectlyPlaced (Phase 4.1 – stale zone_id hardening) ──────
+
+describe('isCorrectlyPlaced – stale zone_id detection (Phase 4.1)', () => {
+  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
+  const redZone = { id: 'cabernet', color: 'red' };
+  const otherRedZone = { id: 'shiraz', color: 'red' };
+
+  it('returns false when zone_id matches physical zone but bestZone disagrees and physical is NOT an alternative', () => {
+    // Wine has zone_id=cabernet, sits in cabernet zone, but bestZone says shiraz
+    // and cabernet is not in alternatives (score=0 for cabernet)
+    const wine = { colour: 'red', zone_id: 'cabernet', wine_name: 'Shiraz 2020' };
+    const bestZone = {
+      zoneId: 'shiraz',
+      displayName: 'Shiraz / Syrah',
+      score: 75,
+      alternativeZones: [
+        { zoneId: 'southern_france', displayName: 'Southern France', score: 40 }
+      ]
+    };
+    expect(isCorrectlyPlaced(wine, redZone, bestZone)).toBe(false);
+  });
+
+  it('returns true when zone_id matches physical zone and physical IS a viable alternative', () => {
+    // Wine has zone_id=cabernet, sits in cabernet, bestZone says shiraz
+    // but cabernet appears in alternatives with positive score
+    const wine = { colour: 'red', zone_id: 'cabernet', wine_name: 'Cab-Shiraz Blend' };
+    const bestZone = {
+      zoneId: 'shiraz',
+      displayName: 'Shiraz / Syrah',
+      score: 80,
+      alternativeZones: [
+        { zoneId: 'cabernet', displayName: 'Cabernet Sauvignon', score: 65 }
+      ]
+    };
+    expect(isCorrectlyPlaced(wine, redZone, bestZone)).toBe(true);
+  });
+
+  it('returns true when zone_id matches physical zone AND bestZone also matches', () => {
+    const wine = { colour: 'red', zone_id: 'cabernet', wine_name: 'Cabernet Sauvignon' };
+    const bestZone = {
+      zoneId: 'cabernet',
+      displayName: 'Cabernet Sauvignon',
+      score: 100,
+      alternativeZones: []
+    };
+    expect(isCorrectlyPlaced(wine, redZone, bestZone)).toBe(true);
+  });
+
+  it('returns true when zone_id matches, bestZone disagrees but bestZone has score=0', () => {
+    // Conservative: don't flag stale if bestZone itself scored 0 (no good match anywhere)
+    const wine = { colour: 'red', zone_id: 'cabernet', wine_name: 'Mystery Red' };
+    const bestZone = {
+      zoneId: 'unclassified',
+      displayName: 'Unclassified',
+      score: 0,
+      alternativeZones: []
+    };
+    expect(isCorrectlyPlaced(wine, redZone, bestZone)).toBe(true);
+  });
+});
+
+// ─── detectDuplicatePlacements (Phase 5.1) ──────────────
+
+describe('detectDuplicatePlacements', () => {
+  it('returns empty array when no duplicates exist', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C1', bottle_count: 2 },
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C2', bottle_count: 2 }
+    ];
+    expect(detectDuplicatePlacements(wines)).toEqual([]);
+  });
+
+  it('detects wine in more slots than bottle_count allows', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C1', bottle_count: 2 },
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C2', bottle_count: 2 },
+      { id: 1, wine_name: 'Wine A', slot_id: 'R2C1', bottle_count: 2 }
+    ];
+    const result = detectDuplicatePlacements(wines);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      wineId: 1,
+      wineName: 'Wine A',
+      expectedCount: 2,
+      duplicateCount: 1
+    });
+    expect(result[0].actualSlots).toHaveLength(3);
+  });
+
+  it('defaults bottle_count to 1 when not specified', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C1' },
+      { id: 1, wine_name: 'Wine A', slot_id: 'R2C1' }
+    ];
+    const result = detectDuplicatePlacements(wines);
+    expect(result).toHaveLength(1);
+    expect(result[0].expectedCount).toBe(1);
+    expect(result[0].duplicateCount).toBe(1);
+  });
+
+  it('ignores fridge slots (only checks cellar R-prefixed slots)', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C1', bottle_count: 1 },
+      { id: 1, wine_name: 'Wine A', slot_id: 'F1', bottle_count: 1 }
+    ];
+    // F1 is ignored, so only 1 cellar slot for bottle_count=1 — no duplicate
+    expect(detectDuplicatePlacements(wines)).toEqual([]);
+  });
+
+  it('uses location_code when slot_id is absent', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', location_code: 'R1C1', bottle_count: 1 },
+      { id: 1, wine_name: 'Wine A', location_code: 'R2C1', bottle_count: 1 }
+    ];
+    const result = detectDuplicatePlacements(wines);
+    expect(result).toHaveLength(1);
+  });
+
+  it('returns empty array for empty input', () => {
+    expect(detectDuplicatePlacements([])).toEqual([]);
   });
 });
 

@@ -186,6 +186,38 @@ export function detectColorAdjacencyIssues(rowToZoneId) {
 // ───────────────────────────────────────────────────────────
 
 /**
+ * Detect wines that appear in more cellar slots than their bottle_count allows.
+ * This catches data integrity issues where the same wine record is assigned to
+ * multiple slots erroneously.
+ * @param {Array} wines - All wines with slot assignments
+ * @returns {Array} Duplicate placement records
+ */
+export function detectDuplicatePlacements(wines) {
+  const wineSlotCounts = new Map();
+  for (const wine of wines) {
+    const slotId = wine.slot_id || wine.location_code;
+    if (!slotId || !slotId.startsWith('R')) continue;
+    if (!wineSlotCounts.has(wine.id)) {
+      wineSlotCounts.set(wine.id, {
+        name: wine.wine_name,
+        slots: [],
+        bottleCount: wine.bottle_count || 1
+      });
+    }
+    wineSlotCounts.get(wine.id).slots.push(slotId);
+  }
+  return [...wineSlotCounts.entries()]
+    .filter(([, d]) => d.slots.length > d.bottleCount)
+    .map(([wineId, d]) => ({
+      wineId,
+      wineName: d.name,
+      expectedCount: d.bottleCount,
+      actualSlots: d.slots,
+      duplicateCount: d.slots.length - d.bottleCount
+    }));
+}
+
+/**
  * Check if wine is legitimately in a buffer zone.
  * A wine with a buffer/fallback zone_id is legitimate UNLESS it violates the
  * colour constraint of the physical zone it sits in (e.g. a red wine with
@@ -218,8 +250,24 @@ export function wineViolatesZoneColour(wine, zone) {
   const zoneColor = zone.color;
   // Zones with null/undefined colour accept anything
   if (!zoneColor) return false;
-  // Array-typed colours (e.g. ['rose','sparkling']) — skip simple red/white guard
-  if (Array.isArray(zoneColor)) return false;
+  // Array-typed colours (e.g. ['rose','sparkling']) — check membership + colour family
+  if (Array.isArray(zoneColor)) {
+    const wineColor = (wine.colour || wine.color || inferColor(wine) || '').toLowerCase();
+    if (!wineColor) return false; // Can't determine colour — don't penalise
+
+    // Direct match: wine colour is one of the zone's accepted colours
+    if (zoneColor.some(c => c.toLowerCase() === wineColor)) return false;
+
+    // Family-level check: if all accepted colours are white-family, red wine = violation
+    const allWhiteFamily = zoneColor.every(c => isWhiteFamily(c));
+    if (allWhiteFamily && wineColor === 'red') return true;
+
+    // Opposite: all accepted colours are red, white-family wine = violation
+    const allRedFamily = zoneColor.every(c => c.toLowerCase() === 'red');
+    if (allRedFamily && isWhiteFamily(wineColor)) return true;
+
+    return false;
+  }
 
   // Only enforce for the two primary colour families
   if (zoneColor !== 'red' && zoneColor !== 'white') return false;
@@ -249,7 +297,21 @@ export function isCorrectlyPlaced(wine, physicalZone, bestZone) {
   if (wineViolatesZoneColour(wine, physicalZone)) return false;
 
   if (bestZone.zoneId === physicalZone.id) return true;
-  if (wine.zone_id === physicalZone.id) return true;
+
+  if (wine.zone_id === physicalZone.id) {
+    // Validate that the physical zone is still a viable match.
+    // If bestZone disagrees AND the physical zone isn't even an alternative
+    // with a positive score, the stored zone_id is stale.
+    if (bestZone.zoneId !== physicalZone.id) {
+      const physicalIsAlternative = bestZone.alternativeZones?.some(
+        alt => alt.zoneId === physicalZone.id && alt.score > 0
+      );
+      if (!physicalIsAlternative && bestZone.score > 0) {
+        return false; // Stale zone_id — wine no longer matches this zone at all
+      }
+    }
+    return true;
+  }
 
   const bestZoneConfig = getZoneById(bestZone.zoneId);
   if (bestZoneConfig?.overflowZoneId === physicalZone.id) return true;

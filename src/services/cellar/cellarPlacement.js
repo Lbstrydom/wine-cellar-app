@@ -13,11 +13,15 @@ import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, LAYO
 /**
  * Determine the best zone for a wine based on its attributes.
  * @param {Object} wine - Wine object with canonical fields
+ * @param {Object} [options]
+ * @param {boolean} [options.explain=false] - Include rejected zones with reasons
  * @returns {Object} Zone match result with confidence and alternatives
  */
-export function findBestZone(wine) {
+export function findBestZone(wine, options) {
+  const explain = options?.explain || false;
   const normalizedWine = normalizeWineAttributes(wine);
   const matches = [];
+  const rejectedZones = explain ? [] : undefined;
 
   for (const zoneId of ZONE_PRIORITY_ORDER) {
     const zone = getZoneById(zoneId);
@@ -34,6 +38,12 @@ export function findBestZone(wine) {
         zone,
         score: matchResult.score,
         matchedOn: matchResult.matchedOn
+      });
+    } else if (explain && matchResult.rejectionReason) {
+      rejectedZones.push({
+        zoneId,
+        displayName: zone.displayName,
+        reason: matchResult.rejectionReason
       });
     }
   }
@@ -54,7 +64,8 @@ export function findBestZone(wine) {
           score: curiositiesMatch.score,
           reason: `Unusual variety/region: ${curiositiesMatch.matchedOn.join(', ')}`,
           alternativeZones: [],
-          requiresReview: false
+          requiresReview: false,
+          ...(explain && { rejectedZones })
         };
       }
     }
@@ -66,7 +77,8 @@ export function findBestZone(wine) {
       score: 0,
       reason: 'No matching zone found - requires manual classification',
       alternativeZones: [],
-      requiresReview: true
+      requiresReview: true,
+      ...(explain && { rejectedZones })
     };
   }
 
@@ -85,7 +97,8 @@ export function findBestZone(wine) {
       score: m.score,
       matchedOn: m.matchedOn
     })),
-    requiresReview: confidence === 'low'
+    requiresReview: confidence === 'low',
+    ...(explain && { rejectedZones })
   };
 }
 
@@ -111,7 +124,7 @@ function calculateZoneMatch(wine, zone) {
       earnedPoints += SCORING_WEIGHTS.color;
       matchedOn.push(`color: ${wine.color}`);
     } else if (wine.color && !zoneColors.includes(wine.color.toLowerCase())) {
-      return { score: 0, matchedOn: [] }; // Wrong color = disqualify
+      return { score: 0, matchedOn: [], rejectionReason: `Colour mismatch: wine is ${wine.color}, zone requires ${zoneColors.join('/')}` };
     }
   }
 
@@ -186,22 +199,25 @@ function calculateZoneMatch(wine, zone) {
   // Exclusion checks - disqualify if matched
   if (rules.excludeKeywords) {
     const searchText = `${wine.name} ${wine.style} ${wine.appellation}`.toLowerCase();
-    if (rules.excludeKeywords.some(k => searchText.includes(k.toLowerCase()))) {
-      return { score: 0, matchedOn: [] };
+    const matchedKeyword = rules.excludeKeywords.find(k => searchText.includes(k.toLowerCase()));
+    if (matchedKeyword) {
+      return { score: 0, matchedOn: [], rejectionReason: `Excluded by keyword: ${matchedKeyword}` };
     }
   }
 
   if (rules.excludeRegions && wine.region) {
-    if (rules.excludeRegions.some(r => wine.region.toLowerCase().includes(r.toLowerCase()))) {
-      return { score: 0, matchedOn: [] };
+    const matchedRegion = rules.excludeRegions.find(r => wine.region.toLowerCase().includes(r.toLowerCase()));
+    if (matchedRegion) {
+      return { score: 0, matchedOn: [], rejectionReason: `Excluded by region: ${matchedRegion}` };
     }
   }
 
   if (rules.excludeWinemaking && wine.winemaking.length > 0) {
-    if (rules.excludeWinemaking.some(wm =>
+    const matchedWM = rules.excludeWinemaking.find(wm =>
       wine.winemaking.some(wwm => wwm.toLowerCase().includes(wm.toLowerCase()))
-    )) {
-      return { score: 0, matchedOn: [] };
+    );
+    if (matchedWM) {
+      return { score: 0, matchedOn: [], rejectionReason: `Excluded by winemaking: ${matchedWM}` };
     }
   }
 
@@ -212,13 +228,13 @@ function calculateZoneMatch(wine, zone) {
       grapeMatchesText(dominantGrape.grape.toLowerCase(), g.toLowerCase())
     );
     if (matchesZoneGrape && dominantGrape.percent < rules.minGrapePercent) {
-      return { score: 0, matchedOn: [] };
+      return { score: 0, matchedOn: [], rejectionReason: `Dominant grape ${dominantGrape.grape} at ${dominantGrape.percent}% is below minimum ${rules.minGrapePercent}%` };
     }
   }
 
   // Minimum number of grapes check (for blend zones)
   if (rules.minGrapes && wine.grapes.length < rules.minGrapes) {
-    return { score: 0, matchedOn: [] };
+    return { score: 0, matchedOn: [], rejectionReason: `Wine has ${wine.grapes.length} grape(s), zone requires at least ${rules.minGrapes}` };
   }
 
   // Calculate final score (0-100), capped

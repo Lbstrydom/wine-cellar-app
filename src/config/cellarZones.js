@@ -107,6 +107,7 @@ export const CELLAR_ZONES = {
         keywords: ['port', 'porto', 'sherry', 'madeira', 'marsala', 'vin santo',
                    'sauternes', 'tokaji', 'ice wine', 'eiswein', 'late harvest',
                    'noble rot', 'botrytis', 'passito', 'recioto', 'pedro ximénez', 'px'],
+        excludeKeywords: ['portugal', 'portuguese'],
         winemaking: ['fortified', 'late harvest', 'noble rot', 'ice wine']
       },
       sortPreference: ['style', 'country', 'vintage']

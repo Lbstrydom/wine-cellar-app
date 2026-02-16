@@ -8,13 +8,14 @@
 
 import { getZoneById } from '../../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
-import { findBestZone } from './cellarPlacement.js';
+import { findBestZone, inferColor } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import {
   parseSlot, analyseZone, getWinesInRows,
-  detectScatteredWines, detectColorAdjacencyIssues
+  detectScatteredWines, detectColorAdjacencyIssues,
+  detectDuplicatePlacements, wineViolatesZoneColour
 } from './cellarMetrics.js';
 import { generateZoneNarratives } from './cellarNarratives.js';
 import {
@@ -23,7 +24,7 @@ import {
   getCurrentZoneAllocation,
   generateCompactionMoves
 } from './cellarSuggestions.js';
-import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
+import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
 // ───────────────────────────────────────────────────────────
@@ -188,6 +189,20 @@ export async function analyseCellar(wines) {
     }
   }
 
+  // Detect duplicate placements (same wine in more slots than bottle_count)
+  const duplicatePlacements = detectDuplicatePlacements(wines);
+  report.duplicatePlacements = duplicatePlacements;
+  report.summary.duplicatePlacementCount = duplicatePlacements.length;
+
+  if (duplicatePlacements.length > 0) {
+    report.alerts.push({
+      type: 'duplicate_placements',
+      severity: 'warning',
+      message: `${duplicatePlacements.length} wine(s) appear in more slots than their bottle count allows. This is a data integrity issue.`,
+      data: { wines: duplicatePlacements }
+    });
+  }
+
   // Check if reorganisation is recommended
   const shouldReorg =
     report.summary.misplacedBottles >= REORG_THRESHOLDS.minMisplacedForReorg ||
@@ -285,6 +300,37 @@ function buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap) {
 
     if (zone.isBufferZone || zone.isFallbackZone) {
       if (zoneWines.length > 0) {
+        // Check for colour violations even in buffer zones
+        // (wineViolatesZoneColour skips buffer zones by design, so check inline)
+        for (const w of zoneWines) {
+          const zoneColors = Array.isArray(zone.color) ? zone.color : (zone.color ? [zone.color] : []);
+          if (zoneColors.length === 0) continue; // No colour constraint → skip
+          const wineColor = (w.colour || w.color || inferColor(w) || '').toLowerCase();
+          if (!wineColor) continue; // Can't determine → don't penalise
+          // Direct match: wine colour is one of the accepted colours
+          if (zoneColors.some(c => c.toLowerCase() === wineColor)) continue;
+          // Family-level check
+          const allWhiteFamily = zoneColors.every(c => isWhiteFamily(c));
+          const isViolation = (allWhiteFamily && wineColor === 'red') ||
+            (zoneColors.every(c => c.toLowerCase() === 'red') && isWhiteFamily(wineColor));
+          if (isViolation) {
+            const bestZone = findBestZone(w);
+            report.misplacedWines.push({
+              wineId: w.id,
+              name: w.wine_name,
+              currentSlot: w.slot_id || w.location_code,
+              currentZone: zone.displayName,
+              currentZoneId: zone.id,
+              suggestedZone: bestZone.displayName,
+              suggestedZoneId: bestZone.zoneId,
+              confidence: bestZone.confidence,
+              score: bestZone.score,
+              reason: `Colour violation: ${w.colour || 'unknown'} wine in ${zone.displayName}`,
+              alternatives: bestZone.alternativeZones
+            });
+            report.summary.misplacedBottles++;
+          }
+        }
         report.overflowAnalysis.push({
           zoneId: zone.id,
           displayName: zone.displayName,

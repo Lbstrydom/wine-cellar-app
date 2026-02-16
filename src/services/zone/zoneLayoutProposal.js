@@ -7,7 +7,7 @@
 import db from '../../db/index.js';
 import { CELLAR_ZONES, ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
-import { grapeMatchesText } from '../../utils/wineNormalization.js';
+import { findBestZone } from '../cellar/cellarPlacement.js';
 
 // Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
 const CELLAR_LAYOUT = {
@@ -112,107 +112,18 @@ async function getBottlesByZone(cellarId) {
 }
 
 /**
- * Classify a wine into a zone based on rules, using priority order.
+ * Classify a wine into a zone using the scored classifier (findBestZone).
+ *
+ * Previously this was an independent first-match implementation that could
+ * disagree with findBestZone (used by analysis). Unifying them ensures
+ * layout proposals and analysis produce identical classifications.
+ *
  * @param {Object} wine - Wine object
  * @returns {string} Zone ID
  */
 function classifyWine(wine) {
-  const colour = toSearchableText(wine.colour);
-  const grapes = toSearchableText(wine.grapes);
-  const style = toSearchableText(wine.style);
-  const country = toSearchableText(wine.country);
-  const wineName = toSearchableText(wine.wine_name);
-  const region = toSearchableText(wine.region);
-  const winemaking = toSearchableText(wine.winemaking);
-  const sweetness = toSearchableText(wine.sweetness);
-  const searchText = `${wineName} ${style} ${region} ${winemaking}`;
-
-  // Use priority order for classification
-  for (const zoneId of ZONE_PRIORITY_ORDER) {
-    const zone = getZoneById(zoneId);
-    if (!zone) continue;
-
-    const rules = zone.rules || {};
-
-    // Special handling for dessert/fortified - require explicit markers
-    if (zoneId === 'dessert_fortified') {
-      // Must have dessert/fortified color, explicit sweetness, or very specific keywords
-      const isDessertColour = colour === 'dessert' || colour === 'fortified';
-      const hasExplicitSweetness = sweetness && (sweetness.includes('sweet') || sweetness.includes('dessert'));
-
-      // Use word boundary regex to avoid false positives like "Portugal" matching "port"
-      // Each keyword must be a complete word, not a substring
-      const fortifiedPatterns = [
-        /\bport\b/i,           // Port wine (not Portugal/Portuguese/Porto)
-        /\btawny\b/i,          // Tawny Port
-        /\bruby\b/i,           // Ruby Port (be careful, could match other things)
-        /\blbv\b/i,            // Late Bottled Vintage
-        /\bvintage\s+port\b/i, // Vintage Port
-        /\bsherry\b/i,
-        /\bmadeira\b/i,
-        /\bmarsala\b/i,
-        /\bsauternes\b/i,
-        /\btokaji\b/i,
-        /\bice\s*wine\b/i,
-        /\beiswein\b/i,
-        /\bpedro\s+xim[eé]nez\b/i,
-        /\b(?:^|\s)px(?:\s|$)/i,  // PX as standalone
-        /\blate\s+harvest\b/i,
-        /\bbotrytis\b/i,
-        /\bvin\s+santo\b/i,
-        /\bmoscatel\b/i,        // Sweet Moscatel (different from dry Moscato)
-        /\bpassito\b/i          // Italian dried grape sweet wines
-      ];
-      const hasFortifiedKeyword = fortifiedPatterns.some(pattern => pattern.test(searchText));
-
-      if (isDessertColour || hasExplicitSweetness || hasFortifiedKeyword) {
-        return zone.id;
-      }
-      // Skip this zone for normal dry wines
-      continue;
-    }
-
-    // Check exclude keywords first (skip zone if any match)
-    if (rules.excludeKeywords?.length > 0) {
-      if (rules.excludeKeywords.some(k => searchText.includes(k.toLowerCase()))) {
-        continue; // Skip this zone
-      }
-    }
-
-    // Check winemaking match (high priority for appassimento, etc.)
-    if (rules.winemaking?.length > 0) {
-      if (rules.winemaking.some(w => winemaking.includes(w.toLowerCase()) || searchText.includes(w.toLowerCase()))) {
-        return zone.id;
-      }
-    }
-
-    // Check grape match (word-boundary-aware to prevent e.g. "sauvignon" matching "cabernet sauvignon")
-    if (rules.grapes?.length > 0) {
-      if (rules.grapes.some(g => grapeMatchesText(grapes, g.toLowerCase()))) {
-        return zone.id;
-      }
-    }
-
-    // Check keyword match
-    if (rules.keywords?.length > 0) {
-      if (rules.keywords.some(k => searchText.includes(k.toLowerCase()))) {
-        return zone.id;
-      }
-    }
-
-    // Check country match (only if it's a primary rule, not just supporting)
-    if (rules.countries?.length > 0 && !rules.grapes?.length && !rules.keywords?.length) {
-      if (rules.countries.some(c => country.includes(c.toLowerCase()))) {
-        return zone.id;
-      }
-    }
-  }
-
-  // Default to buffer zones based on colour
-  if (colour === 'white' || colour === 'rose' || colour === 'sparkling') {
-    return 'white_buffer';
-  }
-  return 'red_buffer';
+  const result = findBestZone(wine);
+  return result.zoneId;
 }
 
 /**
