@@ -585,7 +585,11 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     });
   }
 
-  // Execute all moves in a transaction
+  // Execute all moves in a transaction using two-phase approach:
+  // Phase 1: Clear ALL source slots first
+  // Phase 2: Set ALL target slots
+  // This prevents swaps from overwriting each other (A→B, B→A would
+  // lose wine_B if done sequentially as clear-A, set-B, clear-B, set-A).
   const results = [];
 
   await db.transaction(async (client) => {
@@ -596,14 +600,16 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     );
     const beforeCount = Number(beforeResult.rows[0].count);
 
+    // Phase 1: Clear all source slots
     for (const move of moves) {
-      // Clear source slot
       await client.query(
         'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
         [null, req.cellarId, move.from]
       );
+    }
 
-      // Set target slot
+    // Phase 2: Place all wines in target slots
+    for (const move of moves) {
       await client.query(
         'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
         [move.wineId, req.cellarId, move.to]
