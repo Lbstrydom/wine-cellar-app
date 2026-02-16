@@ -308,9 +308,13 @@ function fixColorBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder =
 }
 
 /**
- * Fix local color adjacency violations at the boundary edge.
- * Scans consecutive rows for color conflicts (e.g. white row N next to red row N+1
- * in whites-top mode) and finds swap partners to separate them.
+ * Fix local color adjacency violations — ANY adjacent rows with different colors.
+ * Matches the detection criteria of detectColorAdjacencyIssues() in cellarMetrics.js:
+ * any two consecutive rows with different zone colors is a violation, regardless of order.
+ *
+ * Strategy: find the "outlier" row (the one surrounded by the opposite color) and swap
+ * it with a same-color row from the opposite region to create clean color blocks.
+ *
  * @param {Map} zoneRowMap - Mutable zone→rows map
  * @param {boolean} whitesOnTop - Whether whites should be in lower row numbers
  * @param {Set} neverMerge - Zones that can't be changed
@@ -336,93 +340,81 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
     rowColors.push({ rowId: rId, rowNumber: r, zoneId, color });
   }
 
-  // Find adjacent pairs with conflicting colors in wrong order
-  // In whites-top mode: violation when white row is BELOW a red row
-  // (i.e. white has higher row number than an adjacent red)
+  // Find ALL adjacent pairs with different colors (same criteria as
+  // detectColorAdjacencyIssues — any color change between neighbors is a violation)
   const alreadySwapped = new Set();
 
   for (let i = 0; i < rowColors.length - 1; i++) {
-    const upper = rowColors[i];      // lower row number = "higher" in cellar
-    const lower = rowColors[i + 1];  // higher row number = "lower" in cellar
+    const upper = rowColors[i];      // lower row number
+    const lower = rowColors[i + 1];  // higher row number
 
     // Skip if not truly adjacent (gap in row numbers)
     if (lower.rowNumber - upper.rowNumber !== 1) continue;
 
-    const isViolation = whitesOnTop
-      ? (upper.color === 'red' && lower.color === 'white')
-      : (upper.color === 'white' && lower.color === 'red');
+    // ANY color difference is a violation (matches detectColorAdjacencyIssues)
+    if (upper.color === lower.color) continue;
 
-    if (!isViolation) continue;
     if (alreadySwapped.has(upper.rowId) || alreadySwapped.has(lower.rowId)) continue;
     if (neverMerge.has(upper.zoneId) || neverMerge.has(lower.zoneId)) continue;
 
-    // Find a swap partner: look for a red row in white region or white row
-    // in red region that we can swap with the violating row.
-    // Strategy: swap the lower-numbered row (the one that should move further up or down)
-    const violator = whitesOnTop ? lower : upper;  // the misplaced one
-    const neighbor = whitesOnTop ? upper : lower;
+    // Determine which row is the outlier by checking surrounding context.
+    // In whites-top mode: the "expected" color for lower row numbers is white,
+    // for higher row numbers is red. The row whose color doesn't match its
+    // position expectation is the outlier.
+    const outlier = identifyOutlier(upper, lower, rowColors, i, whitesOnTop);
+    const neighbor = outlier === upper ? lower : upper;
 
-    // Look for a row of the opposite color that's on the wrong side
+    // Find a swap partner: a row of the neighbor's color (same as the region
+    // color where the outlier sits) that's currently in the outlier's color region.
+    // Swapping them would put both rows in their correct color regions.
     let bestSwapPartner = null;
+    let bestSwapScore = -Infinity;
+
     for (const rc of rowColors) {
-      if (rc.rowId === violator.rowId || rc.rowId === neighbor.rowId) continue;
+      if (rc.rowId === outlier.rowId || rc.rowId === neighbor.rowId) continue;
       if (alreadySwapped.has(rc.rowId)) continue;
       if (neverMerge.has(rc.zoneId)) continue;
+      // We want a row of the opposite color that's on the "wrong side"
+      // e.g. if outlier is white in the red region, find a red row in the white region
+      if (rc.color !== outlier.color) continue; // Must be same color as neighbor, not outlier... wait
+      // Actually: we want to replace the outlier's position with a row of the neighbor's color,
+      // and send the outlier to where the swap partner was.
+      // So swap partner must be the SAME color as neighbor (to take outlier's spot)
+      // and must be in a position where the outlier's color would fit better.
 
-      // We want to swap violator (white, in red region) with a red row in white region
-      // or swap violator (red, in white region) with a white row in red region
-      if (rc.color === neighbor.color) {
-        // This row has the same color as the neighbor — could take violator's place
-        // Check if it's on the "wrong side" (making it a beneficial swap)
-        if (whitesOnTop && rc.color === 'red' && rc.rowNumber < violator.rowNumber) {
-          bestSwapPartner = rc;
-          break;
-        }
-        if (!whitesOnTop && rc.color === 'white' && rc.rowNumber > violator.rowNumber) {
-          bestSwapPartner = rc;
-          break;
-        }
+      // Let me reconsider: the outlier has color X in a region of color Y.
+      // We need to find a row of color Y that's in a region of color X.
+      // Then swap them: outlier goes to color-X region, Y-row goes to color-Y region.
+      if (rc.color !== neighbor.color) continue;
+
+      // Check if this swap partner is on the "wrong side" for its own color
+      // (i.e., it would benefit from moving to the outlier's position)
+      const partnerInWrongRegion = whitesOnTop
+        ? (rc.color === 'red' && rc.rowNumber < outlier.rowNumber) ||
+          (rc.color === 'white' && rc.rowNumber > outlier.rowNumber)
+        : (rc.color === 'white' && rc.rowNumber < outlier.rowNumber) ||
+          (rc.color === 'red' && rc.rowNumber > outlier.rowNumber);
+
+      if (!partnerInWrongRegion) continue;
+
+      // Score by distance (prefer closer swaps for minimal disruption)
+      const dist = Math.abs(rc.rowNumber - outlier.rowNumber);
+      const score = 100 - dist;
+      if (score > bestSwapScore) {
+        bestSwapScore = score;
+        bestSwapPartner = rc;
       }
     }
 
-    // If no swap partner found elsewhere, just swap the two adjacent violating rows directly
-    // This won't fix the boundary but at least puts them in better relative order
-    if (!bestSwapPartner) {
-      // Direct adjacent swap: reallocate the violator's row to the neighbor's zone
-      // and vice versa — effectively swapping their zone assignments
+    if (bestSwapPartner) {
+      // Swap outlier with a row elsewhere that creates cleaner boundary
       actions.push({
         type: 'reallocate_row',
         priority: 1,
-        fromZoneId: violator.zoneId,
-        toZoneId: neighbor.zoneId,
-        rowNumber: violator.rowNumber,
-        reason: `Fix color adjacency: ${violator.zoneId} (${violator.color}) in R${violator.rowNumber} ` +
-          `adjacent to ${neighbor.zoneId} (${neighbor.color}) in R${neighbor.rowNumber}`,
-        bottlesAffected: SLOTS_PER_ROW
-      });
-      actions.push({
-        type: 'reallocate_row',
-        priority: 1,
-        fromZoneId: neighbor.zoneId,
-        toZoneId: violator.zoneId,
-        rowNumber: neighbor.rowNumber,
-        reason: `Fix color adjacency: swap R${neighbor.rowNumber} (${neighbor.zoneId}) ` +
-          `with R${violator.rowNumber} (${violator.zoneId})`,
-        bottlesAffected: SLOTS_PER_ROW
-      });
-      updateZoneRowMap(zoneRowMap, violator.zoneId, violator.rowId, neighbor.zoneId);
-      updateZoneRowMap(zoneRowMap, neighbor.zoneId, neighbor.rowId, violator.zoneId);
-      alreadySwapped.add(violator.rowId);
-      alreadySwapped.add(neighbor.rowId);
-    } else {
-      // Swap violator with a row elsewhere that creates a cleaner boundary
-      actions.push({
-        type: 'reallocate_row',
-        priority: 1,
-        fromZoneId: violator.zoneId,
+        fromZoneId: outlier.zoneId,
         toZoneId: bestSwapPartner.zoneId,
-        rowNumber: violator.rowNumber,
-        reason: `Fix color adjacency: move R${violator.rowNumber} (${violator.zoneId}, ${violator.color}) ` +
+        rowNumber: outlier.rowNumber,
+        reason: `Fix color adjacency: move R${outlier.rowNumber} (${outlier.zoneId}, ${outlier.color}) ` +
           `away from R${neighbor.rowNumber} (${neighbor.color}), swap with R${bestSwapPartner.rowNumber}`,
         bottlesAffected: SLOTS_PER_ROW
       });
@@ -430,20 +422,95 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
         type: 'reallocate_row',
         priority: 1,
         fromZoneId: bestSwapPartner.zoneId,
-        toZoneId: violator.zoneId,
+        toZoneId: outlier.zoneId,
         rowNumber: bestSwapPartner.rowNumber,
         reason: `Fix color adjacency: move R${bestSwapPartner.rowNumber} ` +
-          `(${bestSwapPartner.zoneId}, ${bestSwapPartner.color}) to R${violator.rowNumber} position`,
+          `(${bestSwapPartner.zoneId}, ${bestSwapPartner.color}) to R${outlier.rowNumber} position`,
         bottlesAffected: SLOTS_PER_ROW
       });
-      updateZoneRowMap(zoneRowMap, violator.zoneId, violator.rowId, bestSwapPartner.zoneId);
-      updateZoneRowMap(zoneRowMap, bestSwapPartner.zoneId, bestSwapPartner.rowId, violator.zoneId);
-      alreadySwapped.add(violator.rowId);
+      updateZoneRowMap(zoneRowMap, outlier.zoneId, outlier.rowId, bestSwapPartner.zoneId);
+      updateZoneRowMap(zoneRowMap, bestSwapPartner.zoneId, bestSwapPartner.rowId, outlier.zoneId);
+      alreadySwapped.add(outlier.rowId);
       alreadySwapped.add(bestSwapPartner.rowId);
+    } else {
+      // No swap partner found — do a direct adjacent swap as last resort.
+      // This swaps zone assignments between the two adjacent violating rows.
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: outlier.zoneId,
+        toZoneId: neighbor.zoneId,
+        rowNumber: outlier.rowNumber,
+        reason: `Fix color adjacency: ${outlier.zoneId} (${outlier.color}) in R${outlier.rowNumber} ` +
+          `adjacent to ${neighbor.zoneId} (${neighbor.color}) in R${neighbor.rowNumber}`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      actions.push({
+        type: 'reallocate_row',
+        priority: 1,
+        fromZoneId: neighbor.zoneId,
+        toZoneId: outlier.zoneId,
+        rowNumber: neighbor.rowNumber,
+        reason: `Fix color adjacency: swap R${neighbor.rowNumber} (${neighbor.zoneId}) ` +
+          `with R${outlier.rowNumber} (${outlier.zoneId})`,
+        bottlesAffected: SLOTS_PER_ROW
+      });
+      updateZoneRowMap(zoneRowMap, outlier.zoneId, outlier.rowId, neighbor.zoneId);
+      updateZoneRowMap(zoneRowMap, neighbor.zoneId, neighbor.rowId, outlier.zoneId);
+      alreadySwapped.add(outlier.rowId);
+      alreadySwapped.add(neighbor.rowId);
     }
   }
 
   return actions;
+}
+
+/**
+ * Identify which of two adjacent rows is the "outlier" — the one that doesn't
+ * belong in its current position based on surrounding context and colour order.
+ *
+ * Heuristic (in order of priority):
+ * 1. If a row is surrounded by the opposite color on both sides, it's the outlier
+ * 2. If the row's color doesn't match its expected region (based on whitesOnTop), it's the outlier
+ * 3. Default: the row in the higher-numbered position is the outlier in whites-top mode
+ *
+ * @param {Object} upper - Row with lower number
+ * @param {Object} lower - Row with higher number
+ * @param {Array} rowColors - Full ordered row-color sequence
+ * @param {number} idx - Index of upper in rowColors
+ * @param {boolean} whitesOnTop
+ * @returns {Object} The outlier row
+ */
+function identifyOutlier(upper, lower, rowColors, idx, whitesOnTop) {
+  // Check surrounding context: what color are the neighbors outside this pair?
+  const prevColor = idx > 0 ? rowColors[idx - 1].color : null;
+  const nextColor = idx + 2 < rowColors.length ? rowColors[idx + 2].color : null;
+
+  // If upper is sandwiched: prev has same color as lower → upper is the outlier
+  if (prevColor && prevColor === lower.color && prevColor !== upper.color) {
+    return upper;
+  }
+  // If lower is sandwiched: next has same color as upper → lower is the outlier
+  if (nextColor && nextColor === upper.color && nextColor !== lower.color) {
+    return lower;
+  }
+
+  // Fall back to positional heuristic: which row's color doesn't match its region?
+  if (whitesOnTop) {
+    // White should be in lower row numbers. If a white row has a high number,
+    // or a red row has a low number, that's the outlier.
+    // Use the midpoint of total rows as approximate boundary
+    const mid = Math.ceil(TOTAL_ROWS / 2);
+    if (upper.color === 'white' && upper.rowNumber > mid) return upper;
+    if (lower.color === 'red' && lower.rowNumber < mid) return lower;
+    // Default: the row that's deeper into the "wrong" region is the outlier
+    return upper.color === 'red' ? upper : lower;
+  } else {
+    const mid = Math.ceil(TOTAL_ROWS / 2);
+    if (upper.color === 'red' && upper.rowNumber > mid) return upper;
+    if (lower.color === 'white' && lower.rowNumber < mid) return lower;
+    return upper.color === 'white' ? upper : lower;
+  }
 }
 
 /**
