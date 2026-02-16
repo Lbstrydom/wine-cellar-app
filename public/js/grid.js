@@ -235,7 +235,9 @@ export async function renderCellar() {
     zoneSpans.forEach(span => {
       const zoneLabel = document.createElement('div');
       zoneLabel.className = 'zone-label';
-      zoneLabel.style.height = `${rowHeight * span.rowCount}px`;
+      const GRID_GAP = 3; // must match .cellar-grid { gap: 3px }
+      const spanHeight = (rowHeight * span.rowCount) + (GRID_GAP * (span.rowCount - 1));
+      zoneLabel.style.height = `${spanHeight}px`;
 
       if (span.zoneInfo && hasZoneConfig) {
         zoneLabel.textContent = span.zoneInfo.displayName;

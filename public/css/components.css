@@ -562,7 +562,7 @@
   gap: 0.5rem;
 }
 
-/* Workspace toggle (Zone Analysis | Cellar Placement | Fridge) */
+/* Workspace toggle (Cellar Review | Cellar Placement | Fridge) */
 .analysis-workspace-toggle {
   display: flex;
   border-bottom: 2px solid var(--border);
@@ -780,12 +780,19 @@
 }
 
 .issue-digest-group-label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--text-muted);
   padding: 0.25rem 0;
+}
+
+.issue-digest-group-label .digest-cta {
+  text-transform: none;
 }
 
 .issue-digest-item {

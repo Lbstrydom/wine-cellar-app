@@ -8,6 +8,7 @@
 import { escapeHtml } from '../utils.js';
 import { startZoneSetup } from './zones.js';
 import { switchWorkspace } from './state.js';
+import { TAB_CELLAR_REVIEW, TAB_CELLAR_PLACEMENT, TAB_FRIDGE } from './labels.js';
 
 /**
  * @typedef {Object} DigestItem
@@ -38,7 +39,7 @@ function classifyAlert(alert, summary) {
       workspace: 'structure',
       severity: 'warning',
       message: `${zoneName}: ${wineCount} bottle(s) over capacity`,
-      cta: 'Zone Analysis',
+      cta: TAB_CELLAR_REVIEW,
       ctaWorkspace: 'zones',
       sourceAlert: alert
     };
@@ -60,7 +61,7 @@ function classifyAlert(alert, summary) {
       workspace: 'structure',
       severity: 'warning',
       message: alert.message,
-      cta: 'Zone Analysis',
+      cta: TAB_CELLAR_REVIEW,
       ctaWorkspace: 'zones',
       sourceAlert: alert
     };
@@ -72,7 +73,7 @@ function classifyAlert(alert, summary) {
       workspace: 'placement',
       severity: 'warning',
       message: alert.message,
-      cta: 'Cellar Placement',
+      cta: TAB_CELLAR_PLACEMENT,
       ctaWorkspace: 'placement',
       sourceAlert: alert
     };
@@ -83,7 +84,7 @@ function classifyAlert(alert, summary) {
       workspace: 'placement',
       severity: 'warning',
       message: alert.message,
-      cta: 'Cellar Placement',
+      cta: TAB_CELLAR_PLACEMENT,
       ctaWorkspace: 'placement',
       sourceAlert: alert
     };
@@ -94,7 +95,7 @@ function classifyAlert(alert, summary) {
       workspace: 'placement',
       severity: 'info',
       message: alert.message,
-      cta: 'Cellar Placement',
+      cta: TAB_CELLAR_PLACEMENT,
       ctaWorkspace: 'placement',
       sourceAlert: alert
     };
@@ -105,7 +106,7 @@ function classifyAlert(alert, summary) {
       workspace: 'structure',
       severity: 'warning',
       message: alert.message,
-      cta: 'Zone Analysis',
+      cta: TAB_CELLAR_REVIEW,
       ctaWorkspace: 'zones',
       sourceAlert: alert
     };
@@ -145,7 +146,7 @@ function buildDigestGroups(analysis) {
         workspace: 'fridge',
         severity: 'info',
         message: `${gaps.length} category gap(s) in fridge`,
-        cta: 'Fridge',
+        cta: TAB_FRIDGE,
         ctaWorkspace: 'fridge'
       });
     }
@@ -164,7 +165,7 @@ function buildDigestGroups(analysis) {
       workspace: 'structure',
       severity: 'warning',
       message: `${capacityItems.length} zones over capacity (${totalAffected} bottles affected)`,
-      cta: 'Zone Analysis',
+      cta: TAB_CELLAR_REVIEW,
       ctaWorkspace: 'zones'
     });
   }
@@ -213,18 +214,20 @@ export function renderIssueDigest(analysis) {
   for (const [key, items] of Object.entries(groups)) {
     if (items.length === 0) continue;
 
+    // One CTA per group header (from first item that has one)
+    const ctaItem = items.find(i => i.cta);
+    const groupCtaHtml = ctaItem
+      ? ` <button class="btn btn-small btn-secondary digest-cta" ${ctaItem.ctaWorkspace ? `data-digest-workspace="${ctaItem.ctaWorkspace}"` : ''} ${ctaItem.ctaAction ? `data-digest-action="${ctaItem.ctaAction}"` : ''}>${escapeHtml(ctaItem.cta)}</button>`
+      : '';
+
     html += `<div class="issue-digest-group">`;
-    html += `<div class="issue-digest-group-label">${WORKSPACE_ICONS[key]} ${WORKSPACE_LABELS[key]}</div>`;
+    html += `<div class="issue-digest-group-label"><span>${WORKSPACE_ICONS[key]} ${WORKSPACE_LABELS[key]}</span>${groupCtaHtml}</div>`;
 
     for (const item of items) {
       const severityClass = item.severity === 'warning' ? 'digest-warning' : 'digest-info';
-      const ctaHtml = item.cta
-        ? ` <button class="btn btn-small btn-secondary digest-cta" ${item.ctaWorkspace ? `data-digest-workspace="${item.ctaWorkspace}"` : ''} ${item.ctaAction ? `data-digest-action="${item.ctaAction}"` : ''}>${escapeHtml(item.cta)}</button>`
-        : '';
 
       html += `<div class="issue-digest-item ${severityClass}">`;
       html += `<span class="digest-message">${escapeHtml(item.message)}</span>`;
-      html += ctaHtml;
       html += '</div>';
     }
 
