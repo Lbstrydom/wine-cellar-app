@@ -50,6 +50,16 @@ export async function suggestPlacement(wine) {
 }
 
 /**
+ * Check if the analysis cache is still valid.
+ * Lightweight call — returns cache info without running analysis.
+ * @returns {Promise<{cached: boolean, isValid?: boolean, createdAt?: string}>}
+ */
+export async function checkAnalysisFreshness() {
+  const res = await fetch(`${API_BASE}/api/cellar/analyse/cache-info`);
+  return handleResponse(res, 'Failed to check analysis freshness');
+}
+
+/**
  * Get full cellar analysis.
  * @param {boolean} [forceRefresh=false] - Force fresh analysis ignoring cache
  * @param {Object} [options={}] - Additional options

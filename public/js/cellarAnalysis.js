@@ -27,12 +27,13 @@ export {
 } from './cellarAnalysis/analysis.js';
 
 // Import sub-modules for initialization
-import { refreshAnalysis } from './cellarAnalysis/analysis.js';
+import { loadAnalysis, refreshAnalysis } from './cellarAnalysis/analysis.js';
 import { handleExecuteAllMoves } from './cellarAnalysis/moves.js';
 import { handleGetAIAdvice } from './cellarAnalysis/aiAdvice.js';
 import { handleConfirmLayout, cancelZoneSetup } from './cellarAnalysis/zones.js';
 import { toggleZoneChat, sendZoneChatMessage } from './cellarAnalysis/zoneChat.js';
-import { switchWorkspace, getActiveWorkspace } from './cellarAnalysis/state.js';
+import { switchWorkspace, getActiveWorkspace, isAnalysisLoaded } from './cellarAnalysis/state.js';
+import { initVisibilityRefresh } from './cellarAnalysis/freshness.js';
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -105,5 +106,8 @@ export function initCellarAnalysis() {
   if (persisted !== 'zones') {
     switchWorkspace(persisted);
   }
+
+  // Auto-refresh analysis when tab regains focus with stale data
+  initVisibilityRefresh();
 }
 

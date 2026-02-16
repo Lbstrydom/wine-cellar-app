@@ -21,6 +21,7 @@ import { WineFingerprint } from '../services/wine/wineFingerprint.js';
 import { evaluateWineAdd } from '../services/wine/wineAddOrchestrator.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 
 const router = Router();
 
@@ -534,6 +535,10 @@ router.put('/:id', captureGrapes, validateParams(wineIdSchema), validateBody(upd
   const updateSql = 'UPDATE wines SET ' + setSql + ' WHERE cellar_id = $' + cellarIdParam + ' AND id = $' + idParam;
   await db.prepare(updateSql).run(...values);
 
+  // Invalidate analysis cache — wine metadata changes (colour, style, country)
+  // affect zone placement even when slot assignments haven't changed.
+  await invalidateAnalysisCache(null, req.cellarId);
+
   let warnings = [];
   try {
     const grapes = req._rawGrapes ?? existing.grapes;
@@ -556,6 +561,9 @@ router.delete('/:id', validateParams(wineIdSchema), asyncHandler(async (req, res
   }
 
   await db.prepare('DELETE FROM wines WHERE cellar_id = $1 AND id = $2').run(req.cellarId, id);
+
+  // Invalidate analysis cache — wine removal changes zone composition
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({ message: `Wine ${id} deleted` });
 }));

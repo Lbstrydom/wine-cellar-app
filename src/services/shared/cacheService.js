@@ -560,24 +560,32 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 2;  // v2: colour guard in isCorrectlyPlaced + isLegitimateBufferPlacement
+const ANALYSIS_LOGIC_VERSION = 3;  // v3: wine metadata in hash + explicit cache invalidation on wine edit/delete
 
 /**
  * Generate slot hash for cache invalidation.
- * Hash of all wine_id assignments + analysis logic version to detect changes.
+ * Hash of all wine_id assignments, wine metadata (colour, style, country, grapes),
+ * and analysis logic version to detect changes.
+ *
+ * Wine metadata is included because colour/style/country changes affect zone
+ * placement and misplacement detection even when slot assignments stay the same.
+ *
  * @param {string} cellarId - Cellar ID for tenant isolation
- * @returns {Promise<string>} MD5 hash of slot assignments
+ * @returns {Promise<string>} MD5 hash of slot assignments + wine metadata
  */
 async function generateSlotHash(cellarId) {
   try {
     const slots = await db.prepare(`
-      SELECT location_code, wine_id
-      FROM slots
-      WHERE cellar_id = ? AND wine_id IS NOT NULL
-      ORDER BY location_code
-    `).all(cellarId);
+      SELECT s.location_code, s.wine_id, w.colour, w.style, w.country, w.grapes
+      FROM slots s
+      LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = ?
+      WHERE s.cellar_id = ? AND s.wine_id IS NOT NULL
+      ORDER BY s.location_code
+    `).all(cellarId, cellarId);
 
-    const slotData = slots.map(s => `${s.location_code}:${s.wine_id}`).join('|');
+    const slotData = slots.map(s =>
+      `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}`
+    ).join('|');
     return crypto.createHash('md5').update(`v${ANALYSIS_LOGIC_VERSION}|${slotData}`).digest('hex');
   } catch (err) {
     logger.warn('Cache', `Slot hash generation failed: ${err.message}`);

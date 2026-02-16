@@ -105,6 +105,7 @@ export {
   getZoneMap,
   getSuggestedPlacement,
   suggestPlacement,
+  checkAnalysisFreshness,
   analyseCellar,
   allocateZoneRow,
   mergeZones,
