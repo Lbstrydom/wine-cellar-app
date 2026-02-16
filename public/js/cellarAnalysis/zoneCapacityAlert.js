@@ -187,14 +187,14 @@ function renderActionMarkup(action, index) {
   }
 
   if (type === 'move_wine') {
-    const wineId = escapeHtml(String(action.wineId || ''));
-    const fromZone = escapeHtml(action.fromZone || '');
-    const toZone = escapeHtml(action.toZone || '');
+    const wineName = escapeHtml(action.wineName || `Wine #${action.wineId || '?'}`);
+    const fromSlot = escapeHtml(action.from || '?');
+    const toSlot = escapeHtml(action.to || '?');
     const canApply = !!(action.from && action.to);
     const disabledReason = escapeHtml(action.error || 'No slot available for this move');
     return `
       <div class="zone-capacity-action">
-        <div class="zone-capacity-action-title">Move wine ${wineId}: ${fromZone} → ${toZone}</div>
+        <div class="zone-capacity-action-title">${wineName} (${fromSlot}) → ${toSlot}</div>
         <button class="btn btn-primary" ${canApply ? '' : 'disabled'} title="${canApply ? '' : disabledReason}" data-zone-capacity-apply="${index}">Apply</button>
       </div>
     `;
@@ -243,7 +243,8 @@ function wireAdviceActions(containerEl, advice, onRenderAnalysis) {
 
           const result = await executeCellarMoves([move]);
           if (!result?.success) throw new Error(result?.error || 'Failed to execute move');
-          showToast(`Moved wine ${action.wineId} to ${action.to}`);
+          const name = action.wineName || `Wine #${action.wineId}`;
+          showToast(`Moved ${name} (${action.from}) → ${action.to}`);
         } else {
           throw new Error('Unsupported action');
         }

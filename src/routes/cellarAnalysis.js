@@ -274,6 +274,11 @@ router.post('/zone-capacity-advice', asyncHandler(async (req, res) => {
   if (Array.isArray(advice?.actions) && advice.actions.some(a => a?.type === 'move_wine')) {
     const occupiedSlots = await getOccupiedSlots(req.cellarId);
 
+    // Pre-fetch wine record + all slots per wine to handle multiple bottles.
+    // Track which source slots have already been assigned to avoid duplicates.
+    const wineCache = new Map();     // wineId → { wine, slots: [slot_code, ...] }
+    const assignedSources = new Set();
+
     for (const action of advice.actions) {
       if (action?.type !== 'move_wine') continue;
 
@@ -284,20 +289,35 @@ router.post('/zone-capacity-advice', asyncHandler(async (req, res) => {
         continue;
       }
 
-      const wine = await db.prepare(`
-        SELECT w.*, s.location_code as slot_id
-        FROM wines w
-        LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
-        WHERE w.cellar_id = $1 AND w.id = $2
-      `).get(req.cellarId, wineId);
+      // Fetch wine record + all its slots if not already cached
+      if (!wineCache.has(wineId)) {
+        const wine = await db.prepare(
+          'SELECT * FROM wines WHERE cellar_id = $1 AND id = $2'
+        ).get(req.cellarId, wineId);
+        const slotRows = wine ? await db.prepare(
+          'SELECT location_code FROM slots WHERE wine_id = $1 AND cellar_id = $2'
+        ).all(wineId, req.cellarId) : [];
+        wineCache.set(wineId, {
+          wine,
+          slots: slotRows.map(r => r.location_code)
+        });
+      }
 
-      const from = wine?.slot_id;
+      const cached = wineCache.get(wineId);
+      if (!cached.wine) {
+        action.error = 'Wine not found';
+        continue;
+      }
+
+      // Pick the first unassigned slot for this wine
+      const from = cached.slots.find(s => !assignedSources.has(s));
       if (!from) {
         action.error = 'Wine location unknown';
         continue;
       }
+      assignedSources.add(from);
 
-      const slotResult = await findAvailableSlot(toZoneId, occupiedSlots, wine, {
+      const slotResult = await findAvailableSlot(toZoneId, occupiedSlots, cached.wine, {
         allowFallback: false,
         enforceAffinity: false,
         cellarId: req.cellarId
@@ -311,6 +331,7 @@ router.post('/zone-capacity-advice', asyncHandler(async (req, res) => {
       action.from = from;
       action.to = slotResult.slotId;
       action.zoneId = toZoneId;
+      action.wineName = cached.wine.wine_name || `Wine #${wineId}`;
 
       // Update occupied set so subsequent moves don't collide
       occupiedSlots.delete(from);
