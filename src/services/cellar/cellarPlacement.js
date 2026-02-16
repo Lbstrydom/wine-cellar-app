@@ -371,10 +371,16 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   if (zone.overflowZoneId) {
     const overflowZoneId = zone.overflowZoneId;
     if (enforceAffinity) {
-      const rootZone = getZoneById(rootZoneId);
       const overflowZone = getZoneById(overflowZoneId);
-      if (!isSensibleOverflow(rootZone, overflowZone, wine)) {
-        return null;
+      // When allowFallback is true, permit overflow into fallback zones
+      // even when enforceAffinity would normally block it.  This lets the
+      // "Find Slot" button reach the whole-cellar scan in findAnyAvailableSlot.
+      const fallbackBypass = allowFallback && overflowZone?.isFallbackZone;
+      if (!fallbackBypass) {
+        const rootZone = getZoneById(rootZoneId);
+        if (!isSensibleOverflow(rootZone, overflowZone, wine)) {
+          return null;
+        }
       }
     }
 

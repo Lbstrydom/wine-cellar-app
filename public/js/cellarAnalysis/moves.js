@@ -142,7 +142,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
           </div>
           <span class="move-confidence ${move.confidence}">${move.confidence}</span>
           <div class="move-actions">
-            <button class="btn btn-primary btn-small move-findslot-btn" data-move-index="${index}" title="Re-analyse with overflow to find a slot">Find Slot</button>
+            <button class="btn btn-primary btn-small move-findslot-btn" data-move-index="${index}" data-wine-id="${move.wineId}" title="Re-analyse with overflow to find a slot">Find Slot</button>
             <button class="btn btn-secondary btn-small move-dismiss-btn" data-move-index="${index}" title="Dismiss this suggestion">Dismiss</button>
           </div>
         </div>
@@ -261,12 +261,33 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   listEl.querySelectorAll('.move-findslot-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
+      const wineId = Number(btn.dataset.wineId);
       btn.disabled = true;
       btn.textContent = 'Searching...';
       try {
         const { loadAnalysis } = await import('./analysis.js');
+        const { getCurrentAnalysis } = await import('./state.js');
+
+        // Count manual items before re-analysis
+        const before = getCurrentAnalysis();
+        const manualBefore = (before?.suggestedMoves || []).filter(m => m.type === 'manual').length;
+
         await loadAnalysis(true, { allowFallback: true });
-        showToast('Re-analysed with overflow slots enabled');
+
+        // Compare: did the clicked wine get a concrete move?
+        const after = getCurrentAnalysis();
+        const manualAfter = (after?.suggestedMoves || []).filter(m => m.type === 'manual').length;
+        const wineNowHasMove = wineId && (after?.suggestedMoves || []).some(
+          m => m.type === 'move' && m.wineId === wineId
+        );
+
+        if (wineNowHasMove) {
+          showToast('Slot found — review the move suggestion above');
+        } else if (manualAfter < manualBefore) {
+          showToast('Overflow search found slots for some wines');
+        } else {
+          showToast('No available slots found — consider zone reconfiguration');
+        }
       } catch (err) {
         showToast(`Error: ${err.message}`);
         btn.disabled = false;
