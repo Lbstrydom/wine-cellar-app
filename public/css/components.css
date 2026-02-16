@@ -1000,6 +1000,12 @@
 .move-path .from { color: var(--color-error); }
 .move-path .to { color: var(--color-success); }
 .move-path .arrow { margin: 0 0.5rem; color: var(--text-muted); }
+.move-path .move-zone-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-left: 0.35rem;
+  font-style: italic;
+}
 
 .move-reason {
   font-size: 0.75rem;

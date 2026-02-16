@@ -66,8 +66,8 @@ const mockAnalysis = {
     { wineId: 2, name: 'Meerlust Rubicon 2018', currentZone: 'C', suggestedZone: 'D' },
   ],
   suggestedMoves: [
-    { wineId: 1, wineName: 'Kanonkop Pinotage 2019', from: 'R3C1', to: 'R5C2', type: 'move' },
-    { wineId: 3, wineName: 'Jordan Cobbler Hill 2017', from: 'R1C4', to: 'R7C1', type: 'move' },
+    { wineId: 1, wineName: 'Kanonkop Pinotage 2019', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage', type: 'move' },
+    { wineId: 3, wineName: 'Jordan Cobbler Hill 2017', from: 'R1C4', to: 'R7C1', toZone: 'SA Blends', type: 'move' },
   ],
   needsZoneSetup: false,
   movesHaveSwaps: false,
@@ -335,6 +335,25 @@ describe('formatAIAdvice', () => {
     expect(html).not.toContain('ai-modified-moves');
     expect(html).not.toContain('ai-rejected-moves');
   });
+
+  it('renders zone label alongside slot coordinates when toZone is present', () => {
+    const advice = {
+      ...mockAdvice,
+      confirmedMoves: [{ wineId: 1, wineName: 'Test Wine', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage' }],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('move-zone-label');
+    expect(html).toContain('(Pinotage)');
+  });
+
+  it('omits zone label when toZone is not present', () => {
+    const advice = {
+      ...mockAdvice,
+      confirmedMoves: [{ wineId: 1, wineName: 'Test Wine', from: 'R3C1', to: 'R5C2' }],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).not.toContain('move-zone-label');
+  });
 });
 
 describe('enrichMovesWithNames', () => {
@@ -372,6 +391,39 @@ describe('enrichMovesWithNames', () => {
     const moves = [{ wineId: 1, wineName: 'Custom Name', from: 'R1C1', to: 'R2C2' }];
     const result = enrichMovesWithNames(moves);
     expect(result[0].wineName).toBe('Custom Name');
+  });
+
+  it('prefers suggestedMoves from over AI from (authoritative position)', () => {
+    // AI might return a zone name instead of slot coordinate
+    const moves = [{ wineId: 1, from: 'pinotage_zone', to: 'R5C2' }];
+    const result = enrichMovesWithNames(moves);
+    // Should use original from R3C1, not AI's "pinotage_zone"
+    expect(result[0].from).toBe('R3C1');
+  });
+
+  it('uses AI to when present (modifiedMoves may change target)', () => {
+    const moves = [{ wineId: 1, from: 'R3C1', to: 'R8C3' }];
+    const result = enrichMovesWithNames(moves);
+    // AI's modified target takes priority
+    expect(result[0].to).toBe('R8C3');
+  });
+
+  it('falls back to suggestedMoves to when AI omits it', () => {
+    const moves = [{ wineId: 3, reason: 'test' }];
+    const result = enrichMovesWithNames(moves);
+    expect(result[0].to).toBe('R7C1');
+  });
+
+  it('propagates toZone from suggestedMoves for display context', () => {
+    const moves = [{ wineId: 1, from: 'R3C1', to: 'R5C2' }];
+    const result = enrichMovesWithNames(moves);
+    expect(result[0].toZone).toBe('Pinotage');
+  });
+
+  it('preserves AI toZone if present on the move', () => {
+    const moves = [{ wineId: 1, from: 'R3C1', to: 'R5C2', toZone: 'AI Zone' }];
+    const result = enrichMovesWithNames(moves);
+    expect(result[0].toZone).toBe('AI Zone');
   });
 
   it('returns empty array for null input', () => {

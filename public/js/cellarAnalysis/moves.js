@@ -182,6 +182,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
             <span class="from">${move.from}</span>
             <span class="arrow">→</span>
             <span class="to">${move.to}</span>
+            ${move.toZone ? `<span class="move-zone-label">(${escapeHtml(move.toZone)})</span>` : ''}
           </div>
           <div class="move-reason">${escapeHtml(move.reason)}</div>
         </div>

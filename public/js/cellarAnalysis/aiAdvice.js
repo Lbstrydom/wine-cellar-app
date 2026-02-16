@@ -104,11 +104,17 @@ function enrichMovesWithNames(moves) {
     const sg = suggested.find(s => s.wineId === m.wineId);
     const wineName = m.wineName || mp?.name || sg?.wineName || `Wine #${m.wineId}`;
 
-    // For rejectedMoves (no from/to), try to fill from suggestedMoves
-    const from = m.from || sg?.from || null;
+    // Wine's physical position — original suggestedMoves is authoritative.
+    // AI may return zone names instead of slot coordinates.
+    const from = sg?.from || m.from || null;
+
+    // Target slot — prefer AI's value (may be modified), fall back to original
     const to = m.to || sg?.to || null;
 
-    return { ...m, wineName, from, to };
+    // Zone display name for UI context (e.g. "SA Blends", "Shiraz")
+    const toZone = m.toZone || sg?.toZone || null;
+
+    return { ...m, wineName, from, to, toZone };
   });
 }
 
@@ -309,6 +315,9 @@ function renderMoveSection(moves, config) {
       html += `<span class="from">${escapeHtml(m.from || '?')}</span>`;
       html += '<span class="arrow">→</span>';
       html += `<span class="to">${escapeHtml(m.to || '?')}</span>`;
+      if (m.toZone) {
+        html += ` <span class="move-zone-label">(${escapeHtml(m.toZone)})</span>`;
+      }
       html += '</div>';
     }
     if (m.reason) html += `<div class="move-reason">${escapeHtml(m.reason)}</div>`;

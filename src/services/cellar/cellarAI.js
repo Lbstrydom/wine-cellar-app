@@ -52,6 +52,11 @@ export async function getCellarOrganisationAdvice(analysisReport) {
       // Validate structure
       const validated = validateAdviceSchema(parsed);
 
+      // Cross-reference AI moves with original suggestedMoves for slot coordinates.
+      // Claude may return zone names instead of slot IDs — resolve them back.
+      validated.confirmedMoves = resolveAIMovesToSlots(validated.confirmedMoves, analysisReport.suggestedMoves);
+      validated.modifiedMoves = resolveAIMovesToSlots(validated.modifiedMoves, analysisReport.suggestedMoves);
+
       // GPT-5.2 review if enabled
       if (isCellarAnalysisReviewEnabled()) {
         const reviewContext = {
@@ -255,6 +260,41 @@ function isValidZoneRef(ref) {
 }
 
 /**
+ * Check if a string looks like a valid cellar slot coordinate.
+ * Cellar slots: R3C5, R1C1, etc. Fridge slots: F1, F2, etc.
+ * @param {string} str - Value to check
+ * @returns {boolean}
+ */
+function isSlotCoordinate(str) {
+  return typeof str === 'string' && /^[RF]\d+C?\d*$/.test(str.trim());
+}
+
+/**
+ * Cross-reference AI‐returned moves with the original suggestedMoves to ensure
+ * slot coordinates are real. Claude may return zone names/IDs instead of slot
+ * coordinates — this resolves them back to the authoritative source.
+ * @param {Array} aiMoves - Moves from AI response (confirmed or modified)
+ * @param {Array} suggestedMoves - Original suggestedMoves from analysis report
+ * @returns {Array} Moves with validated slot coordinates and toZone display name
+ */
+function resolveAIMovesToSlots(aiMoves, suggestedMoves) {
+  if (!aiMoves?.length) return aiMoves || [];
+  if (!suggestedMoves?.length) return aiMoves;
+
+  return aiMoves.map(m => {
+    const original = suggestedMoves.find(s => s.wineId === m.wineId && s.type === 'move');
+    if (!original) return m;
+
+    return {
+      ...m,
+      from: original.from,  // Wine's physical position — always authoritative
+      to: isSlotCoordinate(m.to) ? m.to : (original.to || m.to),  // Only keep AI's to if valid slot
+      toZone: original.toZone || m.toZone || null  // Zone display name for UI context
+    };
+  });
+}
+
+/**
  * Validate advice schema.
  * @param {Object} parsed
  * @returns {Object} Validated advice
@@ -314,7 +354,7 @@ function generateFallbackAdvice(report) {
     proposedZoneChanges: [],
     confirmedMoves: report.suggestedMoves
       .filter(m => m.type === 'move' && m.confidence === 'high')
-      .map(m => ({ wineId: m.wineId, from: m.from, to: m.to })),
+      .map(m => ({ wineId: m.wineId, from: m.from, to: m.to, toZone: m.toZone })),
     modifiedMoves: [],
     rejectedMoves: [],
     ambiguousWines: report.suggestedMoves
@@ -333,3 +373,6 @@ function generateFallbackAdvice(report) {
     summary: 'AI analysis unavailable - showing system suggestions only'
   };
 }
+
+// Exported for testing
+export { isSlotCoordinate, resolveAIMovesToSlots, validateAdviceSchema, isValidZoneRef };
