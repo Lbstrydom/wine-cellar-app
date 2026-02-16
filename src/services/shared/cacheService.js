@@ -560,7 +560,7 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 3;  // v3: wine metadata in hash + explicit cache invalidation on wine edit/delete
+const ANALYSIS_LOGIC_VERSION = 4;  // v4: 5-phase zone classification hardening (findBestZone, isCorrectlyPlaced, buffer colour checks)
 
 /**
  * Generate slot hash for cache invalidation.
