@@ -242,10 +242,10 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
   const showZoneGate = zonesNeedReconfig && !needsZoneSetup;
   if (showZoneGate) {
     html += `<div class="ai-zone-gate">
-      <p class="ai-zone-gate-message">Review the proposed zone changes above, then accept or reorganise before proceeding.</p>
+      <p class="ai-zone-gate-message">Review the proposed zone changes above, then accept or adjust the layout before proceeding to bottle placement.</p>
       <div class="ai-zone-gate-actions">
         <button class="btn btn-primary" data-action="ai-accept-zones">Accept Zones \u2014 Continue</button>
-        <button class="btn btn-secondary" data-action="ai-reconfigure-zones">Reorganise Instead</button>
+        <button class="btn btn-secondary" data-action="ai-reconfigure-zones">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
       </div>
     </div>`;
   }

@@ -183,17 +183,19 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
     renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl: el });
   }
 
-  // Color adjacency violations — simple banner with Reorganise Zones CTA
+  // Color adjacency violations — shown here because this is the actionable
+  // Cellar Review workspace. The issue digest only shows a summary count.
   if (adjacencyAlerts.length > 0) {
     const count = adjacencyAlerts.length;
     const bannerHtml = `
       <div class="zone-adjacency-banner">
-        <div class="zone-adjacency-banner-header">⚠️ Color Boundary ${count === 1 ? 'Issue' : 'Issues'}</div>
+        <div class="zone-adjacency-banner-header">🎨 Color Region ${count === 1 ? 'Issue' : 'Issues'}</div>
         <div class="zone-adjacency-banner-body">
-          <p>${count} color adjacency ${count === 1 ? 'violation' : 'violations'} detected — zones should group wines by style to keep reds and whites separated.</p>
+          <p>${count} color boundary ${count === 1 ? 'violation' : 'violations'} — reds and whites should be in separate row regions.</p>
           <ul class="zone-adjacency-list">
             ${adjacencyAlerts.map(a => `<li>${escapeHtml(a.message || 'Color boundary issue')}</li>`).join('')}
           </ul>
+          <p class="zone-adjacency-hint">Zone reconfiguration can fix boundary issues by reassigning rows to the correct color region.</p>
           <button class="btn btn-primary zone-adjacency-reconfig-btn">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
         </div>
       </div>
@@ -269,8 +271,8 @@ function updateActionButton(analysis, onRenderAnalysis) {
   const state = deriveState(analysis);
   const config = {
     [AnalysisState.NO_ZONES]:          { label: CTA_SETUP_ZONES,    hint: 'Create zone definitions for your cellar rows.', handler: () => startZoneSetup() },
-    [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, hint: 'Zones need attention — reconfigure row allocation.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
-    [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, hint: 'Adjust zone boundaries and row allocation.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, hint: 'Zones need attention — adjust which rows belong to which zones.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, hint: 'Adjust which rows belong to which zones.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.JUST_RECONFIGURED]: {
       label: CTA_GUIDE_MOVES,
       hint: 'Walk through the moves needed after reconfiguration.',

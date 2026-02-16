@@ -49,7 +49,7 @@ vi.mock('../../../public/js/utils.js', () => ({
 // Mock labels.js
 vi.mock('../../../public/js/cellarAnalysis/labels.js', () => ({
   CTA_AI_RECOMMENDATIONS: 'AI Cellar Review',
-  CTA_RECONFIGURE_ZONES: 'Reorganise Zones',
+  CTA_RECONFIGURE_ZONES: 'Adjust Zone Layout',
   CTA_SETUP_ZONES: 'Setup Zones',
   CTA_GUIDE_MOVES: 'Guide Me Through Moves',
 }));
@@ -173,7 +173,7 @@ describe('formatAIAdvice', () => {
     const advice = { ...mockAdvice, ambiguousWines: [] };
     const html = formatAIAdvice(advice);
     expect(html).toContain('data-action="ai-reconfigure-zones"');
-    expect(html).toContain('Reorganise Zones');
+    expect(html).toContain('Adjust Zone Layout');
     expect(html).toContain('data-action="ai-view-moves"');
     expect(html).toContain('View Moves');
   });

@@ -23,9 +23,11 @@ import { TAB_CELLAR_REVIEW, TAB_CELLAR_PLACEMENT, TAB_FRIDGE } from './labels.js
 
 /**
  * Classify an alert into a workspace-owned digest item.
+ * Returns null for alerts that should be suppressed from the digest
+ * (rendered in detail elsewhere, e.g. Cellar Review workspace).
  * @param {Object} alert - Raw alert from analysis.alerts
  * @param {Object} summary - Analysis summary for context
- * @returns {DigestItem}
+ * @returns {DigestItem|null}
  */
 function classifyAlert(alert, summary) {
   const type = alert.type;
@@ -56,27 +58,18 @@ function classifyAlert(alert, summary) {
     };
   }
 
+  // Color adjacency violations are shown in detail inside Cellar Review
+  // workspace (#zone-issue-actions). Suppress from digest to avoid
+  // duplicating what the user sees when they navigate there.
   if (type === 'color_adjacency_violation') {
-    return {
-      workspace: 'structure',
-      severity: 'warning',
-      message: alert.message,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones',
-      sourceAlert: alert
-    };
+    return null;
   }
 
-  // Placement issues
+  // Reorganisation recommended is a meta-alert that restates issues already
+  // covered by dedicated alerts (capacity, color boundary, scattered wines).
+  // Suppress from digest to avoid duplication.
   if (type === 'reorganisation_recommended') {
-    return {
-      workspace: 'placement',
-      severity: 'warning',
-      message: alert.message,
-      cta: TAB_CELLAR_PLACEMENT,
-      ctaWorkspace: 'placement',
-      sourceAlert: alert
-    };
+    return null;
   }
 
   if (type === 'scattered_wines') {
@@ -134,7 +127,20 @@ function buildDigestGroups(analysis) {
 
   for (const alert of alerts) {
     const item = classifyAlert(alert, summary);
+    if (!item) continue; // Suppressed — rendered in detail elsewhere
     groups[item.workspace].push(item);
+  }
+
+  // Add color adjacency summary (suppressed from classifyAlert, shown as one line)
+  const colorAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
+  if (colorAlerts.length > 0) {
+    groups.structure.push({
+      workspace: 'structure',
+      severity: 'warning',
+      message: `${colorAlerts.length} color boundary violation(s)`,
+      cta: TAB_CELLAR_REVIEW,
+      ctaWorkspace: 'zones'
+    });
   }
 
   // Add fridge readiness issues from fridgeStatus (not in alerts array)
