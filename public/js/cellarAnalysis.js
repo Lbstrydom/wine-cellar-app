@@ -32,6 +32,7 @@ import { handleExecuteAllMoves } from './cellarAnalysis/moves.js';
 import { handleGetAIAdvice } from './cellarAnalysis/aiAdvice.js';
 import { handleConfirmLayout, cancelZoneSetup } from './cellarAnalysis/zones.js';
 import { toggleZoneChat, sendZoneChatMessage } from './cellarAnalysis/zoneChat.js';
+import { switchWorkspace, getActiveWorkspace } from './cellarAnalysis/state.js';
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -86,6 +87,23 @@ export function initCellarAnalysis() {
         sendZoneChatMessage();
       }
     });
+  }
+
+  // Workspace toggle tabs
+  const workspaceToggle = document.getElementById('analysis-workspace-toggle');
+  if (workspaceToggle) {
+    workspaceToggle.addEventListener('click', (e) => {
+      const tab = e.target.closest('.workspace-tab');
+      if (tab && tab.dataset.workspace) {
+        switchWorkspace(tab.dataset.workspace);
+      }
+    });
+  }
+
+  // Restore persisted workspace on init (survives page reloads)
+  const persisted = getActiveWorkspace();
+  if (persisted !== 'zones') {
+    switchWorkspace(persisted);
   }
 }
 

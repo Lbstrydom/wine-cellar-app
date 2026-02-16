@@ -1,5 +1,5 @@
 /**
- * @fileoverview AI Zone Structure view layer.
+ * @fileoverview AI Cellar Review view layer.
  * Handles API call, spinner UI, HTML rendering for AI advice.
  * Action wiring is delegated to aiAdviceActions.js (controller).
  * @module cellarAnalysis/aiAdvice
@@ -7,40 +7,12 @@
 
 import { analyseCellarAI } from '../api.js';
 import { escapeHtml } from '../utils.js';
-import { getCurrentAnalysis } from './state.js';
+import { getCurrentAnalysis, setAIMoveJudgments, switchWorkspace, notifyWorkspaceTab } from './state.js';
 import { CTA_AI_RECOMMENDATIONS, CTA_RECONFIGURE_ZONES } from './labels.js';
 import { wireAdviceActions } from './aiAdviceActions.js';
+import { renderMoves } from './moves.js';
+import { renderAIFridgeAnnotations } from './fridge.js';
 
-/** Configuration for the 3 move section types — DRY rendering via renderMoveSection() */
-const SECTION_CONFIG = {
-  confirmed: {
-    cssClass: 'ai-confirmed-moves',
-    badge: 'CONFIRMED',
-    badgeVariant: 'confirmed',
-    cardVariant: 'ai-confirmed',
-    hint: 'The AI agrees with these suggested moves.',
-    showActions: true,
-    defaultOpen: true,
-  },
-  modified: {
-    cssClass: 'ai-modified-moves',
-    badge: 'MODIFIED',
-    badgeVariant: 'modified',
-    cardVariant: 'ai-modified',
-    hint: 'The AI suggests a different target for these moves.',
-    showActions: true,
-    defaultOpen: true,
-  },
-  rejected: {
-    cssClass: 'ai-rejected-moves',
-    badge: 'KEEP',
-    badgeVariant: 'rejected',
-    cardVariant: 'ai-rejected',
-    hint: 'The AI recommends keeping these wines where they are.',
-    showActions: false,
-    defaultOpen: false,
-  },
-};
 
 /**
  * Get AI advice for cellar organisation.
@@ -68,6 +40,11 @@ export async function handleGetAIAdvice() {
       rejectedMoves: enrichMovesWithNames(result.aiAdvice?.rejectedMoves || []),
     };
 
+    // Store AI move judgments in shared state so canonical move cards can show badges
+    const judgments = buildMoveJudgments(enrichedAdvice);
+    setAIMoveJudgments(judgments);
+
+    // Zone-related AI content renders in Workspace A (#analysis-ai-advice)
     adviceEl.style.display = 'block';
     adviceEl.innerHTML = `<h3>${escapeHtml(CTA_AI_RECOMMENDATIONS)}</h3>
       <p class="section-desc">AI sommelier's recommendations for your cellar.</p>
@@ -75,6 +52,24 @@ export async function handleGetAIAdvice() {
 
     // Wire event listeners AFTER HTML is in DOM (CSP-compliant)
     wireAdviceActions(adviceEl, enrichedAdvice);
+
+    // Re-render canonical moves with AI badges (Workspace B)
+    const zonesGated = enrichedAdvice.zonesNeedReconfiguration === true && !needsZoneSetup;
+    if (!zonesGated && !needsZoneSetup) {
+      rerenderMovesWithBadges(analysis);
+    }
+
+    // Render fridge annotations inline (Workspace C)
+    if (enrichedAdvice.fridgePlan?.toAdd?.length > 0) {
+      renderAIFridgeAnnotations(enrichedAdvice.fridgePlan.toAdd);
+    }
+
+    // Notify workspace tabs that have new AI content (if user is elsewhere)
+    notifyWorkspaceTab('zones');
+    notifyWorkspaceTab('placement');
+    if (enrichedAdvice.fridgePlan?.toAdd?.length > 0) {
+      notifyWorkspaceTab('fridge');
+    }
 
     adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
     if (statusEl) statusEl.textContent = '';
@@ -119,9 +114,42 @@ function enrichMovesWithNames(moves) {
 }
 
 /**
+ * Build a Map of wineId -> judgment for annotating canonical move cards.
+ * @param {Object} advice - Enriched AI advice
+ * @returns {Map<number, Object>}
+ */
+function buildMoveJudgments(advice) {
+  const map = new Map();
+  for (const m of (advice.confirmedMoves || [])) {
+    map.set(m.wineId, { judgment: 'confirmed', reason: m.reason, to: m.to, toZone: m.toZone });
+  }
+  for (const m of (advice.modifiedMoves || [])) {
+    map.set(m.wineId, { judgment: 'modified', reason: m.reason, to: m.to, toZone: m.toZone });
+  }
+  for (const m of (advice.rejectedMoves || [])) {
+    map.set(m.wineId, { judgment: 'rejected', reason: m.reason, to: m.to, toZone: m.toZone });
+  }
+  return map;
+}
+
+/**
+ * Re-render canonical moves with AI badges.
+ * @param {Object} analysis - Current analysis
+ */
+export function rerenderMovesWithBadges(analysis) {
+  if (!analysis) return;
+  renderMoves(
+    analysis.suggestedMoves,
+    analysis.needsZoneSetup,
+    analysis.movesHaveSwaps
+  );
+}
+
+/**
  * Format AI advice object into HTML.
- * Implements zone-first flow: if zones need reconfiguration, the user must
- * accept or reorganise zones before move sections are revealed.
+ * Renders zone-related content only (summary, verdict, health, proposed changes,
+ * zone gate, ambiguous wines). Move and fridge content is rendered as
+ * annotations on their canonical workspace sections instead.
  * @param {Object} advice - AI advice object (enriched)
  * @param {boolean} needsZoneSetup - Whether zones need setup
  * @returns {string} HTML formatted advice
@@ -243,47 +271,19 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
       });
       html += '</div></div>';
     });
-    html += `<div class="ai-stage-nav"><button class="btn btn-primary" data-action="ai-show-moves">Continue to Moves</button></div>`;
+    html += `<div class="ai-stage-nav"><button class="btn btn-primary" data-action="ai-show-moves">View Moves</button></div>`;
     html += '</div>';
   }
 
-  // ─── STAGE 3: Tactical Moves ───────────────────────────────────────
-  // Gated: hidden until zones accepted (and optionally user input done)
-  const movesHiddenClass = (showZoneGate || (advice.ambiguousWines?.length > 0)) ? ' style="display:none"' : '';
+  // Move and fridge content are now rendered as annotations on their
+  // canonical workspace sections (Workspace B and C respectively),
+  // not as standalone sections here in Workspace A.
 
-  if (!needsZoneSetup) {
-    html += `<div class="ai-moves-container" id="ai-moves-gated"${movesHiddenClass}>`;
-    html += `<div class="ai-stage-header"><span class="ai-stage-number">3</span><h4>Tactical Moves</h4></div>`;
-    html += '<p class="ai-section-hint">Confirmed and adjusted bottle moves based on the zone structure above.</p>';
-
-    // 6. Confirmed Moves
-    html += renderMoveSection(advice.confirmedMoves, SECTION_CONFIG.confirmed);
-
-    // 7. Modified Moves
-    html += renderMoveSection(advice.modifiedMoves, SECTION_CONFIG.modified);
-
-    // 8. Rejected Moves
-    html += renderMoveSection(advice.rejectedMoves, SECTION_CONFIG.rejected);
-
-    html += '</div>'; // close ai-moves-container
-  }
-
-  // 10. Fridge Plan (always rendered)
-  if (advice.fridgePlan?.toAdd?.length > 0) {
-    html += '<details class="ai-fridge-plan">';
-    html += `<summary><h4>Fridge Recommendations <span class="ai-count-badge">${advice.fridgePlan.toAdd.length}</span></h4></summary>`;
-    html += '<ul>';
-    advice.fridgePlan.toAdd.forEach(item => {
-      html += `<li><strong>${escapeHtml(item.category)}</strong>: ${escapeHtml(item.reason)}</li>`;
-    });
-    html += '</ul></details>';
-  }
-
-  // Bottom CTAs — only when all stages are visible (not gated) and not needsZoneSetup
+  // Bottom CTAs
   if (!needsZoneSetup && !showZoneGate && !(advice.ambiguousWines?.length > 0)) {
     html += `<div class="ai-advice-cta">
       <button class="btn btn-primary" data-action="ai-reconfigure-zones">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
-      <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Suggested Moves</button>
+      <button class="btn btn-secondary" data-action="ai-view-moves">View Moves</button>
     </div>`;
   }
 
@@ -291,48 +291,4 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
   return html;
 }
 
-/**
- * Render a move section using SECTION_CONFIG. Returns HTML string.
- * @param {Array} moves - Enriched move objects
- * @param {Object} config - Entry from SECTION_CONFIG
- * @returns {string} HTML string (empty string if no moves)
- */
-function renderMoveSection(moves, config) {
-  if (!moves?.length) return '';
-  const openAttr = config.defaultOpen ? ' open' : '';
-  let html = `<details class="${config.cssClass}"${openAttr}>`;
-  html += `<summary><h4>${config.badge} <span class="ai-count-badge">${moves.length}</span></h4></summary>`;
-  html += `<p class="ai-section-hint">${config.hint}</p>`;
-
-  moves.forEach(m => {
-    const hasLocation = m.from || m.to;
-    html += `<div class="move-item move-item--${config.cardVariant}" data-wine-id="${m.wineId}">`;
-    html += '<div class="move-details">';
-    html += `<div class="move-header"><span class="ai-move-badge ai-move-badge--${config.badgeVariant}">${config.badge}</span></div>`;
-    html += `<div class="move-wine-name">${escapeHtml(m.wineName)}</div>`;
-    if (hasLocation) {
-      html += '<div class="move-path">';
-      html += `<span class="from">${escapeHtml(m.from || '?')}</span>`;
-      html += '<span class="arrow">→</span>';
-      html += `<span class="to">${escapeHtml(m.to || '?')}</span>`;
-      if (m.toZone) {
-        html += ` <span class="move-zone-label">(${escapeHtml(m.toZone)})</span>`;
-      }
-      html += '</div>';
-    }
-    if (m.reason) html += `<div class="move-reason">${escapeHtml(m.reason)}</div>`;
-    html += '</div>'; // close move-details
-    if (config.showActions) {
-      html += '<div class="move-actions">';
-      html += `<button class="btn btn-small btn-primary ai-move-execute-btn" data-wine-id="${m.wineId}" data-from="${escapeHtml(m.from || '')}" data-to="${escapeHtml(m.to || '')}">Move</button>`;
-      html += '<button class="btn btn-small btn-secondary ai-move-dismiss-btn">Dismiss</button>';
-      html += '</div>';
-    }
-    html += '</div>';
-  });
-
-  html += '</details>';
-  return html;
-}
-
-export { formatAIAdvice, enrichMovesWithNames };
+export { formatAIAdvice, enrichMovesWithNames, rerenderMovesWithBadges };

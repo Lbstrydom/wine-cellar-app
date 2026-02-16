@@ -4,12 +4,13 @@
  */
 
 import { analyseCellar } from '../api.js';
-import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis } from './state.js';
+import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis, switchWorkspace } from './state.js';
 import { renderMoves, renderCompactionMoves, renderRowAllocationInfo } from './moves.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
 import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js';
+import { renderIssueDigest } from './issueDigest.js';
 import { deriveState, AnalysisState } from './analysisState.js';
 import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
@@ -164,12 +165,18 @@ export async function refreshAnalysis() {
 function renderAnalysis(analysis, onRenderAnalysis) {
   renderSummary(analysis.summary, analysis.needsZoneSetup);
 
-  const bannerResult = renderZoneReconfigurationBanner(analysis, { onRenderAnalysis });
-  if (bannerResult.rendered) {
-    renderAlerts(bannerResult.remainingAlerts, { append: true });
+  // Special cases: post-reconfig success banner and per-zone quick-fix view
+  // use the existing renderers. Normal path uses the consolidated issue digest.
+  if (analysis?.__justReconfigured || analysis?.__showQuickFixZones) {
+    const bannerResult = renderZoneReconfigurationBanner(analysis, { onRenderAnalysis });
+    if (bannerResult.rendered) {
+      renderAlerts(bannerResult.remainingAlerts, { append: true });
+    } else {
+      const { remainingAlerts, rendered } = renderZoneCapacityAlert(analysis, { onRenderAnalysis });
+      renderAlerts(remainingAlerts, { append: rendered });
+    }
   } else {
-    const { remainingAlerts, rendered } = renderZoneCapacityAlert(analysis, { onRenderAnalysis });
-    renderAlerts(remainingAlerts, { append: rendered });
+    renderIssueDigest(analysis);
   }
 
   renderFridgeStatus(analysis.fridgeStatus);
@@ -178,6 +185,12 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
+
+  // After reconfiguration, auto-switch to Placement workspace so the user
+  // sees the moves they need to execute.
+  if (analysis?.__justReconfigured) {
+    switchWorkspace('placement');
+  }
 
   // Accept an optional report parameter so callers (e.g. zone reconfig modal)
   // can pass a report with flags like __justReconfigured and skip a redundant
@@ -203,11 +216,12 @@ function updateActionButton(analysis, onRenderAnalysis) {
 
   const state = deriveState(analysis);
   const config = {
-    [AnalysisState.NO_ZONES]:          { label: CTA_SETUP_ZONES,    handler: () => startZoneSetup() },
-    [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
-    [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.NO_ZONES]:          { label: CTA_SETUP_ZONES,    hint: 'Create zone definitions for your cellar rows.', handler: () => startZoneSetup() },
+    [AnalysisState.ZONES_DEGRADED]:    { label: CTA_RECONFIGURE_ZONES, hint: 'Zones need attention — reconfigure row allocation.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
+    [AnalysisState.ZONES_HEALTHY]:     { label: CTA_RECONFIGURE_ZONES, hint: 'Adjust zone boundaries and row allocation.', handler: () => openReconfigurationModal({ onRenderAnalysis }) },
     [AnalysisState.JUST_RECONFIGURED]: {
       label: CTA_GUIDE_MOVES,
+      hint: 'Walk through the moves needed after reconfiguration.',
       handler: () => {
         const currentAnalysis = getCurrentAnalysis();
         if (currentAnalysis?.suggestedMoves?.some(m => m.type === 'move')) {
@@ -219,8 +233,12 @@ function updateActionButton(analysis, onRenderAnalysis) {
     },
   };
 
-  const { label, handler } = config[state];
+  const { label, hint, handler } = config[state];
   btn.textContent = label;
+
+  // Update helper microcopy below the CTA button
+  const hintEl = document.getElementById('cellar-action-hint');
+  if (hintEl) hintEl.textContent = hint;
 
   // Replace handler (clone to remove old listener)
   const newBtn = btn.cloneNode(true);

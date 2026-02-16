@@ -545,5 +545,75 @@ function findEmptyFridgeSlot(fridgeStatus) {
   return fridgeSlots.find(s => !occupiedSlots.has(s)) || null;
 }
 
+/**
+ * Render AI fridge annotations inline on existing fridge candidates.
+ * Called after AI advice completes — adds AI recommendation badges
+ * to matching candidates in the fridge section.
+ * @param {Array} toAdd - AI fridgePlan.toAdd items
+ */
+export function renderAIFridgeAnnotations(toAdd) {
+  if (!toAdd?.length) return;
+
+  const contentEl = document.getElementById('fridge-status-content');
+  if (!contentEl) return;
+
+  // Build lookup of AI recommendations by wineId
+  const aiRecs = new Map();
+  for (const item of toAdd) {
+    if (item.wineId) aiRecs.set(item.wineId, item);
+  }
+
+  // Annotate existing candidate cards with AI badges
+  contentEl.querySelectorAll('.fridge-candidate').forEach(card => {
+    const btn = card.querySelector('[data-candidate-index]');
+    if (!btn) return;
+    const index = Number.parseInt(btn.dataset.candidateIndex, 10);
+
+    const analysis = getCurrentAnalysis();
+    const candidate = analysis?.fridgeStatus?.candidates?.[index];
+    if (!candidate) return;
+
+    const aiRec = aiRecs.get(candidate.wineId);
+    if (!aiRec) return;
+
+    // Add AI recommendation badge if not already present
+    if (card.querySelector('.ai-fridge-badge')) return;
+
+    const nameEl = card.querySelector('.fridge-candidate-name');
+    if (nameEl) {
+      const badge = document.createElement('span');
+      badge.className = 'ai-badge ai-badge--confirmed ai-fridge-badge';
+      badge.title = aiRec.reason || 'AI recommended';
+      badge.textContent = 'AI Pick';
+      nameEl.appendChild(badge);
+    }
+  });
+
+  // If AI recommends wines not in the candidate list, add a summary
+  const candidateWineIds = new Set();
+  const analysis = getCurrentAnalysis();
+  (analysis?.fridgeStatus?.candidates || []).forEach(c => candidateWineIds.add(c.wineId));
+
+  const extraRecs = toAdd.filter(r => !candidateWineIds.has(r.wineId));
+  if (extraRecs.length > 0) {
+    let extraEl = contentEl.querySelector('.ai-fridge-extras');
+    if (!extraEl) {
+      extraEl = document.createElement('div');
+      extraEl.className = 'ai-fridge-extras';
+      contentEl.appendChild(extraEl);
+    }
+    extraEl.innerHTML = `
+      <h5>AI Also Suggests</h5>
+      ${extraRecs.map(r => `
+        <div class="ai-fridge-extra-item">
+          <span class="ai-badge ai-badge--confirmed">AI Pick</span>
+          <strong>${escapeHtml(r.wineName || `Wine #${r.wineId}`)}</strong>
+          ${r.reason ? `<span class="ai-fridge-extra-reason">${escapeHtml(r.reason)}</span>` : ''}
+        </div>
+      `).join('')}
+    `;
+  }
+}
+
 // Exported for unit testing
 export { identifySwapTarget, computeUrgency, buildSwapOutReason, findEmptyFridgeSlot };

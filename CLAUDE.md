@@ -64,11 +64,12 @@ public/
     ├── bottles.js         # Bottle add/edit functionality
     ├── utils.js           # Shared utility functions
     ├── cellarAnalysis/    # Cellar analysis & AI recommendations UI
-    │   ├── state.js       # Shared analysis state (currentAnalysis, proposal, etc.)
+    │   ├── state.js       # Shared analysis state, workspace switching, localStorage persistence
     │   ├── analysis.js    # Main analysis rendering & CTA logic
     │   ├── labels.js      # Shared CTA label constants (single source of truth)
-    │   ├── aiAdvice.js    # AI Recommendations view (HTML rendering)
-    │   ├── aiAdviceActions.js # AI Recommendations controller (event wiring, execution)
+    │   ├── aiAdvice.js    # AI Cellar Review view (HTML rendering, move badges, fridge annotations)
+    │   ├── aiAdviceActions.js # AI Cellar Review controller (event wiring, execution)
+    │   ├── issueDigest.js # Consolidated issue digest (replaces fragmented alerts)
     │   ├── moves.js       # Suggested moves rendering & execution
     │   ├── zones.js       # Zone grouping display
     │   ├── fridge.js      # Fridge analysis section
@@ -714,7 +715,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1685 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1706 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |

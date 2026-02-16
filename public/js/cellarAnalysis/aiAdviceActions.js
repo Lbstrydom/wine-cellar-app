@@ -1,18 +1,16 @@
 /**
- * @fileoverview Action handlers for AI Zone Structure section.
+ * @fileoverview Action handlers for AI Cellar Review section.
  * Wires event listeners and handles move execution, zone reassignment,
  * and navigation actions. Separated from aiAdvice.js (view) for SRP.
  * @module cellarAnalysis/aiAdviceActions
  */
 
-import { executeCellarMoves, reassignWineZone } from '../api.js';
+import { reassignWineZone } from '../api.js';
 import { showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
-import { getCurrentAnalysis } from './state.js';
-import { CTA_RECONFIGURE_ZONES } from './labels.js';
+import { getCurrentAnalysis, switchWorkspace } from './state.js';
 import { getOnRenderAnalysis } from './analysis.js';
-import { renderMoves } from './moves.js';
-import { refreshLayout } from '../app.js';
+import { rerenderMovesWithBadges } from './aiAdvice.js';
 
 /**
  * Wire all event listeners for AI advice actions.
@@ -39,19 +37,11 @@ function wireAdviceActions(container, advice) {
     });
   });
 
-  // Scroll to Moves CTA
-  container.querySelector('[data-action="ai-scroll-to-moves"]')?.addEventListener('click', () => {
-    document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  });
-
-  // Move execute buttons
-  container.querySelectorAll('.ai-move-execute-btn').forEach(btn => {
-    btn.addEventListener('click', () => handleAIMoveExecute(btn, container));
-  });
-
-  // Move dismiss buttons
-  container.querySelectorAll('.ai-move-dismiss-btn').forEach(btn => {
-    btn.addEventListener('click', () => handleDismiss(btn, container));
+  // "View Moves" CTA — switch to placement workspace
+  container.querySelectorAll('[data-action="ai-view-moves"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      switchWorkspace('placement');
+    });
   });
 
   // Zone choice buttons (ambiguous wines)
@@ -70,6 +60,10 @@ function handleAcceptZones(container) {
   const gate = container.querySelector('.ai-zone-gate');
   if (gate) gate.style.display = 'none';
 
+  // Re-render canonical moves with AI badges (were hidden behind gate)
+  const analysis = getCurrentAnalysis();
+  rerenderMovesWithBadges(analysis);
+
   // Stage 2: reveal user input section if present
   const inputContainer = container.querySelector('#ai-input-gated');
   if (inputContainer) {
@@ -78,127 +72,18 @@ function handleAcceptZones(container) {
     return; // Don't show moves yet — user must complete input or click "Continue"
   }
 
-  // No Stage 2 — go directly to Stage 3 (Tactical Moves)
-  handleShowMoves(container);
+  // No Stage 2 — switch to placement workspace
+  switchWorkspace('placement');
 }
 
 /**
- * Handle "Continue to Moves" — reveal Stage 3 (Tactical Moves) and
- * add bottom CTAs.
- * @param {HTMLElement} container - The AI advice container
+ * Handle "Continue to Moves" / "View Moves" — switch to placement workspace.
+ * Moves are already rendered as canonical cards in Workspace B with AI badges.
  */
-function handleShowMoves(container) {
-  // Reveal the hidden moves container (Stage 3)
-  const movesContainer = container.querySelector('#ai-moves-gated');
-  if (movesContainer) {
-    movesContainer.style.display = '';
-    movesContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  }
-
-  // Show bottom CTAs now that moves are visible
-  const ctaHtml = `<div class="ai-advice-cta">
-    <button class="btn btn-primary" data-action="ai-reconfigure-zones">${CTA_RECONFIGURE_ZONES}</button>
-    <button class="btn btn-secondary" data-action="ai-scroll-to-moves">Scroll to Suggested Moves</button>
-  </div>`;
-  container.querySelector('.ai-advice-structured')?.insertAdjacentHTML('beforeend', ctaHtml);
-
-  // Wire the newly added CTA buttons
-  const newCta = container.querySelector('.ai-advice-cta:last-of-type');
-  if (newCta) {
-    newCta.querySelector('[data-action="ai-reconfigure-zones"]')?.addEventListener('click', () => {
-      const callback = getOnRenderAnalysis();
-      openReconfigurationModal({ onRenderAnalysis: callback });
-    });
-    newCta.querySelector('[data-action="ai-scroll-to-moves"]')?.addEventListener('click', () => {
-      document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }
+function handleShowMoves() {
+  switchWorkspace('placement');
 }
 
-/**
- * Update count badge after card removal. Hide section if count reaches 0.
- * @param {HTMLElement} container - The AI advice container
- * @param {HTMLElement} detailsEl - The <details> element containing the card
- */
-function updateSectionCount(container, detailsEl) {
-  if (!detailsEl) return;
-  const remaining = detailsEl.querySelectorAll('.move-item').length;
-  const badge = detailsEl.querySelector('.ai-count-badge');
-  if (badge) badge.textContent = remaining;
-  if (remaining === 0) detailsEl.style.display = 'none';
-}
-
-/**
- * Flash-highlight the Suggested Moves section to signal it was updated.
- * Called after an AI move is executed and suggestedMoves is re-rendered.
- */
-function flashSuggestedMoves() {
-  const movesSection = document.getElementById('analysis-moves');
-  if (!movesSection) return;
-  movesSection.classList.add('flash-highlight');
-  movesSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  setTimeout(() => movesSection.classList.remove('flash-highlight'), 1500);
-}
-
-/**
- * Execute an AI-confirmed or AI-modified move.
- * After success: remove card, sync suggestedMoves state, re-render, refresh grid.
- * @param {HTMLElement} btn - The clicked "Move" button
- * @param {HTMLElement} container - The AI advice container
- */
-async function handleAIMoveExecute(btn, container) {
-  const card = btn.closest('.move-item');
-  const wineId = Number(btn.dataset.wineId);
-  const from = btn.dataset.from;
-  const to = btn.dataset.to;
-
-  btn.disabled = true;
-  try {
-    const result = await executeCellarMoves([{ wineId, from, to }]);
-    if (result?.success === false) {
-      showToast(`Move failed: ${result.error || 'validation error'}`);
-      return;
-    }
-
-    showToast('Move executed');
-
-    // 1. Remove card from AI section
-    const detailsEl = card?.closest('details');
-    if (card) card.remove();
-    updateSectionCount(container, detailsEl);
-
-    // 2. Sync Suggested Moves state (R1-1)
-    // Match on wineId + from only (R2-2: intentional — for modifiedMoves,
-    // the AI changed the 'to' field, so the original suggestedMoves entry
-    // has a different 'to'. We match on wineId + from because those identify
-    // the wine's current position, which is what matters for deduplication.)
-    const analysis = getCurrentAnalysis();
-    if (analysis?.suggestedMoves) {
-      const idx = analysis.suggestedMoves.findIndex(
-        m => m.wineId === wineId && m.from === from
-      );
-      if (idx !== -1) analysis.suggestedMoves.splice(idx, 1);
-
-      // Recalculate swap flags (mirrors moves.js:294-297 pattern)
-      const sources = new Set(analysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.from));
-      const targets = new Set(analysis.suggestedMoves.filter(m => m.type === 'move').map(m => m.to));
-      analysis.movesHaveSwaps = [...sources].some(s => targets.has(s));
-
-      // 3. Re-render Suggested Moves section
-      renderMoves(analysis.suggestedMoves, false, analysis.movesHaveSwaps);
-    }
-
-    // 4. Refresh grid layout
-    refreshLayout();
-
-    // 5. Flash-highlight Suggested Moves section (R2-6: visual sync cue)
-    flashSuggestedMoves();
-  } catch (err) {
-    showToast(`Error: ${err.message}`);
-  } finally {
-    btn.disabled = false;
-  }
-}
 
 /**
  * Handle zone choice for an ambiguous wine.
@@ -235,18 +120,6 @@ async function handleZoneChoice(btn, container) {
   } finally {
     btn.disabled = false;
   }
-}
-
-/**
- * Dismiss a move card from the AI section (no API call).
- * @param {HTMLElement} btn - The clicked "Dismiss" button
- * @param {HTMLElement} container - The AI advice container
- */
-function handleDismiss(btn, container) {
-  const card = btn.closest('.move-item');
-  const detailsEl = card?.closest('details');
-  if (card) card.remove();
-  updateSectionCount(container, detailsEl);
 }
 
 export { wireAdviceActions };

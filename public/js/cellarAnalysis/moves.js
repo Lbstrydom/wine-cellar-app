@@ -6,8 +6,29 @@
 import { executeCellarMoves } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { refreshLayout } from '../app.js';
-import { getCurrentAnalysis } from './state.js';
+import { getCurrentAnalysis, getAIMoveJudgments } from './state.js';
 import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
+
+const AI_BADGE_CONFIG = {
+  confirmed: { label: 'AI Confirmed', cssClass: 'ai-badge--confirmed' },
+  modified:  { label: 'AI Modified',  cssClass: 'ai-badge--modified' },
+  rejected:  { label: 'AI: Keep',     cssClass: 'ai-badge--rejected' },
+};
+
+/**
+ * Render an inline AI judgment badge for a move card.
+ * @param {Map|null} aiJudgments - Map of wineId -> judgment
+ * @param {number} wineId
+ * @returns {string} HTML string (empty if no judgment)
+ */
+function renderAIBadge(aiJudgments, wineId) {
+  if (!aiJudgments) return '';
+  const j = aiJudgments.get(wineId);
+  if (!j) return '';
+  const cfg = AI_BADGE_CONFIG[j.judgment];
+  if (!cfg) return '';
+  return ` <span class="ai-badge ${cfg.cssClass}" title="${escapeHtml(j.reason || '')}">${cfg.label}</span>`;
+}
 
 /**
  * Recalculate swap flags on current analysis and re-render moves.
@@ -49,6 +70,9 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     actionsEl.style.display = 'none';
     return;
   }
+
+  // AI judgment badges (when AI advice has been loaded)
+  const aiJudgments = getAIMoveJudgments();
 
   const actionableMoves = moves.filter(m => m.type === 'move');
   const sources = new Set(actionableMoves.map(m => m.from));
@@ -140,18 +164,22 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       if (move.confidence === 'high' || partner.confidence === 'high') bestConf = 'high';
       else if (move.confidence === 'medium' || partner.confidence === 'medium') bestConf = 'medium';
 
+      // AI badges for swap wines
+      const aiBadgeA = renderAIBadge(aiJudgments, move.wineId);
+      const aiBadgeB = renderAIBadge(aiJudgments, partner.wineId);
+
       return `
         <div class="move-item is-swap-group priority-${move.priority}" data-move-index="${index}" data-swap-partner="${partnerIndex}">
           <div class="move-details">
             <span class="swap-badge">SWAP</span>
             <div class="swap-pair-wines">
               <div class="swap-wine-info">
-                <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
+                <div class="move-wine-name">${escapeHtml(move.wineName)}${aiBadgeA}</div>
                 <div class="move-slot"><span class="from">${move.from}</span>  →  ${move.toZone}</div>
               </div>
               <span class="swap-arrow">↔</span>
               <div class="swap-wine-info">
-                <div class="move-wine-name">${escapeHtml(partner.wineName)}</div>
+                <div class="move-wine-name">${escapeHtml(partner.wineName)}${aiBadgeB}</div>
                 <div class="move-slot"><span class="from">${partner.from}</span>  →  ${partner.toZone}</div>
               </div>
             </div>
@@ -174,10 +202,13 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       primaryAction = `<button class="btn btn-primary btn-small move-execute-btn" data-move-index="${index}" title="Move this bottle now">Move</button>`;
     }
 
+    // AI judgment badge
+    const aiBadge = renderAIBadge(aiJudgments, move.wineId);
+
     return `
       <div class="move-item priority-${move.priority}" data-move-index="${index}">
         <div class="move-details">
-          <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
+          <div class="move-wine-name">${escapeHtml(move.wineName)}${aiBadge}</div>
           <div class="move-path">
             <span class="from">${move.from}</span>
             <span class="arrow">→</span>

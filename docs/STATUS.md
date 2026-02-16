@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 15 February 2026
+## 16 February 2026
 
 ---
 
@@ -9,7 +9,18 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 15 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 16 Feb 2026**:
+- **Cellar Analysis UX Restructure (4-Phase Plan) — COMPLETE** ✅:
+  - Plan document: `.claude/plans/tender-greeting-pizza.md` (critical review of `anal-plan.md` + corrected 4-phase implementation)
+  - **Phase 1 — Semantics, Microcopy & Toggle Scaffold**: Renamed "AI Zone Structure" → "AI Cellar Review" in `labels.js`. Added helper microcopy under CTA buttons. Refresh button tooltip. Vertical button stack CSS. 3-way workspace toggle (Zone Analysis | Cellar Placement | Fridge) as segmented control
+  - **Phase 2 — Alert Consolidation**: New `issueDigest.js` — replaces fragmented alert cards with single prioritised digest. Groups issues by workspace ownership (structure/placement/fridge). Severity icons, impact counts, CTA linking to owning workspace. Holistic banner threshold preserved. Post-reconfig success banner as special case
+  - **Phase 3 — Workspace Separation**: 3 workspace panels in `index.html` (Zone Analysis, Cellar Placement, Fridge). Issue digest + summary stats stay above toggle (always visible). Toggle = visibility-only (`display:none/block`), no re-render. `switchWorkspace()` in `state.js`. Auto-switch to Placement after zone reconfiguration (`JUST_RECONFIGURED`). **localStorage persistence** — active workspace survives page reloads and new sessions
+  - **Phase 4 — AI Integration Cleanup**: Split `formatAIAdvice()` into zone-only renderer (Workspace A). Move judgments map (`aiMoveJudgments`) in shared state — canonical move cards show AI badges (Confirmed/Modified/Keep) in Workspace B. Fridge annotations rendered inline in Workspace C. Zone gate spans workspaces (blocks move badges until zone acceptance). **Notification badge** — pulsing dot on workspace tabs when AI completes while user views another workspace, auto-clears on tab switch
+  - CSS: workspace toggle bar, notification badge with pulse animation, workspace panel containers, mobile responsive tabs
+  - Cache version bumped to v125
+  - **Test count**: 1706 unit tests passing across 63 files
+
+**Previous Enhancements** (15 Feb 2026):
 - **AI Zone Structure — Zone-First Flow** ✅:
   - Renamed "AI Recommendations" → "AI Zone Structure" and "Reconfigure Zones" → "Reorganise Zones" across all UI surfaces and `labels.js`
   - `cellarAI.js`: AI prompt restructured to assess zones first — 3 new schema fields: `zonesNeedReconfiguration` (bool), `zoneVerdict` (string), `proposedZoneChanges` (array of `{zoneId, currentLabel, proposedLabel, reason}`)
@@ -86,7 +97,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - Wrapped `startAuthenticatedApp()` and `onAuthStateChange` callback in try/catch to prevent unhandled promise rejections
   - Auth errors now show user-friendly toast + redirect to sign-in screen instead of raw error boundary
 
-- **Test count**: 1685 unit tests passing across 62 files
+- **Test count**: 1685 unit tests passing across 62 files (now 1706 across 63 files after Phase 4)
 
 - **Claude Opus 4.6 Adaptive Thinking — COMPLETE** ✅:
   - Complex AI tasks (cellar analysis, zone reconfiguration, zone capacity advice, award extraction) upgraded from Opus 4.5 to **Opus 4.6 with adaptive thinking** (`thinking: { type: 'adaptive' }` + `output_config: { effort }`)

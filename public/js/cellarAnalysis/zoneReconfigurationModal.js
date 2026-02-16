@@ -61,7 +61,7 @@ function renderError(message) {
       <div class="reconfig-error">
         <div class="reconfig-error-icon">⚠️</div>
         <p>${escapeHtml(message)}</p>
-        <p class="reconfig-error-hint">Close this dialog and try again, or use AI Zone Structure for analysis.</p>
+        <p class="reconfig-error-hint">Close this dialog and try again, or use AI Cellar Review for analysis.</p>
       </div>
     `;
   }

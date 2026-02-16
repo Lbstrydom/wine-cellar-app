@@ -23,6 +23,8 @@ function scanDirForPattern(fs, path, dir, pattern) {
 // Mock state.js before importing the module under test
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn(),
+  setAIMoveJudgments: vi.fn(),
+  switchWorkspace: vi.fn(),
 }));
 
 // Mock api.js
@@ -46,7 +48,7 @@ vi.mock('../../../public/js/utils.js', () => ({
 
 // Mock labels.js
 vi.mock('../../../public/js/cellarAnalysis/labels.js', () => ({
-  CTA_AI_RECOMMENDATIONS: 'AI Zone Structure',
+  CTA_AI_RECOMMENDATIONS: 'AI Cellar Review',
   CTA_RECONFIGURE_ZONES: 'Reorganise Zones',
   CTA_SETUP_ZONES: 'Setup Zones',
   CTA_GUIDE_MOVES: 'Guide Me Through Moves',
@@ -55,6 +57,16 @@ vi.mock('../../../public/js/cellarAnalysis/labels.js', () => ({
 // Mock aiAdviceActions.js (view tests don't need real action wiring)
 vi.mock('../../../public/js/cellarAnalysis/aiAdviceActions.js', () => ({
   wireAdviceActions: vi.fn(),
+}));
+
+// Mock moves.js (avoids app.js → grid.js → localStorage import chain)
+vi.mock('../../../public/js/cellarAnalysis/moves.js', () => ({
+  renderMoves: vi.fn(),
+}));
+
+// Mock fridge.js (avoids app.js import chain)
+vi.mock('../../../public/js/cellarAnalysis/fridge.js', () => ({
+  renderAIFridgeAnnotations: vi.fn(),
 }));
 
 import { formatAIAdvice, enrichMovesWithNames } from '../../../public/js/cellarAnalysis/aiAdvice.js';
@@ -132,41 +144,14 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Consider splitting into sub-regions.');
   });
 
-  it('renders confirmed moves with proper move-path structure showing from and to', () => {
+  it('does not render move sections — moves are now badges on canonical cards', () => {
     const html = formatAIAdvice(mockAdvice);
-    expect(html).toContain('ai-confirmed-moves');
-    expect(html).toContain('ai-move-badge--confirmed');
-    expect(html).toContain('CONFIRMED');
-    expect(html).toContain('ai-move-execute-btn');
-    expect(html).toContain('ai-move-dismiss-btn');
-    // Move cards should use the structured move-path layout
-    expect(html).toContain('move-details');
-    expect(html).toContain('move-path');
-    expect(html).toContain('<span class="from">R3C1</span>');
-    expect(html).toContain('<span class="to">R5C2</span>');
-  });
-
-  it('renders modified moves with reason, from/to path, and MODIFIED badge', () => {
-    const html = formatAIAdvice(mockAdvice);
-    expect(html).toContain('ai-modified-moves');
-    expect(html).toContain('MODIFIED');
-    expect(html).toContain('Better proximity to Italian zone');
-    // Modified moves should show both source and destination
-    expect(html).toContain('<span class="from">R1C4</span>');
-    expect(html).toContain('<span class="to">R8C3</span>');
-  });
-
-  it('renders rejected moves in collapsed <details> without action buttons', () => {
-    const html = formatAIAdvice(mockAdvice);
-    // Rejected section should NOT have "open" attribute
-    expect(html).toMatch(/<details class="ai-rejected-moves">/);
-    expect(html).not.toMatch(/<details class="ai-rejected-moves" open>/);
-    // Should NOT have execute/dismiss buttons in rejected section
-    const rejectedSection = html.match(/<details class="ai-rejected-moves">[\s\S]*?<\/details>/);
-    expect(rejectedSection).toBeTruthy();
-    expect(rejectedSection[0]).not.toContain('ai-move-execute-btn');
-    expect(rejectedSection[0]).not.toContain('ai-move-dismiss-btn');
-    expect(rejectedSection[0]).toContain('KEEP');
+    // Move sections were removed from formatAIAdvice in Phase 4
+    expect(html).not.toContain('ai-confirmed-moves');
+    expect(html).not.toContain('ai-modified-moves');
+    expect(html).not.toContain('ai-rejected-moves');
+    expect(html).not.toContain('ai-move-execute-btn');
+    expect(html).not.toContain('ai-move-dismiss-btn');
   });
 
   it('renders ambiguous wines with zone choice buttons per option', () => {
@@ -179,12 +164,9 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Fits either zone');
   });
 
-  it('renders fridge plan recommendations in collapsed <details>', () => {
+  it('does not render fridge plan — fridge is now annotated in Workspace C', () => {
     const html = formatAIAdvice(mockAdvice);
-    expect(html).toMatch(/<details class="ai-fridge-plan">/);
-    expect(html).not.toMatch(/<details class="ai-fridge-plan" open>/);
-    expect(html).toContain('crispWhite');
-    expect(html).toContain('Ready to drink');
+    expect(html).not.toContain('ai-fridge-plan');
   });
 
   it('renders bottom CTAs when zones do NOT need reconfiguration and no ambiguous wines', () => {
@@ -192,8 +174,8 @@ describe('formatAIAdvice', () => {
     const html = formatAIAdvice(advice);
     expect(html).toContain('data-action="ai-reconfigure-zones"');
     expect(html).toContain('Reorganise Zones');
-    expect(html).toContain('data-action="ai-scroll-to-moves"');
-    expect(html).toContain('Scroll to Suggested Moves');
+    expect(html).toContain('data-action="ai-view-moves"');
+    expect(html).toContain('View Moves');
   });
 
   it('gates moves behind zone acceptance when zonesNeedReconfiguration=true', () => {
@@ -203,22 +185,18 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('ai-zone-gate');
     expect(html).toContain('data-action="ai-accept-zones"');
     expect(html).toContain('Accept Zones');
-    // Moves container should be hidden
-    expect(html).toContain('id="ai-moves-gated"');
-    expect(html).toContain('display:none');
     // Bottom CTAs should NOT be shown while gated
-    expect(html).not.toContain('data-action="ai-scroll-to-moves"');
+    expect(html).not.toContain('data-action="ai-view-moves"');
   });
 
-  it('shows moves immediately when zonesNeedReconfiguration=false and no ambiguous wines', () => {
+  it('shows View Moves CTA when zonesNeedReconfiguration=false and no ambiguous wines', () => {
     const advice = { ...mockAdvice, ambiguousWines: [] };
     const html = formatAIAdvice(advice);
     // No gate
     expect(html).not.toContain('ai-zone-gate');
     expect(html).not.toContain('data-action="ai-accept-zones"');
-    // Moves should be visible (no display:none on the container)
-    expect(html).toContain('id="ai-moves-gated"');
-    expect(html).not.toMatch(/id="ai-moves-gated"[^>]*display:none/);
+    // View Moves button available
+    expect(html).toContain('data-action="ai-view-moves"');
   });
 
   it('renders Stage headers with numbered badges', () => {
@@ -234,7 +212,8 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('ai-stage-number');
     expect(html).toContain('Zone Structure');
     expect(html).toContain('Needs Your Input');
-    expect(html).toContain('Tactical Moves');
+    // Tactical Moves stage removed — moves are in Workspace B
+    expect(html).not.toContain('Tactical Moves');
   });
 
   it('gates ambiguous wines behind zone acceptance when zonesNeedReconfiguration=true', () => {
@@ -245,10 +224,10 @@ describe('formatAIAdvice', () => {
     expect(html).toMatch(/id="ai-input-gated"[^>]*display:none/);
   });
 
-  it('renders "Continue to Moves" button in Stage 2 when ambiguous wines present', () => {
+  it('renders "View Moves" button in Stage 2 when ambiguous wines present', () => {
     const html = formatAIAdvice(mockAdvice);
     expect(html).toContain('data-action="ai-show-moves"');
-    expect(html).toContain('Continue to Moves');
+    expect(html).toContain('View Moves');
   });
 
   it('renders proposedZoneChanges with labels and reasons', () => {
@@ -280,19 +259,17 @@ describe('formatAIAdvice', () => {
     expect(html).not.toContain('ai-zone-adjustments');
   });
 
-  it('skips move sections when needsZoneSetup=true (R1-7)', () => {
+  it('skips ambiguous wines and zone gate when needsZoneSetup=true (R1-7)', () => {
     const html = formatAIAdvice(mockAdvice, true);
-    expect(html).not.toContain('ai-confirmed-moves');
-    expect(html).not.toContain('ai-modified-moves');
-    expect(html).not.toContain('ai-rejected-moves');
     expect(html).not.toContain('ai-input-card');
+    expect(html).not.toContain('ai-zone-gate');
     // Summary/narrative should still be present
     expect(html).toContain('Your cellar is well-organized.');
   });
 
-  it('skips Reorganise Zones CTA and zone gate when needsZoneSetup=true', () => {
+  it('skips View Moves CTA and zone gate when needsZoneSetup=true', () => {
     const html = formatAIAdvice(mockAdvice, true);
-    expect(html).not.toContain('data-action="ai-scroll-to-moves"');
+    expect(html).not.toContain('data-action="ai-view-moves"');
     expect(html).not.toContain('ai-zone-gate');
   });
 
@@ -302,11 +279,7 @@ describe('formatAIAdvice', () => {
       layoutNarrative: '<img onerror=alert(1)>',
       zoneHealth: [{ zone: '<b>zone</b>', status: '<em>healthy</em>', recommendation: '<a>link</a>' }],
       zoneAdjustments: [{ zoneId: '<div>zone</div>', suggestion: '<span>test</span>' }],
-      confirmedMoves: [{ wineId: 1, wineName: '<script>x</script>', from: 'R1C1', to: 'R2C2' }],
-      modifiedMoves: [],
-      rejectedMoves: [],
       ambiguousWines: [{ wineId: 2, name: '<img src=x>', options: ['<zone>'], recommendation: '<b>rec</b>' }],
-      fridgePlan: { toAdd: [{ category: '<b>cat</b>', reason: '<script>r</script>' }] },
     };
     const html = formatAIAdvice(xssAdvice);
     expect(html).not.toContain('<script>');
@@ -328,30 +301,13 @@ describe('formatAIAdvice', () => {
     expect(formatAIAdvice(undefined)).toContain('No advice available.');
   });
 
-  it('renders empty string for section with 0 moves', () => {
+  it('does not render move-related elements regardless of move data', () => {
     const advice = { ...mockAdvice, confirmedMoves: [], modifiedMoves: [], rejectedMoves: [] };
     const html = formatAIAdvice(advice);
     expect(html).not.toContain('ai-confirmed-moves');
     expect(html).not.toContain('ai-modified-moves');
     expect(html).not.toContain('ai-rejected-moves');
-  });
-
-  it('renders zone label alongside slot coordinates when toZone is present', () => {
-    const advice = {
-      ...mockAdvice,
-      confirmedMoves: [{ wineId: 1, wineName: 'Test Wine', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage' }],
-    };
-    const html = formatAIAdvice(advice);
-    expect(html).toContain('move-zone-label');
-    expect(html).toContain('(Pinotage)');
-  });
-
-  it('omits zone label when toZone is not present', () => {
-    const advice = {
-      ...mockAdvice,
-      confirmedMoves: [{ wineId: 1, wineName: 'Test Wine', from: 'R3C1', to: 'R5C2' }],
-    };
-    const html = formatAIAdvice(advice);
+    // Move details like zone labels are no longer in formatAIAdvice
     expect(html).not.toContain('move-zone-label');
   });
 });

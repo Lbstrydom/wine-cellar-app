@@ -6,6 +6,23 @@
 /**
  * Module state for cellar analysis.
  */
+/** @type {'zones'|'placement'|'fridge'} */
+const DEFAULT_WORKSPACE = 'zones';
+const VALID_WORKSPACES = ['zones', 'placement', 'fridge'];
+const WORKSPACE_STORAGE_KEY = 'cellar-analysis-workspace';
+
+/**
+ * Load persisted workspace from localStorage, falling back to default.
+ * @returns {'zones'|'placement'|'fridge'}
+ */
+function loadPersistedWorkspace() {
+  try {
+    const stored = localStorage.getItem(WORKSPACE_STORAGE_KEY);
+    if (stored && VALID_WORKSPACES.includes(stored)) return stored;
+  } catch (_) { /* localStorage unavailable */ }
+  return DEFAULT_WORKSPACE;
+}
+
 export const analysisState = {
   currentAnalysis: null,
   analysisLoaded: false,
@@ -13,7 +30,10 @@ export const analysisState = {
   currentZoneMoves: null,
   currentZoneIndex: 0,
   zoneChatContext: null,
-  fridgeOrganizeMoves: null
+  fridgeOrganizeMoves: null,
+  activeWorkspace: loadPersistedWorkspace(),
+  /** @type {Map<number, {judgment: 'confirmed'|'modified'|'rejected', reason?: string, to?: string, toZone?: string}>|null} */
+  aiMoveJudgments: null
 };
 
 /**
@@ -113,6 +133,76 @@ export function setZoneChatContext(context) {
 }
 
 /**
+ * Get active workspace tab.
+ * @returns {'zones'|'placement'|'fridge'}
+ */
+export function getActiveWorkspace() {
+  return analysisState.activeWorkspace;
+}
+
+/**
+ * Set active workspace tab (state only, no DOM update).
+ * @param {'zones'|'placement'|'fridge'} workspace
+ */
+export function setActiveWorkspace(workspace) {
+  analysisState.activeWorkspace = workspace;
+}
+
+/**
+ * Switch the active workspace: updates state, tab highlights, and panel visibility.
+ * Shared helper so both cellarAnalysis.js (user click) and analysis.js (auto-switch)
+ * use the same logic without circular imports.
+ * @param {'zones'|'placement'|'fridge'} workspace
+ */
+export function switchWorkspace(workspace) {
+  analysisState.activeWorkspace = workspace;
+
+  // Persist so the workspace survives page reloads
+  try { localStorage.setItem(WORKSPACE_STORAGE_KEY, workspace); } catch (_) { /* noop */ }
+
+  const tabs = document.querySelectorAll('.workspace-tab');
+  tabs.forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.workspace === workspace);
+    // Clear notification badge when switching TO that workspace
+    if (tab.dataset.workspace === workspace) {
+      tab.classList.remove('workspace-tab--notified');
+    }
+  });
+
+  const panels = document.querySelectorAll('.workspace-panel');
+  panels.forEach(panel => {
+    panel.style.display = panel.dataset.workspace === workspace ? '' : 'none';
+  });
+}
+
+/**
+ * Show a notification badge on a workspace tab to signal new content.
+ * Does nothing if the user is already viewing that workspace.
+ * @param {'zones'|'placement'|'fridge'} workspace - Tab to badge
+ */
+export function notifyWorkspaceTab(workspace) {
+  if (analysisState.activeWorkspace === workspace) return;
+  const tab = document.querySelector(`.workspace-tab[data-workspace="${workspace}"]`);
+  if (tab) tab.classList.add('workspace-tab--notified');
+}
+
+/**
+ * Get AI move judgments map (wineId -> judgment).
+ * @returns {Map|null}
+ */
+export function getAIMoveJudgments() {
+  return analysisState.aiMoveJudgments;
+}
+
+/**
+ * Set AI move judgments map.
+ * @param {Map|null} judgments
+ */
+export function setAIMoveJudgments(judgments) {
+  analysisState.aiMoveJudgments = judgments;
+}
+
+/**
  * Reset zone chat state.
  */
 function resetZoneChatState() {
@@ -130,4 +220,7 @@ function resetAnalysisState() {
   analysisState.currentZoneIndex = 0;
   analysisState.zoneChatContext = null;
   analysisState.fridgeOrganizeMoves = null;
+  analysisState.activeWorkspace = DEFAULT_WORKSPACE;
+  analysisState.aiMoveJudgments = null;
+  try { localStorage.removeItem(WORKSPACE_STORAGE_KEY); } catch (_) { /* noop */ }
 }

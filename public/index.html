@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260216f">
+  <link rel="stylesheet" href="/css/styles.css?v=20260216k">
 </head>
 <body>
   <header>
@@ -156,14 +156,25 @@
     <div class="analysis-view-header">
       <h2>Cellar Analysis</h2>
       <div class="analysis-actions">
-        <!-- Recommendations first (logical sequence: assess -> act) -->
-        <button class="btn btn-secondary" id="get-ai-advice-btn">AI Zone Structure</button>
-        <!-- Primary CTA - text/action driven by state machine -->
-        <button class="btn btn-primary" id="cellar-action-btn">Setup Zones</button>
-        <!-- Refresh icon -->
-        <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn" title="Refresh analysis" aria-label="Refresh analysis">↻</button>
-        <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
-        <span class="analysis-cache-status" id="analysis-cache-status"></span>
+        <!-- Workflow buttons: stacked vertically with helper microcopy -->
+        <div class="analysis-action-stack">
+          <div class="analysis-action-item">
+            <button class="btn btn-secondary" id="get-ai-advice-btn">AI Cellar Review</button>
+            <span class="action-hint">AI assessment of zone structure, placement, and fridge.</span>
+          </div>
+          <div class="analysis-action-item">
+            <button class="btn btn-primary" id="cellar-action-btn">Setup Zones</button>
+            <span class="action-hint" id="cellar-action-hint">Define or reconfigure zone boundaries and row allocation.</span>
+          </div>
+        </div>
+        <!-- Refresh snapshot + status -->
+        <div class="analysis-action-meta">
+          <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn"
+                  title="Refresh Snapshot — recomputes analysis from current layout. Does not re-run AI or apply moves."
+                  aria-label="Refresh Snapshot">↻</button>
+          <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
+          <span class="analysis-cache-status" id="analysis-cache-status"></span>
+        </div>
       </div>
     </div>
 
@@ -172,97 +183,113 @@
     </div>
     <div class="analysis-alerts" id="analysis-alerts"></div>
 
-    <!-- AI Zone Structure Section (moved up from bottom) -->
-    <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
+    <!-- Workspace toggle: Zone Analysis | Cellar Placement | Fridge -->
+    <div class="analysis-workspace-toggle" id="analysis-workspace-toggle">
+      <button class="workspace-tab active" data-workspace="zones" id="workspace-tab-zones">Zone Analysis</button>
+      <button class="workspace-tab" data-workspace="placement" id="workspace-tab-placement">Cellar Placement</button>
+      <button class="workspace-tab" data-workspace="fridge" id="workspace-tab-fridge">Fridge</button>
+    </div>
 
-    <!-- Zone Setup Wizard -->
-    <div class="zone-setup-wizard" id="zone-setup-wizard" style="display: none;">
-      <div class="wizard-header">
-        <h3>Zone Setup Wizard</h3>
-        <p class="wizard-subtitle">Review and confirm the proposed zone layout for your cellar</p>
-        <button class="btn btn-small btn-secondary" id="toggle-zone-chat-btn">
-          💬 Chat About Zones
-        </button>
-      </div>
+    <!-- Workspace A: Zone Analysis -->
+    <div class="workspace-panel" id="workspace-zones" data-workspace="zones">
+      <!-- AI Cellar Review Section -->
+      <div class="analysis-ai-advice" id="analysis-ai-advice" style="display: none;"></div>
 
-      <!-- Zone Chat Panel -->
-      <div class="zone-chat-panel" id="zone-chat-panel" style="display: none;">
-        <div class="zone-chat-header">
-          <span>Zone Classification Chat</span>
-          <button class="btn-icon" id="zone-chat-close-btn" title="Close chat">✕</button>
+      <!-- Zone Setup Wizard -->
+      <div class="zone-setup-wizard" id="zone-setup-wizard" style="display: none;">
+        <div class="wizard-header">
+          <h3>Zone Setup Wizard</h3>
+          <p class="wizard-subtitle">Review and confirm the proposed zone layout for your cellar</p>
+          <button class="btn btn-small btn-secondary" id="toggle-zone-chat-btn">
+            💬 Chat About Zones
+          </button>
         </div>
-        <div class="zone-chat-messages" id="zone-chat-messages">
-          <div class="chat-message assistant">
-            <div class="chat-content">
-              <p>I'm here to help you review and adjust zone classifications. You can:</p>
-              <ul>
-                <li>Ask why a specific wine is in a certain zone</li>
-                <li>Challenge a classification you disagree with</li>
-                <li>Request reclassification of wines</li>
-                <li>Ask about zone boundaries and rules</li>
-              </ul>
-              <p>Try asking: "Why is [wine name] in the dessert zone?" or "Move my Amarone to the appassimento zone"</p>
+
+        <!-- Zone Chat Panel -->
+        <div class="zone-chat-panel" id="zone-chat-panel" style="display: none;">
+          <div class="zone-chat-header">
+            <span>Zone Classification Chat</span>
+            <button class="btn-icon" id="zone-chat-close-btn" title="Close chat">✕</button>
+          </div>
+          <div class="zone-chat-messages" id="zone-chat-messages">
+            <div class="chat-message assistant">
+              <div class="chat-content">
+                <p>I'm here to help you review and adjust zone classifications. You can:</p>
+                <ul>
+                  <li>Ask why a specific wine is in a certain zone</li>
+                  <li>Challenge a classification you disagree with</li>
+                  <li>Request reclassification of wines</li>
+                  <li>Ask about zone boundaries and rules</li>
+                </ul>
+                <p>Try asking: "Why is [wine name] in the dessert zone?" or "Move my Amarone to the appassimento zone"</p>
+              </div>
             </div>
           </div>
+          <div class="zone-chat-input-container">
+            <input type="text" id="zone-chat-input" placeholder="Ask about zone classifications..."
+                   >
+            <button class="btn btn-primary btn-small" id="zone-chat-send-btn">Send</button>
+          </div>
         </div>
-        <div class="zone-chat-input-container">
-          <input type="text" id="zone-chat-input" placeholder="Ask about zone classifications..."
-                 >
-          <button class="btn btn-primary btn-small" id="zone-chat-send-btn">Send</button>
+
+        <div class="wizard-step" id="wizard-step-1">
+          <h4>Step 1: Review Proposed Layout</h4>
+          <p>Based on your 122 bottles, here's the suggested zone arrangement:</p>
+          <div class="zone-proposal-list" id="zone-proposal-list">
+            <div class="analysis-loading">Generating proposal...</div>
+          </div>
+          <div class="wizard-actions">
+            <button class="btn btn-primary" id="confirm-layout-btn">Confirm Layout</button>
+            <button class="btn btn-secondary" id="cancel-setup-btn">Cancel</button>
+          </div>
+        </div>
+
+        <div class="wizard-step" id="wizard-step-2" style="display: none;">
+          <h4>Step 2: Execute Moves</h4>
+          <p>Now let's move your bottles to their designated zones. Work through zone by zone:</p>
+          <div class="zone-moves-wizard" id="zone-moves-wizard">
+            <div class="analysis-loading">Generating moves...</div>
+          </div>
         </div>
       </div>
 
-      <div class="wizard-step" id="wizard-step-1">
-        <h4>Step 1: Review Proposed Layout</h4>
-        <p>Based on your 122 bottles, here's the suggested zone arrangement:</p>
-        <div class="zone-proposal-list" id="zone-proposal-list">
-          <div class="analysis-loading">Generating proposal...</div>
-        </div>
-        <div class="wizard-actions">
-          <button class="btn btn-primary" id="confirm-layout-btn">Confirm Layout</button>
-          <button class="btn btn-secondary" id="cancel-setup-btn">Cancel</button>
-        </div>
-      </div>
-
-      <div class="wizard-step" id="wizard-step-2" style="display: none;">
-        <h4>Step 2: Execute Moves</h4>
-        <p>Now let's move your bottles to their designated zones. Work through zone by zone:</p>
-        <div class="zone-moves-wizard" id="zone-moves-wizard">
-          <div class="analysis-loading">Generating moves...</div>
-        </div>
+      <!-- Zone Narratives Section -->
+      <div class="analysis-zones" id="analysis-zones" style="display: none;">
+        <h3>Zone Overview</h3>
+        <p class="section-desc">How your cellar rows are grouped by wine style.</p>
+        <div class="zone-cards-grid" id="zone-cards-grid"></div>
       </div>
     </div>
 
-    <!-- Zone Narratives Section -->
-    <div class="analysis-zones" id="analysis-zones" style="display: none;">
-      <h3>Zone Overview</h3>
-      <p class="section-desc">How your cellar rows are grouped by wine style.</p>
-      <div class="zone-cards-grid" id="zone-cards-grid"></div>
-    </div>
+    <!-- Workspace B: Cellar Placement -->
+    <div class="workspace-panel" id="workspace-placement" data-workspace="placement" style="display: none;">
+      <!-- Suggested Moves Section -->
+      <div class="analysis-moves" id="analysis-moves">
+        <h3>Suggested Moves</h3>
+        <p class="section-desc">Bottles that should be moved to their correct zones.</p>
+        <div class="moves-list" id="moves-list"></div>
+        <div class="moves-actions" id="moves-actions" style="display: none;">
+          <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
+        </div>
+      </div>
 
-    <!-- Suggested Moves Section -->
-    <div class="analysis-moves" id="analysis-moves">
-      <h3>Suggested Moves</h3>
-      <p class="section-desc">Bottles that should be moved to their correct zones.</p>
-      <div class="moves-list" id="moves-list"></div>
-      <div class="moves-actions" id="moves-actions" style="display: none;">
-        <button class="btn btn-primary btn-small" id="execute-all-moves-btn">Execute All Moves</button>
+      <!-- Row Compaction Section -->
+      <div class="analysis-compaction" id="analysis-compaction" style="display: none;">
+        <h3>Row Compaction</h3>
+        <p class="section-desc">Fill gaps to keep rows packed neatly.</p>
+        <div class="row-allocation-info" id="row-allocation-info" style="display: none;"></div>
+        <div class="compaction-list" id="compaction-list"></div>
       </div>
     </div>
 
-    <!-- Row Compaction Section -->
-    <div class="analysis-compaction" id="analysis-compaction" style="display: none;">
-      <h3>Row Compaction</h3>
-      <p class="section-desc">Fill gaps to keep rows packed neatly.</p>
-      <div class="row-allocation-info" id="row-allocation-info" style="display: none;"></div>
-      <div class="compaction-list" id="compaction-list"></div>
-    </div>
-
-    <!-- Fridge Status Section -->
-    <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
-      <h3>Fridge Status</h3>
-      <p class="section-desc">Fridge capacity and wine rotation suggestions.</p>
-      <div class="fridge-status-content" id="fridge-status-content"></div>
+    <!-- Workspace C: Fridge -->
+    <div class="workspace-panel" id="workspace-fridge" data-workspace="fridge" style="display: none;">
+      <!-- Fridge Status Section -->
+      <div class="analysis-fridge" id="analysis-fridge" style="display: none;">
+        <h3>Fridge Status</h3>
+        <p class="section-desc">Fridge capacity and wine rotation suggestions.</p>
+        <div class="fridge-status-content" id="fridge-status-content"></div>
+      </div>
     </div>
 
   </div>
