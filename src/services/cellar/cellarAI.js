@@ -222,13 +222,14 @@ ${fridgeContext ? `<FRIDGE>${JSON.stringify(fridgeContext)}</FRIDGE>` : ''}
 2. Confirm moves that fix clear misplacements. Reject moves for borderline cases.
 3. Flag only genuinely ambiguous wines (max 5). Use zone IDs in options.
 4. If duplicatePlacements > 0, call this out explicitly as a data-integrity issue in zoneVerdict or summary.
-5. If fridge data present, suggest a diverse stocking plan.
-6. Write 1-2 sentence summary for the owner.
+5. For each proposed zone change, include a changeType: remove | rename | enlarge | merge | split | add | adjust.
+6. If fridge data present, suggest a diverse stocking plan.
+7. Write 1-2 sentence summary for the owner.
 </TASK>
 
 <OUTPUT_FORMAT>
 Respond with ONLY valid JSON:
-{"zonesNeedReconfiguration":false,"zoneVerdict":"string","proposedZoneChanges":[],"confirmedMoves":[{"wineId":0,"from":"slot","to":"slot"}],"modifiedMoves":[],"rejectedMoves":[{"wineId":0,"reason":"string"}],"ambiguousWines":[{"wineId":0,"name":"string","options":["zone_id"],"recommendation":"string"}],"zoneAdjustments":[],"zoneHealth":[{"zone":"string","status":"string","recommendation":"string"}],"fridgePlan":{"toAdd":[{"wineId":0,"reason":"string","category":"string"}],"toRemove":[],"coverageAfter":{}},"layoutNarrative":"string","summary":"string"}
+{"zonesNeedReconfiguration":false,"zoneVerdict":"string","proposedZoneChanges":[{"changeType":"rename","zoneId":"string","currentLabel":"string","proposedLabel":"string","reason":"string"}],"confirmedMoves":[{"wineId":0,"from":"slot","to":"slot"}],"modifiedMoves":[],"rejectedMoves":[{"wineId":0,"reason":"string"}],"ambiguousWines":[{"wineId":0,"name":"string","options":["zone_id"],"recommendation":"string"}],"zoneAdjustments":[{"zoneId":"string","suggestion":"string"}],"zoneHealth":[{"zone":"string","status":"string","recommendation":"string"}],"fridgePlan":{"toAdd":[{"wineId":0,"reason":"string","category":"string"}],"toRemove":[],"coverageAfter":{}},"layoutNarrative":"string","summary":"string"}
 </OUTPUT_FORMAT>`;
 }
 
@@ -458,6 +459,115 @@ function resolveAIMovesToSlots(aiMoves, suggestedMoves) {
 }
 
 /**
+ * Return first non-empty string value from candidates.
+ * @param {Array<unknown>} candidates
+ * @returns {string}
+ */
+function firstNonEmptyString(candidates) {
+  for (const value of candidates) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed.length > 0) return trimmed;
+    }
+  }
+  return '';
+}
+
+/**
+ * Normalize a proposed zone change entry from AI output.
+ * @param {unknown} item
+ * @returns {{changeType:string|null,zoneId:string,currentLabel:string|null,proposedLabel:string|null,reason:string}|null}
+ */
+function normalizeProposedZoneChange(item) {
+  if (!item || typeof item !== 'object') return null;
+
+  const normalizeChangeType = (rawType, reasonText) => {
+    const value = firstNonEmptyString([rawType]).toLowerCase().replace(/[\s_]+/g, '_');
+    const reason = firstNonEmptyString([reasonText]).toLowerCase();
+
+    if (['remove', 'retire', 'delete', 'drop'].includes(value)) return 'remove';
+    if (['rename', 'relabel'].includes(value)) return 'rename';
+    if (['enlarge', 'expand', 'grow', 'increase_capacity'].includes(value)) return 'enlarge';
+    if (['merge', 'combine'].includes(value)) return 'merge';
+    if (['split', 'divide'].includes(value)) return 'split';
+    if (['add', 'create', 'new'].includes(value)) return 'add';
+    if (['adjust', 'move', 'reassign', 'reallocate'].includes(value)) return 'adjust';
+
+    if (/\b(remove|retire|delete|drop)\b/.test(reason)) return 'remove';
+    if (/\b(rename|relabel)\b/.test(reason)) return 'rename';
+    if (/\b(enlarge|expand|add row|capacity|more space)\b/.test(reason)) return 'enlarge';
+    if (/\b(merge|combine)\b/.test(reason)) return 'merge';
+    if (/\b(split|divide)\b/.test(reason)) return 'split';
+    if (/\b(add|create|new zone)\b/.test(reason)) return 'add';
+
+    return null;
+  };
+
+  const zoneId = firstNonEmptyString([
+    item.zoneId, item.zone_id, item.zone, item.targetZoneId, item.target_zone_id
+  ]);
+  const currentLabel = firstNonEmptyString([
+    item.currentLabel, item.current_label, item.current, item.fromLabel, item.from
+  ]);
+  const proposedLabel = firstNonEmptyString([
+    item.proposedLabel, item.proposed_label, item.proposed, item.toLabel, item.to
+  ]);
+  const reason = firstNonEmptyString([
+    item.reason, item.rationale, item.explanation, item.suggestion, item.recommendation
+  ]);
+  const changeType = normalizeChangeType(
+    firstNonEmptyString([item.changeType, item.change_type, item.action, item.type]),
+    reason
+  );
+
+  if (!zoneId && !currentLabel && !proposedLabel && !reason) return null;
+
+  return {
+    changeType,
+    zoneId: zoneId || currentLabel || proposedLabel || 'zone',
+    currentLabel: currentLabel || null,
+    proposedLabel: proposedLabel || null,
+    reason: reason || ''
+  };
+}
+
+/**
+ * Normalize legacy zone adjustment entries.
+ * @param {unknown} item
+ * @returns {{zoneId:string,suggestion:string}|null}
+ */
+function normalizeZoneAdjustment(item) {
+  if (typeof item === 'string') {
+    const raw = item.trim();
+    if (!raw) return null;
+
+    const colonIndex = raw.indexOf(':');
+    if (colonIndex > 0) {
+      const zoneId = raw.slice(0, colonIndex).trim() || 'zone';
+      const suggestion = raw.slice(colonIndex + 1).trim() || raw;
+      return { zoneId, suggestion };
+    }
+    return { zoneId: 'zone', suggestion: raw };
+  }
+
+  if (!item || typeof item !== 'object') return null;
+
+  const zoneId = firstNonEmptyString([
+    item.zoneId, item.zone_id, item.zone, item.currentLabel, item.current_label, item.name
+  ]);
+  const suggestion = firstNonEmptyString([
+    item.suggestion, item.reason, item.rationale, item.description, item.change, item.recommendation
+  ]);
+
+  if (!zoneId && !suggestion) return null;
+
+  return {
+    zoneId: zoneId || 'zone',
+    suggestion: suggestion || 'Review this zone configuration.'
+  };
+}
+
+/**
  * Validate advice schema.
  * @param {Object} parsed
  * @returns {Object} Validated advice
@@ -473,15 +583,27 @@ function validateAdviceSchema(parsed) {
       .filter(w => w.options.length > 0) // Drop wines with zero valid options
     : [];
 
+  const validatedProposedZoneChanges = Array.isArray(parsed.proposedZoneChanges)
+    ? parsed.proposedZoneChanges
+      .map(normalizeProposedZoneChange)
+      .filter(Boolean)
+    : [];
+
+  const validatedZoneAdjustments = Array.isArray(parsed.zoneAdjustments)
+    ? parsed.zoneAdjustments
+      .map(normalizeZoneAdjustment)
+      .filter(Boolean)
+    : [];
+
   return {
     zonesNeedReconfiguration: parsed.zonesNeedReconfiguration === true,
     zoneVerdict: typeof parsed.zoneVerdict === 'string' ? parsed.zoneVerdict : null,
-    proposedZoneChanges: Array.isArray(parsed.proposedZoneChanges) ? parsed.proposedZoneChanges : [],
+    proposedZoneChanges: validatedProposedZoneChanges,
     confirmedMoves: Array.isArray(parsed.confirmedMoves) ? parsed.confirmedMoves : [],
     modifiedMoves: Array.isArray(parsed.modifiedMoves) ? parsed.modifiedMoves : [],
     rejectedMoves: Array.isArray(parsed.rejectedMoves) ? parsed.rejectedMoves : [],
     ambiguousWines: validatedAmbiguous,
-    zoneAdjustments: Array.isArray(parsed.zoneAdjustments) ? parsed.zoneAdjustments : [],
+    zoneAdjustments: validatedZoneAdjustments,
     zoneHealth: Array.isArray(parsed.zoneHealth) ? parsed.zoneHealth : [],
     fridgeCandidates: Array.isArray(parsed.fridgeCandidates) ? parsed.fridgeCandidates : [],
     fridgePlan: parsed.fridgePlan && typeof parsed.fridgePlan === 'object' ? {

@@ -1388,6 +1388,37 @@
   font-weight: 600;
   margin-right: 0.5rem;
 }
+.zone-change-type-badge {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  margin-right: 0.5rem;
+  border: 1px solid var(--border);
+  background: rgba(var(--accent-rgb), 0.15);
+}
+.zone-change-type-badge--remove {
+  border-color: rgba(239, 68, 68, 0.6);
+  background: rgba(239, 68, 68, 0.16);
+}
+.zone-change-type-badge--rename {
+  border-color: rgba(59, 130, 246, 0.6);
+  background: rgba(59, 130, 246, 0.16);
+}
+.zone-change-type-badge--enlarge {
+  border-color: rgba(245, 158, 11, 0.6);
+  background: rgba(245, 158, 11, 0.16);
+}
+.zone-change-type-badge--merge,
+.zone-change-type-badge--split,
+.zone-change-type-badge--add,
+.zone-change-type-badge--adjust {
+  border-color: rgba(156, 163, 175, 0.55);
+  background: rgba(156, 163, 175, 0.14);
+}
 .zone-change-arrow {
   font-size: 0.9rem;
   color: var(--text-muted);

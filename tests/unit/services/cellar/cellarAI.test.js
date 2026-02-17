@@ -171,6 +171,53 @@ describe('validateAdviceSchema', () => {
     expect(validOptions).toContain('shiraz');
     expect(validOptions).not.toContain('nonexistent_zone_xyz');
   });
+
+  it('normalizes malformed zoneAdjustments and drops empty entries', () => {
+    const result = validateAdviceSchema({
+      zoneAdjustments: [
+        'southern_france: split by style',
+        { zone_id: 'aromatic_whites', reason: 'contains red wines' },
+        { zoneId: ' ', suggestion: ' ' },
+        null
+      ]
+    });
+
+    expect(result.zoneAdjustments).toEqual([
+      { zoneId: 'southern_france', suggestion: 'split by style' },
+      { zoneId: 'aromatic_whites', suggestion: 'contains red wines' }
+    ]);
+  });
+
+  it('normalizes proposedZoneChanges and removes blank objects', () => {
+    const result = validateAdviceSchema({
+      proposedZoneChanges: [
+        { zone_id: 'southern_france', current_label: 'Southern France', proposed_label: 'Rhone', rationale: 'better grouping' },
+        { zoneId: '', currentLabel: '', proposedLabel: '', reason: '' }
+      ]
+    });
+
+    expect(result.proposedZoneChanges).toEqual([
+      {
+        changeType: null,
+        zoneId: 'southern_france',
+        currentLabel: 'Southern France',
+        proposedLabel: 'Rhone',
+        reason: 'better grouping'
+      }
+    ]);
+  });
+
+  it('normalizes proposedZoneChanges changeType aliases', () => {
+    const result = validateAdviceSchema({
+      proposedZoneChanges: [
+        { action: 'retire', zoneId: 'old_zone', reason: 'remove this legacy zone' },
+        { changeType: 'expand', zoneId: 'cabernet', reason: 'add row capacity' }
+      ]
+    });
+
+    expect(result.proposedZoneChanges[0].changeType).toBe('remove');
+    expect(result.proposedZoneChanges[1].changeType).toBe('enlarge');
+  });
 });
 
 describe('enforceAdviceConsistency', () => {

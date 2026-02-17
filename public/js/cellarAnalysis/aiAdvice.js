@@ -167,6 +167,18 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
 
   const zonesNeedReconfig = advice.zonesNeedReconfiguration === true;
   const hasProposedChanges = advice.proposedZoneChanges?.length > 0;
+  const safeZoneAdjustments = (advice.zoneAdjustments || [])
+    .map(adj => {
+      if (!adj || typeof adj !== 'object') return null;
+      const zoneId = typeof adj.zoneId === 'string' ? adj.zoneId.trim() : '';
+      const suggestion = typeof adj.suggestion === 'string' ? adj.suggestion.trim() : '';
+      if (!zoneId && !suggestion) return null;
+      return {
+        zoneId: zoneId || 'Zone',
+        suggestion: suggestion || 'Review this zone configuration.'
+      };
+    })
+    .filter(Boolean);
   const hasZoneHealthIssues = (advice.zoneHealth || []).some(z => {
     const status = String(z?.status || '').toLowerCase().trim();
     return status && !['healthy', 'good'].includes(status);
@@ -178,6 +190,35 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     hasProposedChanges ||
     hasZoneHealthIssues ||
     verdictTextSignalsIssue;
+  const normalizeZoneChangeType = (change) => {
+    const raw = String(change?.changeType || '').toLowerCase().trim().replace(/[\s_]+/g, '_');
+    const reason = String(change?.reason || '').toLowerCase();
+
+    if (['remove', 'retire', 'delete', 'drop'].includes(raw)) return 'remove';
+    if (['rename', 'relabel'].includes(raw)) return 'rename';
+    if (['enlarge', 'expand', 'grow', 'increase_capacity'].includes(raw)) return 'enlarge';
+    if (['merge', 'combine'].includes(raw)) return 'merge';
+    if (['split', 'divide'].includes(raw)) return 'split';
+    if (['add', 'create', 'new'].includes(raw)) return 'add';
+    if (['adjust', 'move', 'reassign', 'reallocate'].includes(raw)) return 'adjust';
+
+    if (/\b(remove|retire|delete|drop)\b/.test(reason)) return 'remove';
+    if (/\b(rename|relabel)\b/.test(reason)) return 'rename';
+    if (/\b(enlarge|expand|add row|capacity|more space)\b/.test(reason)) return 'enlarge';
+    if (/\b(merge|combine)\b/.test(reason)) return 'merge';
+    if (/\b(split|divide)\b/.test(reason)) return 'split';
+    if (/\b(add|create|new zone)\b/.test(reason)) return 'add';
+    return 'adjust';
+  };
+  const zoneChangeTypeLabel = {
+    remove: 'Remove',
+    rename: 'Rename',
+    enlarge: 'Enlarge',
+    merge: 'Merge',
+    split: 'Split',
+    add: 'Add',
+    adjust: 'Adjust'
+  };
 
   let html = '<div class="ai-advice-structured">';
 
@@ -226,7 +267,9 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
     html += `<summary><h4>Proposed Zone Changes <span class="ai-count-badge">${advice.proposedZoneChanges.length}</span></h4></summary>`;
     html += '<p class="ai-section-hint">The AI recommends updating these zones before moving bottles.</p>';
     advice.proposedZoneChanges.forEach(change => {
+      const changeType = normalizeZoneChangeType(change);
       html += `<div class="zone-change-item">
+        <span class="zone-change-type-badge zone-change-type-badge--${escapeHtml(changeType)}">${escapeHtml(zoneChangeTypeLabel[changeType] || 'Adjust')}</span>
         <span class="zone-change-id">${escapeHtml(change.zoneId)}</span>`;
       if (change.currentLabel && change.proposedLabel) {
         html += ` <span class="zone-change-arrow">${escapeHtml(change.currentLabel)} &rarr; ${escapeHtml(change.proposedLabel)}</span>`;
@@ -238,11 +281,11 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
   }
 
   // 5b. Zone Adjustments (legacy format — when no proposedZoneChanges)
-  if (!hasProposedChanges && advice.zoneAdjustments?.length > 0) {
+  if (!hasProposedChanges && safeZoneAdjustments.length > 0) {
     html += '<details class="ai-zone-adjustments" open>';
-    html += `<summary><h4>Suggested Zone Changes <span class="ai-count-badge">${advice.zoneAdjustments.length}</span></h4></summary>`;
+    html += `<summary><h4>Suggested Zone Changes <span class="ai-count-badge">${safeZoneAdjustments.length}</span></h4></summary>`;
     html += '<ul>';
-    advice.zoneAdjustments.forEach(adj => {
+    safeZoneAdjustments.forEach(adj => {
       html += `<li><strong>${escapeHtml(adj.zoneId)}</strong>: ${escapeHtml(adj.suggestion)}</li>`;
     });
     html += '</ul></details>';

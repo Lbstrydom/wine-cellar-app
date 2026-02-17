@@ -155,6 +155,17 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Consider splitting into sub-regions.');
   });
 
+  it('does not render blank zone adjustments when entries are malformed', () => {
+    const advice = {
+      ...mockAdvice,
+      proposedZoneChanges: [],
+      zoneAdjustments: [{ zoneId: ' ', suggestion: ' ' }, {}, null]
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).not.toContain('ai-zone-adjustments');
+    expect(html).not.toContain('<strong></strong>:');
+  });
+
   it('does not render move sections — moves are now badges on canonical cards', () => {
     const html = formatAIAdvice(mockAdvice);
     // Move sections were removed from formatAIAdvice in Phase 4
@@ -255,6 +266,20 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('SA Reds');
     expect(html).toContain('Premium Reds');
     expect(html).toContain('Better reflects collection');
+  });
+
+  it('renders change-type badge for proposed zone changes', () => {
+    const advice = {
+      ...mockAdvice,
+      zonesNeedReconfiguration: true,
+      proposedZoneChanges: [
+        { changeType: 'rename', zoneId: 'southern_france', currentLabel: 'Southern France', proposedLabel: 'Rhone', reason: 'Rename for clarity' }
+      ],
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('zone-change-type-badge');
+    expect(html).toContain('zone-change-type-badge--rename');
+    expect(html).toContain('Rename');
   });
 
   it('does not render zone adjustments when proposedZoneChanges are present', () => {
