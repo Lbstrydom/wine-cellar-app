@@ -8,6 +8,7 @@ import db from '../../db/index.js';
 import { CELLAR_ZONES } from '../../config/cellarZones.js';
 import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 import { findBestZone } from '../cellar/cellarPlacement.js';
+import { MIN_BOTTLES_FOR_ROW } from './rowAllocationSolver.js';
 
 // Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
 const CELLAR_LAYOUT = {
@@ -121,6 +122,7 @@ export async function proposeZoneLayout(cellarId) {
 
   // Calculate required rows per zone
   const proposals = [];
+  const underThresholdZones = [];
   let currentRow = 1;
 
   zoneOrder.forEach(zoneId => {
@@ -129,6 +131,17 @@ export async function proposeZoneLayout(cellarId) {
 
     const zone = entry.zone;
     const bottleCount = entry.count;
+
+    // Under-threshold zones skip row allocation — bottles stay in buffer/overflow
+    if (bottleCount < MIN_BOTTLES_FOR_ROW) {
+      underThresholdZones.push({
+        zoneId,
+        displayName: zone?.displayName || zoneId,
+        bottleCount,
+        reason: `Only ${bottleCount} bottle(s) — needs ${MIN_BOTTLES_FOR_ROW} to justify a dedicated row`
+      });
+      return;
+    }
 
     // Calculate rows needed (round up)
     let slotsNeeded = bottleCount;
@@ -164,6 +177,7 @@ export async function proposeZoneLayout(cellarId) {
     totalBottles: Array.from(bottlesByZone.values()).reduce((sum, e) => sum + e.count, 0),
     totalRows: currentRow - 1,
     proposals,
+    underThresholdZones,
     unassignedRows: currentRow <= 19 ?
       Array.from({length: 19 - currentRow + 1}, (_, i) => `R${currentRow + i}`) : []
   };

@@ -5,15 +5,13 @@
 
 import { zoneChatMessage, reassignWineZone, getZoneLayoutProposal } from '../api.js';
 import { showToast, escapeHtml } from '../utils.js';
+import { renderZoneProposal } from './zoneProposalView.js';
 import {
   getZoneChatContext,
   setZoneChatContext,
   getCurrentProposal,
   setCurrentProposal
 } from './state.js';
-
-// Import renderZoneProposal from zones - but we need to duplicate it here to avoid circular deps
-// Or we can inline the function call
 
 /**
  * Toggle zone chat panel visibility.
@@ -279,55 +277,6 @@ async function refreshProposalIfActive() {
       proposalEl.innerHTML = renderZoneProposal(newProposal);
     }
   }
-}
-
-/**
- * Render zone layout proposal as HTML.
- * Duplicated from zones.js to avoid circular dependency.
- * @param {Object} proposal
- * @returns {string} HTML
- */
-function renderZoneProposal(proposal) {
-  if (!proposal.proposals || proposal.proposals.length === 0) {
-    return '<p>No zones to configure - your cellar appears to be empty.</p>';
-  }
-
-  let html = `
-    <div class="proposal-summary">
-      <strong>${proposal.totalBottles} bottles</strong> across <strong>${proposal.proposals.length} zones</strong>
-      using <strong>${proposal.totalRows} rows</strong>
-    </div>
-    <div class="proposal-zones">
-  `;
-
-  proposal.proposals.forEach((zone, idx) => {
-    html += `
-      <div class="proposal-zone-card">
-        <div class="zone-card-header">
-          <span class="zone-order">${idx + 1}</span>
-          <span class="zone-name">${zone.displayName}</span>
-          <span class="zone-rows">${zone.assignedRows.join(', ')}</span>
-        </div>
-        <div class="zone-card-stats">
-          <span>${zone.bottleCount} bottles</span>
-          <span>${zone.totalCapacity} slots</span>
-          <span>${zone.utilizationPercent}% full</span>
-        </div>
-        <div class="zone-card-wines">
-          ${zone.wines.slice(0, 3).map(w => `<small>${w.name} ${w.vintage || ''}</small>`).join(', ')}
-          ${zone.wines.length > 3 ? `<small>+${zone.wines.length - 3} more</small>` : ''}
-        </div>
-      </div>
-    `;
-  });
-
-  html += '</div>';
-
-  if (proposal.unassignedRows?.length > 0) {
-    html += `<p class="proposal-note">Unassigned rows: ${proposal.unassignedRows.join(', ')} (available for future growth)</p>`;
-  }
-
-  return html;
 }
 
 /**

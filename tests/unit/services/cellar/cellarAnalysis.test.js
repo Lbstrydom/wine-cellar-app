@@ -55,6 +55,39 @@ describe('analyseCellar buffer zone colour-violation detection (Phase 3.2)', () 
     vi.clearAllMocks();
   });
 
+  it('attaches bottles-first scan data to the report', async () => {
+    getActiveZoneMap.mockResolvedValue({
+      R8: {
+        zoneId: 'cabernet',
+        displayName: 'Cabernet Sauvignon',
+        rowNumber: 1,
+        totalRows: 1,
+        wineCount: 1
+      }
+    });
+
+    const wines = [
+      {
+        id: 1,
+        wine_name: 'Cabernet Sauvignon 2020',
+        colour: 'red',
+        country: 'South Africa',
+        region: 'Stellenbosch',
+        grapes: 'cabernet sauvignon',
+        style: null,
+        slot_id: 'R8C1',
+        zone_id: 'cabernet'
+      }
+    ];
+
+    const report = await analyseCellar(wines, { cellarId: 'test-cellar' });
+
+    expect(report.bottleScan).toBeDefined();
+    expect(report.bottleScan.totalBottles).toBe(1);
+    expect(Array.isArray(report.bottleScan.groups)).toBe(true);
+    expect(report.bottleScan.totalGroups).toBe(1);
+  });
+
   it('flags red wine in white_buffer as misplaced', async () => {
     // Setup: white_buffer zone has R7 allocated, with a red wine
     getActiveZoneMap.mockResolvedValue({

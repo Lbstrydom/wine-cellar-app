@@ -25,6 +25,14 @@ const TOTAL_ROWS = 19;
 const SLOTS_PER_ROW = 9;
 
 /**
+ * Minimum bottles a zone needs to justify its own dedicated row.
+ * Zones below this threshold get demand=0 — their bottles remain in
+ * buffer/overflow zones rather than consuming a full row for 1-4 bottles.
+ * @type {number}
+ */
+export const MIN_BOTTLES_FOR_ROW = 5;
+
+/**
  * Solve the row allocation problem deterministically.
  *
  * @param {Object} params
@@ -44,13 +52,13 @@ export function solveRowAllocation(params) {
   const {
     zones,
     utilization,
-    overflowingZones = [],
-    underutilizedZones = [],
+    overflowingZones: _overflowingZones = [],
+    underutilizedZones: _underutilizedZones = [],
     mergeCandidates = [],
     neverMerge = new Set(),
     stabilityBias = 'moderate',
     scatteredWines = [],
-    colorAdjacencyIssues = [],
+    colorAdjacencyIssues: _colorAdjacencyIssues = [],
     colourOrder = 'whites-top'
   } = params;
 
@@ -175,8 +183,10 @@ function computeDemand(zones, utilization) {
   for (const zone of zones) {
     const util = utilization[zone.id];
     const bottles = util?.bottleCount ?? 0;
-    // Each zone with bottles needs at least 1 row
-    const required = bottles > 0 ? Math.ceil(bottles / SLOTS_PER_ROW) : 0;
+    // Only allocate rows to zones that meet the minimum bottle threshold.
+    // Zones below MIN_BOTTLES_FOR_ROW get demand=0 — their bottles stay
+    // in buffer/overflow zones rather than consuming a full row.
+    const required = bottles >= MIN_BOTTLES_FOR_ROW ? Math.ceil(bottles / SLOTS_PER_ROW) : 0;
     demand.set(zone.id, required);
   }
   return demand;
@@ -733,9 +743,9 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
     if (neverMerge.has(zoneId)) continue;
     const currentRows = zoneRowMap.get(zoneId) || [];
     const surplus = currentRows.length - required;
-    if (surplus > 0 && required > 0) {
-      // Only reclaim from zones that still have bottles (demand > 0)
-      // Zones with demand=0 should be fully deallocated by updateZoneWineCount
+    if (surplus > 0) {
+      // Reclaim over-provisioned rows. Includes zones below MIN_BOTTLES_FOR_ROW
+      // (demand=0) whose bottles belong in buffer/overflow zones instead.
       surplusZones.push({ zoneId, surplus, currentRows: [...currentRows], required });
     }
   }
@@ -850,8 +860,8 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
     const sourceBottles = sourceUtil?.bottleCount ?? 0;
     const targetBottles = targetUtil?.bottleCount ?? 0;
 
-    // Only merge if source zone is small (≤5 bottles) or very underutilized (<25%)
-    if (sourceBottles > 5 && (sourceUtil?.utilizationPct ?? 100) > 25) continue;
+    // Only merge if source zone is small (≤MIN_BOTTLES_FOR_ROW) or very underutilized (<25%)
+    if (sourceBottles > MIN_BOTTLES_FOR_ROW && (sourceUtil?.utilizationPct ?? 100) > 25) continue;
 
     // Check if combined bottles fit in target's current + source's rows
     const targetRows = zoneRowMap.get(candidate.targetZone) || [];

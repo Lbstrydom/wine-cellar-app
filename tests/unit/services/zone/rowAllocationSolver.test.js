@@ -40,7 +40,7 @@ vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
   }
 }));
 
-import { solveRowAllocation } from '../../../../src/services/zone/rowAllocationSolver.js';
+import { solveRowAllocation, MIN_BOTTLES_FOR_ROW } from '../../../../src/services/zone/rowAllocationSolver.js';
 
 // ─── Test helpers ───
 
@@ -850,6 +850,107 @@ describe('rowAllocationSolver', () => {
       // R5 (cabernet) should be involved in the fix
       const involvesR5 = colorFixes.some(a => a.rowNumber === 5);
       expect(involvesR5).toBe(true);
+    });
+  });
+
+  describe('Phase B2: MIN_BOTTLES_FOR_ROW threshold', () => {
+    it('exports MIN_BOTTLES_FOR_ROW = 5', () => {
+      expect(MIN_BOTTLES_FOR_ROW).toBe(5);
+    });
+
+    it('gives demand=0 to a zone with 1 bottle (below threshold)', () => {
+      const zones = [
+        makeZone('curiosities', ['R14'], 1),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        curiosities: makeUtil(1, 1),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // curiosities has 1 bottle → demand=0 → surplus=1
+      // Solver should reclaim its row
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('gives demand=0 to a zone with 4 bottles (below threshold)', () => {
+      const zones = [
+        makeZone('curiosities', ['R14'], 4),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        curiosities: makeUtil(4, 1),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // curiosities has 4 bottles → demand=0 → surplus=1
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('gives demand=1 to a zone with 5 bottles (at threshold)', () => {
+      const zones = [
+        makeZone('curiosities', ['R14'], 5),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        curiosities: makeUtil(5, 1),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // curiosities has 5 bottles → demand=1 → surplus=0
+      // Should NOT reclaim its row
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities).toHaveLength(0);
+    });
+
+    it('gives demand=2 to a zone with 10 bottles', () => {
+      const zones = [
+        makeZone('curiosities', ['R14', 'R15'], 10),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        curiosities: makeUtil(10, 2),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // curiosities has 10 bottles → demand=ceil(10/9)=2 → surplus=0
+      // Should NOT reclaim any rows
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities).toHaveLength(0);
     });
   });
 });

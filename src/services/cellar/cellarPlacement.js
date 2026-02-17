@@ -596,16 +596,13 @@ function normalizeWineAttributes(wine) {
   const parsedGrapes = parseTextArray(wine.grapes);
   const parsedWinemaking = parseTextArray(wine.winemaking);
 
-  // Grape resolution chain: DB column → enrichment service → text extraction fallback
+  // Grape resolution chain: DB column → enrichment service fallback
   let resolvedGrapes = parsedGrapes;
   if (resolvedGrapes.length === 0) {
     const enrichment = detectGrapesFromWine(wine);
     if (enrichment.grapes) {
       resolvedGrapes = enrichment.grapes.split(',').map(g => g.trim().toLowerCase());
     }
-  }
-  if (resolvedGrapes.length === 0) {
-    resolvedGrapes = extractGrapesFromText(wine);
   }
 
   return {
@@ -746,24 +743,7 @@ export function inferColor(wine) {
   return null;
 }
 
-/**
- * Extract grape varieties from wine name/style text.
- * @param {Object} wine
- * @returns {string[]}
- */
-function extractGrapesFromText(wine) {
-  const grapePatterns = [
-    'sauvignon blanc', 'chenin blanc', 'chardonnay', 'riesling',
-    'gewürztraminer', 'gewurztraminer', 'viognier', 'malvasia', 'albariño', 'albarino',
-    'cabernet sauvignon', 'merlot', 'pinot noir', 'shiraz', 'syrah',
-    'tempranillo', 'garnacha', 'grenache', 'sangiovese', 'nebbiolo',
-    'primitivo', 'negroamaro', 'corvina', 'barbera', 'dolcetto',
-    'touriga nacional', 'saperavi', 'malbec', 'carmenere', 'carmenère', 'pinotage',
-    'cabernet franc', 'petit verdot', 'mourvedre', 'mourvèdre', 'cinsault'
-  ];
-  const text = `${wine.wine_name || ''} ${wine.style || ''}`.toLowerCase();
-  return grapePatterns.filter(grape => text.includes(grape));
-}
+
 
 /**
  * Extract winemaking methods from wine name/style text.

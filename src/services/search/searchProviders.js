@@ -10,7 +10,7 @@
  *   searchBudget       - Budget tracking (SERP calls, bytes, wall-clock)
  *   fetchUtils         - Timeout/abort, conditional headers, hashing, discovery confidence
  *   countryInference   - Country/locale detection from style & region
- *   grapeDetection     - Grape variety detection from wine name
+ *   grapeEnrichment    - Unified grape variety detection from wine attributes
  *   scoreNormalization - Medal/symbol → 0-100 normalisation
  *   drinkingWindowParser - Drinking window extraction
  *   sourceSelection    - Source ranking and selection
@@ -49,7 +49,7 @@ import { LIMITS } from '../../config/scraperConfig.js';
 import { createSearchBudgetTracker, hasWallClockBudget } from './searchBudget.js';
 import { calculateDiscoveryConfidence } from '../shared/fetchUtils.js';
 import { inferCountryFromStyle } from '../wine/countryInference.js';
-import { detectGrape } from '../wine/grapeDetection.js';
+import { detectGrapesFromWine } from '../wine/grapeEnrichment.js';
 import { getSourcesForWine } from '../ratings/sourceSelection.js';
 import { searchGoogle } from './searchGoogle.js';
 import {
@@ -59,7 +59,7 @@ import { searchProducerWebsite } from './producerSearch.js';
 import { calculateResultRelevance } from './relevanceScoring.js';
 
 // Re-export symbols that are also used internally
-export { inferCountryFromStyle, detectGrape, getSourcesForWine, searchGoogle };
+export { inferCountryFromStyle, detectGrapesFromWine, getSourcesForWine, searchGoogle };
 
 // ── Main orchestrator ───────────────────────────────────────────────────
 
@@ -77,8 +77,9 @@ export async function searchWineRatings(wineName, vintage, country, style = null
   // Build wine object from parameters for identity validation and locale selection
   const wine = { wine_name: wineName, vintage, country, style };
 
-  // Detect grape variety from wine name
-  const detectedGrape = detectGrape(wineName);
+  // Detect grape variety from wine name via unified enrichment service
+  const enrichment = detectGrapesFromWine(wine);
+  const detectedGrape = enrichment.grapes ? enrichment.grapes.split(',')[0].trim().toLowerCase() : null;
 
   // Detect range qualifiers and locale hints for improved scoring
   const qualifiers = detectQualifiers(wineName);

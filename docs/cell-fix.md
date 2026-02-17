@@ -32,8 +32,8 @@ Without grapes, `findBestZone()` loses its strongest signal (35 of ~145 possible
 | A2.4 | Frontend: grape health banner in analysis panel | DONE |
 | A2.5 | Tests (11 new) | DONE |
 | A2.6 | Audit review: blocker fix (findBestZone shape, updateZoneWineCount signature), wineIds validation, dead variable cleanup | DONE |
-| **B1** | scanBottles() — bottles-first grouping | TODO |
-| **B2** | Minimum-row threshold | TODO |
+| **B1** | scanBottles() — bottles-first grouping | DONE |
+| **B2** | Minimum-row threshold | DONE |
 | **B3** | Row cleanliness sweep | TODO |
 | **B4** | Zone consolidation | TODO |
 | **B5** | AI polish scope reduction | TODO |

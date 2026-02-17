@@ -20,6 +20,7 @@ import {
   setCurrentZoneIndex
 } from './state.js';
 import { loadAnalysis } from './analysis.js';
+import { renderZoneProposal } from './zoneProposalView.js';
 
 /**
  * Render zone narratives as cards.
@@ -113,54 +114,6 @@ export async function startZoneSetup() {
   } catch (err) {
     proposalList.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
   }
-}
-
-/**
- * Render zone layout proposal as HTML.
- * @param {Object} proposal
- * @returns {string} HTML
- */
-function renderZoneProposal(proposal) {
-  if (!proposal.proposals || proposal.proposals.length === 0) {
-    return '<p>No zones to configure - your cellar appears to be empty.</p>';
-  }
-
-  let html = `
-    <div class="proposal-summary">
-      <strong>${proposal.totalBottles} bottles</strong> across <strong>${proposal.proposals.length} zones</strong>
-      using <strong>${proposal.totalRows} rows</strong>
-    </div>
-    <div class="proposal-zones">
-  `;
-
-  proposal.proposals.forEach((zone, idx) => {
-    html += `
-      <div class="proposal-zone-card">
-        <div class="zone-card-header">
-          <span class="zone-order">${idx + 1}</span>
-          <span class="zone-name">${zone.displayName}</span>
-          <span class="zone-rows">${zone.assignedRows.join(', ')}</span>
-        </div>
-        <div class="zone-card-stats">
-          <span>${zone.bottleCount} bottles</span>
-          <span>${zone.totalCapacity} slots</span>
-          <span>${zone.utilizationPercent}% full</span>
-        </div>
-        <div class="zone-card-wines">
-          ${zone.wines.slice(0, 3).map(w => `<small>${w.name} ${w.vintage || ''}</small>`).join(', ')}
-          ${zone.wines.length > 3 ? `<small>+${zone.wines.length - 3} more</small>` : ''}
-        </div>
-      </div>
-    `;
-  });
-
-  html += '</div>';
-
-  if (proposal.unassignedRows?.length > 0) {
-    html += `<p class="proposal-note">Unassigned rows: ${proposal.unassignedRows.join(', ')} (available for future growth)</p>`;
-  }
-
-  return html;
 }
 
 /**

@@ -24,6 +24,7 @@ import {
   getCurrentZoneAllocation,
   generateCompactionMoves
 } from './cellarSuggestions.js';
+import { scanBottles } from './bottleScanner.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
@@ -91,6 +92,9 @@ export async function analyseCellar(wines) {
   } else if (hasZoneAllocations) {
     buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap);
   }
+
+  // Bottles-first scan: classify every wine and cross-reference against zone rows
+  report.bottleScan = scanBottles(wines, zoneMap);
 
   // Generate zone narratives
   report.zoneNarratives = generateZoneNarratives(zoneWineMap);
