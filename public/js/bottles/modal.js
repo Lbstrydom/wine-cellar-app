@@ -40,6 +40,11 @@ export function showAddBottleModal(location) {
   document.getElementById('selected-wine-id').value = '';
   document.getElementById('wine-search-results').classList.remove('active');
 
+  // Reset grape autocomplete
+  if (bottleState.grapeAutocomplete) {
+    bottleState.grapeAutocomplete.setValue('');
+  }
+
   // Reset image upload
   clearUploadedImage();
 
@@ -82,6 +87,10 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-style').value = wine.style || '';
     const grapesEl = document.getElementById('wine-grapes');
     if (grapesEl) grapesEl.value = wine.grapes || '';
+    // Sync autocomplete if available
+    if (bottleState.grapeAutocomplete) {
+      bottleState.grapeAutocomplete.setValue(wine.grapes || '');
+    }
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
 
@@ -106,7 +115,8 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-drink-peak').value = wine.drink_peak || '';
     document.getElementById('wine-drink-until').value = wine.drink_until || '';
     document.getElementById('selected-wine-id').value = wineId;
-  } catch (_err) {
+  } catch (error_) {
+    console.error('[modal] Failed to load wine details:', error_.message);
     showToast('Failed to load wine details');
     return;
   }
@@ -134,6 +144,17 @@ export function closeBottleModal() {
 }
 
 /**
+ * Toggle visibility of a DOM element.
+ * @param {string} id - Element ID
+ * @param {boolean} visible - Whether to show
+ * @param {string} [display='block'] - Display value when visible
+ */
+function toggleVisibility(id, visible, display = 'block') {
+  const el = document.getElementById(id);
+  if (el) el.style.display = visible ? display : 'none';
+}
+
+/**
  * Set bottle form mode (existing wine search, new wine entry, or parse text).
  * @param {string} mode - 'existing', 'new', or 'parse'
  */
@@ -144,25 +165,14 @@ export function setBottleFormMode(mode) {
   });
 
   // Show/hide sections
-  const existingSection = document.getElementById('existing-wine-section');
-  const newSection = document.getElementById('new-wine-section');
-  const parseSection = document.getElementById('parse-wine-section');
-
-  if (existingSection) existingSection.style.display = mode === 'existing' ? 'block' : 'none';
-  if (newSection) newSection.style.display = mode === 'new' ? 'block' : 'none';
-  if (parseSection) parseSection.style.display = mode === 'parse' ? 'block' : 'none';
+  toggleVisibility('existing-wine-section', mode === 'existing');
+  toggleVisibility('new-wine-section', mode === 'new');
+  toggleVisibility('parse-wine-section', mode === 'parse');
 
   // Show/hide bottom buttons based on mode
-  const quantitySection = document.getElementById('quantity-section');
-  const modalActions = document.querySelector('#bottle-modal .modal-actions');
+  const isParse = mode === 'parse';
+  toggleVisibility('quantity-section', !isParse);
 
-  if (mode === 'parse') {
-    // Hide bottom buttons on parse tab - user needs to analyze first
-    if (quantitySection) quantitySection.style.display = 'none';
-    if (modalActions) modalActions.style.display = 'none';
-  } else {
-    // Show bottom buttons for existing/new modes
-    if (quantitySection) quantitySection.style.display = 'block';
-    if (modalActions) modalActions.style.display = 'flex';
-  }
+  const modalActions = document.querySelector('#bottle-modal .modal-actions');
+  if (modalActions) modalActions.style.display = isParse ? 'none' : 'flex';
 }

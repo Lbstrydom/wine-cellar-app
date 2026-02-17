@@ -18,6 +18,7 @@ import { fetchWineStyles } from './api.js';
 import { escapeHtml } from './utils.js';
 import { showWineModal } from './modals.js';
 import { isDragging } from './dragdrop.js';
+import { initGrapeAutocomplete } from './grapeAutocomplete.js';
 
 // Import sub-modules
 import { bottleState } from './bottles/state.js';
@@ -63,6 +64,10 @@ export async function initBottles() {
   initForm();
   initTextParsing();
   initImageParsing();
+
+  // Initialize grape autocomplete
+  const grapeAc = initGrapeAutocomplete('wine-grapes');
+  if (grapeAc) bottleState.grapeAutocomplete = grapeAc;
 
   // Cancel button
   document.getElementById('bottle-cancel-btn')?.addEventListener('click', closeBottleModal);

@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260217b">
+  <link rel="stylesheet" href="/css/styles.css?v=20260217c">
 </head>
 <body>
   <header>
@@ -172,7 +172,7 @@
           <button class="btn btn-secondary btn-icon" id="refresh-analysis-btn"
                   title="Refresh Snapshot — recomputes analysis from current layout. Does not re-run AI or apply moves."
                   aria-label="Refresh Snapshot">↻</button>
-          <span id="ai-advice-status" class="analysis-status" role="status" aria-live="polite"></span>
+          <output id="ai-advice-status" class="analysis-status" aria-live="polite"></output>
           <span class="analysis-cache-status" id="analysis-cache-status"></span>
         </div>
       </div>
@@ -964,19 +964,19 @@
       <h2 id="modal-wine-name">Wine Name</h2>
       <div class="modal-subtitle" id="modal-wine-style">Style - Vintage</div>
       <div class="modal-field">
-        <label>Location</label>
+        <span class="modal-label">Location</span>
         <span id="modal-location">-</span>
       </div>
       <div class="modal-field">
-        <label>Rating</label>
+        <span class="modal-label">Rating</span>
         <span id="modal-rating">-</span>
       </div>
       <div class="modal-field">
-        <label>Price</label>
+        <span class="modal-label">Price</span>
         <span id="modal-price">-</span>
       </div>
       <div class="modal-field" id="modal-reduce-field" style="display: none;">
-        <label>Drink Soon Reason</label>
+        <span class="modal-label">Drink Soon Reason</span>
         <span id="modal-reduce-reason">-</span>
       </div>
       <!-- Tasting & Service Card (consolidated) -->
@@ -986,13 +986,13 @@
       
       <!-- Legacy tasting notes (hidden, used as fallback) -->
       <div class="modal-field" id="modal-tasting-notes-field" style="display: none;">
-        <label>Tasting Notes</label>
+        <span class="modal-label">Tasting Notes</span>
         <p id="modal-tasting-notes" class="tasting-notes-text">-</p>
       </div>
       
       <!-- Legacy serving temp (hidden, used as fallback) -->
       <div class="modal-field serving-temp-field" id="legacy-serving-temp-field" style="display: none;">
-        <label>Serving Temperature</label>
+        <span class="modal-label">Serving Temperature</span>
         <div id="serving-temp-display">
           <span class="no-data">Loading...</span>
         </div>
@@ -1020,7 +1020,7 @@
       </div>
 
       <div class="modal-field personal-rating-section">
-        <label>My Rating</label>
+        <label for="modal-personal-rating">My Rating</label>
         <div class="personal-rating-input">
           <select id="modal-personal-rating">
             <option value="">Not rated</option>
@@ -1108,7 +1108,7 @@
 
         <!-- Existing wine search -->
         <div class="form-section" id="existing-wine-section">
-          <label class="form-label">Search your wines:</label>
+          <label class="form-label" for="wine-search">Search your wines:</label>
           <input type="text" id="wine-search" placeholder="Type to search..." autocomplete="off" />
           <div id="wine-search-results" class="search-results"></div>
           <input type="hidden" id="selected-wine-id" />
@@ -1154,18 +1154,18 @@
         <div class="form-section" id="new-wine-section" style="display: none;">
           <div class="form-row">
             <div class="form-field">
-              <label>Wine Name *</label>
+              <label for="wine-name">Wine Name *</label>
               <input type="text" id="wine-name" />
             </div>
           </div>
 
           <div class="form-row">
             <div class="form-field">
-              <label>Vintage</label>
+              <label for="wine-vintage">Vintage</label>
               <input type="number" id="wine-vintage" min="1900" max="2030" placeholder="e.g., 2023" />
             </div>
             <div class="form-field">
-              <label>Colour *</label>
+              <label for="wine-colour">Colour *</label>
               <select id="wine-colour">
                 <option value="red">Red</option>
                 <option value="white" selected>White</option>
@@ -1177,7 +1177,7 @@
 
           <div class="form-row">
             <div class="form-field">
-              <label>Style</label>
+              <label for="wine-style">Style</label>
               <input type="text" id="wine-style" placeholder="e.g., Sauvignon Blanc" list="style-list" />
               <datalist id="style-list"></datalist>
             </div>
@@ -1245,7 +1245,7 @@
         <div class="form-section" id="quantity-section">
           <div class="form-row">
             <div class="form-field">
-              <label>Quantity</label>
+              <label for="bottle-quantity">Quantity</label>
               <input type="number" id="bottle-quantity" min="1" max="20" value="1" />
               <span class="form-hint">Will fill consecutive slots from selected position</span>
             </div>

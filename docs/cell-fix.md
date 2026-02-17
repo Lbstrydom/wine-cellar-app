@@ -35,8 +35,8 @@ Without grapes, `findBestZone()` loses its strongest signal (35 of ~145 possible
 | **B1** | scanBottles() — bottles-first grouping | DONE |
 | **B2** | Minimum-row threshold | DONE |
 | **B3** | Row cleanliness sweep | DONE |
-| **B4** | Zone consolidation | TODO |
-| **B5** | AI polish scope reduction | TODO |
+| **B4** | Zone consolidation | DONE |
+| **B5** | AI polish scope reduction | DONE |
 
 ---
 

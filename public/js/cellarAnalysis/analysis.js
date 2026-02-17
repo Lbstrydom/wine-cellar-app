@@ -18,6 +18,7 @@ import { openMoveGuide } from './moveGuide.js';
 import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './labels.js';
 import { escapeHtml } from '../utils.js';
 import { renderGrapeHealthBanner } from './grapeHealth.js';
+import { renderConsolidationCards } from './consolidation.js';
 
 let _onRenderAnalysis = null;
 
@@ -135,7 +136,7 @@ function renderOfflineState(summaryEl) {
   // Clear all analysis subsections to avoid stale data
   const sectionIds = [
     'analysis-alerts', 'zone-cards-grid', 'moves-list',
-    'fridge-status-content', 'analysis-ai-advice'
+    'fridge-status-content', 'analysis-ai-advice', 'zone-consolidation'
   ];
   for (const id of sectionIds) {
     const el = document.getElementById(id);
@@ -236,6 +237,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
   renderZoneIssueActions(analysis, onRenderAnalysis);
+  renderConsolidationCards(analysis);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);

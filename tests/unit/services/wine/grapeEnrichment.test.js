@@ -87,9 +87,10 @@ describe('grapeEnrichment', () => {
         expect(result.source).toBe('appellation');
       });
 
-      it('detects Sangiovese from Chianti', () => {
+      it('detects Chianti blend (Sangiovese-led)', () => {
         const result = detectGrapesFromWine({ wine_name: 'Antinori Chianti Classico 2019' });
-        expect(result.grapes).toBe('Sangiovese');
+        expect(result.grapes).toContain('Sangiovese');
+        expect(result.grapes).toContain('Canaiolo');
         expect(result.confidence).toBe('high');
         expect(result.source).toBe('appellation');
       });
@@ -140,6 +141,165 @@ describe('grapeEnrichment', () => {
         const result = detectGrapesFromWine({ wine_name: 'Jaboulet Hermitage La Chapelle 2017' });
         expect(result.grapes).toBe('Shiraz');
         expect(result.confidence).toBe('high');
+        expect(result.source).toBe('appellation');
+      });
+    });
+
+    describe('blend appellation detection', () => {
+      // ── RED BLENDS ──
+      it('detects Châteauneuf-du-Pape as GSM blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château Rayas Châteauneuf-du-Pape 2018' });
+        expect(result.grapes).toContain('Grenache');
+        expect(result.grapes).toContain('Shiraz');
+        expect(result.grapes).toContain('Mourvèdre');
+        expect(result.confidence).toBe('high');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Bordeaux Left Bank blend (Médoc)', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château Margaux Margaux 2015' });
+        expect(result.grapes).toContain('Cabernet Sauvignon');
+        expect(result.grapes).toContain('Merlot');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Bordeaux Right Bank blend (Pomerol)', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château Pétrus Pomerol 2012' });
+        expect(result.grapes).toContain('Merlot');
+        expect(result.grapes).toContain('Cabernet Franc');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects generic Bordeaux as red blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château Lynch-Bages Bordeaux 2019' });
+        expect(result.grapes).toContain('Cabernet Sauvignon');
+        expect(result.grapes).toContain('Merlot');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Amarone as Corvina blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Masi Amarone della Valpolicella 2016' });
+        expect(result.grapes).toContain('Corvina');
+        expect(result.grapes).toContain('Rondinella');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Rioja as Tempranillo blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'La Rioja Alta Gran Reserva Rioja 2011' });
+        expect(result.grapes).toContain('Tempranillo');
+        expect(result.grapes).toContain('Garnacha');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Priorat as Grenache-Carignan blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Alvaro Palacios L\'Ermita Priorat 2019' });
+        expect(result.grapes).toContain('Grenache');
+        expect(result.grapes).toContain('Carignan');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Douro as Portuguese field blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Quinta do Vale Meão Douro 2018' });
+        expect(result.grapes).toContain('Touriga Nacional');
+        expect(result.grapes).toContain('Touriga Franca');
+        expect(result.grapes).toContain('Tinta Roriz');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Super Tuscan as Sangiovese-Cab blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Tenuta San Guido Super Tuscan 2019' });
+        expect(result.grapes).toContain('Sangiovese');
+        expect(result.grapes).toContain('Cabernet Sauvignon');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Cape Blend (Pinotage-led)', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Kanonkop Cape Blend 2020' });
+        expect(result.grapes).toContain('Pinotage');
+        expect(result.grapes).toContain('Cabernet Sauvignon');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Meritage as Bordeaux-style blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Clos du Bois Meritage 2018' });
+        expect(result.grapes).toContain('Cabernet Sauvignon');
+        expect(result.grapes).toContain('Merlot');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Côte-Rôtie as Shiraz-Viognier blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Guigal La Mouline Côte-Rôtie 2017' });
+        expect(result.grapes).toContain('Shiraz');
+        expect(result.grapes).toContain('Viognier');
+        expect(result.source).toBe('appellation');
+      });
+
+      // ── WHITE BLENDS ──
+      it('detects Sauternes as Sémillon-Sauvignon blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château d\'Yquem Sauternes 2017' });
+        expect(result.grapes).toContain('Sémillon');
+        expect(result.grapes).toContain('Sauvignon Blanc');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Jurançon as Manseng blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Domaine Cauhapé Jurançon 2020' });
+        expect(result.grapes).toContain('Gros Manseng');
+        expect(result.grapes).toContain('Petit Manseng');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Bordeaux Blanc as white blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château Smith Haut Lafitte Bordeaux Blanc 2020' });
+        expect(result.grapes).toContain('Sémillon');
+        expect(result.grapes).toContain('Sauvignon Blanc');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Hermitage blanc vs red correctly', () => {
+        const blanc = detectGrapesFromWine({ wine_name: 'Chapoutier Hermitage Blanc 2019' });
+        expect(blanc.grapes).toContain('Marsanne');
+        expect(blanc.grapes).toContain('Roussanne');
+
+        const red = detectGrapesFromWine({ wine_name: 'Chapoutier Hermitage 2019' });
+        expect(red.grapes).toBe('Shiraz');
+      });
+
+      it('detects Vinho Verde as Portuguese white blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Quinta da Aveleda Vinho Verde 2022' });
+        expect(result.grapes).toContain('Loureiro');
+        expect(result.grapes).toContain('Alvarinho');
+        expect(result.source).toBe('appellation');
+      });
+
+      // ── SPARKLING ──
+      it('detects Champagne as three-grape blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Krug Grande Cuvée Champagne' });
+        expect(result.grapes).toContain('Chardonnay');
+        expect(result.grapes).toContain('Pinot Noir');
+        expect(result.grapes).toContain('Pinot Meunier');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Cava as Spanish sparkling blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Codorníu Cava Brut 2021' });
+        expect(result.grapes).toContain('Macabeo');
+        expect(result.grapes).toContain('Parellada');
+        expect(result.source).toBe('appellation');
+      });
+
+      // ── ROSÉ ──
+      it('detects Provence rosé blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Domaine Tempier Bandol Rosé Provence 2022' });
+        expect(result.grapes).toContain('Grenache');
+        expect(result.grapes).toContain('Cinsault');
+        expect(result.source).toBe('appellation');
+      });
+
+      it('detects Tavel as rosé blend', () => {
+        const result = detectGrapesFromWine({ wine_name: 'Château d\'Aqueria Tavel 2022' });
+        expect(result.grapes).toContain('Grenache');
+        expect(result.grapes).toContain('Cinsault');
         expect(result.source).toBe('appellation');
       });
     });

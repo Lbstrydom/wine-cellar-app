@@ -727,7 +727,8 @@ header .search-trigger {
   }
 
   /* Modal fields */
-  .modal-field label {
+  .modal-field label,
+  .modal-field .modal-label {
     font-size: 0.85rem;
   }
 

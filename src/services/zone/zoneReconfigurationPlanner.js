@@ -318,7 +318,7 @@ function wouldCreateColorViolation(action, zoneRowMap) {
 async function refinePlanWithLLM(ctx) {
   const {
     solverActions, solverReasoning,
-    zonesWithAllocations, utilization, allZones,
+    zonesWithAllocations, allZones,
     capacityIssues, underutilizedZones, mergeCandidates,
     neverMerge, stability, includeRetirements,
     totalBottles, misplacedBottles, misplacementPct,
@@ -685,9 +685,23 @@ export async function generateReconfigurationPlan(report, options = {}) {
   try {
     const solverStart = Date.now();
     layoutSettings = await getCellarLayoutSettings(cellarId);
+
+    // Build ideal-state bottle counts from bottles-first scan (Phase B4).
+    // These represent "how many bottles each zone *should* have" based on
+    // wine classification, rather than where they physically sit right now.
+    let idealBottleCounts = null;
+    const bottleScanGroups = report?.bottleScan?.groups;
+    if (Array.isArray(bottleScanGroups) && bottleScanGroups.length > 0) {
+      idealBottleCounts = new Map();
+      for (const group of bottleScanGroups) {
+        idealBottleCounts.set(group.zoneId, group.bottleCount);
+      }
+    }
+
     const solverResult = solveRowAllocation({
       zones: zonesWithAllocations,
       utilization,
+      idealBottleCounts,
       overflowingZones,
       underutilizedZones,
       mergeCandidates,

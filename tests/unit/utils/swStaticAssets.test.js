@@ -16,8 +16,8 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
 
 const PUBLIC_DIR = path.resolve('public');
 const SW_PATH = path.join(PUBLIC_DIR, 'sw.js');
@@ -113,7 +113,7 @@ describe('SW STATIC_ASSETS completeness', () => {
     }
 
     if (missingModules.length > 0) {
-      const list = missingModules.sort().map(m => `  - ${m}`).join('\n');
+      const list = missingModules.toSorted((a, b) => a.localeCompare(b)).map(m => `  - ${m}`).join('\n');
       expect.fail(
         `${missingModules.length} JS module(s) reachable from app.js are NOT in sw.js STATIC_ASSETS.\n` +
         `This will cause stale SW cache to crash the app.\n` +
@@ -135,7 +135,7 @@ describe('SW STATIC_ASSETS completeness', () => {
     }
 
     if (missingFiles.length > 0) {
-      const list = missingFiles.sort().map(m => `  - ${m}`).join('\n');
+      const list = missingFiles.toSorted((a, b) => a.localeCompare(b)).map(m => `  - ${m}`).join('\n');
       expect.fail(
         `${missingFiles.length} STATIC_ASSETS entry/ies point to non-existent files:\n${list}`
       );

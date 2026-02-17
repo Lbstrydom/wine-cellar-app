@@ -93,6 +93,7 @@ export async function startZoneSetup() {
   const proposalList = document.getElementById('zone-proposal-list');
   const step1 = document.getElementById('wizard-step-1');
   const step2 = document.getElementById('wizard-step-2');
+  const confirmLayoutBtn = document.getElementById('confirm-layout-btn');
 
   if (!wizard || !proposalList) return;
 
@@ -106,13 +107,19 @@ export async function startZoneSetup() {
   document.getElementById('analysis-ai-advice')?.style.setProperty('display', 'none');
 
   proposalList.innerHTML = '<div class="analysis-loading">Generating zone layout proposal...</div>';
+  if (confirmLayoutBtn) confirmLayoutBtn.disabled = true;
 
   try {
     const proposal = await getZoneLayoutProposal();
     setCurrentProposal(proposal);
     proposalList.innerHTML = renderZoneProposal(proposal);
+    if (confirmLayoutBtn) {
+      const hasAllocations = Array.isArray(proposal?.proposals) && proposal.proposals.length > 0;
+      confirmLayoutBtn.disabled = !hasAllocations;
+    }
   } catch (err) {
     proposalList.innerHTML = `<div class="ai-advice-error">Error: ${err.message}</div>`;
+    if (confirmLayoutBtn) confirmLayoutBtn.disabled = true;
   }
 }
 
@@ -121,12 +128,13 @@ export async function startZoneSetup() {
  */
 export async function handleConfirmLayout() {
   const currentProposal = getCurrentProposal();
-  if (!currentProposal?.proposals) {
-    showToast('No proposal to confirm');
+  const proposals = Array.isArray(currentProposal?.proposals) ? currentProposal.proposals : [];
+  if (proposals.length === 0) {
+    showToast('No dedicated rows to confirm yet');
     return;
   }
 
-  const assignments = currentProposal.proposals.map(p => ({
+  const assignments = proposals.map(p => ({
     zoneId: p.zoneId,
     assignedRows: p.assignedRows,
     bottleCount: p.bottleCount

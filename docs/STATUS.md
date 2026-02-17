@@ -10,12 +10,21 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 17 Feb 2026**:
+- **Production SW Cache Fix + Regression Prevention — COMPLETE** ✅:
+  - **Root cause**: Service Worker `CACHE_VERSION` not bumped across 7 frontend-changing commits. Cache-first strategy served stale `api/index.js` and `api/cellar.js` from commit `3931f2a` — missing `backfillGrapes` export caused `SyntaxError` on import, crashing the entire `app.js` module tree → blank UI, no wines, no click handlers
+  - **Fix (v141→v143)**: Added ~20 missing modules to `STATIC_ASSETS` in `sw.js` (cellarAnalysis/*, bottles/*, restaurantPairing/*, storageBuilder.js, tastingService.js, consolidation.js). Bumped `CACHE_VERSION` v141→v142→v143. Aligned CSS `?v=` strings between `index.html` and `sw.js`
+  - **Secondary fixes**: `onAuthStateChange` handler — skip `loadUserContext()` when `INITIAL_SESSION` fires with null session (prevented "No token provided" error on auth screen). `bottles/modal.js` — guarded `#wine-grapes` element access with conditional check
+  - **Regression prevention**: New `tests/unit/utils/swStaticAssets.test.js` (3 tests) — walks import tree from `app.js` + `pairing.js` via regex, verifies every reachable module is listed in `STATIC_ASSETS`, verifies all entries point to existing files, verifies CSS version strings match between `index.html` and `sw.js`
+  - **Documentation**: Added "Service Worker Pre-Cache (CRITICAL)" section to AGENTS.md and CLAUDE.md with mandatory checklist for adding new frontend files
+  - **Commits**: `3ebc065` (initial fix v142), `84c48a2` (complete fix v143 + regression test)
+  - **Test count**: 1944 unit tests passing across 72 files
+
 - **Grape Data Quality Fix (Phase A) — COMPLETE** ✅:
   - Plan document: `docs/cell-fix.md` (2-part plan: data quality + bottles-first analysis)
   - **Phase A1 — Persist grapes on new wine add**: Added `grapes` field to Zod schema (`wine.js`). Added as 21st column in POST INSERT and to PUT UPDATE builder (`wines.js`). Removed legacy `captureGrapes` middleware. Mapped Vivino `grapeVariety→grapes` in frontend form submissions (`form.js`). Created unified grape enrichment service (`grapeEnrichment.js`) with 42 grape patterns + 26 appellation→grape proxy mappings (e.g., Barolo→Nebbiolo, Chianti→Sangiovese, Sancerre→Sauvignon Blanc). Auto-detect grapes post-INSERT when no Vivino data. Wired enrichment into `normalizeWineAttributes()` as 3-tier fallback chain (DB column → enrichment service → text extraction). 31 new tests
   - **Phase A2 — Backfill existing wines + auto re-classify**: `POST /api/cellar/grape-backfill` endpoint with dry-run/commit modes and optional `wineIds` filter with strict validation. Auto zone re-classification via shared `reclassifyWineZoneIfNeeded()` helper when grapes updated and confidence is non-low. Grapes field in bottle edit form with pre-population. Grape health banner in analysis panel — shows missing grape count, preview table with per-wine confidence, Apply All/per-row Apply buttons. `backfillGrapes()` API function in `api/cellar.js`. 13 new tests (11 backfill + 2 validation)
   - **Audit review**: Fixed blocker (wrong `findBestZone` shape + `updateZoneWineCount` call signature), medium (wineIds validation), low (dead variable). Shared `resolveZoneId()` helper handles both `{ zoneId }` and `{ zone: { id } }` shapes
-  - **Test count**: 1881 unit tests passing across 67 files
+  - **Test count**: 1881 unit tests passing across 67 files (now 1944 across 72 files after SW fix)
 
 **Previous Enhancements** (16 Feb 2026):
 - **Cellar Analysis UX Restructure (4-Phase Plan) — COMPLETE** ✅:
@@ -415,7 +424,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Test Framework**: Vitest with self-contained integration tests that automatically manage server lifecycle.
 
 **Coverage Stats**:
-- **1735+ tests passing** (1685 unit + 21 integration + 30 benchmark)
+- **1995+ tests passing** (1944 unit + 21 integration + 30 benchmark)
 - **~85% coverage on services**
 - **~60% coverage on routes**
 - **~70% coverage on config**
@@ -424,7 +433,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1685 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1944 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:benchmark` | Runs 30 benchmark tests (REPLAY mode) | ❌ No |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |

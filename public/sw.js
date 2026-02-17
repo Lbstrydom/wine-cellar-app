@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v143';
+const CACHE_VERSION = 'v145';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -20,12 +20,12 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260217b',
-  '/css/variables.css?v=20260217b',
-  '/css/layout.css?v=20260217b',
-  '/css/components.css?v=20260217b',
-  '/css/themes.css?v=20260217b',
-  '/css/accessibility.css?v=20260217b',
+  '/css/styles.css?v=20260217c',
+  '/css/variables.css?v=20260217c',
+  '/css/layout.css?v=20260217c',
+  '/css/components.css?v=20260217c',
+  '/css/themes.css?v=20260217c',
+  '/css/accessibility.css?v=20260217c',
   '/js/theme-init.js',
   '/js/app.js',
   '/js/api.js',
@@ -43,6 +43,8 @@ const STATIC_ASSETS = [
   '/js/bottles/slotPicker.js',
   '/js/bottles/disambiguationModal.js',
   '/js/bottles/wineConfirmation.js',
+  '/js/grapeData.js',
+  '/js/grapeAutocomplete.js',
   '/js/sommelier.js',
   '/js/ratings.js',
   '/js/settings.js',
@@ -119,7 +121,7 @@ const CACHEABLE_API_PATTERNS = [
 /**
  * Install event - pre-cache static assets.
  */
-self.addEventListener('install', (event) => {
+globalThis.addEventListener('install', (event) => {
   console.log('[SW] Installing service worker...');
 
   event.waitUntil(
@@ -130,7 +132,7 @@ self.addEventListener('install', (event) => {
       })
       .then(() => {
         // Skip waiting to activate immediately
-        return self.skipWaiting();
+        return globalThis.skipWaiting();
       })
       .catch((error) => {
         console.error('[SW] Pre-cache failed:', error);
@@ -141,7 +143,7 @@ self.addEventListener('install', (event) => {
 /**
  * Activate event - clean up old caches.
  */
-self.addEventListener('activate', (event) => {
+globalThis.addEventListener('activate', (event) => {
   console.log('[SW] Activating service worker...');
 
   event.waitUntil(
@@ -162,7 +164,7 @@ self.addEventListener('activate', (event) => {
       })
       .then(() => {
         // Claim all clients immediately
-        return self.clients.claim();
+        return globalThis.clients.claim();
       })
   );
 });
@@ -170,7 +172,7 @@ self.addEventListener('activate', (event) => {
 /**
  * Fetch event - implement caching strategies.
  */
-self.addEventListener('fetch', (event) => {
+globalThis.addEventListener('fetch', (event) => {
   const { request } = event;
   const url = new URL(request.url);
 
@@ -229,6 +231,7 @@ async function cacheFirstWithNetwork(request) {
     return networkResponse;
   } catch (error) {
     // Network failed, return offline fallback
+    console.warn('[SW] Network failed for navigation:', error.message);
     return caches.match('/index.html');
   }
 }
@@ -266,6 +269,7 @@ async function networkFirstWithCache(request) {
     return networkResponse;
   } catch (error) {
     // Network failed or timed out, try cache
+    console.warn('[SW] API fetch failed:', error.message);
     const cachedResponse = await caches.match(request);
 
     if (cachedResponse) {
@@ -301,19 +305,21 @@ async function fetchAndCache(request, cacheName) {
       cache.put(request, response);
     }
   } catch (error) {
-    // Silently fail background updates
+    // Background revalidation failure is non-critical
+    console.debug('[SW] Background fetch failed:', error.message);
   }
 }
 
 /**
  * Handle messages from the main thread.
  */
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
-    self.skipWaiting();
+globalThis.addEventListener('message', (event) => {
+  if (!event.source) return; // Ignore messages without a source window
+  if (event.data?.type === 'SKIP_WAITING') {
+    globalThis.skipWaiting();
   }
 
-  if (event.data && event.data.type === 'CLEAR_CACHE') {
+  if (event.data?.type === 'CLEAR_CACHE') {
     event.waitUntil(
       caches.keys().then((cacheNames) => {
         return Promise.all(
@@ -328,7 +334,7 @@ self.addEventListener('message', (event) => {
  * Background sync for offline actions.
  * Queued actions will be synced when connection is restored.
  */
-self.addEventListener('sync', (event) => {
+globalThis.addEventListener('sync', (event) => {
   console.log('[SW] Background sync triggered:', event.tag);
 
   if (event.tag === 'sync-wines') {
@@ -348,7 +354,7 @@ async function syncPendingWines() {
 /**
  * Push notification handler (for future use).
  */
-self.addEventListener('push', (event) => {
+globalThis.addEventListener('push', (event) => {
   if (!event.data) return;
 
   const data = event.data.json();
@@ -364,14 +370,14 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title || 'Wine Cellar', options)
+    globalThis.registration.showNotification(data.title || 'Wine Cellar', options)
   );
 });
 
 /**
  * Notification click handler.
  */
-self.addEventListener('notificationclick', (event) => {
+globalThis.addEventListener('notificationclick', (event) => {
   event.notification.close();
 
   const url = event.notification.data?.url || '/';

@@ -15,6 +15,7 @@ export const bottleState = {
   parsedWines: [],
   selectedParsedIndex: 0,
   uploadedImage: null, // { base64: string, mediaType: string, preview: string }
+  grapeAutocomplete: null, // grape autocomplete component instance
   // Slot picker state
   pendingAddWineId: null,
   pendingQuantity: 1,

@@ -715,7 +715,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1706 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 1944 unit tests (~1s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -1037,10 +1037,22 @@ DATABASE_URL="your-supabase-url" npm run dev
 ### Cache Busting
 
 When updating frontend files, bump the cache version in two places:
-1. `public/index.html` - Update `?v=YYYYMMDDX` in CSS and JS imports
-2. `public/sw.js` - Update `CACHE_VERSION` constant
+1. `public/index.html` - Update `?v=YYYYMMDDX` in CSS import
+2. `public/sw.js` - Update `CACHE_VERSION` constant and match CSS `?v=` strings
 
-This forces browsers to reload fresh assets instead of using cached versions
+This forces browsers to reload fresh assets instead of using cached versions.
+
+### Service Worker Pre-Cache (CRITICAL)
+
+When adding a **new frontend JS module**, you MUST add it to the `STATIC_ASSETS` array in `public/sw.js`. If a module is reachable from `app.js` via static imports but missing from `STATIC_ASSETS`, the SW will serve a stale cached copy on the next deploy — causing `SyntaxError` on missing exports and crashing the entire app.
+
+**Regression test**: `tests/unit/utils/swStaticAssets.test.js` walks the import tree from `app.js` and `pairing.js`, and fails if any reachable module is missing from `STATIC_ASSETS`. Run `npm run test:unit` to catch this before deploy.
+
+**Checklist when adding new frontend files:**
+1. Add the file path to `STATIC_ASSETS` in `public/sw.js`
+2. Bump `CACHE_VERSION` in `public/sw.js`
+3. Match CSS `?v=` strings between `index.html` and `sw.js`
+4. Run `npm run test:unit` — the `swStaticAssets` test will catch misses
 
 ---
 
@@ -1526,6 +1538,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use invariant checks (before/after counts) for data-critical operations
 - Test with PostgreSQL before deploying (not just SQLite locally)
 - Bump cache version after frontend changes
+- Add new frontend JS modules to `STATIC_ASSETS` in `public/sw.js` (regression test enforces this)
 - Always use `req.cellarId` in all database queries for user-data tables
 - Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
 - Apply `requireAuth` + `requireCellarContext` middleware to all data routes

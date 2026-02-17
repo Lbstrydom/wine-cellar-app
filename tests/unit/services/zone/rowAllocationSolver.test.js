@@ -953,4 +953,117 @@ describe('rowAllocationSolver', () => {
       expect(fromCuriosities).toHaveLength(0);
     });
   });
+
+  describe('Phase B4: idealBottleCounts (bottles-first demand)', () => {
+    it('uses idealBottleCounts for demand when provided', () => {
+      // Physical utilization: cabernet has 3 bottles in 1 row (demand=1)
+      // Ideal counts: cabernet should have 15 bottles (demand=2)
+      // Shiraz: physical has 12, ideal has 5 (demand=1)
+      const zones = [
+        makeZone('cabernet', ['R10'], 3),
+        makeZone('shiraz', ['R12', 'R13'], 12)
+      ];
+      const utilization = {
+        cabernet: makeUtil(3, 1),
+        shiraz: makeUtil(12, 2)
+      };
+
+      const idealBottleCounts = new Map([
+        ['cabernet', 15],  // needs 2 rows (ideal)
+        ['shiraz', 5]       // needs 1 row (ideal)
+      ]);
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        idealBottleCounts,
+        stabilityBias: 'low'
+      });
+
+      // With ideal counts, cabernet needs 2 rows but has 1 → deficit
+      // Shiraz needs 1 row but has 2 → surplus
+      // Solver should reallocate a row from shiraz to cabernet
+      const shirazToCabernet = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'shiraz' && a.toZoneId === 'cabernet'
+      );
+      expect(shirazToCabernet.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('falls back to physical utilization when idealBottleCounts is null', () => {
+      const zones = [
+        makeZone('cabernet', ['R10', 'R11'], 12),
+        makeZone('shiraz', ['R12', 'R13'], 10)
+      ];
+      const utilization = {
+        cabernet: makeUtil(12, 2),
+        shiraz: makeUtil(10, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        idealBottleCounts: null,
+        stabilityBias: 'moderate'
+      });
+
+      // No surplus/deficit with physical counts → no actions
+      expect(result.actions).toHaveLength(0);
+    });
+
+    it('applies MIN_BOTTLES_FOR_ROW threshold to ideal counts', () => {
+      // Ideal counts put only 2 bottles in curiosities → demand=0
+      const zones = [
+        makeZone('curiosities', ['R14'], 2),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        curiosities: makeUtil(2, 1),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const idealBottleCounts = new Map([
+        ['curiosities', 2],  // below threshold → demand=0
+        ['cabernet', 12]
+      ]);
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        idealBottleCounts,
+        stabilityBias: 'low'
+      });
+
+      // curiosities has demand=0 with ideal counts → surplus=1
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('handles zones missing from idealBottleCounts by falling back to utilization', () => {
+      const zones = [
+        makeZone('cabernet', ['R10', 'R11'], 12),
+        makeZone('shiraz', ['R12'], 8)
+      ];
+      const utilization = {
+        cabernet: makeUtil(12, 2),
+        shiraz: makeUtil(8, 1)
+      };
+
+      // Only shiraz has ideal counts; cabernet falls back to physical
+      const idealBottleCounts = new Map([
+        ['shiraz', 8]
+      ]);
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        idealBottleCounts,
+        stabilityBias: 'moderate'
+      });
+
+      // No surplus/deficit → no actions
+      expect(result.actions).toHaveLength(0);
+    });
+  });
 });

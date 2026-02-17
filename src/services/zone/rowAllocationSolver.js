@@ -38,6 +38,9 @@ export const MIN_BOTTLES_FOR_ROW = 5;
  * @param {Object} params
  * @param {Array} params.zones - Zone metadata [{id, name, color, actualAssignedRows}]
  * @param {Object} params.utilization - Zone utilization map {zoneId: {bottleCount, rowCount, capacity, ...}}
+ * @param {Map<string,number>} [params.idealBottleCounts] - Bottles-first classification counts per zone.
+ *   When provided, computeDemand uses these counts (how many rows each zone needs if every wine
+ *   were correctly placed) instead of physical utilization counts.
  * @param {Array} params.overflowingZones - Zones needing more space [{zoneId, affectedCount, ...}]
  * @param {Array} params.underutilizedZones - Zones that can donate rows
  * @param {Array} params.mergeCandidates - Pre-computed merge candidates [{sourceZone, targetZone, affinity, reason}]
@@ -52,6 +55,7 @@ export function solveRowAllocation(params) {
   const {
     zones,
     utilization,
+    idealBottleCounts = null,
     overflowingZones: _overflowingZones = [],
     underutilizedZones: _underutilizedZones = [],
     mergeCandidates = [],
@@ -66,7 +70,7 @@ export function solveRowAllocation(params) {
   // Phase 1: Build mutable state
   // ───────────────────────────────────────────
   const zoneRowMap = buildZoneRowMap(zones);
-  const demand = computeDemand(zones, utilization);
+  const demand = computeDemand(zones, utilization, idealBottleCounts);
   const actions = [];
   const reasoningParts = [];
 
@@ -176,13 +180,16 @@ function buildZoneRowMap(zones) {
  * Compute row demand for each zone.
  * @param {Array} zones
  * @param {Object} utilization
+ * @param {Map<string,number>|null} [idealBottleCounts=null] - When provided, uses ideal
+ *   (bottles-first) counts instead of physical utilization. Represents "how many rows each
+ *   zone needs if every wine were correctly placed".
  * @returns {Map<string, number>} zoneId → required rows
  */
-function computeDemand(zones, utilization) {
+function computeDemand(zones, utilization, idealBottleCounts = null) {
   const demand = new Map();
   for (const zone of zones) {
-    const util = utilization[zone.id];
-    const bottles = util?.bottleCount ?? 0;
+    // Use ideal counts (from bottleScan) when available, fall back to physical utilization
+    const bottles = idealBottleCounts?.get(zone.id) ?? utilization[zone.id]?.bottleCount ?? 0;
     // Only allocate rows to zones that meet the minimum bottle threshold.
     // Zones below MIN_BOTTLES_FOR_ROW get demand=0 — their bottles stay
     // in buffer/overflow zones rather than consuming a full row.

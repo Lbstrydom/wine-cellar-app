@@ -594,6 +594,8 @@ describe('rowCleanlinessSweep (Phase B3)', () => {
     expect(sbViolation).toBeDefined();
     expect(sbViolation.severity).toBe('moderate');
     expect(sbViolation.bestZoneId).toBe('sauvignon_blanc');
+    expect(sbViolation.scoreDelta).toBeGreaterThanOrEqual(40);
+    expect(typeof sbViolation.rowZoneScore).toBe('number');
     expect(sbViolation.reason).toContain('Better fit');
   });
 
@@ -692,6 +694,8 @@ describe('rowCleanlinessSweep (Phase B3)', () => {
     expect(v).toHaveProperty('bestZoneId');
     expect(v).toHaveProperty('bestZoneName');
     expect(v).toHaveProperty('bestScore');
+    expect(v).toHaveProperty('rowZoneScore');
+    expect(v).toHaveProperty('scoreDelta');
     expect(v).toHaveProperty('confidence');
     expect(v).toHaveProperty('reason');
   });

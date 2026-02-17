@@ -23,6 +23,7 @@ import {
   validateAdviceSchema,
   isValidZoneRef,
   enforceAdviceConsistency,
+  buildCellarAdvicePrompt,
 } from '../../../../src/services/cellar/cellarAI.js';
 
 describe('isSlotCoordinate', () => {
@@ -293,5 +294,161 @@ describe('enforceAdviceConsistency', () => {
     const normalized = enforceAdviceConsistency(advice, report);
     expect(normalized.zoneVerdict).toContain('duplicate bottle placements');
     expect(normalized.summary).toContain('duplicate placement issue(s)');
+  });
+});
+
+describe('Phase B5: buildCellarAdvicePrompt', () => {
+  /** Minimal report with bottleScan, cleanlinessViolations, and standard fields. */
+  function makeReport(overrides = {}) {
+    return {
+      summary: {
+        totalBottles: 50,
+        correctlyPlaced: 42,
+        misplacedBottles: 8,
+        unclassifiedCount: 0,
+        scatteredWineCount: 2,
+        overflowingZones: [],
+        fragmentedZones: [],
+        colorAdjacencyViolations: 0,
+        duplicatePlacementCount: 0
+      },
+      misplacedWines: [],
+      suggestedMoves: [],
+      duplicatePlacements: [],
+      zoneNarratives: [
+        { zoneId: 'shiraz', displayName: 'Shiraz', rows: ['R3', 'R4'], currentComposition: { bottleCount: 18, topGrapes: ['Shiraz'] } },
+        { zoneId: 'cabernet', displayName: 'Cabernet', rows: ['R5'], currentComposition: { bottleCount: 9, topGrapes: ['Cabernet Sauvignon'] } }
+      ],
+      bottleScan: {
+        groups: [
+          {
+            zoneId: 'shiraz', displayName: 'Shiraz', bottleCount: 18,
+            correctlyPlacedCount: 16, misplacedCount: 2, demandRows: 2, rowDeficit: 0,
+            wines: [
+              { wineId: 1, wineName: 'Kanonkop Pinotage', slot: 'R3C1', physicalRow: 'R3', canonicalZoneId: 'shiraz', confidence: 'high', score: 85, correctlyPlaced: true },
+              { wineId: 2, wineName: 'Mystery Blend', slot: 'R3C2', physicalRow: 'R3', canonicalZoneId: 'shiraz', confidence: 'low', score: 35, correctlyPlaced: true },
+              { wineId: 3, wineName: 'Borderline GSM', slot: 'R4C1', physicalRow: 'R4', canonicalZoneId: 'shiraz', confidence: 'medium', score: 55, correctlyPlaced: true }
+            ]
+          },
+          {
+            zoneId: 'cabernet', displayName: 'Cabernet', bottleCount: 9,
+            correctlyPlacedCount: 8, misplacedCount: 1, demandRows: 1, rowDeficit: 0,
+            wines: [
+              { wineId: 4, wineName: 'Warwick Cab', slot: 'R5C1', physicalRow: 'R5', canonicalZoneId: 'cabernet', confidence: 'high', score: 90, correctlyPlaced: true }
+            ]
+          }
+        ],
+        consolidationOpportunities: [],
+        totalBottles: 27,
+        totalGroups: 2
+      },
+      cleanlinessViolations: [
+        { wineId: 10, wineName: 'Stray Chardonnay', slot: 'R3C5', physicalRow: 'R3', rowZoneId: 'shiraz', rowZoneName: 'Shiraz', bestZoneId: 'chardonnay', bestZoneName: 'Chardonnay', bestScore: 80, rowZoneScore: 5, scoreDelta: 75, confidence: 'high', severity: 'critical', reason: 'Colour mismatch: white wine in red zone' }
+      ],
+      fridgeStatus: null,
+      layoutBaseline: null,
+      ...overrides
+    };
+  }
+
+  it('includes BOTTLES_FIRST_SCAN section with pre-classified groups', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport());
+    expect(prompt).toContain('<BOTTLES_FIRST_SCAN>');
+    expect(prompt).toContain('Pre-classified zone groupings');
+    expect(prompt).toContain('"zoneId":"shiraz"');
+    expect(prompt).toContain('"bottles":18');
+    expect(prompt).toContain('"correct":16');
+  });
+
+  it('includes CLEANLINESS_VIOLATIONS section when violations exist', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport());
+    expect(prompt).toContain('<CLEANLINESS_VIOLATIONS>');
+    expect(prompt).toContain('Pre-prioritized row violations');
+    expect(prompt).toContain('"severity":"critical"');
+    expect(prompt).toContain('Stray Chardonnay');
+  });
+
+  it('omits CLEANLINESS_VIOLATIONS section when no violations', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport({ cleanlinessViolations: [] }));
+    expect(prompt).not.toContain('<CLEANLINESS_VIOLATIONS>');
+  });
+
+  it('includes AMBIGUITY_CANDIDATES for low/medium confidence wines only', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport());
+    expect(prompt).toContain('<AMBIGUITY_CANDIDATES>');
+    // Low confidence wine included
+    expect(prompt).toContain('Mystery Blend');
+    // Medium confidence wine included
+    expect(prompt).toContain('Borderline GSM');
+    // High confidence wine excluded
+    expect(prompt).not.toContain('Kanonkop Pinotage');
+    expect(prompt).not.toContain('Warwick Cab');
+  });
+
+  it('omits AMBIGUITY_CANDIDATES when all wines are high confidence', () => {
+    const report = makeReport();
+    // Override wines to all high confidence
+    report.bottleScan.groups = [{
+      zoneId: 'shiraz', displayName: 'Shiraz', bottleCount: 2,
+      correctlyPlacedCount: 2, misplacedCount: 0, demandRows: 1, rowDeficit: 0,
+      wines: [
+        { wineId: 1, wineName: 'Wine A', slot: 'R3C1', physicalRow: 'R3', canonicalZoneId: 'shiraz', confidence: 'high', score: 90, correctlyPlaced: true },
+        { wineId: 2, wineName: 'Wine B', slot: 'R3C2', physicalRow: 'R3', canonicalZoneId: 'shiraz', confidence: 'high', score: 85, correctlyPlaced: true }
+      ]
+    }];
+    const prompt = buildCellarAdvicePrompt(report);
+    expect(prompt).not.toContain('<AMBIGUITY_CANDIDATES>');
+  });
+
+  it('caps ambiguity candidates at 15', () => {
+    const report = makeReport();
+    // Create 20 low-confidence wines
+    const manyWines = Array.from({ length: 20 }, (_, i) => ({
+      wineId: 100 + i, wineName: `Wine ${i}`, slot: `R3C${i + 1}`, physicalRow: 'R3',
+      canonicalZoneId: 'shiraz', confidence: 'low', score: 30, correctlyPlaced: false
+    }));
+    report.bottleScan.groups = [{
+      zoneId: 'shiraz', displayName: 'Shiraz', bottleCount: 20,
+      correctlyPlacedCount: 0, misplacedCount: 20, demandRows: 3, rowDeficit: 1,
+      wines: manyWines
+    }];
+    const prompt = buildCellarAdvicePrompt(report);
+    // Count occurrences of wineId in the AMBIGUITY_CANDIDATES section
+    const ambSection = prompt.split('<AMBIGUITY_CANDIDATES>')[1]?.split('</AMBIGUITY_CANDIDATES>')[0] || '';
+    const matches = ambSection.match(/"id":\d+/g) || [];
+    expect(matches.length).toBe(15);
+  });
+
+  it('instructs AI that algorithmic classification is authoritative', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport());
+    expect(prompt).toContain('ALGORITHMIC CLASSIFICATION IS AUTHORITATIVE');
+    expect(prompt).toContain('do NOT reclassify');
+  });
+
+  it('removes misplacedWines from DATA (replaced by bottles-first scan)', () => {
+    const prompt = buildCellarAdvicePrompt(makeReport());
+    // DATA section should not contain misplacedWines key
+    const dataSection = prompt.split('<DATA>')[1]?.split('</DATA>')[0] || '';
+    expect(dataSection).not.toContain('"misplacedWines"');
+  });
+
+  it('gracefully handles missing bottleScan', () => {
+    const report = makeReport({ bottleScan: null });
+    const prompt = buildCellarAdvicePrompt(report);
+    // Should still produce valid prompt with empty groups
+    expect(prompt).toContain('<BOTTLES_FIRST_SCAN>');
+    expect(prompt).toContain('[]');
+    expect(prompt).not.toContain('<AMBIGUITY_CANDIDATES>');
+  });
+
+  it('includes suggested moves for AI confirmation', () => {
+    const report = makeReport({
+      suggestedMoves: [
+        { wineId: 10, wineName: 'Stray Chardonnay', from: 'R3C5', to: 'R7C1', type: 'move' }
+      ]
+    });
+    const prompt = buildCellarAdvicePrompt(report);
+    expect(prompt).toContain('"suggestedMoves"');
+    expect(prompt).toContain('Stray Chardonnay');
   });
 });

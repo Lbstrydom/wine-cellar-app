@@ -258,6 +258,10 @@ export function rowCleanlinessSweep(slotToWine, zoneMap) {
 
       // Determine severity
       const wineColour = wineColourFamily(wine);
+      const rowZoneScore = bestZone.alternativeZones?.find(
+        az => az.zoneId === rowZoneInfo.zoneId
+      )?.score ?? 0;
+      const scoreDelta = bestZone.score - rowZoneScore;
       let severity;
 
       if (rowZoneColour && wineColour && rowZoneColour !== wineColour) {
@@ -265,12 +269,6 @@ export function rowCleanlinessSweep(slotToWine, zoneMap) {
         severity = 'critical';
       } else {
         // Same colour family — check score delta
-        // Score the wine against the row's zone to compute delta
-        const rowZoneScore = bestZone.alternativeZones?.find(
-          az => az.zoneId === rowZoneInfo.zoneId
-        )?.score ?? 0;
-        const scoreDelta = bestZone.score - rowZoneScore;
-
         if (scoreDelta >= MODERATE_SCORE_DELTA) {
           severity = 'moderate';
         } else {
@@ -288,19 +286,24 @@ export function rowCleanlinessSweep(slotToWine, zoneMap) {
         bestZoneId: bestZone.zoneId,
         bestZoneName: bestZone.displayName,
         bestScore: bestZone.score,
+        rowZoneScore,
+        scoreDelta,
         confidence: bestZone.confidence,
         severity,
         reason: severity === 'critical'
           ? `Colour violation: ${wineColour} wine in ${rowZoneColour} zone (${rowZoneInfo.displayName})`
-          : `Better fit: ${bestZone.displayName} (score ${bestZone.score}) vs ${rowZoneInfo.displayName}`
+          : `Better fit: ${bestZone.displayName} (score ${bestZone.score}) vs ${rowZoneInfo.displayName} (score ${rowZoneScore}), delta ${scoreDelta}`
       });
     }
   }
 
-  // Sort by severity (critical first), then by best score descending (worst offenders first)
+  // Sort by severity (critical first), then by score delta descending.
+  // Larger deltas indicate stronger "this bottle is in the wrong row" signals.
   violations.sort((a, b) => {
     const sev = severitySort(a.severity, b.severity);
     if (sev !== 0) return sev;
+    const deltaDiff = (b.scoreDelta ?? 0) - (a.scoreDelta ?? 0);
+    if (deltaDiff !== 0) return deltaDiff;
     return b.bestScore - a.bestScore;
   });
 
