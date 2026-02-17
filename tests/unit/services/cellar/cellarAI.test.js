@@ -22,6 +22,7 @@ import {
   resolveAIMovesToSlots,
   validateAdviceSchema,
   isValidZoneRef,
+  enforceAdviceConsistency,
 } from '../../../../src/services/cellar/cellarAI.js';
 
 describe('isSlotCoordinate', () => {
@@ -169,5 +170,56 @@ describe('validateAdviceSchema', () => {
     const validOptions = result.ambiguousWines[0]?.options || [];
     expect(validOptions).toContain('shiraz');
     expect(validOptions).not.toContain('nonexistent_zone_xyz');
+  });
+});
+
+describe('enforceAdviceConsistency', () => {
+  it('rewrites overconfident verdict and summary when issues exist', () => {
+    const advice = {
+      summary: 'Your cellar is 95% well-organized.',
+      zoneVerdict: 'Zone structure is sound and well-configured for this collection.',
+      zoneHealth: [{ zone: 'aromatic_whites', status: 'contaminated', recommendation: 'Move reds out.' }]
+    };
+    const report = {
+      summary: {
+        totalBottles: 98,
+        misplacedBottles: 6,
+        unclassifiedCount: 4,
+        scatteredWineCount: 2,
+        overflowingZones: ['Pinot Noir', 'Shiraz'],
+        fragmentedZones: [],
+        colorAdjacencyViolations: 1
+      },
+      zoneCapacityIssues: [{ zoneId: 'pinot_noir' }]
+    };
+
+    const normalized = enforceAdviceConsistency(advice, report);
+    expect(normalized.zoneVerdict).toContain('unresolved issues');
+    expect(normalized.summary).toContain('misplaced bottle(s)');
+    expect(normalized.summary).toContain('structural issue(s)');
+  });
+
+  it('keeps advice unchanged when no issue signals are present', () => {
+    const advice = {
+      summary: 'Your cellar is well-organized.',
+      zoneVerdict: 'Zone structure is sound.',
+      zoneHealth: [{ zone: 'chenin_blanc', status: 'healthy', recommendation: 'No changes needed.' }]
+    };
+    const report = {
+      summary: {
+        totalBottles: 40,
+        misplacedBottles: 0,
+        unclassifiedCount: 0,
+        scatteredWineCount: 0,
+        overflowingZones: [],
+        fragmentedZones: [],
+        colorAdjacencyViolations: 0
+      },
+      zoneCapacityIssues: []
+    };
+
+    const normalized = enforceAdviceConsistency(advice, report);
+    expect(normalized.zoneVerdict).toBe(advice.zoneVerdict);
+    expect(normalized.summary).toBe(advice.summary);
   });
 });

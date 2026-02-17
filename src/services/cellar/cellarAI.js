@@ -50,12 +50,15 @@ export async function getCellarOrganisationAdvice(analysisReport) {
       const parsed = JSON.parse(jsonStr);
 
       // Validate structure
-      const validated = validateAdviceSchema(parsed);
+      let validated = validateAdviceSchema(parsed);
 
       // Cross-reference AI moves with original suggestedMoves for slot coordinates.
       // Claude may return zone names instead of slot IDs — resolve them back.
       validated.confirmedMoves = resolveAIMovesToSlots(validated.confirmedMoves, analysisReport.suggestedMoves);
       validated.modifiedMoves = resolveAIMovesToSlots(validated.modifiedMoves, analysisReport.suggestedMoves);
+
+      // Guardrail: remove "all good" language when the analysis has unresolved issues.
+      validated = enforceAdviceConsistency(validated, analysisReport);
 
       // GPT-5.2 review if enabled
       if (isCellarAnalysisReviewEnabled()) {
@@ -189,7 +192,7 @@ ${JSON.stringify(zoneDefinitions)}
 </ZONE_DEFINITIONS>
 
 <DATA>
-{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount}},"misplacedWines":${JSON.stringify(sanitizedMisplaced)},"suggestedMoves":${JSON.stringify(sanitizedMoves)}}
+{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount},"scatteredWines":${report.summary.scatteredWineCount || 0},"overflowingZones":${report.summary.overflowingZones?.length || 0},"fragmentedZones":${report.summary.fragmentedZones?.length || 0},"colorBoundaryViolations":${report.summary.colorAdjacencyViolations || 0}},"misplacedWines":${JSON.stringify(sanitizedMisplaced)},"suggestedMoves":${JSON.stringify(sanitizedMoves)}}
 </DATA>
 
 ${fridgeContext ? `<FRIDGE>${JSON.stringify(fridgeContext)}</FRIDGE>` : ''}
@@ -206,6 +209,114 @@ ${fridgeContext ? `<FRIDGE>${JSON.stringify(fridgeContext)}</FRIDGE>` : ''}
 Respond with ONLY valid JSON:
 {"zonesNeedReconfiguration":false,"zoneVerdict":"string","proposedZoneChanges":[],"confirmedMoves":[{"wineId":0,"from":"slot","to":"slot"}],"modifiedMoves":[],"rejectedMoves":[{"wineId":0,"reason":"string"}],"ambiguousWines":[{"wineId":0,"name":"string","options":["zone_id"],"recommendation":"string"}],"zoneAdjustments":[],"zoneHealth":[{"zone":"string","status":"string","recommendation":"string"}],"fridgePlan":{"toAdd":[{"wineId":0,"reason":"string","category":"string"}],"toRemove":[],"coverageAfter":{}},"layoutNarrative":"string","summary":"string"}
 </OUTPUT_FORMAT>`;
+}
+
+const OVERCONFIDENT_LANGUAGE_RE = /\b(zone structure is sound|well-?organi[sz]ed|well-?configured|well[- ]suited|no (major )?changes needed|already (well-?organi[sz]ed|optimal)|in good shape)\b/i;
+
+/**
+ * Build an issue snapshot from analysis report.
+ * @param {Object} report
+ * @returns {Object}
+ */
+function getIssueSnapshot(report) {
+  const summary = report?.summary || {};
+  const overflowingZones = Array.isArray(summary.overflowingZones) ? summary.overflowingZones.length : 0;
+  const fragmentedZones = Array.isArray(summary.fragmentedZones) ? summary.fragmentedZones.length : 0;
+  const colorBoundaryViolations = Number(summary.colorAdjacencyViolations || 0);
+  const zoneCapacityIssues = Array.isArray(report?.zoneCapacityIssues) ? report.zoneCapacityIssues.length : 0;
+  const misplacedBottles = Number(summary.misplacedBottles || 0);
+  const unclassifiedCount = Number(summary.unclassifiedCount || 0);
+  const scatteredWineCount = Number(summary.scatteredWineCount || 0);
+  const totalBottles = Number(summary.totalBottles || 0);
+
+  return {
+    totalBottles,
+    misplacedBottles,
+    unclassifiedCount,
+    scatteredWineCount,
+    structureIssueCount: overflowingZones + fragmentedZones + colorBoundaryViolations + zoneCapacityIssues,
+    placementIssueCount: misplacedBottles + unclassifiedCount + scatteredWineCount
+  };
+}
+
+/**
+ * Check for overconfident language that conflicts with active issues.
+ * @param {string|null} text
+ * @returns {boolean}
+ */
+function hasOverconfidentLanguage(text) {
+  return typeof text === 'string' && OVERCONFIDENT_LANGUAGE_RE.test(text);
+}
+
+/**
+ * Build a neutral, issue-aware summary.
+ * @param {Object} snapshot
+ * @returns {string}
+ */
+function buildConsistencySummary(snapshot) {
+  const issueBits = [];
+  if (snapshot.misplacedBottles > 0) issueBits.push(`${snapshot.misplacedBottles} misplaced bottle(s)`);
+  if (snapshot.unclassifiedCount > 0) issueBits.push(`${snapshot.unclassifiedCount} unclassified bottle(s)`);
+  if (snapshot.scatteredWineCount > 0) issueBits.push(`${snapshot.scatteredWineCount} scattered wine group(s)`);
+  if (snapshot.structureIssueCount > 0) issueBits.push(`${snapshot.structureIssueCount} structural issue(s)`);
+
+  const correctlyPlaced = Math.max(snapshot.totalBottles - snapshot.misplacedBottles, 0);
+  const organisedPct = snapshot.totalBottles > 0
+    ? Math.round((correctlyPlaced / snapshot.totalBottles) * 100)
+    : 100;
+
+  if (issueBits.length === 0) {
+    return `Cellar organisation is stable at about ${organisedPct}% correctly placed.`;
+  }
+  return `Your cellar is about ${organisedPct}% organised, but it still has ${issueBits.join(', ')}.`;
+}
+
+/**
+ * Build a neutral, issue-aware zone verdict.
+ * @param {Object} snapshot
+ * @param {boolean} hasZoneHealthIssues
+ * @returns {string|null}
+ */
+function buildConsistencyVerdict(snapshot, hasZoneHealthIssues) {
+  if (snapshot.structureIssueCount > 0 || hasZoneHealthIssues) {
+    return 'Zone structure has unresolved issues and still needs adjustment.';
+  }
+  if (snapshot.placementIssueCount > 0) {
+    return 'Zone structure is usable, but bottle placement issues still need cleanup.';
+  }
+  return null;
+}
+
+/**
+ * Ensure AI advice does not claim "all good" when the report still has issues.
+ * @param {Object} advice
+ * @param {Object} report
+ * @returns {Object}
+ */
+function enforceAdviceConsistency(advice, report) {
+  if (!advice || typeof advice !== 'object') return advice;
+
+  const snapshot = getIssueSnapshot(report);
+  const hasAnalysisIssues = snapshot.structureIssueCount > 0 || snapshot.placementIssueCount > 0;
+  const hasZoneHealthIssues = Array.isArray(advice.zoneHealth) && advice.zoneHealth.some(z => {
+    const status = String(z?.status || '').toLowerCase().trim();
+    return status && !['healthy', 'good'].includes(status);
+  });
+
+  if (!hasAnalysisIssues && !hasZoneHealthIssues) return advice;
+
+  const normalized = { ...advice };
+
+  if (!normalized.zoneVerdict || hasOverconfidentLanguage(normalized.zoneVerdict)) {
+    const safeVerdict = buildConsistencyVerdict(snapshot, hasZoneHealthIssues);
+    if (safeVerdict) normalized.zoneVerdict = safeVerdict;
+  }
+
+  if (hasAnalysisIssues && (!normalized.summary || hasOverconfidentLanguage(normalized.summary))) {
+    normalized.summary = buildConsistencySummary(snapshot);
+  }
+
+  return normalized;
 }
 
 /**
@@ -375,4 +486,4 @@ function generateFallbackAdvice(report) {
 }
 
 // Exported for testing
-export { isSlotCoordinate, resolveAIMovesToSlots, validateAdviceSchema, isValidZoneRef };
+export { isSlotCoordinate, resolveAIMovesToSlots, validateAdviceSchema, isValidZoneRef, enforceAdviceConsistency };

@@ -138,6 +138,17 @@ describe('formatAIAdvice', () => {
     expect(html).toContain('Zones should be updated.');
   });
 
+  it('renders zone verdict as reconfig when zone health reports non-healthy status', () => {
+    const advice = {
+      ...mockAdvice,
+      zonesNeedReconfiguration: false,
+      zoneVerdict: 'Zone structure is sound.',
+      zoneHealth: [{ zone: 'aromatic_whites', status: 'contaminated', recommendation: 'Move red wines out.' }]
+    };
+    const html = formatAIAdvice(advice);
+    expect(html).toContain('ai-zone-verdict--reconfig');
+  });
+
   it('renders zone adjustments as list items', () => {
     const html = formatAIAdvice(mockAdvice);
     expect(html).toContain('<strong>italian</strong>');

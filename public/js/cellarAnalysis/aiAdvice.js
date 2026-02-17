@@ -167,6 +167,17 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
 
   const zonesNeedReconfig = advice.zonesNeedReconfiguration === true;
   const hasProposedChanges = advice.proposedZoneChanges?.length > 0;
+  const hasZoneHealthIssues = (advice.zoneHealth || []).some(z => {
+    const status = String(z?.status || '').toLowerCase().trim();
+    return status && !['healthy', 'good'].includes(status);
+  });
+  const verdictTextSignalsIssue = typeof advice.zoneVerdict === 'string' &&
+    /\b(issue|problem|reconfig|contaminat|over\s*capacity|fragment|misplac|needs?\b)/i.test(advice.zoneVerdict);
+  const verdictNeedsAttention =
+    zonesNeedReconfig ||
+    hasProposedChanges ||
+    hasZoneHealthIssues ||
+    verdictTextSignalsIssue;
 
   let html = '<div class="ai-advice-structured">';
 
@@ -182,8 +193,8 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
 
   // 3. Zone Verdict — always shown when present
   if (advice.zoneVerdict) {
-    const verdictClass = zonesNeedReconfig ? 'ai-zone-verdict--reconfig' : 'ai-zone-verdict--good';
-    const verdictIcon = zonesNeedReconfig ? '⚠️' : '✅';
+    const verdictClass = verdictNeedsAttention ? 'ai-zone-verdict--reconfig' : 'ai-zone-verdict--good';
+    const verdictIcon = verdictNeedsAttention ? '&#9888;' : '&#9989;';
     html += `<div class="ai-zone-verdict ${verdictClass}">
       <h4>${verdictIcon} Zone Assessment</h4>
       <p>${escapeHtml(advice.zoneVerdict)}</p>
@@ -292,3 +303,4 @@ function formatAIAdvice(advice, needsZoneSetup = false) {
 }
 
 export { formatAIAdvice, enrichMovesWithNames };
+
