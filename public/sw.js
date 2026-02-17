@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v142';
+const CACHE_VERSION = 'v143';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -20,12 +20,12 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260217a',
-  '/css/variables.css?v=20260217a',
-  '/css/layout.css?v=20260217a',
-  '/css/components.css?v=20260217a',
-  '/css/themes.css?v=20260217a',
-  '/css/accessibility.css?v=20260217a',
+  '/css/styles.css?v=20260217b',
+  '/css/variables.css?v=20260217b',
+  '/css/layout.css?v=20260217b',
+  '/css/components.css?v=20260217b',
+  '/css/themes.css?v=20260217b',
+  '/css/accessibility.css?v=20260217b',
   '/js/theme-init.js',
   '/js/app.js',
   '/js/api.js',
@@ -69,7 +69,10 @@ const STATIC_ASSETS = [
   '/js/cellarAnalysis/moveGuide.js',
   '/js/cellarAnalysis/freshness.js',
   '/js/cellarAnalysis/grapeHealth.js',
+  '/js/cellarAnalysis/consolidation.js',
   '/js/onboarding.js',
+  '/js/storageBuilder.js',
+  '/js/tastingService.js',
   '/js/recommendations.js',
   '/js/errorBoundary.js',
   '/js/eventManager.js',
