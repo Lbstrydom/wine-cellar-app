@@ -347,6 +347,9 @@ router.post('/assign-zone', asyncHandler(async (req, res) => {
     await updateZoneWineCount(zoneId, req.cellarId, 1);
   }
 
+  // Zone assignment changes affect placement/analysis outcomes.
+  await invalidateAnalysisCache(null, req.cellarId);
+
   res.json({
     success: true,
     wineId,

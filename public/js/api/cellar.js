@@ -195,15 +195,26 @@ export async function undoReconfiguration(reconfigurationId) {
 /**
  * Get AI-enhanced cellar analysis.
  * AI analysis can take 60-120 seconds, so we use a long timeout.
+ * @param {boolean} [forceRefresh=true] - Bypass cached analysis/advice for this run
+ * @param {Object} [options={}] - Additional options
+ * @param {boolean} [options.clean=true] - Include clean ideal-vs-current layout baseline
  * @returns {Promise<Object>}
  */
-export async function analyseCellarAI() {
+export async function analyseCellarAI(forceRefresh = true, options = {}) {
+  const { clean = true } = options;
   // Use cache: 'no-store' to bypass service worker caching
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 240000); // 4 minute timeout
 
   try {
-    const res = await fetch(`${API_BASE}/api/cellar/analyse/ai`, {
+    const params = new URLSearchParams();
+    if (forceRefresh) params.set('refresh', 'true');
+    if (clean) params.set('clean', 'true');
+    const url = params.toString()
+      ? `${API_BASE}/api/cellar/analyse/ai?${params.toString()}`
+      : `${API_BASE}/api/cellar/analyse/ai`;
+
+    const res = await fetch(url, {
       cache: 'no-store',
       signal: controller.signal
     });

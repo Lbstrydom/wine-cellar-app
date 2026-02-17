@@ -13,6 +13,7 @@ import {
   invalidateAnalysisCache,
   getAnalysisCacheInfo
 } from '../services/shared/cacheService.js';
+import { proposeZoneLayout, getSavedZoneLayout } from '../services/zone/zoneLayoutProposal.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots } from './cellar.js';
 
@@ -42,6 +43,43 @@ export async function runAnalysis(wines, cellarId) {
   report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, cellarId);
 
   return report;
+}
+
+/**
+ * Build a compact baseline snapshot for clean AI comparison:
+ * ideal zone layout (from current bottles) vs current saved layout.
+ * @param {string} cellarId
+ * @returns {Promise<Object|null>}
+ */
+async function buildLayoutBaseline(cellarId) {
+  try {
+    const [ideal, current] = await Promise.all([
+      proposeZoneLayout(cellarId),
+      getSavedZoneLayout(cellarId)
+    ]);
+
+    return {
+      ideal: {
+        totalRows: ideal?.totalRows || 0,
+        totalBottles: ideal?.totalBottles || 0,
+        zones: (ideal?.proposals || []).map(z => ({
+          zoneId: z.zoneId,
+          bottleCount: z.bottleCount,
+          assignedRows: z.assignedRows
+        })),
+        unassignedRows: ideal?.unassignedRows || []
+      },
+      current: {
+        zones: (current || []).map(z => ({
+          zoneId: z.zoneId,
+          bottleCount: z.wineCount || 0,
+          assignedRows: z.assignedRows || []
+        }))
+      }
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -182,15 +220,21 @@ router.get('/fridge-organize', asyncHandler(async (req, res) => {
  * Uses cached report if available.
  */
 router.get('/analyse/ai', asyncHandler(async (req, res) => {
+  const forceRefresh = req.query.refresh === 'true';
+  const cleanMode = req.query.clean === 'true';
   let report;
   let fromCache = false;
 
-  // Check cache first
-  const cached = await getCachedAnalysis('full', req.cellarId);
-  if (cached) {
-    report = cached.data;
-    fromCache = true;
-  } else {
+  // Check cache first unless caller explicitly requests a fresh run.
+  if (!forceRefresh) {
+    const cached = await getCachedAnalysis('full', req.cellarId);
+    if (cached) {
+      report = cached.data;
+      fromCache = true;
+    }
+  }
+
+  if (!report) {
     const wines = await getAllWinesWithSlots(req.cellarId);
     report = await runAnalysis(wines, req.cellarId);
 
@@ -199,18 +243,25 @@ router.get('/analyse/ai', asyncHandler(async (req, res) => {
     await cacheAnalysis('full', report, wineCount, req.cellarId);
   }
 
-  // Check for cached AI advice (keyed to same slot hash as report)
-  const cachedAI = await getCachedAnalysis('ai_advice', req.cellarId);
-  if (cachedAI) {
-    return res.json({
-      success: true,
-      report,
-      aiAdvice: cachedAI.data.advice,
-      aiSuccess: cachedAI.data.aiSuccess,
-      aiError: cachedAI.data.aiError || null,
-      reportFromCache: fromCache,
-      aiFromCache: true
-    });
+  // Optional clean baseline context: compare ideal layout vs current layout.
+  if (cleanMode) {
+    report.layoutBaseline = await buildLayoutBaseline(req.cellarId);
+  }
+
+  // Check for cached AI advice (keyed to current fingerprint), unless force-refresh.
+  if (!forceRefresh) {
+    const cachedAI = await getCachedAnalysis('ai_advice', req.cellarId);
+    if (cachedAI) {
+      return res.json({
+        success: true,
+        report,
+        aiAdvice: cachedAI.data.advice,
+        aiSuccess: cachedAI.data.aiSuccess,
+        aiError: cachedAI.data.aiError || null,
+        reportFromCache: fromCache,
+        aiFromCache: true
+      });
+    }
   }
 
   const aiResult = await getCellarOrganisationAdvice(report);

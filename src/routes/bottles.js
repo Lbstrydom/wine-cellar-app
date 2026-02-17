@@ -8,6 +8,7 @@ import { z } from 'zod';
 import db from '../db/index.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 
 const router = Router();
 
@@ -110,6 +111,7 @@ router.post('/add', asyncHandler(async (req, res) => {
 
   // Update zone wine_count if this wine's first bottle just entered the cellar
   await adjustZoneCountAfterBottleCrud(wine_id, req.cellarId, 'added');
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     message: `Added ${slotsToFill.length} bottle(s)`,

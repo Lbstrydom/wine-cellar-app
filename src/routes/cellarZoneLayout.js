@@ -18,6 +18,7 @@ import {
   getSavedZoneLayout,
   generateConsolidationMoves
 } from '../services/zone/zoneLayoutProposal.js';
+import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { discussZoneClassification } from '../services/zone/zoneChat.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots } from './cellar.js';
@@ -144,6 +145,7 @@ router.post('/zone-layout/confirm', asyncHandler(async (req, res) => {
   }
 
   await saveZoneLayout(assignments, req.cellarId);
+  await invalidateAnalysisCache(null, req.cellarId);
 
   res.json({
     success: true,

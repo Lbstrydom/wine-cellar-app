@@ -28,7 +28,7 @@ export async function handleGetAIAdvice() {
   if (statusEl) statusEl.textContent = 'AI zone structure analysis in progress (may take up to 2 minutes)...';
 
   try {
-    const result = await analyseCellarAI();
+    const result = await analyseCellarAI(true, { clean: true });
     const analysis = getCurrentAnalysis();
     const needsZoneSetup = analysis?.needsZoneSetup ?? false;
 

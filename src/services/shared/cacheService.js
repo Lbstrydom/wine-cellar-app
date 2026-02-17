@@ -560,7 +560,25 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 5;  // v5: 6-phase allocation fix (ghost rows, ping-pong swap, wine_count CRUD, surplus right-sizing, scatter consolidation)
+const ANALYSIS_LOGIC_VERSION = 6;  // v6: include bottle_count + zone_allocations in cache fingerprint to prevent stale AI/analysis state
+
+/**
+ * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
+ * @param {unknown} value
+ * @returns {string[]}
+ */
+function parseAssignedRowsForHash(value) {
+  if (Array.isArray(value)) return value.map(String).filter(Boolean);
+  if (typeof value !== 'string') return [];
+  const trimmed = value.trim();
+  if (!trimmed) return [];
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed.map(String).filter(Boolean) : [];
+  } catch {
+    return [];
+  }
+}
 
 /**
  * Generate slot hash for cache invalidation.
@@ -576,17 +594,31 @@ const ANALYSIS_LOGIC_VERSION = 5;  // v5: 6-phase allocation fix (ghost rows, pi
 async function generateSlotHash(cellarId) {
   try {
     const slots = await db.prepare(`
-      SELECT s.location_code, s.wine_id, w.colour, w.style, w.country, w.grapes
+      SELECT s.location_code, s.wine_id, w.colour, w.style, w.country, w.grapes, w.bottle_count
       FROM slots s
       LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = ?
       WHERE s.cellar_id = ? AND s.wine_id IS NOT NULL
       ORDER BY s.location_code
     `).all(cellarId, cellarId);
 
+    const allocations = await db.prepare(`
+      SELECT zone_id, assigned_rows, wine_count
+      FROM zone_allocations
+      WHERE cellar_id = ?
+      ORDER BY zone_id
+    `).all(cellarId);
+
     const slotData = slots.map(s =>
-      `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}`
+      `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}:${s.bottle_count ?? ''}`
     ).join('|');
-    return crypto.createHash('md5').update(`v${ANALYSIS_LOGIC_VERSION}|${slotData}`).digest('hex');
+    const allocationData = allocations.map(a => {
+      const rows = parseAssignedRowsForHash(a.assigned_rows).sort((aRow, bRow) => aRow.localeCompare(bRow));
+      return `${a.zone_id}:${rows.join(',')}:${a.wine_count ?? ''}`;
+    }).join('|');
+
+    return crypto.createHash('md5').update(
+      `v${ANALYSIS_LOGIC_VERSION}|slots:${slotData}|alloc:${allocationData}`
+    ).digest('hex');
   } catch (err) {
     logger.warn('Cache', `Slot hash generation failed: ${err.message}`);
     return '';

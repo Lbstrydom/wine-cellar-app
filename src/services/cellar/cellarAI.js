@@ -142,6 +142,14 @@ function buildCellarAdvicePrompt(report) {
       to: m.to || 'manual'
     }));
 
+  const duplicateContext = (report.duplicatePlacements || []).slice(0, 5).map(d => ({
+    wineId: d.wineId,
+    name: sanitizeForPrompt(d.wineName),
+    expectedCount: d.expectedCount,
+    actualSlotCount: Array.isArray(d.actualSlots) ? d.actualSlots.length : 0,
+    duplicateCount: d.duplicateCount
+  }));
+
   // Zone definitions — compact summary
   const zoneDefinitions = (report.zoneNarratives || []).slice(0, 12).map(n => ({
     id: n.zoneId,
@@ -161,6 +169,16 @@ function buildCellarAdvicePrompt(report) {
       name: sanitizeForPrompt(c.wineName),
       category: c.category
     }))
+  } : null;
+
+  const layoutBaseline = report.layoutBaseline ? {
+    ideal: {
+      totalRows: report.layoutBaseline.ideal?.totalRows || 0,
+      zones: (report.layoutBaseline.ideal?.zones || []).slice(0, 20)
+    },
+    current: {
+      zones: (report.layoutBaseline.current?.zones || []).slice(0, 20)
+    }
   } : null;
 
   return `You are a sommelier reviewing a wine cellar. Be concise and practical.
@@ -192,17 +210,20 @@ ${JSON.stringify(zoneDefinitions)}
 </ZONE_DEFINITIONS>
 
 <DATA>
-{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount},"scatteredWines":${report.summary.scatteredWineCount || 0},"overflowingZones":${report.summary.overflowingZones?.length || 0},"fragmentedZones":${report.summary.fragmentedZones?.length || 0},"colorBoundaryViolations":${report.summary.colorAdjacencyViolations || 0}},"misplacedWines":${JSON.stringify(sanitizedMisplaced)},"suggestedMoves":${JSON.stringify(sanitizedMoves)}}
+{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount},"scatteredWines":${report.summary.scatteredWineCount || 0},"overflowingZones":${report.summary.overflowingZones?.length || 0},"fragmentedZones":${report.summary.fragmentedZones?.length || 0},"colorBoundaryViolations":${report.summary.colorAdjacencyViolations || 0},"duplicatePlacements":${report.summary.duplicatePlacementCount || 0}},"misplacedWines":${JSON.stringify(sanitizedMisplaced)},"suggestedMoves":${JSON.stringify(sanitizedMoves)},"duplicatePlacements":${JSON.stringify(duplicateContext)}}
 </DATA>
 
+${layoutBaseline ? `<LAYOUT_BASELINE>${JSON.stringify(layoutBaseline)}</LAYOUT_BASELINE>` : ''}
 ${fridgeContext ? `<FRIDGE>${JSON.stringify(fridgeContext)}</FRIDGE>` : ''}
 
 <TASK>
-1. Assess whether zones suit the collection. Set zonesNeedReconfiguration=true ONLY if zones are fundamentally wrong.
+1. Assess whether zones suit the collection. Compare current layout to LAYOUT_BASELINE ideal when provided.
+   Set zonesNeedReconfiguration=true if structure is materially worse than baseline or fundamentally wrong.
 2. Confirm moves that fix clear misplacements. Reject moves for borderline cases.
 3. Flag only genuinely ambiguous wines (max 5). Use zone IDs in options.
-4. If fridge data present, suggest a diverse stocking plan.
-5. Write 1-2 sentence summary for the owner.
+4. If duplicatePlacements > 0, call this out explicitly as a data-integrity issue in zoneVerdict or summary.
+5. If fridge data present, suggest a diverse stocking plan.
+6. Write 1-2 sentence summary for the owner.
 </TASK>
 
 <OUTPUT_FORMAT>
@@ -212,6 +233,29 @@ Respond with ONLY valid JSON:
 }
 
 const OVERCONFIDENT_LANGUAGE_RE = /\b(zone structure is sound|well-?organi[sz]ed|well-?configured|well[- ]suited|no (major )?changes needed|already (well-?organi[sz]ed|optimal)|in good shape)\b/i;
+
+/**
+ * Compare current row allocations with clean ideal baseline.
+ * Returns how many zones differ in assigned rows.
+ * @param {Object|null|undefined} baseline
+ * @returns {number}
+ */
+function countLayoutBaselineDrift(baseline) {
+  if (!baseline?.ideal?.zones || !baseline?.current?.zones) return 0;
+
+  const toKey = (rows) => (Array.isArray(rows) ? [...rows].sort((a, b) => a.localeCompare(b)).join(',') : '');
+  const idealMap = new Map((baseline.ideal.zones || []).map(z => [z.zoneId, toKey(z.assignedRows)]));
+  const currentMap = new Map((baseline.current.zones || []).map(z => [z.zoneId, toKey(z.assignedRows)]));
+  const allZoneIds = new Set([...idealMap.keys(), ...currentMap.keys()]);
+
+  let driftCount = 0;
+  for (const zoneId of allZoneIds) {
+    if ((idealMap.get(zoneId) || '') !== (currentMap.get(zoneId) || '')) {
+      driftCount++;
+    }
+  }
+  return driftCount;
+}
 
 /**
  * Build an issue snapshot from analysis report.
@@ -224,6 +268,8 @@ function getIssueSnapshot(report) {
   const fragmentedZones = Array.isArray(summary.fragmentedZones) ? summary.fragmentedZones.length : 0;
   const colorBoundaryViolations = Number(summary.colorAdjacencyViolations || 0);
   const zoneCapacityIssues = Array.isArray(report?.zoneCapacityIssues) ? report.zoneCapacityIssues.length : 0;
+  const duplicatePlacementCount = Number(summary.duplicatePlacementCount || 0);
+  const layoutBaselineDrift = countLayoutBaselineDrift(report?.layoutBaseline);
   const misplacedBottles = Number(summary.misplacedBottles || 0);
   const unclassifiedCount = Number(summary.unclassifiedCount || 0);
   const scatteredWineCount = Number(summary.scatteredWineCount || 0);
@@ -234,8 +280,10 @@ function getIssueSnapshot(report) {
     misplacedBottles,
     unclassifiedCount,
     scatteredWineCount,
-    structureIssueCount: overflowingZones + fragmentedZones + colorBoundaryViolations + zoneCapacityIssues,
-    placementIssueCount: misplacedBottles + unclassifiedCount + scatteredWineCount
+    duplicatePlacementCount,
+    layoutBaselineDrift,
+    structureIssueCount: overflowingZones + fragmentedZones + colorBoundaryViolations + zoneCapacityIssues + layoutBaselineDrift,
+    placementIssueCount: misplacedBottles + unclassifiedCount + scatteredWineCount + duplicatePlacementCount
   };
 }
 
@@ -258,6 +306,7 @@ function buildConsistencySummary(snapshot) {
   if (snapshot.misplacedBottles > 0) issueBits.push(`${snapshot.misplacedBottles} misplaced bottle(s)`);
   if (snapshot.unclassifiedCount > 0) issueBits.push(`${snapshot.unclassifiedCount} unclassified bottle(s)`);
   if (snapshot.scatteredWineCount > 0) issueBits.push(`${snapshot.scatteredWineCount} scattered wine group(s)`);
+  if (snapshot.duplicatePlacementCount > 0) issueBits.push(`${snapshot.duplicatePlacementCount} duplicate placement issue(s)`);
   if (snapshot.structureIssueCount > 0) issueBits.push(`${snapshot.structureIssueCount} structural issue(s)`);
 
   const correctlyPlaced = Math.max(snapshot.totalBottles - snapshot.misplacedBottles, 0);
@@ -278,6 +327,9 @@ function buildConsistencySummary(snapshot) {
  * @returns {string|null}
  */
 function buildConsistencyVerdict(snapshot, hasZoneHealthIssues) {
+  if (snapshot.duplicatePlacementCount > 0) {
+    return 'Cellar data has duplicate bottle placements that need correction before zone assessment can be fully trusted.';
+  }
   if (snapshot.structureIssueCount > 0 || hasZoneHealthIssues) {
     return 'Zone structure has unresolved issues and still needs adjustment.';
   }

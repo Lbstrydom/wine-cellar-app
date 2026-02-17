@@ -222,4 +222,29 @@ describe('enforceAdviceConsistency', () => {
     expect(normalized.zoneVerdict).toBe(advice.zoneVerdict);
     expect(normalized.summary).toBe(advice.summary);
   });
+
+  it('flags duplicate placements as data integrity issue', () => {
+    const advice = {
+      summary: 'Your cellar is well-organized.',
+      zoneVerdict: 'Zone structure is sound.',
+      zoneHealth: [{ zone: 'cabernet', status: 'healthy', recommendation: 'No changes needed.' }]
+    };
+    const report = {
+      summary: {
+        totalBottles: 50,
+        misplacedBottles: 0,
+        unclassifiedCount: 0,
+        scatteredWineCount: 0,
+        duplicatePlacementCount: 2,
+        overflowingZones: [],
+        fragmentedZones: [],
+        colorAdjacencyViolations: 0
+      },
+      zoneCapacityIssues: []
+    };
+
+    const normalized = enforceAdviceConsistency(advice, report);
+    expect(normalized.zoneVerdict).toContain('duplicate bottle placements');
+    expect(normalized.summary).toContain('duplicate placement issue(s)');
+  });
 });
