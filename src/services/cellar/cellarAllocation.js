@@ -190,6 +190,36 @@ export async function updateZoneWineCount(zoneId, cellarId, delta) {
 }
 
 /**
+ * Adjust zone wine_count after a bottle enters/leaves the cellar.
+ * Only changes the count when a wine's first bottle enters or last bottle leaves.
+ * wine_count tracks distinct wines per zone, not individual bottles.
+ * @param {number} wineId - The wine being affected
+ * @param {string} cellarId - Cellar scope
+ * @param {'added'|'removed'} operation - Whether a bottle was added or removed
+ */
+export async function adjustZoneCountAfterBottleCrud(wineId, cellarId, operation) {
+  const wine = await db.prepare(
+    'SELECT zone_id FROM wines WHERE cellar_id = $1 AND id = $2'
+  ).get(cellarId, wineId);
+
+  if (!wine?.zone_id) return; // No zone assigned — nothing to update
+
+  const result = await db.prepare(
+    'SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id = $2'
+  ).get(cellarId, wineId);
+  const remaining = result?.count ?? 0;
+
+  if (operation === 'added' && remaining === 1) {
+    // First bottle just placed — this wine is newly in the cellar
+    await updateZoneWineCount(wine.zone_id, cellarId, 1);
+  } else if (operation === 'removed' && remaining === 0) {
+    // Last bottle just removed — this wine is no longer in the cellar
+    await updateZoneWineCount(wine.zone_id, cellarId, -1);
+  }
+  // All other cases: no change (wine already had bottles, or still has bottles)
+}
+
+/**
  * Get map of ALL allocated rows (regardless of wine_count).
  * Use this for availability checks — mirrors what allocateRowToZone() uses.
  * @param {string} cellarId - Cellar ID for tenant isolation

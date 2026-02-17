@@ -188,15 +188,19 @@ describe('Phase 2 – Classifier unification & dessert_fortified protection', ()
   });
 });
 
-describe('findAvailableSlot colour-region filter', () => {
+describe('findAvailableSlot uses allocated rows regardless of colour region (Phase A fix)', () => {
+  // Phase A fix: Allocated rows are committed decisions. We no longer filter them
+  // against the dynamic colour boundary — that filtering caused ghost row growth
+  // when the boundary shifted. The colour boundary only gates NEW allocations
+  // in allocateRowToZone(). (See external review Finding #6)
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('filters out red-region rows for a white zone (prevents whites moving to red territory)', async () => {
-    // chenin_blanc zone has R17 allocated (wrong — R17 is in range 8-19 = red territory)
+  it('uses a white zone row even if in red territory (allocated rows are committed)', async () => {
+    // chenin_blanc zone has R17 allocated — even though R17 is in "red territory",
+    // it's an existing allocation that must be honoured to prevent ghost row growth
     getZoneRows.mockResolvedValue(['R17']);
-    // No new row allocation available
     allocateRowToZone.mockRejectedValue(new Error('No rows'));
 
     const occupied = new Set();
@@ -204,10 +208,10 @@ describe('findAvailableSlot colour-region filter', () => {
       cellarId: 'test-cellar'
     });
 
-    // Should NOT return a slot in R17 (red territory for whites-top)
-    if (result) {
-      expect(result.slotId).not.toMatch(/^R17/);
-    }
+    // Should USE R17 because it's an allocated row (not filter it out)
+    expect(result).not.toBeNull();
+    expect(result.slotId).toMatch(/^R17C/);
+    expect(result.isOverflow).toBe(false);
   });
 
   it('keeps white-region rows for a white zone', async () => {
@@ -226,8 +230,9 @@ describe('findAvailableSlot colour-region filter', () => {
     expect(result.isOverflow).toBe(false);
   });
 
-  it('filters out white-region rows for a red zone (prevents reds in white territory)', async () => {
-    // cabernet zone has R5 allocated (wrong — R5 is in range 1-7 = white territory)
+  it('uses a red zone row even if in white territory (allocated rows are committed)', async () => {
+    // cabernet zone has R5 allocated — even though R5 is in "white territory",
+    // it's an existing allocation that must be honoured to prevent ghost row growth
     getZoneRows.mockResolvedValue(['R5']);
     allocateRowToZone.mockRejectedValue(new Error('No rows'));
 
@@ -236,10 +241,10 @@ describe('findAvailableSlot colour-region filter', () => {
       cellarId: 'test-cellar'
     });
 
-    // Should NOT return a slot in R5 (white territory for whites-top)
-    if (result) {
-      expect(result.slotId).not.toMatch(/^R5/);
-    }
+    // Should USE R5 because it's an allocated row (not filter it out)
+    expect(result).not.toBeNull();
+    expect(result.slotId).toMatch(/^R5C/);
+    expect(result.isOverflow).toBe(false);
   });
 
   it('keeps red-region rows for a red zone', async () => {

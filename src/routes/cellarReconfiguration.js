@@ -284,18 +284,13 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
 
   const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
 
-  // Get current allocations
+  // Get current source allocation
   const fromAlloc = await client.query(
     'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
     [cellarId, fromZoneId]
   );
-  const toAlloc = await client.query(
-    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
-    [cellarId, toZoneId]
-  );
 
   const fromRows = parseAssignedRows(fromAlloc.rows[0]?.assigned_rows);
-  const toRows = parseAssignedRows(toAlloc.rows[0]?.assigned_rows);
 
   // Verify the row belongs to fromZone - return skip status instead of throwing
   if (!fromRows.includes(rowId)) {
@@ -305,8 +300,6 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
 
   // Remove from source zone
   const updatedFromRows = fromRows.filter(r => r !== rowId);
-  // Add to target zone
-  const updatedToRows = [...toRows, rowId].filter(Boolean);
 
   // Update source zone allocation
   if (updatedFromRows.length > 0) {
@@ -321,6 +314,20 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
       [JSON.stringify([]), cellarId, fromZoneId]
     );
   }
+
+  // Handle surplus reclaim: toZoneId === '__unassigned' means just free the row
+  // without assigning it to any target zone. (Phase D: surplus right-sizing)
+  if (toZoneId === '__unassigned') {
+    return { success: true, skipped: false, fromRows: updatedFromRows, toRows: [] };
+  }
+
+  // Get target allocation and add row to target zone
+  const toAlloc = await client.query(
+    'SELECT assigned_rows, wine_count FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, toZoneId]
+  );
+  const toRows = parseAssignedRows(toAlloc.rows[0]?.assigned_rows);
+  const updatedToRows = [...toRows, rowId].filter(Boolean);
 
   // Update or create target zone allocation
   if (toAlloc.rows.length > 0) {
@@ -399,6 +406,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
 
       if (action.type === 'reallocate_row') {
         // Move a row from one zone to another (within fixed 19-row limit)
+        // toZoneId === '__unassigned' is valid for surplus right-sizing (Phase D)
         const { fromZoneId, toZoneId, rowNumber } = action;
         if (!fromZoneId || !toZoneId || rowNumber == null) continue;
 
@@ -415,8 +423,10 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
         const fromRows = zoneAllocMap.get(fromZoneId) || [];
         zoneAllocMap.set(fromZoneId, fromRows.filter(r => r !== rowId));
-        const toRows = zoneAllocMap.get(toZoneId) || [];
-        zoneAllocMap.set(toZoneId, [...toRows, rowId]);
+        if (toZoneId !== '__unassigned') {
+          const toRows = zoneAllocMap.get(toZoneId) || [];
+          zoneAllocMap.set(toZoneId, [...toRows, rowId]);
+        }
         zonesChanged++;
       } else if (action.type === 'expand_zone') {
         const zoneId = action.zoneId;

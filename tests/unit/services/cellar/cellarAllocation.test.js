@@ -27,7 +27,7 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
 }));
 
 import db from '../../../../src/db/index.js';
-import { allocateRowToZone } from '../../../../src/services/cellar/cellarAllocation.js';
+import { allocateRowToZone, adjustZoneCountAfterBottleCrud } from '../../../../src/services/cellar/cellarAllocation.js';
 
 describe('allocateRowToZone cross-colour safety (Phase 3.1)', () => {
   beforeEach(() => {
@@ -78,5 +78,83 @@ describe('allocateRowToZone cross-colour safety (Phase 3.1)', () => {
     const row = await allocateRowToZone('chenin_blanc', 'cellar-1');
     // chenin_blanc's preferredRowRange starts at low numbers
     expect(row).toMatch(/^R\d+$/);
+  });
+});
+
+describe('adjustZoneCountAfterBottleCrud (Phase C)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('increments zone count when first bottle of a wine enters cellar', async () => {
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1 });
+    const mockGet = vi.fn()
+      .mockResolvedValueOnce({ zone_id: 'sauvignon_blanc' })  // SELECT wine zone_id
+      .mockResolvedValueOnce({ count: 1 })                      // SELECT COUNT(*) from slots (1 = first bottle)
+      .mockResolvedValueOnce({ wine_count: 5 });                 // updateZoneWineCount reads count (not zero)
+
+    db.prepare.mockReturnValue({ get: mockGet, run: mockRun });
+
+    await adjustZoneCountAfterBottleCrud(42, 'cellar-1', 'added');
+
+    // Should have called run() to UPDATE wine_count
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it('does NOT increment when adding a second bottle of same wine', async () => {
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1 });
+    const mockGet = vi.fn()
+      .mockResolvedValueOnce({ zone_id: 'sauvignon_blanc' })  // wine zone_id
+      .mockResolvedValueOnce({ count: 2 });                      // 2 bottles = not first
+
+    db.prepare.mockReturnValue({ get: mockGet, run: mockRun });
+
+    await adjustZoneCountAfterBottleCrud(42, 'cellar-1', 'added');
+
+    // Should NOT have called run() — count is 2, not 1
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('decrements zone count when last bottle of a wine leaves cellar', async () => {
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1 });
+    const mockGet = vi.fn()
+      .mockResolvedValueOnce({ zone_id: 'cabernet' })  // wine zone_id
+      .mockResolvedValueOnce({ count: 0 })               // 0 bottles = last one removed
+      .mockResolvedValueOnce({ wine_count: 1 });          // updateZoneWineCount reads count
+
+    db.prepare.mockReturnValue({ get: mockGet, run: mockRun });
+
+    await adjustZoneCountAfterBottleCrud(42, 'cellar-1', 'removed');
+
+    // Should have called run() to decrement wine_count
+    expect(mockRun).toHaveBeenCalled();
+  });
+
+  it('does NOT decrement when bottles still remain', async () => {
+    const mockRun = vi.fn().mockResolvedValue({ changes: 1 });
+    const mockGet = vi.fn()
+      .mockResolvedValueOnce({ zone_id: 'cabernet' })  // wine zone_id
+      .mockResolvedValueOnce({ count: 3 });               // 3 bottles remain
+
+    db.prepare.mockReturnValue({ get: mockGet, run: mockRun });
+
+    await adjustZoneCountAfterBottleCrud(42, 'cellar-1', 'removed');
+
+    // Should NOT have called run() — bottles still remain
+    expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('does nothing if wine has no zone_id', async () => {
+    const mockRun = vi.fn();
+    const mockGet = vi.fn()
+      .mockResolvedValueOnce({ zone_id: null });  // no zone assigned
+
+    db.prepare.mockReturnValue({ get: mockGet, run: mockRun });
+
+    await adjustZoneCountAfterBottleCrud(42, 'cellar-1', 'added');
+
+    // Should have only called get() once (for wine zone_id), then returned
+    expect(mockGet).toHaveBeenCalledTimes(1);
+    expect(mockRun).not.toHaveBeenCalled();
   });
 });

@@ -23,6 +23,7 @@ import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { normalizeColour } from '../utils/wineNormalization.js';
+import { updateZoneWineCount } from '../services/cellar/cellarAllocation.js';
 
 const router = Router();
 
@@ -558,9 +559,20 @@ router.put('/:id', captureGrapes, validateParams(wineIdSchema), validateBody(upd
 router.delete('/:id', validateParams(wineIdSchema), asyncHandler(async (req, res) => {
   const { id } = req.params;
 
-  const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
+  const wine = await db.prepare('SELECT id, zone_id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, id);
   if (!wine) {
     return res.status(404).json({ error: 'Wine not found' });
+  }
+
+  // Decrement zone wine_count before deleting the wine (if it has a zone and bottles in cellar)
+  if (wine.zone_id) {
+    const bottleResult = await db.prepare(
+      'SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id = $2'
+    ).get(req.cellarId, id);
+    const hasBottles = (bottleResult?.count ?? 0) > 0;
+    if (hasBottles) {
+      await updateZoneWineCount(wine.zone_id, req.cellarId, -1);
+    }
   }
 
   await db.prepare('DELETE FROM wines WHERE cellar_id = $1 AND id = $2').run(req.cellarId, id);

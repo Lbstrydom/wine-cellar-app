@@ -7,6 +7,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import db from '../db/index.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
 
 const router = Router();
 
@@ -106,6 +107,9 @@ router.post('/add', asyncHandler(async (req, res) => {
   for (const loc of slotsToFill) {
     await db.prepare('UPDATE slots SET wine_id = $1 WHERE location_code = $2 AND cellar_id = $3').run(wine_id, loc, req.cellarId);
   }
+
+  // Update zone wine_count if this wine's first bottle just entered the cellar
+  await adjustZoneCountAfterBottleCrud(wine_id, req.cellarId, 'added');
 
   res.json({
     message: `Added ${slotsToFill.length} bottle(s)`,

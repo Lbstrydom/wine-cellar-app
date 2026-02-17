@@ -16,6 +16,7 @@ import {
 } from '../schemas/slot.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
 import { parseSlot, detectRowGaps } from '../services/cellar/cellarMetrics.js';
 import { getCellarLayoutSettings } from '../services/shared/cellarLayoutSettings.js';
 
@@ -183,6 +184,11 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     }
   });
 
+  // Update zone wine_count if this wine's last bottle just left the cellar
+  if (remainingCount === 0) {
+    await adjustZoneCountAfterBottleCrud(wineId, req.cellarId, 'removed');
+  }
+
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
 
@@ -214,6 +220,9 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
 
   await db.prepare('UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3').run(wine_id, req.cellarId, location);
 
+  // Update zone wine_count if this wine's first bottle just entered the cellar
+  await adjustZoneCountAfterBottleCrud(wine_id, req.cellarId, 'added');
+
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
 
@@ -235,7 +244,11 @@ router.delete('/:location/remove', validateParams(locationParamSchema), asyncHan
     return res.status(400).json({ error: 'Slot is already empty' });
   }
 
+  const removedWineId = slot.wine_id;
   await db.prepare('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2').run(req.cellarId, location);
+
+  // Update zone wine_count if this wine's last bottle just left the cellar
+  await adjustZoneCountAfterBottleCrud(removedWineId, req.cellarId, 'removed');
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);

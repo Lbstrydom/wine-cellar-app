@@ -92,6 +92,21 @@ export function solveRowAllocation(params) {
   }
 
   // ───────────────────────────────────────────
+  // Phase 3b: Reclaim surplus rows (right-sizing)
+  // ───────────────────────────────────────────
+  const surplusActions = reclaimSurplusRows(
+    zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias
+  );
+  if (surplusActions.length > 0) {
+    actions.push(...surplusActions);
+    const surplusZoneNames = [...new Set(surplusActions.map(a => a.fromZoneId))];
+    reasoningParts.push(
+      `Reclaimed ${surplusActions.length} surplus row(s) from over-provisioned zones: ` +
+      surplusZoneNames.map(z => getZoneDisplayName(z, zones)).join(', ') + '.'
+    );
+  }
+
+  // ───────────────────────────────────────────
   // Phase 4: Merge opportunities (small zones)
   // ───────────────────────────────────────────
   const maxMerges = stabilityBias === 'high' ? 1 : stabilityBias === 'moderate' ? 2 : 3;
@@ -427,32 +442,11 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
       alreadySwapped.add(outlier.rowId);
       alreadySwapped.add(bestSwapPartner.rowId);
     } else {
-      // No swap partner found — do a direct adjacent swap as last resort.
-      // This swaps zone assignments between the two adjacent violating rows.
-      actions.push({
-        type: 'reallocate_row',
-        priority: 1,
-        fromZoneId: outlier.zoneId,
-        toZoneId: neighbor.zoneId,
-        rowNumber: outlier.rowNumber,
-        reason: `Fix color adjacency: ${outlier.zoneId} (${outlier.color}) in R${outlier.rowNumber} ` +
-          `adjacent to ${neighbor.zoneId} (${neighbor.color}) in R${neighbor.rowNumber}`,
-        bottlesAffected: SLOTS_PER_ROW
-      });
-      actions.push({
-        type: 'reallocate_row',
-        priority: 1,
-        fromZoneId: neighbor.zoneId,
-        toZoneId: outlier.zoneId,
-        rowNumber: neighbor.rowNumber,
-        reason: `Fix color adjacency: swap R${neighbor.rowNumber} (${neighbor.zoneId}) ` +
-          `with R${outlier.rowNumber} (${outlier.zoneId})`,
-        bottlesAffected: SLOTS_PER_ROW
-      });
-      updateZoneRowMap(zoneRowMap, outlier.zoneId, outlier.rowId, neighbor.zoneId);
-      updateZoneRowMap(zoneRowMap, neighbor.zoneId, neighbor.rowId, outlier.zoneId);
-      alreadySwapped.add(outlier.rowId);
-      alreadySwapped.add(neighbor.rowId);
+      // No remote swap partner found — skip this violation.
+      // A direct adjacent swap merely reverses the violation without fixing it,
+      // causing ping-pong across runs. Accept this boundary as unfixable by swaps;
+      // the right-sizing phase or LLM may resolve it by restructuring surrounding
+      // zones. (See external review Finding #1)
     }
   }
 
@@ -704,6 +698,130 @@ function scoreDonorCandidates(
 }
 
 // ═══════════════════════════════════════════
+// Phase 3b: Surplus right-sizing
+// ═══════════════════════════════════════════
+
+/**
+ * Reclaim surplus rows from over-provisioned zones.
+ *
+ * A zone is over-provisioned when it holds more rows than it needs
+ * (e.g. 4 rows for 14 bottles = demand of 2 rows → 2 surplus).
+ *
+ * Freed rows go to deficit zones (colour-compatible) if any exist,
+ * otherwise they are released to '__unassigned' (freed for future use).
+ *
+ * Rows are reclaimed from the edges (highest row numbers within the zone)
+ * to keep the zone's remaining rows contiguous.
+ *
+ * @param {Map} zoneRowMap - Mutable zone→rows map
+ * @param {Map} demand - Zone demand (required rows)
+ * @param {Object} utilization - Zone utilization data
+ * @param {Array} zones - Zone metadata
+ * @param {Set} neverMerge - Protected zones
+ * @param {string} stabilityBias - 'low'|'moderate'|'high'
+ * @returns {Array} reallocate_row actions
+ */
+function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias) {
+  const actions = [];
+
+  // Determine max reclaims based on stability bias
+  const maxReclaims = stabilityBias === 'high' ? 1 : stabilityBias === 'moderate' ? 3 : 5;
+
+  // Build surplus list: zones with more rows than demanded
+  const surplusZones = [];
+  for (const [zoneId, required] of demand) {
+    if (neverMerge.has(zoneId)) continue;
+    const currentRows = zoneRowMap.get(zoneId) || [];
+    const surplus = currentRows.length - required;
+    if (surplus > 0 && required > 0) {
+      // Only reclaim from zones that still have bottles (demand > 0)
+      // Zones with demand=0 should be fully deallocated by updateZoneWineCount
+      surplusZones.push({ zoneId, surplus, currentRows: [...currentRows], required });
+    }
+  }
+
+  // Sort by surplus descending (most over-provisioned first)
+  surplusZones.sort((a, b) => b.surplus - a.surplus);
+
+  // Also find any remaining deficit zones that Phase 3 couldn't fully satisfy
+  const deficitZones = [];
+  for (const [zoneId, required] of demand) {
+    const currentRows = zoneRowMap.get(zoneId) || [];
+    const shortfall = required - currentRows.length;
+    if (shortfall > 0) {
+      deficitZones.push({ zoneId, shortfall, color: getZoneColor(zoneId) });
+    }
+  }
+
+  let totalReclaimed = 0;
+
+  for (const surplusEntry of surplusZones) {
+    if (totalReclaimed >= maxReclaims) break;
+
+    const { zoneId: fromZoneId, surplus, required } = surplusEntry;
+    const fromColor = getZoneColor(fromZoneId);
+
+    // Reclaim up to surplus rows, respecting the max reclaims limit
+    const toReclaim = Math.min(surplus, maxReclaims - totalReclaimed);
+
+    // Sort the zone's rows by row number descending — reclaim from edges
+    const zoneRows = [...(zoneRowMap.get(fromZoneId) || [])];
+    zoneRows.sort((a, b) => rowNum(b) - rowNum(a));
+
+    for (let i = 0; i < toReclaim; i++) {
+      const rowToFree = zoneRows[i];
+      if (!rowToFree) break;
+
+      // Try to route to a colour-compatible deficit zone first
+      let targetZoneId = '__unassigned';
+      let targetName = 'unassigned (freed for future use)';
+
+      for (let d = 0; d < deficitZones.length; d++) {
+        const deficit = deficitZones[d];
+        if (deficit.shortfall <= 0) continue;
+
+        // Check colour compatibility
+        const compatible = fromColor === 'any' || deficit.color === 'any' || fromColor === deficit.color;
+        if (!compatible) continue;
+
+        targetZoneId = deficit.zoneId;
+        targetName = getZoneDisplayName(deficit.zoneId, zones);
+        deficit.shortfall--;
+        break;
+      }
+
+      const fromName = getZoneDisplayName(fromZoneId, zones);
+      const fromUtil = utilization[fromZoneId];
+      const utilPct = fromUtil?.utilizationPct ?? 0;
+
+      actions.push({
+        type: 'reallocate_row',
+        priority: 2,
+        fromZoneId,
+        toZoneId: targetZoneId,
+        rowNumber: rowNum(rowToFree),
+        reason: `Right-size ${fromName}: has ${zoneRows.length} rows but only needs ${required} ` +
+          `(${utilPct}% utilized). Free R${rowNum(rowToFree)} to ${targetName}.`,
+        bottlesAffected: 0 // Surplus rows should have 0 or few bottles
+      });
+
+      // Update mutable state
+      if (targetZoneId === '__unassigned') {
+        // Just remove from source zone, don't add anywhere
+        const fromRows = zoneRowMap.get(fromZoneId) || [];
+        zoneRowMap.set(fromZoneId, fromRows.filter(r => r !== rowToFree));
+      } else {
+        updateZoneRowMap(zoneRowMap, fromZoneId, rowToFree, targetZoneId);
+      }
+
+      totalReclaimed++;
+    }
+  }
+
+  return actions;
+}
+
+// ═══════════════════════════════════════════
 // Phase 4: Zone merge detection
 // ═══════════════════════════════════════════
 
@@ -776,25 +894,147 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
 
 /**
  * Generate row reallocation actions to reduce wine scattering.
- * Wines of the same type scattered across non-adjacent rows can be
- * consolidated by swapping adjacent rows into the zone.
  *
- * @param {Map} zoneRowMap
- * @param {Array} scatteredWines
- * @param {Array} zones
- * @param {Set} neverMerge
- * @param {string} stabilityBias
+ * A zone's wines are "scattered" when its rows are non-contiguous
+ * (e.g. zone owns R3 and R7 but not R4-R6). This function finds
+ * the zone's largest contiguous block and tries to swap outlier
+ * rows with adjacent rows owned by other zones to create contiguity.
+ *
+ * Only proposes colour-compatible swaps and respects stability bias.
+ *
+ * @param {Map} zoneRowMap - Mutable zone→rows map
+ * @param {Array} scatteredWines - [{wineName, bottleCount, rows, zoneId}]
+ * @param {Array} zones - Zone metadata
+ * @param {Set} neverMerge - Protected zones
+ * @param {string} stabilityBias - 'low'|'moderate'|'high'
  * @returns {Array} Actions
  */
-function consolidateScatteredWines(zoneRowMap, scatteredWines, _zones, _neverMerge, stabilityBias) {
-  // Only consolidate when stability allows
+function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias) {
   if (stabilityBias === 'high') return [];
   if (!scatteredWines || scatteredWines.length === 0) return [];
 
-  // Scattered wine consolidation is handled by capacity rebalancing (moving
-  // rows to zones with more bottles). Additional scatter-specific heuristics
-  // could be added here in the future.
-  return [];
+  const maxConsolidations = stabilityBias === 'moderate' ? 2 : 4;
+  const actions = [];
+  const alreadySwapped = new Set();
+
+  // Build row→zone reverse map
+  const rowToZone = new Map();
+  for (const [zoneId, rows] of zoneRowMap) {
+    for (const r of rows) rowToZone.set(r, zoneId);
+  }
+
+  // Extract unique zone IDs from scattered wines
+  const scatteredZoneIds = [...new Set(
+    scatteredWines.map(sw => sw.zoneId).filter(Boolean)
+  )];
+
+  for (const zoneId of scatteredZoneIds) {
+    if (actions.length >= maxConsolidations) break;
+    if (neverMerge.has(zoneId)) continue;
+
+    const zoneRows = (zoneRowMap.get(zoneId) || []).map(r => rowNum(r)).sort((a, b) => a - b);
+    if (zoneRows.length < 2) continue;
+
+    // Find the largest contiguous block
+    const blocks = findContiguousBlocks(zoneRows);
+    if (blocks.length <= 1) continue; // Already contiguous
+
+    // Largest block is the anchor; other rows are outliers
+    blocks.sort((a, b) => b.length - a.length);
+    const anchorBlock = blocks[0];
+    const anchorMin = Math.min(...anchorBlock);
+    const anchorMax = Math.max(...anchorBlock);
+
+    const zoneColor = getZoneColor(zoneId);
+
+    // For each outlier row, see if we can swap it closer to the anchor
+    for (let b = 1; b < blocks.length; b++) {
+      if (actions.length >= maxConsolidations) break;
+
+      for (const outlierRowNum of blocks[b]) {
+        if (actions.length >= maxConsolidations) break;
+        const outlierRowId = `R${outlierRowNum}`;
+        if (alreadySwapped.has(outlierRowId)) continue;
+
+        // Determine target: the row adjacent to the anchor block that would extend it
+        // toward the outlier. If outlier < anchor, target = anchorMin - 1.
+        // If outlier > anchor, target = anchorMax + 1.
+        const targetRowNum = outlierRowNum < anchorMin ? anchorMin - 1 : anchorMax + 1;
+        if (targetRowNum < 1 || targetRowNum > TOTAL_ROWS) continue;
+
+        const targetRowId = `R${targetRowNum}`;
+        const targetOwner = rowToZone.get(targetRowId);
+
+        // Skip if target row is unassigned (can't swap with nothing)
+        if (!targetOwner) continue;
+        // Skip if target row already belongs to this zone
+        if (targetOwner === zoneId) continue;
+        if (neverMerge.has(targetOwner)) continue;
+        if (alreadySwapped.has(targetRowId)) continue;
+
+        // Check colour compatibility: both zones should accept the swap
+        const targetColor = getZoneColor(targetOwner);
+        const colorsCompatible =
+          (zoneColor === 'any' || targetColor === 'any' || zoneColor === targetColor);
+        if (!colorsCompatible) continue;
+
+        // Propose the swap
+        actions.push({
+          type: 'reallocate_row',
+          priority: 3,
+          fromZoneId: zoneId,
+          toZoneId: targetOwner,
+          rowNumber: outlierRowNum,
+          reason: `Consolidate ${getZoneDisplayName(zoneId, zones)}: ` +
+            `swap outlier R${outlierRowNum} with adjacent R${targetRowNum} ` +
+            `(${getZoneDisplayName(targetOwner, zones)}) to create contiguous block`,
+          bottlesAffected: SLOTS_PER_ROW
+        });
+        actions.push({
+          type: 'reallocate_row',
+          priority: 3,
+          fromZoneId: targetOwner,
+          toZoneId: zoneId,
+          rowNumber: targetRowNum,
+          reason: `Consolidate ${getZoneDisplayName(zoneId, zones)}: ` +
+            `receive R${targetRowNum} from ${getZoneDisplayName(targetOwner, zones)} in swap`,
+          bottlesAffected: SLOTS_PER_ROW
+        });
+
+        // Update mutable state
+        updateZoneRowMap(zoneRowMap, zoneId, outlierRowId, targetOwner);
+        updateZoneRowMap(zoneRowMap, targetOwner, targetRowId, zoneId);
+        alreadySwapped.add(outlierRowId);
+        alreadySwapped.add(targetRowId);
+
+        // Update reverse map
+        rowToZone.set(outlierRowId, targetOwner);
+        rowToZone.set(targetRowId, zoneId);
+      }
+    }
+  }
+
+  return actions;
+}
+
+/**
+ * Find contiguous blocks within a sorted array of row numbers.
+ * E.g. [3, 4, 7, 8, 9] → [[3, 4], [7, 8, 9]]
+ *
+ * @param {number[]} sortedRows - Sorted row numbers
+ * @returns {number[][]} Array of contiguous blocks
+ */
+function findContiguousBlocks(sortedRows) {
+  if (sortedRows.length === 0) return [];
+  const blocks = [[sortedRows[0]]];
+  for (let i = 1; i < sortedRows.length; i++) {
+    if (sortedRows[i] === sortedRows[i - 1] + 1) {
+      blocks[blocks.length - 1].push(sortedRows[i]);
+    } else {
+      blocks.push([sortedRows[i]]);
+    }
+  }
+  return blocks;
 }
 
 // ═══════════════════════════════════════════

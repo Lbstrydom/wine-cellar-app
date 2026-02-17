@@ -560,7 +560,7 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 4;  // v4: 5-phase zone classification hardening (findBestZone, isCorrectlyPlaced, buffer colour checks)
+const ANALYSIS_LOGIC_VERSION = 5;  // v5: 6-phase allocation fix (ghost rows, ping-pong swap, wine_count CRUD, surplus right-sizing, scatter consolidation)
 
 /**
  * Generate slot hash for cache invalidation.

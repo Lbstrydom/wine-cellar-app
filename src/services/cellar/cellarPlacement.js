@@ -321,19 +321,11 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
   if (!zone.isBufferZone && !zone.isFallbackZone && !zone.isCuratedZone) {
     let rows = await getZoneRows(zoneId, cellarId);
 
-    // Filter zone rows against dynamic colour ranges to prevent
-    // cross-colour-boundary moves (e.g., whites moving to red-region rows)
-    if (rows.length > 0 && whiteRows && redRows) {
-      const zoneColor = zone.color;
-      const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
-      const zoneIsWhite = isWhiteFamily(primaryColor);
-      const validRowNums = new Set(zoneIsWhite ? whiteRows : redRows);
-      const filtered = rows.filter(r => {
-        const num = parseInt(r.replace('R', ''), 10);
-        return validRowNums.has(num);
-      });
-      rows = filtered; // Empty forces new allocation or overflow
-    }
+    // NOTE: Do NOT filter allocated zone rows against the dynamic colour boundary.
+    // A zone's allocated rows are committed decisions. Filtering them out when the
+    // boundary shifts causes ghost row growth — the zone gets a new row while the
+    // old one sits unused. The colour boundary only gates NEW allocations in
+    // allocateRowToZone(). (See external review Finding #6)
 
     // If zone has no rows yet, allocate one
     if (rows.length === 0) {
@@ -353,7 +345,16 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
     }
   }
 
-  // Buffer zones - find gaps in preferred row range
+  // Buffer zones - find gaps in preferred row range.
+  // KNOWN LIMITATION (external review Finding #4): Buffer zones (white_buffer /
+  // red_buffer) have isBufferZone=true so getZoneRows() returns []. Wines scatter
+  // into any gap across the entire preferredRowRange rather than being grouped.
+  // When a buffer zone holds many bottles (e.g. 11+ White Reserve), it would benefit
+  // from dedicated rows like regular zones. Fix options:
+  //   (a) Promote buffer to regular zone when bottle count > threshold, or
+  //   (b) Add adjacency-preferring logic here to cluster buffer wines.
+  // The right-sizing in Phase D (reclaimSurplusRows) helps indirectly by freeing
+  // surplus rows, reducing the random gaps buffer wines scatter into.
   // When enforceAffinity is true, only use rows not allocated to other zones
   if (zone.isBufferZone && zone.preferredRowRange) {
     const zoneMap = enforceAffinity ? await getActiveZoneMap(cellarId) : null;

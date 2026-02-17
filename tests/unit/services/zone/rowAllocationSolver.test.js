@@ -544,6 +544,225 @@ describe('rowAllocationSolver', () => {
     });
   });
 
+  describe('Phase B: no ping-pong adjacent swaps', () => {
+    it('does not generate direct adjacent swap when no remote partner exists', () => {
+      // Two adjacent rows of different colours, no remote partner to swap with.
+      // Before Phase B fix, the solver would do a direct adjacent swap that
+      // ping-pongs on each run. Now it should skip.
+      const zones = [
+        makeZone('chenin_blanc', ['R7'], 5),   // white, at boundary edge
+        makeZone('cabernet', ['R8'], 7)         // red, right next to it
+      ];
+      const utilization = {
+        chenin_blanc: makeUtil(5, 1),
+        cabernet: makeUtil(7, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        colourOrder: 'whites-top'
+      });
+
+      // There are only 2 zones, both at the boundary. No remote swap partner.
+      // The solver should NOT generate swap actions for this pair.
+      const colorSwaps = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.reason.includes('color')
+      );
+      expect(colorSwaps).toHaveLength(0);
+    });
+  });
+
+  describe('Phase 3b: surplus right-sizing', () => {
+    it('reclaims surplus rows from over-provisioned zones', () => {
+      // Sauvignon Blanc: 14 bottles in 4 rows → needs 2, surplus = 2
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R3', 'R4', 'R5'], 14),
+        makeZone('chenin_blanc', ['R2'], 7)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(14, 4),
+        chenin_blanc: makeUtil(7, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // Should generate surplus-reclaim actions for Sauvignon Blanc
+      const surplusActions = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.reason.includes('Right-size')
+      );
+      expect(surplusActions.length).toBeGreaterThanOrEqual(1);
+      expect(surplusActions[0].fromZoneId).toBe('sauvignon_blanc');
+    });
+
+    it('routes freed surplus rows to deficit zones when possible', () => {
+      // Curiosities: 3 bottles in 3 rows → needs 1, surplus = 2
+      // Cabernet: 20 bottles in 2 rows → needs 3, deficit = 1
+      const zones = [
+        makeZone('curiosities', ['R14', 'R15', 'R16'], 3),
+        makeZone('cabernet', ['R10', 'R11'], 20)
+      ];
+      const utilization = {
+        curiosities: makeUtil(3, 3),
+        cabernet: makeUtil(20, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'moderate'
+      });
+
+      // Phase 3 should donate to cabernet, Phase 3b may also free surplus.
+      // Either way, curiosities should lose at least one row.
+      const fromCuriosities = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'curiosities'
+      );
+      expect(fromCuriosities.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('respects neverMerge for surplus reclaim', () => {
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R2', 'R3', 'R4'], 5)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(5, 4) // needs 1 row, has 4 → surplus 3
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        neverMerge: new Set(['sauvignon_blanc']),
+        stabilityBias: 'low'
+      });
+
+      const surplusActions = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'sauvignon_blanc'
+      );
+      expect(surplusActions).toHaveLength(0);
+    });
+
+    it('limits reclaims based on stability bias', () => {
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R2', 'R3', 'R4', 'R5'], 5)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(5, 5) // needs 1 row, surplus = 4
+      };
+
+      const highResult = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'high'
+      });
+      const lowResult = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      const highSurplus = highResult.actions.filter(a => a.reason?.includes('Right-size'));
+      const lowSurplus = lowResult.actions.filter(a => a.reason?.includes('Right-size'));
+
+      // High stability should reclaim fewer rows than low
+      expect(highSurplus.length).toBeLessThanOrEqual(lowSurplus.length);
+    });
+
+    it('reclaims from edge rows (highest numbers) to preserve contiguity', () => {
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R2', 'R3', 'R4'], 5)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(5, 4) // needs 1 row, surplus = 3
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      const surplusActions = result.actions.filter(a => a.reason?.includes('Right-size'));
+      if (surplusActions.length > 0) {
+        // First reclaimed should be highest row number (R4)
+        expect(surplusActions[0].rowNumber).toBe(4);
+      }
+    });
+  });
+
+  describe('Phase 5: scatter consolidation', () => {
+    it('proposes swaps to consolidate non-contiguous zone rows', () => {
+      // Cabernet has R10 and R14 (non-contiguous), R11 belongs to shiraz
+      const zones = [
+        makeZone('cabernet', ['R10', 'R14'], 12),
+        makeZone('shiraz', ['R11', 'R12'], 10),
+        makeZone('merlot', ['R13'], 7)
+      ];
+      const utilization = {
+        cabernet: makeUtil(12, 2),
+        shiraz: makeUtil(10, 2),
+        merlot: makeUtil(7, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        scatteredWines: [{ wineName: 'Test Cab', bottleCount: 12, rows: ['R10', 'R14'], zoneId: 'cabernet' }],
+        stabilityBias: 'low'
+      });
+
+      const scatterActions = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.reason.includes('Consolidate')
+      );
+      // Should propose a swap to bring R14 closer to R10 (e.g. swap R14↔R11)
+      expect(scatterActions.length).toBeGreaterThanOrEqual(1);
+    });
+
+    it('skips consolidation when stabilityBias is high', () => {
+      const zones = [
+        makeZone('cabernet', ['R10', 'R14'], 12),
+        makeZone('shiraz', ['R11'], 7)
+      ];
+      const utilization = {
+        cabernet: makeUtil(12, 2),
+        shiraz: makeUtil(7, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        scatteredWines: [{ wineName: 'Test', bottleCount: 12, rows: ['R10', 'R14'], zoneId: 'cabernet' }],
+        stabilityBias: 'high'
+      });
+
+      const scatterActions = result.actions.filter(a =>
+        a.reason?.includes('Consolidate')
+      );
+      expect(scatterActions).toHaveLength(0);
+    });
+
+    it('skips consolidation when no scattered wines', () => {
+      const zones = [makeZone('cabernet', ['R10', 'R11'], 12)];
+      const utilization = { cabernet: makeUtil(12, 2) };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        scatteredWines: [],
+        stabilityBias: 'low'
+      });
+
+      const scatterActions = result.actions.filter(a =>
+        a.reason?.includes('Consolidate')
+      );
+      expect(scatterActions).toHaveLength(0);
+    });
+  });
+
   describe('color interleaving detection', () => {
     it('fixes white zone sandwiched between red zones (R8=red, R9=white, R10=red)', () => {
       // Real scenario: Aromatic Whites in R9 (white region should be R1-R7)

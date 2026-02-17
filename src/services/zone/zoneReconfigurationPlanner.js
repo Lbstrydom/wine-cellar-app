@@ -745,8 +745,10 @@ export async function generateReconfigurationPlan(report, options = {}) {
   }
 
   // ─── Layer 2b: Preserve solver color-fix actions ──────────
-  // The LLM can override solver actions, but color-boundary fixes are
-  // deterministically correct. If the LLM dropped them, merge them back.
+  // The LLM can override solver actions, but color-boundary fixes (remote swaps)
+  // are deterministically correct. If the LLM dropped them, merge them back.
+  // Note: Direct adjacent swaps were removed (ping-pong risk — Finding #1),
+  // so only remote swap partners reach here.
   if (llmActions && solverActions.length > 0) {
     const solverColorFixes = solverActions.filter(a =>
       a.priority === 1 && a.reason?.includes('color')
