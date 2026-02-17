@@ -64,6 +64,7 @@ function collectWineFormData() {
     vintage: document.getElementById('wine-vintage').value || null,
     colour: document.getElementById('wine-colour').value,
     style: document.getElementById('wine-style').value.trim() || null,
+    grapes: document.getElementById('wine-grapes')?.value?.trim() || null,
     vivino_rating: document.getElementById('wine-rating').value || null,
     price_eur: document.getElementById('wine-price').value || null,
     country: getCountryValue(),
@@ -218,6 +219,8 @@ async function saveWineWithConfirmation(formData, confirmedWine, fallbackQuantit
       country: formData.country || confirmedWine.country,
       // Use confirmed grape variety as style if we didn't have one
       style: formData.style || confirmedWine.grapeVariety,
+      // Persist grape variety data
+      grapes: confirmedWine.grapeVariety || null,
       // Use confirmed rating
       vivino_rating: confirmedWine.rating || formData.vivino_rating,
       // Add Vivino reference (ensure vivinoId is string - API may return number)
@@ -262,6 +265,7 @@ async function saveWineWithExternalMatch(formData, match, fallbackQuantity = 1) 
       vintage: match.vintage || formData.vintage,
       country: formData.country || match.country,
       style: formData.style || match.grape_variety || match.grapeVariety,
+      grapes: match.grape_variety || match.grapeVariety || null,
       external_match: {
         source: match.source || 'vivino',
         external_id: match.external_id,

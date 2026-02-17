@@ -324,6 +324,22 @@ export async function zoneChatMessage(message, context = null) {
 }
 
 /**
+ * Backfill grape data for wines with missing grapes.
+ * @param {Object} [options]
+ * @param {boolean} [options.commit=false] - false = dry-run, true = persist
+ * @param {number[]} [options.wineIds] - Optional subset of wine IDs
+ * @returns {Promise<Object>}
+ */
+export async function backfillGrapes(options = {}) {
+  const res = await fetch(`${API_BASE}/api/cellar/grape-backfill`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return handleResponse(res, 'Failed to backfill grapes');
+}
+
+/**
  * Reassign a wine to a different zone.
  * @param {number} wineId - Wine ID
  * @param {string} newZoneId - New zone ID

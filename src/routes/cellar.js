@@ -17,6 +17,7 @@ import {
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler, AppError } from '../utils/errorResponse.js';
 import { reassignWineZone } from '../services/zone/zoneChat.js';
+import { batchDetectGrapes } from '../services/wine/grapeEnrichment.js';
 
 const router = express.Router();
 
@@ -80,6 +81,42 @@ function parseAssignedRows(value) {
   } catch {
     return [];
   }
+}
+
+/**
+ * Resolve zone ID from a placement result.
+ * Supports both current shape ({ zoneId }) and legacy/mocked shape ({ zone: { id } }).
+ * @param {Object|null} zoneMatch
+ * @returns {string|null}
+ */
+function resolveZoneId(zoneMatch) {
+  if (!zoneMatch) return null;
+  return zoneMatch.zoneId || zoneMatch.zone?.id || null;
+}
+
+/**
+ * Reclassify a wine's zone when placement confidence is sufficient and zone differs.
+ * Also updates zone allocation counts for old/new zones.
+ * @param {Object} wine - Wine row including id and zone_id
+ * @param {Object|null} zoneMatch - findBestZone result
+ * @param {number|string} cellarId - Tenant scope
+ * @returns {Promise<boolean>} True if zone_id was updated
+ */
+async function reclassifyWineZoneIfNeeded(wine, zoneMatch, cellarId) {
+  const nextZoneId = resolveZoneId(zoneMatch);
+  if (!nextZoneId) return false;
+  if (zoneMatch.confidence === 'low') return false;
+  if (wine.zone_id === nextZoneId) return false;
+
+  await db.prepare(
+    'UPDATE wines SET zone_id = $1, zone_confidence = $2 WHERE cellar_id = $3 AND id = $4'
+  ).run(nextZoneId, zoneMatch.confidence || wine.zone_confidence || null, cellarId, wine.id);
+
+  if (wine.zone_id) {
+    await updateZoneWineCount(wine.zone_id, cellarId, -1);
+  }
+  await updateZoneWineCount(nextZoneId, cellarId, 1);
+  return true;
 }
 
 // ============================================================
@@ -399,11 +436,105 @@ router.post('/update-wine-attributes', asyncHandler(async (req, res) => {
   const wine = await db.prepare('SELECT * FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wineId);
   const newZoneMatch = findBestZone(wine);
 
+  // Auto re-classify: persist zone_id when new zone differs and confidence is not low
+  const zoneReclassified = await reclassifyWineZoneIfNeeded(wine, newZoneMatch, req.cellarId);
+  if (zoneReclassified) {
+    await invalidateAnalysisCache(null, req.cellarId);
+  }
+
   res.json({
     success: true,
     wineId,
     updatedFields: updates.map(u => u.split(' = ')[0]),
-    suggestedZone: newZoneMatch
+    suggestedZone: newZoneMatch,
+    zoneReclassified
+  });
+}));
+
+/**
+ * POST /api/cellar/grape-backfill
+ * Detect grapes for wines with missing grape data and optionally persist.
+ * @body {boolean} [commit=false] - false = dry-run (preview), true = write to DB
+ * @body {number[]} [wineIds] - Optional subset of wine IDs to process
+ */
+router.post('/grape-backfill', asyncHandler(async (req, res) => {
+  const commit = req.body?.commit === true;
+  const inputWineIds = req.body?.wineIds;
+
+  let wineIds = null;
+  if (inputWineIds !== undefined) {
+    if (!Array.isArray(inputWineIds)) {
+      return res.status(400).json({ error: 'wineIds must be an array of numeric IDs' });
+    }
+
+    const parsedIds = inputWineIds.map(id => Number(id));
+    const hasInvalid = parsedIds.some(id => !Number.isInteger(id) || id <= 0);
+    if (hasInvalid) {
+      return res.status(400).json({ error: 'wineIds must contain positive integer IDs' });
+    }
+    wineIds = [...new Set(parsedIds)];
+  }
+
+  // Fetch wines with missing grapes
+  let wines;
+  if (wineIds && wineIds.length > 0) {
+    const placeholders = wineIds.map((_, i) => '$' + (i + 2)).join(', ');
+    // Safe: placeholders are parameterized indices ($2, $3, ...), not user input
+    const inSql = 'SELECT * FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ") AND (grapes IS NULL OR grapes = '')";
+    wines = await db.prepare(inSql).all(req.cellarId, ...wineIds);
+  } else {
+    wines = await db.prepare(
+      "SELECT * FROM wines WHERE cellar_id = $1 AND (grapes IS NULL OR grapes = '')"
+    ).all(req.cellarId);
+  }
+
+  const detections = batchDetectGrapes(wines);
+  const suggestions = detections.filter(d => d.detection.grapes !== null);
+
+  if (!commit) {
+    return res.json({
+      success: true,
+      mode: 'dry-run',
+      totalMissing: wines.length,
+      detectable: suggestions.length,
+      suggestions: suggestions.map(s => ({
+        wineId: s.wineId,
+        wine_name: s.wine_name,
+        grapes: s.detection.grapes,
+        confidence: s.detection.confidence,
+        source: s.detection.source
+      }))
+    });
+  }
+
+  // Commit mode: write grapes + re-classify zones
+  let updated = 0;
+  let reclassified = 0;
+  for (const s of suggestions) {
+    await db.prepare('UPDATE wines SET grapes = $1 WHERE id = $2 AND cellar_id = $3')
+      .run(s.detection.grapes, s.wineId, req.cellarId);
+    updated++;
+
+    // Re-evaluate zone placement with new grape data
+    const wine = await db.prepare('SELECT * FROM wines WHERE id = $1 AND cellar_id = $2')
+      .get(s.wineId, req.cellarId);
+    const zoneMatch = findBestZone(wine);
+    const zoneReclassified = await reclassifyWineZoneIfNeeded(wine, zoneMatch, req.cellarId);
+    if (zoneReclassified) {
+      reclassified++;
+    }
+  }
+
+  if (updated > 0) {
+    await invalidateAnalysisCache(null, req.cellarId);
+  }
+
+  res.json({
+    success: true,
+    mode: 'commit',
+    totalMissing: wines.length,
+    updated,
+    reclassified
   });
 }));
 

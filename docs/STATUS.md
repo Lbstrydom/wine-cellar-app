@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 16 February 2026
+## 17 February 2026
 
 ---
 
@@ -9,7 +9,15 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 16 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 17 Feb 2026**:
+- **Grape Data Quality Fix (Phase A) — COMPLETE** ✅:
+  - Plan document: `docs/cell-fix.md` (2-part plan: data quality + bottles-first analysis)
+  - **Phase A1 — Persist grapes on new wine add**: Added `grapes` field to Zod schema (`wine.js`). Added as 21st column in POST INSERT and to PUT UPDATE builder (`wines.js`). Removed legacy `captureGrapes` middleware. Mapped Vivino `grapeVariety→grapes` in frontend form submissions (`form.js`). Created unified grape enrichment service (`grapeEnrichment.js`) with 42 grape patterns + 26 appellation→grape proxy mappings (e.g., Barolo→Nebbiolo, Chianti→Sangiovese, Sancerre→Sauvignon Blanc). Auto-detect grapes post-INSERT when no Vivino data. Wired enrichment into `normalizeWineAttributes()` as 3-tier fallback chain (DB column → enrichment service → text extraction). 31 new tests
+  - **Phase A2 — Backfill existing wines + auto re-classify**: `POST /api/cellar/grape-backfill` endpoint with dry-run/commit modes and optional `wineIds` filter with strict validation. Auto zone re-classification via shared `reclassifyWineZoneIfNeeded()` helper when grapes updated and confidence is non-low. Grapes field in bottle edit form with pre-population. Grape health banner in analysis panel — shows missing grape count, preview table with per-wine confidence, Apply All/per-row Apply buttons. `backfillGrapes()` API function in `api/cellar.js`. 13 new tests (11 backfill + 2 validation)
+  - **Audit review**: Fixed blocker (wrong `findBestZone` shape + `updateZoneWineCount` call signature), medium (wineIds validation), low (dead variable). Shared `resolveZoneId()` helper handles both `{ zoneId }` and `{ zone: { id } }` shapes
+  - **Test count**: 1881 unit tests passing across 67 files
+
+**Previous Enhancements** (16 Feb 2026):
 - **Cellar Analysis UX Restructure (4-Phase Plan) — COMPLETE** ✅:
   - Plan document: `.claude/plans/tender-greeting-pizza.md` (critical review of `anal-plan.md` + corrected 4-phase implementation)
   - **Phase 1 — Semantics, Microcopy & Toggle Scaffold**: Renamed "AI Zone Structure" → "AI Cellar Review" in `labels.js`. Added helper microcopy under CTA buttons. Refresh button tooltip. Vertical button stack CSS. 3-way workspace toggle (Zone Analysis | Cellar Placement | Fridge) as segmented control
@@ -20,7 +28,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - Cache version bumped to v125
   - **Test count**: 1706 unit tests passing across 63 files
 
-**Previous Enhancements** (15 Feb 2026):
+**Previous Enhancements** (15 Feb 2026 → 16 Feb 2026):
 - **AI Zone Structure — Zone-First Flow** ✅:
   - Renamed "AI Recommendations" → "AI Zone Structure" and "Reconfigure Zones" → "Reorganise Zones" across all UI surfaces and `labels.js`
   - `cellarAI.js`: AI prompt restructured to assess zones first — 3 new schema fields: `zonesNeedReconfiguration` (bool), `zoneVerdict` (string), `proposedZoneChanges` (array of `{zoneId, currentLabel, proposedLabel, reason}`)
@@ -2465,7 +2473,7 @@ const wines = await db.prepare(sql).all(...params);
 
 See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 
-**Current Status**: All major development phases complete. Production-ready PWA deployed on Railway + Supabase PostgreSQL. SQL pattern standardization initiative complete (Jan 13, 2026). ✅ **All known issues resolved** - see KNOWN_ISSUES.md for details.
+**Current Status**: All major development phases complete. Production-ready PWA deployed on Railway + Supabase PostgreSQL. Grape data quality fix (Phase A) complete — Phase B (bottles-first analysis) pending. ✅ **All known issues resolved** - see KNOWN_ISSUES.md for details.
 
 ### Completed Phases:
 - ✅ **Phase 1**: Testing infrastructure, unified configs, provenance, governance

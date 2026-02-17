@@ -1,5 +1,5 @@
 /**
- * @fileoverview Tests for captureGrapes middleware and advisory warnings on POST/PUT /api/wines.
+ * @fileoverview Tests for grapes schema validation and advisory warnings on POST/PUT /api/wines.
  * Exercises REAL route handlers via supertest through the actual Express middleware chain.
  * Only db and non-relevant services are mocked; checkWineConsistency is mocked for isolation.
  * Uses vitest globals (do NOT import from 'vitest').
@@ -31,10 +31,16 @@ vi.mock('../../../src/services/wine/wineAddOrchestrator.js', () => ({
   evaluateWineAdd: vi.fn(),
 }));
 
+// Mock grapeEnrichment (not under test)
+vi.mock('../../../src/services/wine/grapeEnrichment.js', () => ({
+  detectGrapesFromWine: vi.fn(() => ({ grapes: null, confidence: 'low', source: 'name' })),
+}));
+
 import express from 'express';
 import request from 'supertest';
 import winesRouter from '../../../src/routes/wines.js';
 import { checkWineConsistency } from '../../../src/services/shared/consistencyChecker.js';
+import { detectGrapesFromWine } from '../../../src/services/wine/grapeEnrichment.js';
 import db from '../../../src/db/index.js';
 
 /**
@@ -59,6 +65,7 @@ describe('POST /wines advisory warnings (real route)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    detectGrapesFromWine.mockReturnValue({ grapes: null, confidence: 'low', source: 'name' });
     // Default db mock: INSERT RETURNING id → { id: 1 }
     db.prepare.mockReturnValue({
       get: vi.fn().mockResolvedValue({ id: 1 }),
@@ -110,10 +117,49 @@ describe('POST /wines advisory warnings (real route)', () => {
     expect(res.body.warnings).toEqual([]);
   });
 
-  it('captureGrapes preserves grapes through Zod validation (grapes not in createWineSchema)', async () => {
-    // grapes is NOT in createWineSchema → Zod strips it from req.body.
-    // captureGrapes runs BEFORE validateBody and saves req._rawGrapes.
-    // If captureGrapes is missing or runs after validation, grapes would be undefined.
+  it('auto-detects and persists grapes when not provided and detection confidence is not low', async () => {
+    checkWineConsistency.mockReturnValue(null);
+    detectGrapesFromWine.mockReturnValue({
+      grapes: 'Tempranillo',
+      confidence: 'medium',
+      source: 'appellation',
+    });
+
+    const runMock = vi.fn().mockResolvedValue({ changes: 1 });
+    db.prepare.mockImplementation((sql) => {
+      if (String(sql).includes('UPDATE wines SET grapes = $1')) {
+        return {
+          run: runMock,
+          get: vi.fn().mockResolvedValue({}),
+          all: vi.fn().mockResolvedValue([]),
+        };
+      }
+      return {
+        get: vi.fn().mockResolvedValue({ id: 1 }),
+        run: vi.fn().mockResolvedValue({ changes: 0 }),
+        all: vi.fn().mockResolvedValue([]),
+      };
+    });
+
+    const res = await request(app)
+      .post('/wines')
+      .send({ wine_name: 'Castillo de Aresan Reserve', colour: 'red', region: 'Ribera del Duero' });
+
+    expect(res.status).toBe(201);
+    expect(detectGrapesFromWine).toHaveBeenCalledWith(
+      expect.objectContaining({
+        wine_name: 'Castillo de Aresan Reserve',
+        region: 'Ribera del Duero',
+      })
+    );
+    expect(runMock).toHaveBeenCalledWith('Tempranillo', 1, 1);
+    expect(checkWineConsistency).toHaveBeenCalledWith(
+      expect.objectContaining({ grapes: 'Tempranillo' })
+    );
+  });
+
+  it('grapes passes through Zod validation to consistency checker', async () => {
+    // grapes is in createWineSchema as z.string().max(500).optional().nullable()
     checkWineConsistency.mockReturnValue(null);
 
     await request(app)
@@ -125,15 +171,15 @@ describe('POST /wines advisory warnings (real route)', () => {
     );
   });
 
-  it('captureGrapes preserves grapes array', async () => {
+  it('grapes string passes through schema validation to consistency checker', async () => {
     checkWineConsistency.mockReturnValue(null);
 
     await request(app)
       .post('/wines')
-      .send({ wine_name: 'Array Test', colour: 'red', grapes: ['Shiraz', 'Merlot'] });
+      .send({ wine_name: 'Array Test', colour: 'red', grapes: 'Shiraz, Merlot' });
 
     expect(checkWineConsistency).toHaveBeenCalledWith(
-      expect.objectContaining({ grapes: ['Shiraz', 'Merlot'] })
+      expect.objectContaining({ grapes: 'Shiraz, Merlot' })
     );
   });
 
@@ -218,6 +264,7 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    detectGrapesFromWine.mockReturnValue({ grapes: null, confidence: 'low', source: 'name' });
     // Default: existing wine found, update succeeds
     db.prepare.mockReturnValue({
       get: vi.fn().mockResolvedValue(existingWine),
@@ -244,8 +291,7 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
   });
 
   it('falls back to existing.grapes when grapes not in body', async () => {
-    // Body has no grapes → captureGrapes does not set req._rawGrapes
-    // Handler uses: req._rawGrapes ?? existing.grapes → 'Merlot, Cabernet Franc'
+    // Body has no grapes → handler uses: grapes ?? existing.grapes → 'Merlot, Cabernet Franc'
     checkWineConsistency.mockReturnValue(null);
 
     await request(app)
@@ -257,7 +303,7 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
     );
   });
 
-  it('uses body grapes (via captureGrapes) when provided, overriding existing', async () => {
+  it('uses body grapes when provided, overriding existing', async () => {
     checkWineConsistency.mockReturnValue(null);
 
     await request(app)
@@ -266,6 +312,18 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
 
     expect(checkWineConsistency).toHaveBeenCalledWith(
       expect.objectContaining({ grapes: 'Pinot Noir' })
+    );
+  });
+
+  it('allows explicit null grapes to clear field', async () => {
+    checkWineConsistency.mockReturnValue(null);
+
+    await request(app)
+      .put('/wines/5')
+      .send({ wine_name: 'Updated', colour: 'red', grapes: null });
+
+    expect(checkWineConsistency).toHaveBeenCalledWith(
+      expect.objectContaining({ grapes: null })
     );
   });
 

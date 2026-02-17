@@ -42,6 +42,7 @@ export const createWineSchema = z.object({
     z.null()
   ]).optional().nullable(),
   country: z.string().max(100).optional().nullable(),
+  grapes: z.string().max(500).optional().nullable(),
   vivino_id: z.string().max(100).optional().nullable(),
   vivino_url: z.string().url().max(500).optional().nullable().or(z.literal('')),
   vivino_confirmed: z.union([z.boolean(), z.number().transform(Boolean)]).optional(),

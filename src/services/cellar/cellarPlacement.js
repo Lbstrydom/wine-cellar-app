@@ -9,6 +9,7 @@ import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../../config/cellarThres
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
 import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
+import { detectGrapesFromWine } from '../wine/grapeEnrichment.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -595,9 +596,21 @@ function normalizeWineAttributes(wine) {
   const parsedGrapes = parseTextArray(wine.grapes);
   const parsedWinemaking = parseTextArray(wine.winemaking);
 
+  // Grape resolution chain: DB column → enrichment service → text extraction fallback
+  let resolvedGrapes = parsedGrapes;
+  if (resolvedGrapes.length === 0) {
+    const enrichment = detectGrapesFromWine(wine);
+    if (enrichment.grapes) {
+      resolvedGrapes = enrichment.grapes.split(',').map(g => g.trim().toLowerCase());
+    }
+  }
+  if (resolvedGrapes.length === 0) {
+    resolvedGrapes = extractGrapesFromText(wine);
+  }
+
   return {
     name: wine.wine_name || wine.name || '',
-    grapes: parsedGrapes.length > 0 ? parsedGrapes : extractGrapesFromText(wine),
+    grapes: resolvedGrapes,
     style: wine.style || '',
     color: wine.colour || wine.color || inferColor(wine),
     country: wine.country || '',

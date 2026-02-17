@@ -80,6 +80,7 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-vintage').value = wine.vintage || '';
     document.getElementById('wine-colour').value = wine.colour || 'white';
     document.getElementById('wine-style').value = wine.style || '';
+    document.getElementById('wine-grapes').value = wine.grapes || '';
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
 

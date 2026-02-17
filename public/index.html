@@ -182,6 +182,7 @@
       <div class="analysis-loading">Loading analysis...</div>
     </div>
     <div class="analysis-alerts" id="analysis-alerts"></div>
+    <div id="grape-health-banner"></div>
 
     <!-- Workspace toggle: Cellar Review | Cellar Placement | Fridge -->
     <div class="analysis-workspace-toggle" id="analysis-workspace-toggle">
@@ -1176,6 +1177,13 @@
               <label>Style</label>
               <input type="text" id="wine-style" placeholder="e.g., Sauvignon Blanc" list="style-list" />
               <datalist id="style-list"></datalist>
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="wine-grapes">Grapes</label>
+              <input type="text" id="wine-grapes" placeholder="e.g., Cabernet Sauvignon, Merlot" maxlength="500" />
             </div>
           </div>
 

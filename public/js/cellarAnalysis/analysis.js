@@ -17,6 +17,7 @@ import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
 import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './labels.js';
 import { escapeHtml } from '../utils.js';
+import { renderGrapeHealthBanner } from './grapeHealth.js';
 
 let _onRenderAnalysis = null;
 
@@ -229,6 +230,8 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   } else {
     renderIssueDigest(analysis);
   }
+
+  renderGrapeHealthBanner(analysis, { onRenderAnalysis });
 
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
