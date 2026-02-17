@@ -597,7 +597,12 @@ async function initAuth() {
 
         // Handle both INITIAL_SESSION (OAuth callbacks) and SIGNED_IN (social login)
         if (event === 'INITIAL_SESSION' || event === 'SIGNED_IN') {
-          setAccessToken(session?.access_token || null);
+          // Skip if no session (e.g., INITIAL_SESSION fires with null on cold load)
+          if (!session?.access_token) {
+            if (DEBUG) console.log('[Auth] No session in', event, '- skipping');
+            return;
+          }
+          setAccessToken(session.access_token);
           const ok = await loadUserContext();
           if (ok) {
             toggleAuthScreen(false);

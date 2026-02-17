@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v141';
+const CACHE_VERSION = 'v142';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -20,12 +20,12 @@ const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
 const STATIC_ASSETS = [
   '/',
   '/index.html',
-  '/css/styles.css?v=20260216a',
-  '/css/variables.css?v=20260216a',
-  '/css/layout.css?v=20260216a',
-  '/css/components.css?v=20260216a',
-  '/css/themes.css?v=20260207a',
-  '/css/accessibility.css?v=20260207a',
+  '/css/styles.css?v=20260217a',
+  '/css/variables.css?v=20260217a',
+  '/css/layout.css?v=20260217a',
+  '/css/components.css?v=20260217a',
+  '/css/themes.css?v=20260217a',
+  '/css/accessibility.css?v=20260217a',
   '/js/theme-init.js',
   '/js/app.js',
   '/js/api.js',
@@ -41,6 +41,8 @@ const STATIC_ASSETS = [
   '/js/bottles/textParsing.js',
   '/js/bottles/imageParsing.js',
   '/js/bottles/slotPicker.js',
+  '/js/bottles/disambiguationModal.js',
+  '/js/bottles/wineConfirmation.js',
   '/js/sommelier.js',
   '/js/ratings.js',
   '/js/settings.js',
@@ -49,6 +51,25 @@ const STATIC_ASSETS = [
   '/js/globalSearch.js',
   '/js/accessibility.js',
   '/js/cellarAnalysis.js',
+  '/js/cellarAnalysis/state.js',
+  '/js/cellarAnalysis/analysis.js',
+  '/js/cellarAnalysis/analysisState.js',
+  '/js/cellarAnalysis/labels.js',
+  '/js/cellarAnalysis/moves.js',
+  '/js/cellarAnalysis/fridge.js',
+  '/js/cellarAnalysis/zones.js',
+  '/js/cellarAnalysis/zoneChat.js',
+  '/js/cellarAnalysis/zoneCapacityAlert.js',
+  '/js/cellarAnalysis/zoneReconfigurationBanner.js',
+  '/js/cellarAnalysis/zoneReconfigurationModal.js',
+  '/js/cellarAnalysis/zoneProposalView.js',
+  '/js/cellarAnalysis/issueDigest.js',
+  '/js/cellarAnalysis/aiAdvice.js',
+  '/js/cellarAnalysis/aiAdviceActions.js',
+  '/js/cellarAnalysis/moveGuide.js',
+  '/js/cellarAnalysis/freshness.js',
+  '/js/cellarAnalysis/grapeHealth.js',
+  '/js/onboarding.js',
   '/js/recommendations.js',
   '/js/errorBoundary.js',
   '/js/eventManager.js',
@@ -60,6 +81,8 @@ const STATIC_ASSETS = [
   '/js/restaurantPairing/dishReview.js',
   '/js/restaurantPairing/results.js',
   '/js/restaurantPairing/quickPair.js',
+  '/js/restaurantPairing/currencyUtils.js',
+  '/js/pwa.js',
   '/js/api/base.js',
   '/js/api/index.js',
   '/js/api/profile.js',

@@ -1334,6 +1334,92 @@
   opacity: 0.9;
 }
 
+/* Zone Consolidation Cards (Phase B4) */
+.consolidation-section {
+  margin-bottom: 1rem;
+}
+
+.consolidation-section h3 {
+  font-size: 1rem;
+  margin-bottom: 0.25rem;
+}
+
+.consolidation-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.consolidation-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+}
+
+.consolidation-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.consolidation-zone-name {
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+
+.consolidation-count {
+  font-size: 0.8rem;
+  color: var(--color-warning);
+  font-weight: 500;
+}
+
+.consolidation-summary {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
+.consolidation-wine-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.consolidation-wine-item {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  padding: 0.2rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.consolidation-wine-item:last-child {
+  border-bottom: none;
+}
+
+.consolidation-wine-name {
+  font-weight: 500;
+}
+
+.consolidation-wine-location {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.consolidation-wine-overflow {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  padding-top: 0.25rem;
+}
+
+.consolidation-card-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
 .move-details {
   flex: 1;
 }
