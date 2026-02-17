@@ -24,7 +24,7 @@ import {
   getCurrentZoneAllocation,
   generateCompactionMoves
 } from './cellarSuggestions.js';
-import { scanBottles } from './bottleScanner.js';
+import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
@@ -95,6 +95,9 @@ export async function analyseCellar(wines) {
 
   // Bottles-first scan: classify every wine and cross-reference against zone rows
   report.bottleScan = scanBottles(wines, zoneMap);
+
+  // Row cleanliness sweep: grade every misplacement by severity
+  report.cleanlinessViolations = rowCleanlinessSweep(slotToWine, zoneMap);
 
   // Generate zone narratives
   report.zoneNarratives = generateZoneNarratives(zoneWineMap);

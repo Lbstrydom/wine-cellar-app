@@ -5,8 +5,10 @@
  * @module services/cellar/bottleScanner
  */
 
-import { findBestZone } from './cellarPlacement.js';
+import { findBestZone, inferColor } from './cellarPlacement.js';
 import { parseSlot } from './cellarMetrics.js';
+import { getZoneById } from '../../config/cellarZones.js';
+import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 
 /** Slots per row: R1 has 7, all others have 9. */
 const SLOTS_PER_ROW_DEFAULT = 9;
@@ -177,4 +179,130 @@ export function scanBottles(wines, zoneMap) {
     totalBottles: cellarWines.length,
     totalGroups: groups.length
   };
+}
+
+/** Score delta above which a same-colour misplacement is flagged as moderate. */
+const MODERATE_SCORE_DELTA = 40;
+
+/**
+ * Severity sort order: critical before moderate.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
+ */
+function severitySort(a, b) {
+  const order = { critical: 0, moderate: 1 };
+  return (order[a] ?? 2) - (order[b] ?? 2);
+}
+
+/**
+ * Determine the effective colour family of a zone.
+ * @param {Object} zone - Zone config object from cellarZones
+ * @returns {'red'|'white'|null}
+ */
+function zoneColourFamily(zone) {
+  if (!zone) return null;
+  const color = zone.color;
+  if (Array.isArray(color)) {
+    const allWhite = color.every(c => isWhiteFamily(c));
+    const allRed = color.every(c => c.toLowerCase() === 'red');
+    if (allWhite) return 'white';
+    if (allRed) return 'red';
+    return null; // mixed-colour zone — no single family
+  }
+  if (isWhiteFamily(color)) return 'white';
+  if (color === 'red') return 'red';
+  return null;
+}
+
+/**
+ * Determine the colour family of a wine.
+ * @param {Object} wine - Wine object
+ * @returns {'red'|'white'|null}
+ */
+function wineColourFamily(wine) {
+  const colour = (wine.colour || wine.color || inferColor(wine) || '').toLowerCase();
+  if (!colour) return null;
+  if (isWhiteFamily(colour)) return 'white';
+  if (colour === 'red') return 'red';
+  return null;
+}
+
+/**
+ * Sweep every occupied slot in allocated rows, comparing each wine's best zone
+ * against the row's assigned zone. Grades violations by severity.
+ *
+ * @param {Map<string, Object>} slotToWine - Slot ID → wine object mapping.
+ * @param {Object} zoneMap - Active zone map from getActiveZoneMap().
+ *   Keys are row IDs (e.g. 'R3'), values have { zoneId, displayName, ... }.
+ * @returns {Array<Object>} Violations sorted by severity (critical first) then score delta descending.
+ */
+export function rowCleanlinessSweep(slotToWine, zoneMap) {
+  const violations = [];
+
+  for (const [rowId, rowZoneInfo] of Object.entries(zoneMap)) {
+    const rowZone = getZoneById(rowZoneInfo.zoneId);
+    const rowZoneColour = zoneColourFamily(rowZone);
+    const rowNum = parseInt(rowId.slice(1), 10);
+    const maxCol = rowId === 'R1' ? SLOTS_ROW_1 : SLOTS_PER_ROW_DEFAULT;
+
+    for (let col = 1; col <= maxCol; col++) {
+      const slotId = `R${rowNum}C${col}`;
+      const wine = slotToWine.get(slotId);
+      if (!wine) continue; // empty slot
+
+      const bestZone = findBestZone(wine);
+
+      // Wine already belongs in this row's zone — no violation
+      if (bestZone.zoneId === rowZoneInfo.zoneId) continue;
+
+      // Determine severity
+      const wineColour = wineColourFamily(wine);
+      let severity;
+
+      if (rowZoneColour && wineColour && rowZoneColour !== wineColour) {
+        // Colour family mismatch: red wine in white zone or vice versa
+        severity = 'critical';
+      } else {
+        // Same colour family — check score delta
+        // Score the wine against the row's zone to compute delta
+        const rowZoneScore = bestZone.alternativeZones?.find(
+          az => az.zoneId === rowZoneInfo.zoneId
+        )?.score ?? 0;
+        const scoreDelta = bestZone.score - rowZoneScore;
+
+        if (scoreDelta >= MODERATE_SCORE_DELTA) {
+          severity = 'moderate';
+        } else {
+          continue; // below threshold — not a meaningful violation
+        }
+      }
+
+      violations.push({
+        wineId: wine.id,
+        wineName: wine.wine_name,
+        slot: slotId,
+        physicalRow: rowId,
+        rowZoneId: rowZoneInfo.zoneId,
+        rowZoneName: rowZoneInfo.displayName,
+        bestZoneId: bestZone.zoneId,
+        bestZoneName: bestZone.displayName,
+        bestScore: bestZone.score,
+        confidence: bestZone.confidence,
+        severity,
+        reason: severity === 'critical'
+          ? `Colour violation: ${wineColour} wine in ${rowZoneColour} zone (${rowZoneInfo.displayName})`
+          : `Better fit: ${bestZone.displayName} (score ${bestZone.score}) vs ${rowZoneInfo.displayName}`
+      });
+    }
+  }
+
+  // Sort by severity (critical first), then by best score descending (worst offenders first)
+  violations.sort((a, b) => {
+    const sev = severitySort(a.severity, b.severity);
+    if (sev !== 0) return sev;
+    return b.bestScore - a.bestScore;
+  });
+
+  return violations;
 }

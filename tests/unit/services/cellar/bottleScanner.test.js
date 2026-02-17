@@ -13,7 +13,7 @@ vi.mock('../../../../src/services/cellar/cellarAllocation.js', () => ({
   getActiveZoneMap: vi.fn().mockResolvedValue({})
 }));
 
-import { scanBottles } from '../../../../src/services/cellar/bottleScanner.js';
+import { scanBottles, rowCleanlinessSweep } from '../../../../src/services/cellar/bottleScanner.js';
 
 // ── Helpers ────────────────────────────────────────────────────
 
@@ -510,5 +510,189 @@ describe('scanBottles (Phase B1)', () => {
       expect(cabConsolidation.scattered).toHaveLength(1);
       expect(cabConsolidation.scattered[0].wineId).toBe(3);
     });
+  });
+});
+
+// ── rowCleanlinessSweep (Phase B3) ────────────────────────────
+
+describe('rowCleanlinessSweep (Phase B3)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('flags red wine in white zone as critical severity', () => {
+    // Shiraz (red) sitting in Aromatic Whites (white zone)
+    const slotToWine = new Map([
+      ['R5C1', makeWine({
+        id: 1,
+        wine_name: 'Stellenbosch Shiraz 2020',
+        grapes: 'shiraz',
+        colour: 'red',
+        slot_id: 'R5C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R5: zoneMapEntry('aromatic_whites', 'Aromatic Whites')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+
+    expect(violations.length).toBeGreaterThanOrEqual(1);
+    const shirazViolation = violations.find(v => v.wineId === 1);
+    expect(shirazViolation).toBeDefined();
+    expect(shirazViolation.severity).toBe('critical');
+    expect(shirazViolation.reason).toContain('Colour violation');
+    expect(shirazViolation.bestZoneId).not.toBe('aromatic_whites');
+  });
+
+  it('flags white wine in red zone as critical severity', () => {
+    // Sauvignon Blanc (white) in Cabernet zone (red)
+    const slotToWine = new Map([
+      ['R10C1', makeWine({
+        id: 2,
+        wine_name: 'Marlborough Sauvignon Blanc 2023',
+        grapes: 'sauvignon blanc',
+        colour: 'white',
+        slot_id: 'R10C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R10: zoneMapEntry('cabernet', 'Cabernet Sauvignon')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+
+    expect(violations.length).toBeGreaterThanOrEqual(1);
+    const sbViolation = violations.find(v => v.wineId === 2);
+    expect(sbViolation).toBeDefined();
+    expect(sbViolation.severity).toBe('critical');
+  });
+
+  it('flags same-colour misplacement as moderate when score delta ≥ 40', () => {
+    // Sauvignon Blanc in Chenin Blanc row — both white zones,
+    // but findBestZone will score sauvignon_blanc much higher (grape match 35+ pts)
+    const slotToWine = new Map([
+      ['R3C1', makeWine({
+        id: 3,
+        wine_name: 'Loire Sauvignon Blanc 2022',
+        grapes: 'sauvignon blanc',
+        colour: 'white',
+        slot_id: 'R3C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R3: zoneMapEntry('chenin_blanc', 'Chenin Blanc')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+
+    expect(violations.length).toBeGreaterThanOrEqual(1);
+    const sbViolation = violations.find(v => v.wineId === 3);
+    expect(sbViolation).toBeDefined();
+    expect(sbViolation.severity).toBe('moderate');
+    expect(sbViolation.bestZoneId).toBe('sauvignon_blanc');
+    expect(sbViolation.reason).toContain('Better fit');
+  });
+
+  it('does not flag correctly placed wine', () => {
+    // Cabernet Sauvignon in its own zone row
+    const slotToWine = new Map([
+      ['R8C1', makeWine({
+        id: 4,
+        wine_name: 'Stellenbosch Cabernet 2019',
+        grapes: 'cabernet sauvignon',
+        colour: 'red',
+        slot_id: 'R8C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R8: zoneMapEntry('cabernet', 'Cabernet Sauvignon')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+    expect(violations).toHaveLength(0);
+  });
+
+  it('skips empty slots', () => {
+    const slotToWine = new Map(); // no wines at all
+
+    const zoneMap = {
+      R8: zoneMapEntry('cabernet', 'Cabernet Sauvignon')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+    expect(violations).toHaveLength(0);
+  });
+
+  it('sorts critical violations before moderate', () => {
+    const slotToWine = new Map([
+      // Moderate: Sauvignon Blanc in Chenin row (same colour)
+      ['R3C1', makeWine({
+        id: 1,
+        wine_name: 'Loire Sauvignon Blanc 2022',
+        grapes: 'sauvignon blanc',
+        colour: 'white',
+        slot_id: 'R3C1'
+      })],
+      // Critical: Shiraz in Aromatic Whites (colour violation)
+      ['R5C1', makeWine({
+        id: 2,
+        wine_name: 'Barossa Shiraz 2020',
+        grapes: 'shiraz',
+        colour: 'red',
+        slot_id: 'R5C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R3: zoneMapEntry('chenin_blanc', 'Chenin Blanc'),
+      R5: zoneMapEntry('aromatic_whites', 'Aromatic Whites')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+
+    expect(violations.length).toBeGreaterThanOrEqual(2);
+    // Critical should come first
+    expect(violations[0].severity).toBe('critical');
+    expect(violations[violations.length - 1].severity).toBe('moderate');
+  });
+
+  it('populates all expected fields on each violation', () => {
+    const slotToWine = new Map([
+      ['R5C1', makeWine({
+        id: 10,
+        wine_name: 'Misplaced Shiraz',
+        grapes: 'shiraz',
+        colour: 'red',
+        slot_id: 'R5C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R5: zoneMapEntry('aromatic_whites', 'Aromatic Whites')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+
+    expect(violations).toHaveLength(1);
+    const v = violations[0];
+    expect(v).toEqual(expect.objectContaining({
+      wineId: 10,
+      wineName: 'Misplaced Shiraz',
+      slot: 'R5C1',
+      physicalRow: 'R5',
+      rowZoneId: 'aromatic_whites',
+      rowZoneName: 'Aromatic Whites',
+      severity: 'critical'
+    }));
+    expect(v).toHaveProperty('bestZoneId');
+    expect(v).toHaveProperty('bestZoneName');
+    expect(v).toHaveProperty('bestScore');
+    expect(v).toHaveProperty('confidence');
+    expect(v).toHaveProperty('reason');
   });
 });
