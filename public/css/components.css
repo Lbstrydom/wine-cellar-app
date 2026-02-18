@@ -921,6 +921,89 @@
   color: var(--text-muted);
 }
 
+/* Grape Indicator (cellar grid header pill) */
+.grape-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-left: auto;
+  margin-right: 0.5rem;
+}
+
+.grape-indicator-pill {
+  white-space: nowrap;
+  line-height: 1.3;
+  cursor: default;
+}
+
+.grape-indicator-fix {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+}
+
+/* Grape Indicator Preview Panel */
+.grape-indicator-panel {
+  background: var(--bg-card, #1e1e2e);
+  border: 1px solid var(--border-color, #333);
+  border-radius: 8px;
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+}
+
+.grape-indicator-panel-header {
+  font-size: 0.85rem;
+  margin-bottom: 0.5rem;
+}
+
+.grape-indicator-panel-table-wrap {
+  max-height: 300px;
+  overflow-y: auto;
+  margin-bottom: 0.5rem;
+}
+
+.grape-indicator-panel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.grape-indicator-panel-table th {
+  text-align: left;
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border-color, #333);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.grape-indicator-panel-table td {
+  padding: 0.3rem 0.5rem;
+  border-bottom: 1px solid var(--border-color-light, #2a2a3a);
+}
+
+.grape-ind-wine-name {
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grape-ind-input {
+  width: 100%;
+  min-width: 140px;
+}
+
+.grape-indicator-panel-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.grape-indicator-panel-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 0.5rem;
+}
+
 /* Zone Capacity Alert */
 .zone-capacity-alert {
   padding: 1rem;

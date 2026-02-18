@@ -317,6 +317,16 @@ async function startAuthenticatedApp() {
 
     // Initialize zoom controls after grid is rendered
     initZoomControls();
+
+    // Listen for grape health changes — refresh data if wines were reclassified
+    document.addEventListener('grape-health:changed', (e) => {
+      const reclassified = e.detail?.reclassified || 0;
+      if (reclassified > 0) {
+        refreshData();
+      } else {
+        loadStats();
+      }
+    });
   } catch (err) {
     console.error('[App] startAuthenticatedApp failed:', err);
     showToast(`Initialization error: ${err.message}`);
@@ -338,6 +348,7 @@ async function loadInitialData() {
   } finally {
     showGridLoading(false);
   }
+
 }
 
 /**
@@ -666,6 +677,11 @@ export async function loadStats() {
   document.getElementById('stat-total').textContent = stats.total_bottles;
   document.getElementById('stat-reduce').textContent = stats.reduce_now_count;
   document.getElementById('stat-empty').textContent = stats.empty_slots;
+
+  // Update grape health indicator (non-blocking)
+  import('./grapeIndicator.js')
+    .then(m => m.renderGrapeIndicator(stats))
+    .catch(() => { /* grape indicator is non-critical */ });
 }
 
 /**

@@ -29,6 +29,13 @@ router.get('/', asyncHandler(async (req, res) => {
     WHERE cellar_id = $1 AND consumed_at > CURRENT_TIMESTAMP - INTERVAL '30 days'
   `).get(req.cellarId);
   const openBottles = await db.prepare('SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND is_open = TRUE').get(req.cellarId);
+  const grapeHealth = await db.prepare(`
+    SELECT COUNT(DISTINCT w.id) AS total,
+           COUNT(DISTINCT w.id) FILTER (WHERE w.grapes IS NULL OR w.grapes = '') AS missing
+    FROM wines w
+    JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1
+    WHERE w.cellar_id = $1
+  `).get(req.cellarId);
 
   const byColourNormalized = (byColour || []).map((row) => ({
     ...row,
@@ -41,7 +48,9 @@ router.get('/', asyncHandler(async (req, res) => {
     reduce_now_count: Number(reduceNowCount?.count ?? 0),
     empty_slots: Number(emptySlots?.count ?? 0),
     consumed_last_30_days: Number(recentConsumption?.count ?? 0),
-    open_bottles: Number(openBottles?.count ?? 0)
+    open_bottles: Number(openBottles?.count ?? 0),
+    grape_total: Number(grapeHealth?.total ?? 0),
+    grape_missing: Number(grapeHealth?.missing ?? 0)
   });
 }));
 

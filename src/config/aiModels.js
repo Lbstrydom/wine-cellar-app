@@ -28,13 +28,13 @@ export const MODELS = {
     capabilities: ['complex', 'awards', 'analysis', 'high-accuracy', 'planning'],
     description: 'Previous generation Opus for complex planning and extraction'
   },
-  'claude-sonnet-4-5-20250929': {
-    id: 'claude-sonnet-4-5-20250929',
-    name: 'Claude Sonnet 4.5',
-    maxTokens: 8192,
+  'claude-sonnet-4-6': {
+    id: 'claude-sonnet-4-6',
+    name: 'Claude Sonnet 4.6',
+    maxTokens: 16384,
     costTier: 'standard',
-    capabilities: ['fast', 'general', 'pairing', 'parsing'],
-    description: 'Fast and capable for most tasks'
+    capabilities: ['fast', 'general', 'pairing', 'parsing', 'thinking'],
+    description: 'Fast and capable with adaptive thinking support'
   },
   'claude-haiku-4-5-20251001': {
     id: 'claude-haiku-4-5-20251001',
@@ -52,23 +52,26 @@ export const MODELS = {
  * @type {Object.<string, string>}
  */
 export const TASK_MODELS = {
-  // Conversational tasks use Sonnet 4.5
-  sommelier: 'claude-sonnet-4-5-20250929',
-  parsing: 'claude-sonnet-4-5-20250929',
-  ratings: 'claude-sonnet-4-5-20250929',
-  zoneChat: 'claude-sonnet-4-5-20250929',
-  drinkRecommendations: 'claude-sonnet-4-5-20250929',
-  tastingExtraction: 'claude-sonnet-4-5-20250929',
+  // Conversational tasks use Sonnet 4.6 (fast, no thinking needed)
+  sommelier: 'claude-sonnet-4-6',
+  parsing: 'claude-sonnet-4-6',
+  ratings: 'claude-sonnet-4-6',
+  zoneChat: 'claude-sonnet-4-6',
+  drinkRecommendations: 'claude-sonnet-4-6',
+  tastingExtraction: 'claude-sonnet-4-6',
 
-  // Restaurant pairing tasks use Sonnet 4.5
-  menuParsing: 'claude-sonnet-4-5-20250929',
-  restaurantPairing: 'claude-sonnet-4-5-20250929',
+  // Restaurant pairing tasks use Sonnet 4.6
+  menuParsing: 'claude-sonnet-4-6',
+  restaurantPairing: 'claude-sonnet-4-6',
 
-  // Cellar analysis uses Sonnet — classification + review, not deep planning
-  cellarAnalysis: 'claude-sonnet-4-5-20250929',
+  // Cellar analysis uses Sonnet 4.6 with adaptive thinking (low effort)
+  cellarAnalysis: 'claude-sonnet-4-6',
   zoneCapacityAdvice: 'claude-opus-4-6',
-  // Reconfiguration uses Sonnet — primary planning is done by algorithmic solver
-  zoneReconfigurationPlan: 'claude-sonnet-4-5-20250929',
+  // Reconfiguration uses Sonnet 4.6 — primary planning is done by algorithmic solver
+  zoneReconfigurationPlan: 'claude-sonnet-4-6',
+
+  // Web search with dynamic filtering (Tier 2 replacement for Gemini)
+  webSearch: 'claude-sonnet-4-6',
 
   // Complex extraction tasks use Opus 4.6 with adaptive thinking
   awardExtraction: 'claude-opus-4-6',
@@ -98,7 +101,12 @@ const VALID_EFFORTS = new Set(['low', 'medium', 'high', 'max']);
  * @type {Object.<string, string>}
  */
 export const TASK_THINKING = {
+  // Sonnet 4.6 tasks with adaptive thinking (new capability in 4.6)
+  cellarAnalysis: 'low',
+  restaurantPairing: 'low',
+  drinkRecommendations: 'low',
   zoneReconfigurationPlan: 'low',
+  // Opus 4.6 tasks with adaptive thinking
   zoneCapacityAdvice: 'medium',
   awardExtraction: 'medium'
 };
@@ -140,8 +148,8 @@ export function getModelForTask(task) {
     logger.warn('AIModels', `${taskEnvKey}="${taskEnvModel}" is not a known model, ignoring`);
   }
 
-  // Use task mapping or default to Sonnet
-  return TASK_MODELS[task] || 'claude-sonnet-4-5-20250929';
+  // Use task mapping or default to Sonnet 4.6
+  return TASK_MODELS[task] || 'claude-sonnet-4-6';
 }
 
 /**

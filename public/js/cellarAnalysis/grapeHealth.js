@@ -145,6 +145,11 @@ async function commitBackfill(el, wineIds) {
       (result.reclassified > 0 ? `, <strong>${result.reclassified}</strong> reclassified to new zones` : '') +
       `</div>`;
 
+    // Notify grid indicator and other components
+    document.dispatchEvent(new CustomEvent('grape-health:changed', {
+      detail: { reclassified: result.reclassified || 0 }
+    }));
+
     // Refresh analysis to reflect changes
     if (_onRefreshAnalysis) {
       setTimeout(() => _onRefreshAnalysis(), 500);

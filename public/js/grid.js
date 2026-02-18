@@ -9,6 +9,7 @@ import { setupDragAndDrop, cleanupDragAndDrop } from './dragdrop.js';
 import { handleSlotClick } from './bottles.js';
 import { getZoneMap } from './api.js';
 import { addTrackedListener, cleanupNamespace } from './eventManager.js';
+import { renderGrapeIndicator } from './grapeIndicator.js';
 
 const NAMESPACE = 'grid';
 
@@ -259,6 +260,11 @@ export async function renderCellar() {
   if (typeof window.__moveGuideAnnotate === 'function') {
     window.__moveGuideAnnotate();
   }
+
+  // Grape health indicator — render from cached stats (non-blocking)
+  if (state.stats) {
+    renderGrapeIndicator(state.stats);
+  }
 }
 
 /**
@@ -308,6 +314,7 @@ export async function renderStorageAreas() {
 
     const header = document.createElement('div');
     header.className = 'zone-header';
+    if (isCellar) header.dataset.cellarIndicator = '1';
     const title = document.createElement('span');
     title.className = 'zone-title';
     title.textContent = area.name;
@@ -475,6 +482,11 @@ export async function renderStorageAreas() {
   setupInteractions();
   if (typeof window.__moveGuideAnnotate === 'function') {
     window.__moveGuideAnnotate();
+  }
+
+  // Grape health indicator — render from cached stats (non-blocking)
+  if (state.stats) {
+    renderGrapeIndicator(state.stats);
   }
 }
 

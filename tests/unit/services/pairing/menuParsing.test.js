@@ -15,7 +15,7 @@ vi.mock('../../../../src/services/ai/claudeClient.js', () => ({
 }));
 
 vi.mock('../../../../src/config/aiModels.js', () => ({
-  getModelForTask: vi.fn(() => 'claude-sonnet-4-5-20250929')
+  getModelForTask: vi.fn(() => 'claude-sonnet-4-6')
 }));
 
 const mockCleanup = vi.fn();

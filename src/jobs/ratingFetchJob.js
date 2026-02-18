@@ -2,7 +2,8 @@
  * @fileoverview Job handler for fetching wine ratings.
  * Implements 3-Tier Waterfall Strategy:
  *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
- *   Tier 2: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
+ *   Tier 2: Claude Web Search (~10-30s) - Anthropic web search with dynamic filtering
+ *          Fallback: Gemini Hybrid (~15-45s) if Claude web search unavailable
  *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
  *
  * Features:
@@ -15,6 +16,7 @@
  */
 
 import { fetchWineRatings, saveExtractedWindows } from '../services/ai/index.js';
+import { claudeWebSearch, isClaudeWebSearchAvailable } from '../services/search/claudeWebSearch.js';
 import { hybridWineSearch, isGeminiSearchAvailable } from '../services/search/geminiSearch.js';
 import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/search/serpAi.js';
 import { calculateWineRatings, saveRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
@@ -24,8 +26,10 @@ import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 
-// Timeout for Gemini hybrid search (Gemini API + Claude extraction = 2 API calls)
-// Increased to 45s to handle slow Gemini responses (32s+ observed in production)
+// Timeout for Tier 2 Claude Web Search (single API call with web tools)
+const CLAUDE_WEB_SEARCH_TIMEOUT_MS = 30000; // 30 seconds
+
+// Timeout for Gemini hybrid fallback (Gemini API + Claude extraction = 2 API calls)
 const GEMINI_TIMEOUT_MS = 45000; // 45 seconds
 
 // Timeout for Tier 1 Quick SERP AI extraction
@@ -54,11 +58,12 @@ function logTierResolution(tier, wine, startTime, ratingsFound = 0) {
 }
 
 /**
- * Transform hybrid Gemini result to standard rating format.
- * @param {Object} hybridResult - Result from hybridWineSearch
+ * Transform hybrid search result (Claude Web Search or Gemini) to standard rating format.
+ * @param {Object} hybridResult - Result from claudeWebSearch or hybridWineSearch
+ * @param {string} method - Source method for search_notes
  * @returns {Object} Transformed result with ratings array
  */
-function transformHybridResult(hybridResult) {
+function transformHybridResult(hybridResult, method = 'Gemini Hybrid') {
   return {
     ratings: (hybridResult.ratings || []).map(r => ({
       source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
@@ -72,7 +77,7 @@ function transformHybridResult(hybridResult) {
       tasting_notes: r.tasting_notes
     })),
     tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
-    search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
+    search_notes: `Found via ${method} (${hybridResult._metadata?.sources_count || 0} sources)`
   };
 }
 
@@ -148,16 +153,64 @@ async function threeTierWaterfall(wine, updateProgress, identityTokens) {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 2: Gemini Hybrid (~15-45s)
-  // Uses Gemini grounded search + Claude extraction for comprehensive coverage
+  // TIER 2: Claude Web Search (~10-30s)
+  // Uses Anthropic web_search + web_fetch tools with dynamic filtering.
+  // Single API call: Claude searches, fetches pages, writes Python to filter,
+  // and extracts structured wine data.
+  // Falls back to Gemini Hybrid if Claude web search unavailable/fails.
   // ═══════════════════════════════════════════════════════════════════════════
-  if (isGeminiSearchAvailable() && !isCircuitOpen('gemini_hybrid')) {
-    await updateProgress(25, 'Tier 2: Gemini Hybrid');
+  let tier2Resolved = false;
+
+  // Tier 2a: Claude Web Search (primary)
+  if (isClaudeWebSearchAvailable() && !isCircuitOpen('claude_web_search')) {
+    await updateProgress(25, 'Tier 2: Claude Web Search');
 
     try {
-      logger.info('RatingFetchJob', `Tier 2: Attempting Gemini Hybrid (${GEMINI_TIMEOUT_MS}ms timeout)`);
+      logger.info('RatingFetchJob', `Tier 2a: Attempting Claude Web Search (${CLAUDE_WEB_SEARCH_TIMEOUT_MS}ms timeout)`);
 
-      // Use AbortController for clean timeout handling
+      const tier2Promise = withCircuitBreaker('claude_web_search', () =>
+        claudeWebSearch(wine)
+      );
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Claude Web Search timed out')), CLAUDE_WEB_SEARCH_TIMEOUT_MS)
+      );
+
+      const tier2 = await Promise.race([tier2Promise, timeoutPromise]);
+
+      if (tier2?.ratings?.length > 0) {
+        const { ratings: validatedTier2 } = validateRatingsWithIdentity(wine, tier2.ratings, identityTokens);
+
+        if (validatedTier2.length === 0) {
+          logger.info('RatingFetchJob', 'Tier 2a: Identity gate rejected all ratings');
+        } else {
+          logTierResolution('tier2_claude_web', wine, startTime, tier2.ratings.length);
+          logger.info('RatingFetchJob', `Tier 2a SUCCESS: ${tier2.ratings.length} ratings in ${Date.now() - startTime}ms`);
+          tier2Resolved = true;
+          return {
+            result: transformHybridResult({ ...tier2, ratings: validatedTier2 }, 'Claude Web Search'),
+            usedMethod: 'claude_web_tier2'
+          };
+        }
+      }
+
+      logger.info('RatingFetchJob', 'Tier 2a: No valid ratings, trying Gemini fallback');
+    } catch (err) {
+      logger.warn('RatingFetchJob', `Tier 2a failed: ${err.message}`);
+    }
+  } else if (!isClaudeWebSearchAvailable()) {
+    logger.info('RatingFetchJob', 'Tier 2a: Claude Web Search not available');
+  } else {
+    logger.info('RatingFetchJob', 'Tier 2a: Circuit open, skipping');
+  }
+
+  // Tier 2b: Gemini Hybrid (fallback)
+  if (!tier2Resolved && isGeminiSearchAvailable() && !isCircuitOpen('gemini_hybrid')) {
+    await updateProgress(35, 'Tier 2b: Gemini Hybrid');
+
+    try {
+      logger.info('RatingFetchJob', `Tier 2b: Attempting Gemini Hybrid fallback (${GEMINI_TIMEOUT_MS}ms timeout)`);
+
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
 
@@ -176,32 +229,29 @@ async function threeTierWaterfall(wine, updateProgress, identityTokens) {
           const { ratings: validatedTier2 } = validateRatingsWithIdentity(wine, tier2.ratings, identityTokens);
 
           if (validatedTier2.length === 0) {
-            logger.info('RatingFetchJob', 'Tier 2: Identity gate rejected all ratings, proceeding to Tier 3');
+            logger.info('RatingFetchJob', 'Tier 2b: Identity gate rejected all ratings, proceeding to Tier 3');
           }
 
           logTierResolution('tier2_gemini', wine, startTime, tier2.ratings.length);
-          logger.info('RatingFetchJob', `Tier 2 SUCCESS: ${tier2.ratings.length} ratings in ${Date.now() - startTime}ms`);
+          logger.info('RatingFetchJob', `Tier 2b SUCCESS: ${tier2.ratings.length} ratings in ${Date.now() - startTime}ms`);
           if (validatedTier2.length > 0) {
             return {
-              result: transformHybridResult({ ...tier2, ratings: validatedTier2 }),
+              result: transformHybridResult({ ...tier2, ratings: validatedTier2 }, 'Gemini Hybrid'),
               usedMethod: 'gemini_tier2'
             };
           }
         }
 
-        logger.info('RatingFetchJob', 'Tier 2: No ratings found, proceeding to Tier 3');
+        logger.info('RatingFetchJob', 'Tier 2b: No ratings found, proceeding to Tier 3');
       } catch (err) {
         clearTimeout(timeoutId);
         throw err;
       }
     } catch (err) {
-      logger.warn('RatingFetchJob', `Tier 2 failed: ${err.message}`);
-      // Circuit breaker will record failure via withCircuitBreaker
+      logger.warn('RatingFetchJob', `Tier 2b failed: ${err.message}`);
     }
-  } else if (!isGeminiSearchAvailable()) {
-    logger.info('RatingFetchJob', 'Tier 2: Gemini not available (missing API key)');
-  } else {
-    logger.info('RatingFetchJob', 'Tier 2: Circuit open, skipping');
+  } else if (!tier2Resolved && !isGeminiSearchAvailable()) {
+    logger.info('RatingFetchJob', 'Tier 2b: Gemini not available (missing API key), proceeding to Tier 3');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════

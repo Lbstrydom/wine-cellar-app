@@ -3,7 +3,7 @@ import { describe, it, expect, vi } from 'vitest';
 // Mock dependencies before import
 vi.mock('../../../../src/services/ai/claudeClient.js', () => ({ default: null }));
 vi.mock('../../../../src/config/aiModels.js', () => ({
-  getModelForTask: () => 'claude-sonnet-4-5-20250929',
+  getModelForTask: () => 'claude-sonnet-4-6',
   getThinkingConfig: () => null,
 }));
 vi.mock('../../../../src/services/ai/claudeResponseUtils.js', () => ({

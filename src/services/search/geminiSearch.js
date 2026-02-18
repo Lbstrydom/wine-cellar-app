@@ -5,7 +5,8 @@
  * @module services/search/geminiSearch
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 import { getSourcesForCountry } from '../../config/unifiedSources.js';
 
@@ -277,7 +278,7 @@ export async function extractWineDataWithClaude(geminiResults, wine) {
   logger.info('GeminiSearch', `Starting Claude extraction for ${wine.wine_name || wine.name}, content length: ${geminiResults.content.length}`);
   const startTime = Date.now();
 
-  const anthropic = new Anthropic();
+
 
   // OPTIMIZED: Shorter prompt, explicit JSON-only output
   const prompt = `Extract wine data from these search results. Return ONLY valid JSON.
@@ -301,7 +302,7 @@ Rules: Only verified data. Empty array/null for missing. No markdown, no explana
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: getModelForTask('ratings'),
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     });

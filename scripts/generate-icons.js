@@ -1,5 +1,6 @@
 /**
  * @fileoverview Generate PWA icons from SVG source.
+ * Requires sharp: npm install --no-save sharp
  * Run with: node scripts/generate-icons.js
  */
 

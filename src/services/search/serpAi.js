@@ -8,7 +8,8 @@
  * @module services/search/serpAi
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 // circuitBreaker reserved for future resilience patterns
 import { TIMEOUTS } from '../../config/scraperConfig.js';
@@ -176,7 +177,7 @@ async function quickClaudeExtraction(content, wine) {
     return null;
   }
 
-  const anthropic = new Anthropic();
+
   const vintage = wine.vintage || 'NV';
 
   // FAST prompt - minimal tokens, JSON-only output
@@ -194,7 +195,7 @@ Rules: Only ${vintage} vintage. Empty array if no ratings found. No explanation.
 
   try {
     const message = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5-20250929',
+      model: getModelForTask('ratings'),
       max_tokens: 500,
       messages: [{ role: 'user', content: prompt }]
     });
