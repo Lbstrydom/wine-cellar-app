@@ -1077,19 +1077,22 @@ All model selection is centralized in `src/config/aiModels.js`. Tasks map to mod
 
 | Task | Model | Thinking Effort |
 |------|-------|-----------------|
-| `cellarAnalysis` | Opus 4.6 | high |
 | `zoneCapacityAdvice` | Opus 4.6 | medium |
 | `awardExtraction` | Opus 4.6 | medium |
-| `zoneReconfigurationPlan` | Sonnet 4.5 | low |
-| `sommelier`, `parsing`, `ratings` | Sonnet 4.5 | none |
+| `cellarAnalysis` | Sonnet 4.6 | low |
+| `restaurantPairing` | Sonnet 4.6 | low |
+| `drinkRecommendations` | Sonnet 4.6 | low |
+| `zoneReconfigurationPlan` | Sonnet 4.6 | low |
+| `webSearch` | Sonnet 4.6 | none |
+| `sommelier`, `parsing`, `ratings` | Sonnet 4.6 | none |
 | `wineClassification` | Haiku 4.5 | none |
 
 ```javascript
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 
-const modelId = getModelForTask('cellarAnalysis');  // 'claude-opus-4-6'
+const modelId = getModelForTask('cellarAnalysis');  // 'claude-sonnet-4-6'
 const thinking = getThinkingConfig('cellarAnalysis');
-// { thinking: { type: 'adaptive' }, output_config: { effort: 'high' } }
+// { thinking: { type: 'adaptive' }, output_config: { effort: 'low' } }
 
 const thinking2 = getThinkingConfig('sommelier');
 // null (no thinking for this task)
@@ -1125,7 +1128,7 @@ const response = await anthropic.messages.create({
 **Key constraints:**
 - `temperature` is **incompatible** with adaptive thinking — the API will reject the request
 - Thinking tokens count against `max_tokens` — use 32000 for complex tasks, 16000 for simpler tasks
-- Non-thinking tasks (Sonnet/Haiku) return `null` from `getThinkingConfig()`, so the spread is a no-op
+- Non-thinking tasks (speed-sensitive Sonnet tasks, Haiku) return `null` from `getThinkingConfig()`, so the spread is a no-op
 
 ### Response Handling (`claudeResponseUtils.js`)
 
@@ -1155,11 +1158,12 @@ Thinking tokens count against `max_tokens`. Set limits high enough for thinking 
 
 | Task | `max_tokens` | Reason |
 |------|-------------|--------|
-| Cellar analysis | 32000 | ~2K JSON output + up to 20K thinking |
-| Zone reconfiguration | 8000 | Algorithmic solver does primary planning; LLM refines |
-| Zone capacity advice | 16000 | ~1.2K JSON output + up to 5K thinking |
-| Award extraction | 32000 | Large JSON output + thinking |
-| Sommelier (no thinking) | 8192 | Standard Sonnet limit |
+| Cellar analysis (Sonnet 4.6) | 16000 | ~2K JSON output + low-effort thinking |
+| Restaurant pairing (Sonnet 4.6) | 16000 | Pairing reasoning + low-effort thinking |
+| Zone reconfiguration (Sonnet 4.6) | 8000 | Algorithmic solver does primary planning; LLM refines |
+| Zone capacity advice (Opus 4.6) | 16000 | ~1.2K JSON output + up to 5K thinking |
+| Award extraction (Opus 4.6) | 32000 | Large JSON output + thinking |
+| Sommelier (Sonnet 4.6, no thinking) | 8192 | Speed-sensitive, no thinking needed |
 
 ---
 
@@ -1343,6 +1347,26 @@ items.sort((a, b) => {
 ---
 
 ## Search Pipeline Patterns
+
+### 3-Tier Waterfall Strategy
+
+Rating fetches use a cascading waterfall (`src/jobs/ratingFetchJob.js`):
+
+| Tier | Method | Latency | API Keys Needed |
+|------|--------|---------|-----------------|
+| 1 | Quick SERP AI (BrightData) | 3-8s | `BRIGHTDATA_API_KEY` |
+| 2a | **Claude Web Search** (primary) | 10-30s | `ANTHROPIC_API_KEY` only |
+| 2b | Gemini Hybrid (fallback) | 15-45s | `GEMINI_API_KEY` |
+| 3 | Legacy Deep Scraping | 30-60s | `BRIGHTDATA_API_KEY` |
+
+**Tier 2a: Claude Web Search** (`src/services/search/claudeWebSearch.js`):
+Uses Anthropic's `web_search_20260209` and `web_fetch_20260209` tools with dynamic filtering.
+Claude autonomously searches, fetches pages, writes Python to filter results, and extracts
+structured wine data — all in a single API call. Requires beta header:
+`anthropic-beta: code-execution-web-tools-2026-02-09`
+
+**Tier 2b: Gemini Hybrid** (`src/services/search/geminiSearch.js`):
+Fallback when Claude Web Search fails or circuit is open. Uses Gemini grounded search + Claude extraction (2 API calls).
 
 ### Query Builder Service Pattern
 
