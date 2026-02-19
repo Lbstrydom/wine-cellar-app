@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
+    "@mozilla/readability": "^0.6.0",
     "@supabase/supabase-js": "^2.94.1",
     "cors": "^2.8.6",
     "dotenv": "^17.2.3",

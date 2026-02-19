@@ -19,6 +19,7 @@ import {
   resolvePublicCacheStatus
 } from '../shared/fetchUtils.js';
 import { fetchDocumentContent } from '../search/documentFetcher.js';
+import { extractWithReadability } from './readabilityExtractor.js';
 
 /**
  * Fetch page content for parsing.
@@ -256,15 +257,22 @@ export async function fetchPageContent(url, maxLength = 8000, budget = null) {
       }
 
       if (!text) {
-        text = contentText
-          .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-          .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-          .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-          .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-          .replace(/<[^>]+>/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
+        // Try Readability first — produces cleaner article text than regex stripping
+        const readable = extractWithReadability(contentText, url);
+        if (readable) {
+          text = readable.text;
+        } else {
+          // Fallback: crude regex tag stripping
+          text = contentText
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+            .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+            .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
       }
     }
 
