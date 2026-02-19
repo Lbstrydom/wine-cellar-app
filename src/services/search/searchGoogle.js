@@ -1,6 +1,5 @@
 /**
- * @fileoverview Google SERP API integration.
- * Supports Bright Data SERP API and Google Programmable Search API.
+ * @fileoverview Google SERP API integration via Bright Data.
  * @module services/search/searchGoogle
  */
 
@@ -18,8 +17,7 @@ import { createTimeoutAbort } from '../shared/fetchUtils.js';
 const serpRequestDeduper = createRequestDeduper();
 
 /**
- * Search using Bright Data SERP API or Google Programmable Search API.
- * Prefers Bright Data if configured, falls back to Google Custom Search.
+ * Search using Bright Data SERP API.
  * Uses caching to avoid redundant API calls.
  * @param {string} query - Search query
  * @param {string[]} domains - Domains to restrict search to
@@ -57,63 +55,15 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
       return [];
     }
 
-    // Prefer Bright Data SERP API if configured
     const brightDataApiKey = process.env.BRIGHTDATA_API_KEY;
     const serpZone = process.env.BRIGHTDATA_SERP_ZONE;
 
-    let results = [];
-
-    if (brightDataApiKey && serpZone) {
-      results = await searchBrightDataSerp(query, domainList, { hl, gl });
-    } else {
-      // Fallback to Google Custom Search API
-      const apiKey = process.env.GOOGLE_SEARCH_API_KEY;
-      const engineId = process.env.GOOGLE_SEARCH_ENGINE_ID;
-
-      if (!apiKey || !engineId) {
-        logger.warn('Search', 'No search API configured (need BRIGHTDATA_SERP_ZONE or GOOGLE_SEARCH_API_KEY)');
-        return [];
-      }
-
-      let fullQuery = query;
-      if (domainList.length > 0 && domainList.length <= 10) {
-        const siteRestriction = domainList.map(d => `site:${d}`).join(' OR ');
-        fullQuery = `${query} (${siteRestriction})`;
-      }
-
-      const url = new URL('https://www.googleapis.com/customsearch/v1');
-      url.searchParams.set('key', apiKey);
-      url.searchParams.set('cx', engineId);
-      url.searchParams.set('q', fullQuery);
-      url.searchParams.set('num', '10');
-      url.searchParams.set('hl', hl);
-      url.searchParams.set('gl', gl);
-
-      logger.info('Google', `Searching: "${query}" across ${domainList.length} domains (${hl}/${gl})`);
-
-      try {
-        const response = await fetch(url.toString());
-        const data = await response.json();
-
-        if (data.error) {
-          logger.error('Google', `API error: ${data.error.message}`);
-          return [];
-        }
-
-        results = (data.items || []).map(item => ({
-          title: item.title,
-          url: item.link,
-          snippet: item.snippet,
-          source: extractDomain(item.link)
-        }));
-
-        logger.info('Google', `Found ${results.length} results`);
-
-      } catch (error) {
-        logger.error('Google', `Search failed: ${error.message}`);
-        return [];
-      }
+    if (!brightDataApiKey || !serpZone) {
+      logger.warn('Search', 'No search API configured (need BRIGHTDATA_API_KEY + BRIGHTDATA_SERP_ZONE)');
+      return [];
     }
+
+    let results = await searchBrightDataSerp(query, domainList, { hl, gl });
 
     // Cache results
     try {

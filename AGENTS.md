@@ -826,8 +826,6 @@ refactor/modular-structure
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
 | `CLAUDE_MODEL` | Override Claude model for ALL tasks | No (default: per-task mapping) |
 | `CLAUDE_MODEL_<TASK>` | Override model for specific task (e.g., `CLAUDE_MODEL_CELLARANALYSIS`) | No |
-| `GOOGLE_SEARCH_API_KEY` | Google Programmable Search API key | For ratings search |
-| `GOOGLE_SEARCH_ENGINE_ID` | Google Custom Search Engine ID | For ratings search |
 | `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
@@ -1009,8 +1007,6 @@ Set these in Railway dashboard → Variables:
 |----------|-------------|
 | `DATABASE_URL` | Supabase PostgreSQL connection string |
 | `ANTHROPIC_API_KEY` | Claude API key |
-| `GOOGLE_SEARCH_API_KEY` | Google Search API key |
-| `GOOGLE_SEARCH_ENGINE_ID` | Google CSE ID |
 | `BRIGHTDATA_API_KEY` | BrightData API key |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |

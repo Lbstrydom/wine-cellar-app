@@ -28,8 +28,7 @@ const SERVICES = {
   },
   ratings: {
     name: 'External Ratings',
-    primary: ['BRIGHTDATA_API_KEY'],
-    fallback: ['GOOGLE_SEARCH_API_KEY', 'GOOGLE_SEARCH_ENGINE_ID']
+    primary: ['BRIGHTDATA_API_KEY']
   }
 };
 

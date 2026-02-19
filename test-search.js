@@ -19,17 +19,17 @@ async function runTests() {
   console.log(`Country: ${testCountry}`);
   console.log('');
 
-  // Test Google Search
-  console.log('--- Google Search ---');
-  if (process.env.GOOGLE_SEARCH_API_KEY && process.env.GOOGLE_SEARCH_ENGINE_ID) {
-    const googleResults = await searchGoogle(
+  // Test BrightData SERP Search
+  console.log('--- BrightData SERP Search ---');
+  if (process.env.BRIGHTDATA_API_KEY && process.env.BRIGHTDATA_SERP_ZONE) {
+    const serpResults = await searchGoogle(
       `"${testWine}" ${testVintage} rating`,
       ['timatkin.com', 'vivino.com', 'decanter.com']
     );
-    console.log(`Results: ${googleResults.length}`);
-    googleResults.forEach(r => console.log(`  - ${r.source}: ${r.title.substring(0, 50)}`));
+    console.log(`Results: ${serpResults.length}`);
+    serpResults.forEach(r => console.log(`  - ${r.source}: ${r.title.substring(0, 50)}`));
   } else {
-    console.log('  SKIPPED: Google API not configured');
+    console.log('  SKIPPED: BrightData SERP not configured');
   }
   console.log('');
 

@@ -57,8 +57,6 @@ Set in Railway dashboard:
 |----------|-------------|
 | `DATABASE_URL` | Supabase PostgreSQL connection string |
 | `ANTHROPIC_API_KEY` | Claude API key |
-| `GOOGLE_SEARCH_API_KEY` | Google Search API key |
-| `GOOGLE_SEARCH_ENGINE_ID` | Google CSE ID |
 | `BRIGHTDATA_API_KEY` | BrightData API key |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web zone |

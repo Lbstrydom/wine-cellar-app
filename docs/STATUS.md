@@ -213,7 +213,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
     - `queryBuilder.js` service integrated into `searchProviders.js`
     - All SERP queries now use `getLocaleParams()` for country→locale mapping
     - Broad queries use `buildQueryVariants()` for intent-based query generation
-    - Google Custom Search and Bright Data SERP calls include `hl`/`gl` parameters
+    - Bright Data SERP calls include `hl`/`gl` parameters
     - Region-specific sources (Platters, Halliday, RVF) targeted in queries
   - **Phase 6 (Observability)**: Migration 046 adds accuracy metrics (`vintage_mismatch_count`, `wrong_wine_count`, `identity_rejection_count`) to `search_metrics`
     - New `accuracyMetrics.js` service for data quality tracking
@@ -2347,8 +2347,6 @@ Implemented comprehensive feedback loop for wine pairing recommendations:
 | `OPENAI_REVIEW_MAX_OUTPUT_TOKENS` | No | Max tokens for reviewer output (default: 1500) |
 | `OPENAI_REVIEW_REASONING_EFFORT` | No | Reasoning effort: low/medium/high (default: medium) |
 | `OPENAI_REVIEW_TIMEOUT_MS` | No | Reviewer timeout in ms (default: 120000) |
-| `GOOGLE_SEARCH_API_KEY` | No | Google Custom Search |
-| `GOOGLE_SEARCH_ENGINE_ID` | No | Search engine ID |
 | `BRIGHTDATA_API_KEY` | No | BrightData scraping |
 | `BRIGHTDATA_SERP_ZONE` | No | BrightData SERP zone |
 | `BRIGHTDATA_WEB_ZONE` | No | Web Unlocker zone |

@@ -53,7 +53,7 @@ export async function fetchWineRatings(wine, options = {}) {
   logger.separator();
   logger.info('Ratings', `Starting search for: ${wineName} ${vintage}`);
   logger.info('Ratings', `Wine style: ${style || 'Unknown'}`);
-  logger.info('Ratings', `API Keys: Google=${process.env.GOOGLE_SEARCH_API_KEY ? 'Set' : 'MISSING'}, Engine=${process.env.GOOGLE_SEARCH_ENGINE_ID ? 'Set' : 'MISSING'}, BrightData=${process.env.BRIGHTDATA_API_KEY ? 'Set' : 'MISSING'}, WebZone=${process.env.BRIGHTDATA_WEB_ZONE ? 'Set' : 'MISSING'}`);
+  logger.info('Ratings', `API Keys: BrightData=${process.env.BRIGHTDATA_API_KEY ? 'Set' : 'MISSING'}, SerpZone=${process.env.BRIGHTDATA_SERP_ZONE ? 'Set' : 'MISSING'}, WebZone=${process.env.BRIGHTDATA_WEB_ZONE ? 'Set' : 'MISSING'}`);
 
   // Step 0: Try authenticated sources first (faster and more reliable if configured)
   const authenticatedRatings = await fetchAuthenticatedRatings(wineName, vintage);
