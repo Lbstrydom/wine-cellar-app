@@ -921,6 +921,39 @@
   color: var(--text-muted);
 }
 
+.grape-health-manual-section {
+  margin-top: 0.75rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.grape-health-subheader {
+  font-size: 0.88rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-muted);
+}
+
+.grape-health-manual-input {
+  width: 100%;
+  min-width: 140px;
+  font-size: 0.85rem;
+  padding: 0.25rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+.grape-health-saved {
+  color: var(--color-success, #22c55e);
+  font-size: 0.85rem;
+}
+
+.grape-health-error-inline {
+  color: var(--color-warning, #eab308);
+  font-size: 0.78rem;
+}
+
 /* Grape Indicator (cellar grid header pill) */
 .grape-indicator {
   display: flex;

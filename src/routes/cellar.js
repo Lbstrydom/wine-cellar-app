@@ -490,6 +490,7 @@ router.post('/grape-backfill', asyncHandler(async (req, res) => {
 
   const detections = batchDetectGrapes(wines);
   const suggestions = detections.filter(d => d.detection.grapes !== null);
+  const undetectable = detections.filter(d => d.detection.grapes === null);
 
   if (!commit) {
     return res.json({
@@ -503,6 +504,10 @@ router.post('/grape-backfill', asyncHandler(async (req, res) => {
         grapes: s.detection.grapes,
         confidence: s.detection.confidence,
         source: s.detection.source
+      })),
+      undetectable: undetectable.map(u => ({
+        wineId: u.wineId,
+        wine_name: u.wine_name
       }))
     });
   }

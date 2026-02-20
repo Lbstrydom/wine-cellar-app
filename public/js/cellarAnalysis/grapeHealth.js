@@ -4,10 +4,13 @@
  * @module cellarAnalysis/grapeHealth
  */
 
-import { backfillGrapes } from '../api.js';
+import { backfillGrapes, updateWine } from '../api.js';
 import { escapeHtml } from '../utils.js';
+import { initGrapeAutocomplete } from '../grapeAutocomplete.js';
 
 let _onRefreshAnalysis = null;
+/** @type {{ destroy: Function }[]} */
+let _grapeAcInstances = [];
 
 /**
  * Render the grape health banner in the analysis panel.
@@ -40,7 +43,7 @@ export async function renderGrapeHealthBanner(_analysis, options = {}) {
  * @param {Object} dryRun - Dry-run result from backfill API
  */
 function renderBannerSummary(el, dryRun) {
-  const { totalMissing, detectable, suggestions } = dryRun;
+  const { totalMissing, detectable, suggestions, undetectable } = dryRun;
 
   let html = '<div class="grape-health-banner">';
   html += '<div class="grape-health-header">';
@@ -55,26 +58,71 @@ function renderBannerSummary(el, dryRun) {
     html += '<div class="grape-health-actions">';
     html += '<button class="btn btn-small btn-secondary" id="grape-health-preview-btn">Detect Grapes</button>';
     html += '</div>';
-  } else {
-    html += '<div class="grape-health-note">No grapes could be auto-detected. Add grapes manually via the edit form.</div>';
+  }
+
+  // Show undetectable wines with manual input
+  const manualWines = undetectable && undetectable.length > 0 ? undetectable : [];
+  if (manualWines.length > 0) {
+    html += '<div class="grape-health-manual-section">';
+    html += `<div class="grape-health-subheader"><strong>${manualWines.length}</strong> wine${manualWines.length !== 1 ? 's' : ''} need manual grape entry</div>`;
+    html += '<div class="grape-health-table-wrap">';
+    html += '<table class="grape-health-table">';
+    html += '<thead><tr><th>Wine</th><th>Grapes</th><th></th></tr></thead>';
+    html += '<tbody>';
+    for (const u of manualWines) {
+      const inputId = `grape-health-manual-${u.wineId}`;
+      html += `<tr data-wine-id="${u.wineId}">`;
+      html += `<td>${escapeHtml(u.wine_name)}</td>`;
+      html += `<td><input type="text" id="${inputId}" class="grape-health-manual-input" value="" data-wine-id="${u.wineId}" placeholder="Select grapes…"></td>`;
+      html += `<td><button class="btn btn-small btn-secondary grape-health-save-one" data-wine-id="${u.wineId}" data-input-id="${inputId}">Save</button></td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    html += '</div>';
+    html += '</div>';
   }
 
   html += '</div>';
   el.innerHTML = html;
 
+  // Clean up previous autocomplete instances
+  for (const ac of _grapeAcInstances) {
+    try { ac.destroy(); } catch { /* ignore */ }
+  }
+  _grapeAcInstances = [];
+
   // Wire preview button
   const previewBtn = document.getElementById('grape-health-preview-btn');
   if (previewBtn) {
-    previewBtn.addEventListener('click', () => renderPreviewTable(el, suggestions));
+    previewBtn.addEventListener('click', () => renderPreviewTable(el, suggestions, undetectable));
   }
+
+  // Initialize grapeAutocomplete on manual inputs
+  for (const u of manualWines) {
+    const inputId = `grape-health-manual-${u.wineId}`;
+    const ac = initGrapeAutocomplete(inputId);
+    if (ac) _grapeAcInstances.push(ac);
+  }
+
+  // Wire individual Save buttons
+  el.querySelectorAll('.grape-health-save-one').forEach(btn => {
+    btn.addEventListener('click', (e) => saveManualGrapeHealth(e.currentTarget, el));
+  });
 }
 
 /**
  * Render the preview table with per-row and apply-all controls.
  * @param {HTMLElement} el - Container element
  * @param {Array} suggestions - Detection suggestions from dry-run
+ * @param {Array} [undetectable] - Wines that couldn't be auto-detected
  */
-function renderPreviewTable(el, suggestions) {
+function renderPreviewTable(el, suggestions, undetectable) {
+  // Clean up previous autocomplete instances
+  for (const ac of _grapeAcInstances) {
+    try { ac.destroy(); } catch { /* ignore */ }
+  }
+  _grapeAcInstances = [];
+
   let html = '<div class="grape-health-banner">';
   html += '<div class="grape-health-header">';
   html += `<span class="grape-health-icon">&#127815;</span> `;
@@ -103,6 +151,29 @@ function renderPreviewTable(el, suggestions) {
   html += '<button class="btn btn-small btn-primary" id="grape-health-apply-all-btn">Apply All</button>';
   html += '<button class="btn btn-small btn-secondary" id="grape-health-cancel-btn">Cancel</button>';
   html += '</div>';
+
+  // Undetectable wines with manual input
+  const manualWines = undetectable && undetectable.length > 0 ? undetectable : [];
+  if (manualWines.length > 0) {
+    html += '<div class="grape-health-manual-section">';
+    html += `<div class="grape-health-subheader"><strong>${manualWines.length}</strong> wine${manualWines.length !== 1 ? 's' : ''} need manual grape entry</div>`;
+    html += '<div class="grape-health-table-wrap">';
+    html += '<table class="grape-health-table">';
+    html += '<thead><tr><th>Wine</th><th>Grapes</th><th></th></tr></thead>';
+    html += '<tbody>';
+    for (const u of manualWines) {
+      const inputId = `grape-health-preview-manual-${u.wineId}`;
+      html += `<tr data-wine-id="${u.wineId}">`;
+      html += `<td>${escapeHtml(u.wine_name)}</td>`;
+      html += `<td><input type="text" id="${inputId}" class="grape-health-manual-input" value="" data-wine-id="${u.wineId}" placeholder="Select grapes…"></td>`;
+      html += `<td><button class="btn btn-small btn-secondary grape-health-save-one" data-wine-id="${u.wineId}" data-input-id="${inputId}">Save</button></td>`;
+      html += '</tr>';
+    }
+    html += '</tbody></table>';
+    html += '</div>';
+    html += '</div>';
+  }
+
   html += '</div>';
 
   el.innerHTML = html;
@@ -124,6 +195,18 @@ function renderPreviewTable(el, suggestions) {
       const wineId = Number(e.target.dataset.wineId);
       await commitBackfill(el, [wineId]);
     });
+  });
+
+  // Initialize grapeAutocomplete on manual inputs
+  for (const u of manualWines) {
+    const inputId = `grape-health-preview-manual-${u.wineId}`;
+    const ac = initGrapeAutocomplete(inputId);
+    if (ac) _grapeAcInstances.push(ac);
+  }
+
+  // Wire individual Save buttons for manual entries
+  el.querySelectorAll('.grape-health-save-one').forEach(btn => {
+    btn.addEventListener('click', (e) => saveManualGrapeHealth(e.currentTarget, el));
   });
 }
 
@@ -156,5 +239,43 @@ async function commitBackfill(el, wineIds) {
     }
   } catch (err) {
     el.innerHTML = `<div class="grape-health-banner grape-health-error">Failed to backfill grapes: ${escapeHtml(err.message)}</div>`;
+  }
+}
+
+/**
+ * Save manually entered grapes for a single wine (used in preview table).
+ * @param {HTMLElement} btn - The Save button that was clicked
+ * @param {HTMLElement} el - Parent container element for refresh
+ */
+async function saveManualGrapeHealth(btn, el) {
+  const wineId = Number(btn.dataset.wineId);
+  const inputId = btn.dataset.inputId;
+  const input = document.getElementById(inputId);
+  if (!input) return;
+
+  const grapes = input.value.trim();
+  if (!grapes) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    await updateWine(wineId, { grapes });
+    const row = btn.closest('tr');
+    if (row) {
+      row.innerHTML = `<td colspan="3" class="grape-health-saved">&#10003; Saved: ${escapeHtml(grapes)}</td>`;
+    }
+
+    document.dispatchEvent(new CustomEvent('grape-health:changed', {
+      detail: { reclassified: 0 }
+    }));
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Save';
+    const row = btn.closest('tr');
+    if (row) {
+      const td = row.querySelector('td:last-child');
+      if (td) td.innerHTML += ` <span class="grape-health-error-inline">${escapeHtml(err.message)}</span>`;
+    }
   }
 }

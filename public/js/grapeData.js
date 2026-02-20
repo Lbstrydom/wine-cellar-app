@@ -46,6 +46,7 @@ export const WHITE_GRAPES = [
   'Verdejo',
   'Vermentino',
   'Viognier',
+  'Viura',
   'Xarel·lo',
 ];
 

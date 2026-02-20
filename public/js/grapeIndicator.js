@@ -5,7 +5,7 @@
  * @module grapeIndicator
  */
 
-import { backfillGrapes } from './api.js';
+import { backfillGrapes, updateWine } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { initGrapeAutocomplete } from './grapeAutocomplete.js';
 
@@ -142,10 +142,11 @@ async function handleIdentifyClick(e) {
 
 /**
  * Render the inline preview panel below the zone-header.
+ * Shows auto-detected grapes and lists undetectable wines with manual input.
  * @param {Object} dryRun - Dry-run result from backfillGrapes({ commit: false })
  */
 function renderPreviewPanel(dryRun) {
-  const { totalMissing, detectable, suggestions } = dryRun;
+  const { totalMissing, detectable, suggestions, undetectable } = dryRun;
   closePreviewPanel(); // Clean up any existing panel
 
   const headerEl = findCellarHeader();
@@ -163,6 +164,7 @@ function renderPreviewPanel(dryRun) {
   }
   html += '</div>';
 
+  // --- Auto-detected section ---
   if (suggestions && suggestions.length > 0) {
     html += '<div class="grape-indicator-panel-table-wrap">';
     html += '<table class="grape-indicator-panel-table">';
@@ -183,11 +185,41 @@ function renderPreviewPanel(dryRun) {
     html += '</div>';
 
     html += '<div class="grape-indicator-panel-actions">';
-    html += '<button class="btn btn-small btn-primary grape-ind-apply-all">Apply All</button>';
-    html += '<button class="btn btn-small btn-secondary grape-ind-cancel">Cancel</button>';
+    html += '<button class="btn btn-small btn-primary grape-ind-apply-all">Apply All Detected</button>';
+    html += '<button class="btn btn-small btn-secondary grape-ind-cancel">Close</button>';
     html += '</div>';
-  } else {
-    html += '<div class="grape-indicator-panel-note">No grapes could be auto-detected. Add grapes manually via the edit form.</div>';
+  }
+
+  // --- Undetectable wines section ---
+  const manualWines = undetectable && undetectable.length > 0 ? undetectable : [];
+  if (manualWines.length > 0) {
+    html += '<div class="grape-indicator-panel-header grape-indicator-panel-manual-header">';
+    html += `<strong>${manualWines.length}</strong> wine${manualWines.length !== 1 ? 's' : ''} need manual grape entry`;
+    html += '</div>';
+    html += '<div class="grape-indicator-panel-table-wrap">';
+    html += '<table class="grape-indicator-panel-table">';
+    html += '<thead><tr><th>Wine</th><th>Grapes</th><th></th></tr></thead>';
+    html += '<tbody>';
+
+    for (const u of manualWines) {
+      const inputId = `grape-ind-manual-${u.wineId}`;
+      html += `<tr data-wine-id="${u.wineId}">`;
+      html += `<td class="grape-ind-wine-name">${escapeHtml(u.wine_name)}</td>`;
+      html += `<td><input type="text" id="${inputId}" class="grape-ind-input grape-ind-manual" value="" data-wine-id="${u.wineId}" placeholder="Select grapes…"></td>`;
+      html += `<td><button class="btn btn-small btn-secondary grape-ind-save-one" data-wine-id="${u.wineId}" data-input-id="${inputId}">Save</button></td>`;
+      html += '</tr>';
+    }
+
+    html += '</tbody></table>';
+    html += '</div>';
+  }
+
+  // If nothing auto-detected and nothing undetectable, show generic close
+  if ((!suggestions || suggestions.length === 0) && manualWines.length === 0) {
+    html += '<div class="grape-indicator-panel-note">All wines have grape data.</div>';
+  }
+
+  if (!suggestions || suggestions.length === 0) {
     html += '<div class="grape-indicator-panel-actions">';
     html += '<button class="btn btn-small btn-secondary grape-ind-cancel">Close</button>';
     html += '</div>';
@@ -203,7 +235,7 @@ function renderPreviewPanel(dryRun) {
     zoneEl.appendChild(panel);
   }
 
-  // Initialize grapeAutocomplete on each input
+  // Initialize grapeAutocomplete on auto-detected inputs
   _acInstances = [];
   for (const s of (suggestions || [])) {
     const inputId = `grape-ind-ac-${s.wineId}`;
@@ -211,13 +243,61 @@ function renderPreviewPanel(dryRun) {
     if (ac) _acInstances.push(ac);
   }
 
+  // Initialize grapeAutocomplete on manual inputs
+  for (const u of manualWines) {
+    const inputId = `grape-ind-manual-${u.wineId}`;
+    const ac = initGrapeAutocomplete(inputId);
+    if (ac) _acInstances.push(ac);
+  }
+
+  // Wire individual Save buttons for manual entries
+  panel.querySelectorAll('.grape-ind-save-one').forEach(btn => {
+    btn.addEventListener('click', (e) => saveManualGrape(e.currentTarget));
+  });
+
   // Wire Apply All
   panel.querySelector('.grape-ind-apply-all')?.addEventListener('click', () => commitFromPanel(panel));
 
-  // Wire Cancel
-  panel.querySelector('.grape-ind-cancel')?.addEventListener('click', () => closePreviewPanel());
+  // Wire Cancel/Close
+  panel.querySelectorAll('.grape-ind-cancel').forEach(btn => {
+    btn.addEventListener('click', () => closePreviewPanel());
+  });
 }
 
+/**
+ * Save manually entered grape for a single wine.
+ * @param {HTMLElement} btn - The Save button element
+ */
+async function saveManualGrape(btn) {
+  const wineId = Number(btn.dataset.wineId);
+  const inputId = btn.dataset.inputId;
+  const input = document.getElementById(inputId);
+  const grapes = input?.value?.trim();
+
+  if (!grapes) {
+    showToast('Please select or type grapes first', 'warning');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    await updateWine(wineId, { grapes });
+    // Mark the row as saved
+    const row = btn.closest('tr');
+    if (row) {
+      row.style.opacity = '0.5';
+      btn.textContent = 'Saved';
+    }
+    showToast(`Grapes saved for wine`, 'success');
+    document.dispatchEvent(new CustomEvent('grape-health:changed'));
+  } catch (err) {
+    showToast(`Failed to save: ${err.message}`, 'error');
+    btn.disabled = false;
+    btn.textContent = 'Save';
+  }
+}
 /**
  * Commit grape changes from the preview panel.
  * Reads current values from grapeAutocomplete inputs.
