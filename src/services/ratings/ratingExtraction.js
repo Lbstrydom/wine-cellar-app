@@ -448,6 +448,7 @@ Return ONLY valid JSON:
     }
   ],
   "tasting_notes": "Any tasting notes found (combine from multiple sources)",
+  "grape_varieties": ["Grape1", "Grape2"],
   "search_notes": "Summary: found X ratings from Y sources"
 }
 
@@ -462,6 +463,7 @@ RULES:
 - For Platter's, use stars (e.g., "4.5") and normalise by multiplying by 20
 - IMPORTANT: For Vivino ratings (e.g., "4.2", "3.8"), ALWAYS use score_type: "stars" (NOT "points"). Vivino ratings are on a 1-5 star scale.
 - Extract drinking_window whenever window/maturity text is present
+- Extract grape_varieties: list grape/variety names found for this wine (e.g., ["Cabernet Sauvignon", "Merlot"]). Empty array if not visible.
 - If no ratings found for this wine: {"ratings": [], "search_notes": "No ratings found"}`;
 }
 
@@ -552,6 +554,7 @@ Return ONLY valid JSON:
 {
   "ratings": [...],
   "tasting_notes": "Any tasting/flavour notes visible in snippets (or null if none)",
+  "grape_varieties": ["Grape1", "Grape2"],
   "search_notes": "Extracted from search snippets (pages blocked)"
 }
 
@@ -563,6 +566,7 @@ RULES:
 - If rating_count is visible (e.g., "1234 ratings"), include it
 - Extract drinking_window if maturity/window text is visible
 - Extract tasting_notes if flavour/aroma descriptions visible
+- Extract grape_varieties: list grape/variety names if visible (e.g., ["Shiraz", "Grenache"]). Empty array if not visible.
 - If no ratings visible: {"ratings": [], "tasting_notes": null, "search_notes": "No ratings visible in snippets"}`;
 }
 

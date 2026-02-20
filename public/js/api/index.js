@@ -123,7 +123,8 @@ export {
   getConsolidationMoves,
   zoneChatMessage,
   reassignWineZone,
-  backfillGrapes
+  backfillGrapes,
+  searchGrapes
 } from './cellar.js';
 
 // Awards database

@@ -1037,6 +1037,51 @@
   margin-bottom: 0.5rem;
 }
 
+.grape-ind-source {
+  font-size: 0.75rem;
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.grape-ind-web-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.grape-search-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.grape-search-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-darker, #1a1a2e);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.grape-search-progress-fill {
+  height: 100%;
+  background: var(--color-accent, #6c5ce7);
+  border-radius: 3px;
+  transition: width 0.5s ease;
+}
+
+.grape-search-progress-text {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.grape-search-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-left: 0.5rem;
+}
+
 /* Zone Capacity Alert */
 .zone-capacity-alert {
   padding: 1rem;

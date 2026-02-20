@@ -189,9 +189,9 @@ TEXT:
 ${content.substring(0, 2000)}
 
 Return:
-{"ratings":[{"source":"source_name","score":"90","score_type":"points|stars","confidence":"high|medium|low"}],"has_ratings":true|false}
+{"ratings":[{"source":"source_name","score":"90","score_type":"points|stars","confidence":"high|medium|low"}],"has_ratings":true|false,"grape_varieties":["Grape1","Grape2"]}
 
-Rules: Only ${vintage} vintage. Empty array if no ratings found. No explanation.`;
+Rules: Only ${vintage} vintage. Empty array if no ratings found. grape_varieties: list grape/variety names if visible (empty array if none). No explanation.`;
 
   try {
     const message = await anthropic.messages.create({
@@ -316,6 +316,7 @@ export async function quickSerpAiExtraction(wine, identityTokens = null) {
         success: true,
         ratings,
         tasting_notes: null,
+        grape_varieties: extracted.grape_varieties || [],
         search_notes: `Found via SERP AI Overview in ${latencyMs}ms`,
         rawSerp: {
           organic: serpResult.organicResults,

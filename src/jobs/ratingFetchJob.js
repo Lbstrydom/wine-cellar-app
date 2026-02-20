@@ -77,6 +77,7 @@ function transformHybridResult(hybridResult, method = 'Gemini Hybrid') {
       tasting_notes: r.tasting_notes
     })),
     tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
+    grape_varieties: hybridResult.grape_varieties || [],
     search_notes: `Found via ${method} (${hybridResult._metadata?.sources_count || 0} sources)`
   };
 }
@@ -134,6 +135,7 @@ async function threeTierWaterfall(wine, updateProgress, identityTokens) {
             result: {
               ratings: validatedTier1,
               tasting_notes: tier1.tasting_notes,
+              grape_varieties: tier1.grape_varieties || [],
               search_notes: tier1.search_notes
             },
             usedMethod: 'serp_ai_tier1'
@@ -343,6 +345,20 @@ async function handleRatingFetch(payload, context) {
 
   await updateProgress(90, 'Calculating aggregates');
 
+  // Enrich wine with discovered grape varieties (only if wine is missing them)
+  const discoveredGrapes = result.grape_varieties || [];
+  let grapesEnriched = false;
+  if (discoveredGrapes.length > 0 && !wine.grapes) {
+    const grapeString = discoveredGrapes.join(', ');
+    const grapeResult = await db.prepare(
+      "UPDATE wines SET grapes = ? WHERE id = ? AND (grapes IS NULL OR grapes = '')"
+    ).run(grapeString, wineId);
+    if (grapeResult.changes > 0) {
+      grapesEnriched = true;
+      logger.info('RatingFetchJob', `Enriched grapes from search: ${grapeString}`);
+    }
+  }
+
   // Get all ratings for this wine and calculate aggregates
   const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
   // Get user preference scoped to cellar (use wine.cellar_id since jobs don't have req context)
@@ -394,6 +410,8 @@ async function handleRatingFetch(payload, context) {
     purchaseStars: aggregates.purchase_stars,
     confidenceLevel: aggregates.confidence_level,
     tastingNotes: result.tasting_notes ? 'captured' : null,
+    grapesDiscovered: discoveredGrapes.length > 0 ? discoveredGrapes : null,
+    grapesEnriched,
     searchNotes: result.search_notes,
     method: usedMethod
   };

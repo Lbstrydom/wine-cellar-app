@@ -5,7 +5,7 @@
  * @module grapeIndicator
  */
 
-import { backfillGrapes, updateWine } from './api.js';
+import { backfillGrapes, searchGrapes, updateWine } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { initGrapeAutocomplete } from './grapeAutocomplete.js';
 
@@ -115,26 +115,67 @@ function getConfClass(pct) {
 }
 
 /**
- * Handle "Identify" button click — show preview panel.
+ * Handle "Identify" button click — run full search then show proposals.
+ * Step 1: Pattern matching (instant) + web search for undetectable wines.
+ * Step 2: Display combined proposals in the preview panel.
  */
 async function handleIdentifyClick(e) {
   const btn = e.currentTarget;
   btn.disabled = true;
-  btn.textContent = 'Loading...';
+  btn.textContent = 'Searching…';
+
+  // Show progress panel immediately
+  const headerEl = findCellarHeader();
+  const zoneEl = headerEl?.closest('.zone');
+  let progressEl = null;
+  if (zoneEl) {
+    closePreviewPanel();
+    progressEl = document.createElement('div');
+    progressEl.className = PANEL_CLASS;
+    progressEl.innerHTML = `
+      <div class="grape-indicator-panel-header">
+        <strong>Identifying grapes…</strong>
+        <span class="grape-search-status">Pattern matching + searching online</span>
+      </div>
+      <div class="grape-search-progress">
+        <div class="grape-search-progress-bar"><div class="grape-search-progress-fill" style="width: 10%"></div></div>
+        <span class="grape-search-progress-text">Detecting from wine names…</span>
+      </div>`;
+    const cellarContainer = zoneEl.querySelector('.cellar-container') || zoneEl.querySelector('.cellar-grid');
+    if (cellarContainer) {
+      zoneEl.insertBefore(progressEl, cellarContainer);
+    } else {
+      zoneEl.appendChild(progressEl);
+    }
+  }
 
   try {
-    const result = await backfillGrapes({ commit: false });
+    // Update progress: searching online
+    if (progressEl) {
+      const fill = progressEl.querySelector('.grape-search-progress-fill');
+      const text = progressEl.querySelector('.grape-search-progress-text');
+      if (fill) fill.style.width = '30%';
+      if (text) text.textContent = 'Searching online for remaining wines…';
+    }
+
+    // Full search: pattern matching + web search in one call
+    const result = await searchGrapes({ commit: false });
 
     if (!result || result.totalMissing === 0) {
       showToast('All wines already have grape data', 'info');
+      if (progressEl) progressEl.remove();
       btn.disabled = false;
       btn.textContent = 'Identify';
       return;
     }
 
+    // Remove progress panel, show results
+    if (progressEl) progressEl.remove();
+
     renderPreviewPanel(result);
   } catch (err) {
-    showToast(`Failed to detect grapes: ${err.message}`, 'error');
+    if (progressEl) progressEl.remove();
+    showToast(`Failed to identify grapes: ${err.message}`, 'error');
     btn.disabled = false;
     btn.textContent = 'Identify';
   }
@@ -143,10 +184,10 @@ async function handleIdentifyClick(e) {
 /**
  * Render the inline preview panel below the zone-header.
  * Shows auto-detected grapes and lists undetectable wines with manual input.
- * @param {Object} dryRun - Dry-run result from backfillGrapes({ commit: false })
+ * @param {Object} dryRun - Dry-run result from searchGrapes({ commit: false })
  */
 function renderPreviewPanel(dryRun) {
-  const { totalMissing, detectable, suggestions, undetectable } = dryRun;
+  const { totalMissing, detectable, suggestions, undetectable, webSearched } = dryRun;
   closePreviewPanel(); // Clean up any existing panel
 
   const headerEl = findCellarHeader();
@@ -160,23 +201,28 @@ function renderPreviewPanel(dryRun) {
   let html = '<div class="grape-indicator-panel-header">';
   html += `<strong>${totalMissing} wine${totalMissing !== 1 ? 's' : ''}</strong> missing grapes`;
   if (detectable > 0) {
-    html += ` &mdash; <strong>${detectable}</strong> auto-detected`;
+    html += ` &mdash; <strong>${detectable}</strong> identified`;
+  }
+  if (webSearched > 0) {
+    html += ` <span class="grape-ind-web-note">(${webSearched} searched online)</span>`;
   }
   html += '</div>';
 
-  // --- Auto-detected section ---
+  // --- Detected section (pattern match + web search) ---
   if (suggestions && suggestions.length > 0) {
     html += '<div class="grape-indicator-panel-table-wrap">';
     html += '<table class="grape-indicator-panel-table">';
-    html += '<thead><tr><th>Wine</th><th>Proposed Grapes</th><th>Conf.</th></tr></thead>';
+    html += '<thead><tr><th>Wine</th><th>Proposed Grapes</th><th>Source</th><th>Conf.</th></tr></thead>';
     html += '<tbody>';
 
     for (const s of suggestions) {
       const confClass = s.confidence === 'high' ? 'conf-high' : s.confidence === 'medium' ? 'conf-medium' : 'conf-low';
       const inputId = `grape-ind-ac-${s.wineId}`;
+      const sourceLabel = s.source === 'web_search' ? '&#127760; Web' : '&#128269; Name';
       html += `<tr data-wine-id="${s.wineId}">`;
       html += `<td class="grape-ind-wine-name">${escapeHtml(s.wine_name)}</td>`;
       html += `<td><input type="text" id="${inputId}" class="grape-ind-input" value="${escapeHtml(s.grapes || '')}" data-wine-id="${s.wineId}"></td>`;
+      html += `<td class="grape-ind-source">${sourceLabel}</td>`;
       html += `<td><span class="grape-conf ${confClass}">${s.confidence}</span></td>`;
       html += '</tr>';
     }
@@ -185,7 +231,7 @@ function renderPreviewPanel(dryRun) {
     html += '</div>';
 
     html += '<div class="grape-indicator-panel-actions">';
-    html += '<button class="btn btn-small btn-primary grape-ind-apply-all">Apply All Detected</button>';
+    html += '<button class="btn btn-small btn-primary grape-ind-apply-all">Apply All</button>';
     html += '<button class="btn btn-small btn-secondary grape-ind-cancel">Close</button>';
     html += '</div>';
   }
@@ -300,7 +346,7 @@ async function saveManualGrape(btn) {
 }
 /**
  * Commit grape changes from the preview panel.
- * Reads current values from grapeAutocomplete inputs.
+ * Uses the full search endpoint with commit mode.
  * @param {HTMLElement} panel
  */
 async function commitFromPanel(panel) {
@@ -311,7 +357,7 @@ async function commitFromPanel(panel) {
   }
 
   try {
-    const result = await backfillGrapes({ commit: true });
+    const result = await searchGrapes({ commit: true });
     const msg = `${result.updated} wine${result.updated !== 1 ? 's' : ''} updated with grape data` +
       (result.reclassified > 0 ? `, ${result.reclassified} reclassified` : '');
     showToast(msg, 'success');

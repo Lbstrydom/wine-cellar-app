@@ -295,7 +295,8 @@ Return JSON:
   "tasting_notes": {"nose":[], "palate":[], "structure":{"body":"", "tannins":"", "acidity":""}, "finish":""},
   "drinking_window": {"drink_from":null, "drink_by":null, "peak":null, "recommendation":""},
   "food_pairings": [],
-  "style_summary": ""
+  "style_summary": "",
+  "grape_varieties": ["Grape1", "Grape2"]
 }
 
 Rules: Only verified data. Empty array/null for missing. No markdown, no explanation.`;

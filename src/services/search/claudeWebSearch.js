@@ -114,7 +114,8 @@ Return ONLY valid JSON (no markdown, no explanation):
   "tasting_notes": {"nose":[], "palate":[], "structure":{"body":"", "tannins":"", "acidity":""}, "finish":""},
   "drinking_window": {"drink_from":null, "drink_by":null, "peak":null, "recommendation":""},
   "food_pairings": [],
-  "style_summary": ""
+  "style_summary": "",
+  "grape_varieties": ["Grape1", "Grape2"]
 }
 
 CRITICAL RULES:
@@ -122,7 +123,8 @@ CRITICAL RULES:
 - Wine colour: ${colour}
 - Empty array/null for missing data
 - raw_score_numeric must be a number or null
-- source_url must be a real URL from the search results`
+- source_url must be a real URL from the search results
+- grape_varieties: extract the grape/variety names for this wine (e.g. ["Cabernet Sauvignon", "Merlot"]). Check Vivino, CellarTracker, critic pages. Empty array if not found.`
       }]
     }, {
       headers: { 'anthropic-beta': WEB_TOOLS_BETA }

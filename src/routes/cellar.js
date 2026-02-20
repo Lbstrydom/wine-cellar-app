@@ -18,6 +18,7 @@ import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler, AppError } from '../utils/errorResponse.js';
 import { reassignWineZone } from '../services/zone/zoneChat.js';
 import { batchDetectGrapes } from '../services/wine/grapeEnrichment.js';
+import { batchSearchGrapeVarieties } from '../services/wine/grapeSearch.js';
 
 const router = express.Router();
 
@@ -448,6 +449,126 @@ router.post('/update-wine-attributes', asyncHandler(async (req, res) => {
     updatedFields: updates.map(u => u.split(' = ')[0]),
     suggestedZone: newZoneMatch,
     zoneReclassified
+  });
+}));
+
+/**
+ * POST /api/cellar/grape-search
+ * Full grape identification: pattern matching + web search for undetectable wines.
+ * Returns combined proposals without persisting anything.
+ * @body {number[]} [wineIds] - Optional subset of wine IDs to process
+ * @body {boolean} [commit=false] - false = dry-run (proposals only), true = persist all
+ */
+router.post('/grape-search', asyncHandler(async (req, res) => {
+  const commit = req.body?.commit === true;
+  const inputWineIds = req.body?.wineIds;
+
+  let wineIds = null;
+  if (inputWineIds !== undefined) {
+    if (!Array.isArray(inputWineIds)) {
+      return res.status(400).json({ error: 'wineIds must be an array of numeric IDs' });
+    }
+    const parsedIds = inputWineIds.map(id => Number(id));
+    if (parsedIds.some(id => !Number.isInteger(id) || id <= 0)) {
+      return res.status(400).json({ error: 'wineIds must contain positive integer IDs' });
+    }
+    wineIds = [...new Set(parsedIds)];
+  }
+
+  // Fetch wines with missing grapes
+  let wines;
+  if (wineIds && wineIds.length > 0) {
+    const placeholders = wineIds.map((_, i) => '$' + (i + 2)).join(', ');
+    wines = await db.prepare(
+      'SELECT * FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ") AND (grapes IS NULL OR grapes = '')"
+    ).all(req.cellarId, ...wineIds);
+  } else {
+    wines = await db.prepare(
+      "SELECT * FROM wines WHERE cellar_id = $1 AND (grapes IS NULL OR grapes = '')"
+    ).all(req.cellarId);
+  }
+
+  if (wines.length === 0) {
+    return res.json({
+      success: true, totalMissing: 0, detectable: 0,
+      suggestions: [], undetectable: [], webSearched: 0
+    });
+  }
+
+  // Step 1: Pattern matching (instant)
+  const detections = batchDetectGrapes(wines);
+  const patternSuggestions = detections.filter(d => d.detection.grapes !== null);
+  const undetected = detections.filter(d => d.detection.grapes === null);
+
+  // Step 2: Web search for undetectable wines
+  const undetectedWines = undetected.map(u => wines.find(w => w.id === u.wineId)).filter(Boolean);
+  let webSuggestions = [];
+  if (undetectedWines.length > 0) {
+    const webResults = await batchSearchGrapeVarieties(undetectedWines, { concurrency: 3 });
+    webSuggestions = webResults.filter(r => r.grapes !== null);
+  }
+
+  // Combine suggestions: pattern matches + web discoveries
+  const allSuggestions = [
+    ...patternSuggestions.map(s => ({
+      wineId: s.wineId,
+      wine_name: s.wine_name,
+      grapes: s.detection.grapes,
+      confidence: s.detection.confidence,
+      source: s.detection.source
+    })),
+    ...webSuggestions.map(s => ({
+      wineId: s.wineId,
+      wine_name: s.wine_name,
+      grapes: s.grapes,
+      confidence: 'medium',
+      source: 'web_search'
+    }))
+  ];
+
+  // Wines still undetectable after web search
+  const webFoundIds = new Set(webSuggestions.map(s => s.wineId));
+  const stillUndetectable = undetected
+    .filter(u => !webFoundIds.has(u.wineId))
+    .map(u => ({ wineId: u.wineId, wine_name: u.wine_name }));
+
+  if (!commit) {
+    return res.json({
+      success: true,
+      totalMissing: wines.length,
+      detectable: allSuggestions.length,
+      suggestions: allSuggestions,
+      undetectable: stillUndetectable,
+      webSearched: undetectedWines.length
+    });
+  }
+
+  // Commit mode: persist grapes + re-classify zones
+  let updated = 0;
+  let reclassified = 0;
+  for (const s of allSuggestions) {
+    await db.prepare('UPDATE wines SET grapes = $1 WHERE id = $2 AND cellar_id = $3')
+      .run(s.grapes, s.wineId, req.cellarId);
+    updated++;
+
+    const wine = await db.prepare('SELECT * FROM wines WHERE id = $1 AND cellar_id = $2')
+      .get(s.wineId, req.cellarId);
+    const zoneMatch = findBestZone(wine);
+    const zoneReclassified = await reclassifyWineZoneIfNeeded(wine, zoneMatch, req.cellarId);
+    if (zoneReclassified) reclassified++;
+  }
+
+  if (updated > 0) {
+    await invalidateAnalysisCache(null, req.cellarId);
+  }
+
+  res.json({
+    success: true,
+    mode: 'commit',
+    totalMissing: wines.length,
+    updated,
+    reclassified,
+    webSearched: undetectedWines.length
   });
 }));
 

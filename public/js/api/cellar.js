@@ -340,6 +340,22 @@ export async function backfillGrapes(options = {}) {
 }
 
 /**
+ * Full grape search: pattern matching + web search for undetectable wines.
+ * @param {Object} [options]
+ * @param {boolean} [options.commit=false] - false = dry-run proposals, true = persist
+ * @param {number[]} [options.wineIds] - Optional subset of wine IDs
+ * @returns {Promise<Object>} { suggestions, undetectable, webSearched, ... }
+ */
+export async function searchGrapes(options = {}) {
+  const res = await fetch(`${API_BASE}/api/cellar/grape-search`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options)
+  });
+  return handleResponse(res, 'Failed to search for grapes');
+}
+
+/**
  * Reassign a wine to a different zone.
  * @param {number} wineId - Wine ID
  * @param {string} newZoneId - New zone ID
