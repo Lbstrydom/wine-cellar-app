@@ -94,7 +94,7 @@ export async function claudeWebSearch(wine) {
 
     const message = await anthropic.messages.create({
       model: modelId,
-      max_tokens: 4096,
+      max_tokens: 16000,
       tools: [
         { type: 'web_search_20260209', name: 'web_search' },
         { type: 'web_fetch_20260209', name: 'web_fetch' }
@@ -137,7 +137,8 @@ CRITICAL RULES:
     const responseText = textBlock?.text || '';
 
     if (!responseText) {
-      logger.warn('ClaudeWebSearch', `No text in response after ${duration}ms (${message.content?.length || 0} content blocks)`);
+      const stopReason = message.stop_reason || 'unknown';
+      logger.warn('ClaudeWebSearch', `No text in response after ${duration}ms (${message.content?.length || 0} content blocks, stop_reason: ${stopReason})`);
       return null;
     }
 

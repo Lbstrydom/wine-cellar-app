@@ -45,7 +45,7 @@ export async function searchGrapeVarieties(wine) {
 
     const message = await anthropic.messages.create({
       model: modelId,
-      max_tokens: 4096,
+      max_tokens: 8192,
       tools: [
         { type: 'web_search_20260209', name: 'web_search' }
       ],

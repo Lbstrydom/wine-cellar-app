@@ -2,7 +2,8 @@
  * @fileoverview 3-Tier Waterfall fetch for wine ratings.
  * Implements the sync fetch strategy:
  *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
- *   Tier 2: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
+ *   Tier 2a: Claude Web Search (~10-30s) - Anthropic web search with dynamic filtering
+ *   Tier 2b: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
  *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
  * @module routes/ratingsTier
  */
@@ -12,6 +13,7 @@ import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
 import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
 import { fetchWineRatings } from '../services/ai/index.js';
+import { claudeWebSearch, isClaudeWebSearchAvailable } from '../services/search/claudeWebSearch.js';
 import { hybridWineSearch, isGeminiSearchAvailable } from '../services/search/geminiSearch.js';
 import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/search/serpAi.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
@@ -22,6 +24,7 @@ import { validateParams } from '../middleware/validate.js';
 import { ratingWineIdSchema } from '../schemas/rating.js';
 
 // Timeout constants for tier waterfall
+const CLAUDE_WEB_SEARCH_TIMEOUT_MS = 30000; // 30 seconds for Claude Web Search
 const GEMINI_TIMEOUT_MS = 45000; // 45 seconds for Gemini + Claude
 const SERP_AI_TIMEOUT_MS = 15000; // 15 seconds for SERP AI extraction
 
@@ -54,7 +57,8 @@ const router = Router();
  *
  * 3-Tier Waterfall:
  *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
- *   Tier 2: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
+ *   Tier 2a: Claude Web Search (~10-30s) - Anthropic web search tools
+ *   Tier 2b: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
  *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
  *
  * @route POST /api/wines/:wineId/ratings/fetch
@@ -104,6 +108,7 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
           result = {
             ratings: validatedTier1,
             tasting_notes: tier1.tasting_notes,
+            grape_varieties: tier1.grape_varieties || [],
             search_notes: tier1.search_notes
           };
           usedMethod = 'serp_ai_tier1';
@@ -125,8 +130,69 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 2: Gemini Hybrid (~15-45s)
-  // Uses Gemini grounded search + Claude extraction for comprehensive coverage
+  // TIER 2a: Claude Web Search (~10-30s)
+  // Uses Anthropic web_search + web_fetch tools with dynamic filtering.
+  // Single API call: Claude searches, fetches pages, and extracts structured data.
+  // Only needs ANTHROPIC_API_KEY (no additional keys).
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (!result && isClaudeWebSearchAvailable() && !isCircuitOpen('claude_web_search')) {
+    try {
+      logger.info('Ratings', `Tier 2a: Claude Web Search for wine ${wineId} (${CLAUDE_WEB_SEARCH_TIMEOUT_MS}ms timeout)`);
+
+      const claudePromise = withCircuitBreaker('claude_web_search', () =>
+        claudeWebSearch(wine)
+      );
+
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Claude Web Search timed out')), CLAUDE_WEB_SEARCH_TIMEOUT_MS)
+      );
+
+      const tier2a = await Promise.race([claudePromise, timeoutPromise]);
+
+      if (tier2a?.ratings?.length > 0) {
+        const normalizedRatings = tier2a.ratings.map(r => ({
+          source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
+          source_lens: r.source_lens || 'critics',
+          score_type: r.score_type || 'points',
+          raw_score: r.raw_score,
+          raw_score_numeric: r.raw_score_numeric,
+          vintage_match: r.vintage_match || 'inferred',
+          match_confidence: r.confidence || 'medium',
+          source_url: r.source_url,
+          tasting_notes: r.tasting_notes
+        }));
+
+        const { ratings: validatedTier2a } = validateRatingsWithIdentity(wine, normalizedRatings, identityTokens);
+
+        if (validatedTier2a.length > 0) {
+          result = {
+            ratings: validatedTier2a,
+            tasting_notes: tier2a.tasting_notes ? JSON.stringify(tier2a.tasting_notes) : null,
+            grape_varieties: tier2a.grape_varieties || [],
+            search_notes: `Found via Claude Web Search (${tier2a._metadata?.sources_count || 0} sources)`
+          };
+          usedMethod = 'claude_web_tier2';
+          logTierResolution('tier2_claude_web', wine, startTime, tier2a.ratings.length);
+          logger.info('Ratings', `Tier 2a SUCCESS: ${tier2a.ratings.length} ratings in ${Date.now() - startTime}ms`);
+        } else {
+          logger.info('Ratings', 'Tier 2a: Identity gate rejected all ratings, proceeding to Tier 2b');
+        }
+      } else {
+        logger.info('Ratings', 'Tier 2a: No ratings found, proceeding to Tier 2b');
+      }
+    } catch (err) {
+      logger.warn('Ratings', `Tier 2a failed: ${err.message}`);
+    }
+  } else if (!result && !isClaudeWebSearchAvailable()) {
+    logger.info('Ratings', 'Tier 2a: Claude Web Search not available');
+  } else if (!result) {
+    logger.info('Ratings', 'Tier 2a: Circuit open, skipping');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TIER 2b: Gemini Hybrid (~15-45s)
+  // Fallback when Claude Web Search unavailable or fails.
+  // Uses Gemini grounded search + Claude extraction for comprehensive coverage.
   // ═══════════════════════════════════════════════════════════════════════════
   if (!result && isGeminiSearchAvailable() && !isCircuitOpen('gemini_hybrid')) {
     try {
@@ -165,16 +231,17 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
             result = {
               ratings: validatedTier2,
               tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
+              grape_varieties: hybridResult.grape_varieties || [],
               search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
             };
-            usedMethod = 'gemini_tier2';
-            logTierResolution('tier2_gemini', wine, startTime, hybridResult.ratings.length);
-            logger.info('Ratings', `Tier 2 SUCCESS: ${hybridResult.ratings.length} ratings in ${Date.now() - startTime}ms`);
+            usedMethod = 'gemini_tier2b';
+            logTierResolution('tier2b_gemini', wine, startTime, hybridResult.ratings.length);
+            logger.info('Ratings', `Tier 2b SUCCESS: ${hybridResult.ratings.length} ratings in ${Date.now() - startTime}ms`);
           } else {
-            logger.info('Ratings', 'Tier 2: Identity gate rejected all ratings, proceeding to Tier 3');
+            logger.info('Ratings', 'Tier 2b: Identity gate rejected all ratings, proceeding to Tier 3');
           }
         } else {
-          logger.info('Ratings', 'Tier 2: No ratings found, proceeding to Tier 3');
+          logger.info('Ratings', 'Tier 2b: No ratings found, proceeding to Tier 3');
         }
       } catch (err) {
         clearTimeout(timeoutId);
@@ -184,9 +251,9 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
       logger.warn('Ratings', `Tier 2 failed: ${err.message}`);
     }
   } else if (!result && !isGeminiSearchAvailable()) {
-    logger.info('Ratings', 'Tier 2: Gemini not available (missing API key)');
+    logger.info('Ratings', 'Tier 2b: Gemini not available (missing API key)');
   } else if (!result) {
-    logger.info('Ratings', 'Tier 2: Circuit open, skipping');
+    logger.info('Ratings', 'Tier 2b: Circuit open, skipping');
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
@@ -205,6 +272,17 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
     logger.info('Ratings', `Tier 3 COMPLETE: ${result.ratings?.length || 0} ratings in ${Date.now() - startTime}ms`);
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // GRAPE PERSISTENCE: Save discovered grape varieties if wine has none
+  // ═══════════════════════════════════════════════════════════════════════════
+  const discoveredGrapes = result.grape_varieties || [];
+  if (discoveredGrapes.length > 0 && (!wine.grapes || wine.grapes.trim() === '')) {
+    const grapeString = discoveredGrapes.join(', ');
+    await db.prepare("UPDATE wines SET grapes = $1 WHERE id = $2 AND cellar_id = $3 AND (grapes IS NULL OR grapes = '')")
+      .run(grapeString, wineId, req.cellarId);
+    logger.info('Ratings', `Saved discovered grapes for wine ${wineId}: ${grapeString}`);
+  }
+
   // Get existing ratings count for comparison
   const existingRatings = await db.prepare(
     'SELECT * FROM wine_ratings WHERE wine_id = $1 AND (is_user_override IS NOT TRUE)'
@@ -213,7 +291,7 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const rawRatings = result.ratings || [];
 
   // Identity validation (defensive) and vintage sensitivity filter
-  const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+  const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
 
   const sensitivity = getVintageSensitivity(wine);
   const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
@@ -225,12 +303,20 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   // ONLY delete if we have valid replacements
   // This prevents losing data when search/extraction fails
   if (newRatings.length === 0) {
-    logger.info('Ratings', `No new ratings found via ${usedMethod}, keeping ${existingRatings.length} existing`);
+    const identityRejectedCount = identityRejected?.length ?? (rawRatings.length - identityValidRatings.length);
+    logger.info('Ratings', `No new ratings found via ${usedMethod}, keeping ${existingRatings.length} existing (${identityRejectedCount} rejected by identity gate)`);
+
+    const message = identityRejectedCount > 0
+      ? `Found ${rawRatings.length} ratings but all rejected by identity validation`
+      : 'No new ratings found, existing ratings preserved';
+
     return res.json({
-      message: 'No new ratings found, existing ratings preserved',
+      message,
       search_notes: result.search_notes,
       ratings_kept: existingRatings.length,
-      method: usedMethod
+      identity_rejected: identityRejectedCount,
+      method: usedMethod,
+      grapes_discovered: discoveredGrapes.length > 0 ? discoveredGrapes : undefined
     });
   }
 

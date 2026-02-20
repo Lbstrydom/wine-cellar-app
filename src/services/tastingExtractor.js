@@ -4,7 +4,7 @@
  * @module services/tastingExtractor
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from './ai/claudeClient.js';
 import {
   FRUIT_DESCRIPTORS,
   SECONDARY_DESCRIPTORS,
@@ -19,17 +19,13 @@ import { getModelForTask } from '../config/aiModels.js';
 import { sanitizeTastingNote } from './shared/inputSanitizer.js';
 import logger from '../utils/logger.js';
 
-let anthropic = null;
-
 /**
  * Initialize Anthropic client lazily.
- * @returns {Anthropic|null} Anthropic client or null if no API key
+ * Uses the shared singleton client from claudeClient.js.
+ * @returns {Object|null} Anthropic client or null if no API key
  */
 function getClient() {
-  if (!anthropic && process.env.ANTHROPIC_API_KEY) {
-    anthropic = new Anthropic();
-  }
-  return anthropic;
+  return anthropic || null;
 }
 
 /**
