@@ -15,7 +15,19 @@ vi.mock('../../../../src/services/ai/claudeClient.js', () => ({
 }));
 
 vi.mock('../../../../src/config/aiModels.js', () => ({
-  getModelForTask: vi.fn(() => 'claude-sonnet-4-6')
+  getModelForTask: vi.fn(() => 'claude-sonnet-4-6'),
+  getThinkingConfig: vi.fn(() => null)
+}));
+
+vi.mock('../../../../src/services/ai/claudeResponseUtils.js', () => ({
+  extractText: vi.fn((response) => {
+    const textBlocks = (response?.content || []).filter(b => b.type === 'text');
+    if (textBlocks.length === 0) throw new Error('No text block found');
+    for (let i = textBlocks.length - 1; i >= 0; i--) {
+      if (textBlocks[i].text?.trim()) return textBlocks[i].text;
+    }
+    return textBlocks[textBlocks.length - 1].text;
+  })
 }));
 
 const mockCleanup = vi.fn();
@@ -92,11 +104,11 @@ const VALID_AI_RESPONSE = {
 };
 
 function claudeJson(obj) {
-  return { content: [{ text: JSON.stringify(obj) }] };
+  return { content: [{ type: 'text', text: JSON.stringify(obj) }] };
 }
 
 function claudeText(text) {
-  return { content: [{ text }] };
+  return { content: [{ type: 'text', text }] };
 }
 
 // ---------------------------------------------------------------------------

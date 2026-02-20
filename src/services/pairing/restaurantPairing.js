@@ -8,7 +8,8 @@
 
 import { randomUUID } from 'crypto';
 import anthropic from '../ai/claudeClient.js';
-import { getModelForTask } from '../../config/aiModels.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
 import { createTimeoutAbort } from '../shared/fetchUtils.js';
 import { sanitize, sanitizeChatMessage } from '../shared/inputSanitizer.js';
 import { recommendResponseSchema } from '../../schemas/restaurantPairing.js';
@@ -248,14 +249,15 @@ export async function getRecommendations(params, userId, cellarId) {
     const message = await anthropic.messages.create(
       {
         model: modelId,
-        max_tokens: 4096,
+        max_tokens: 16000,
         system: systemPrompt,
-        messages: [{ role: 'user', content: userPrompt }]
+        messages: [{ role: 'user', content: userPrompt }],
+        ...(getThinkingConfig('restaurantPairing') || {})
       },
       { signal: controller.signal }
     );
 
-    const responseText = message.content[0].text;
+    const responseText = extractText(message);
     const parsed = extractJson(responseText);
     const validated = validateResponse(parsed);
 
@@ -502,14 +504,15 @@ export async function continueChat(chatId, message, userId, cellarId) {
     const response = await anthropic.messages.create(
       {
         model: modelId,
-        max_tokens: 2048,
+        max_tokens: 16000,
         system: buildChatSystemPrompt(),
-        messages
+        messages,
+        ...(getThinkingConfig('restaurantPairing') || {})
       },
       { signal: controller.signal }
     );
 
-    const responseText = response.content[0].text;
+    const responseText = extractText(response);
     let parsed;
 
     try {

@@ -5,16 +5,12 @@
  * @module services/ai/drinkNowAI
  */
 
-import Anthropic from '@anthropic-ai/sdk';
+import anthropic from './claudeClient.js';
 import db from '../../db/index.js';
 import { stringAgg, nullsLast } from '../../db/helpers.js';
-import { getModelForTask } from '../../config/aiModels.js';
-// Note: sanitize functions available from inputSanitizer.js if needed for user inputs
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
+import { extractText } from './claudeResponseUtils.js';
 import logger from '../../utils/logger.js';
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY
-});
 
 const DRINK_NOW_SYSTEM_PROMPT = `You are a sommelier AI helping manage a personal wine cellar. Your task is to recommend wines to drink soon based on:
 
@@ -272,12 +268,13 @@ export async function generateDrinkRecommendations(options = {}) {
     const modelId = getModelForTask('drinkRecommendations');
     const response = await anthropic.messages.create({
       model: modelId,
-      max_tokens: 1024,
+      max_tokens: 16000,
       system: DRINK_NOW_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
+      ...(getThinkingConfig('drinkRecommendations') || {})
     });
 
-    const content = response.content[0].text;
+    const content = extractText(response);
 
     // Parse JSON response
     const jsonMatch = content.match(/\{[\s\S]*\}/);
