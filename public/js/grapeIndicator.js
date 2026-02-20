@@ -5,7 +5,7 @@
  * @module grapeIndicator
  */
 
-import { backfillGrapes, searchGrapes, updateWine } from './api.js';
+import { searchGrapes, updateWine } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { initGrapeAutocomplete } from './grapeAutocomplete.js';
 
@@ -173,6 +173,10 @@ async function handleIdentifyClick(e) {
     if (progressEl) progressEl.remove();
 
     renderPreviewPanel(result);
+
+    // Reset button state (panel is now visible with results)
+    btn.disabled = false;
+    btn.textContent = 'Identify';
   } catch (err) {
     if (progressEl) progressEl.remove();
     showToast(`Failed to identify grapes: ${err.message}`, 'error');
@@ -204,7 +208,8 @@ function renderPreviewPanel(dryRun) {
     html += ` &mdash; <strong>${detectable}</strong> identified`;
   }
   if (webSearched > 0) {
-    html += ` <span class="grape-ind-web-note">(${webSearched} searched online)</span>`;
+    const webFound = (suggestions || []).filter(s => s.source === 'web_search').length;
+    html += ` <span class="grape-ind-web-note">(${webSearched} searched online, ${webFound} found)</span>`;
   }
   html += '</div>';
 
@@ -346,7 +351,8 @@ async function saveManualGrape(btn) {
 }
 /**
  * Commit grape changes from the preview panel.
- * Uses the full search endpoint with commit mode.
+ * Reads the user-edited values from the panel inputs and saves each one.
+ * This avoids re-running the full web search which is flaky and would lose user edits.
  * @param {HTMLElement} panel
  */
 async function commitFromPanel(panel) {
@@ -357,17 +363,41 @@ async function commitFromPanel(panel) {
   }
 
   try {
-    const result = await searchGrapes({ commit: true });
-    const msg = `${result.updated} wine${result.updated !== 1 ? 's' : ''} updated with grape data` +
-      (result.reclassified > 0 ? `, ${result.reclassified} reclassified` : '');
+    // Collect grape values from all editable inputs in the suggestions table
+    const inputs = panel.querySelectorAll('.grape-ind-input:not(.grape-ind-manual)');
+    const updates = [];
+    for (const input of inputs) {
+      const wineId = Number(input.dataset.wineId);
+      const grapes = input.value?.trim();
+      if (wineId && grapes) {
+        updates.push({ wineId, grapes });
+      }
+    }
+
+    if (updates.length === 0) {
+      showToast('No grape data to apply', 'warning');
+      if (applyBtn) {
+        applyBtn.disabled = false;
+        applyBtn.textContent = 'Apply All';
+      }
+      return;
+    }
+
+    let updated = 0;
+    for (const { wineId, grapes } of updates) {
+      await updateWine(wineId, { grapes });
+      updated++;
+    }
+
+    const msg = `${updated} wine${updated !== 1 ? 's' : ''} updated with grape data`;
     showToast(msg, 'success');
 
     closePreviewPanel();
     document.dispatchEvent(new CustomEvent('grape-health:changed', {
-      detail: { reclassified: result.reclassified || 0 }
+      detail: { reclassified: 0 }
     }));
   } catch (err) {
-    showToast(`Grape detection failed: ${err.message}`, 'error');
+    showToast(`Grape update failed: ${err.message}`, 'error');
     if (applyBtn) {
       applyBtn.disabled = false;
       applyBtn.textContent = 'Apply All';

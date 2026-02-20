@@ -7,7 +7,6 @@
 
 import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
-import { extractText } from '../ai/claudeResponseUtils.js';
 import logger from '../../utils/logger.js';
 
 /** Beta header required for web search tools */
@@ -46,7 +45,7 @@ export async function searchGrapeVarieties(wine) {
 
     const message = await anthropic.messages.create({
       model: modelId,
-      max_tokens: 1024,
+      max_tokens: 4096,
       tools: [
         { type: 'web_search_20260209', name: 'web_search' }
       ],
@@ -69,10 +68,15 @@ Rules:
     });
 
     const duration = Date.now() - startTime;
-    const responseText = extractText(message) || '';
+
+    // Extract text from response — skip tool_use and web_search_tool_result blocks
+    // (matches the pattern used in claudeWebSearch.js which works reliably)
+    const textBlock = message.content?.find(b => b.type === 'text');
+    const responseText = textBlock?.text || '';
 
     if (!responseText) {
-      logger.warn('GrapeSearch', `No text in response after ${duration}ms`);
+      const blockTypes = (message.content || []).map(b => b.type).join(', ');
+      logger.warn('GrapeSearch', `No text in response after ${duration}ms (blocks: ${blockTypes}, stop: ${message.stop_reason})`);
       return [];
     }
 
