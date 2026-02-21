@@ -73,6 +73,9 @@ export const TASK_MODELS = {
   // Web search with dynamic filtering (Tier 2 replacement for Gemini)
   webSearch: 'claude-sonnet-4-6',
 
+  // Move auditor uses Opus 4.6 to validate algorithmic move suggestions
+  moveAudit: 'claude-opus-4-6',
+
   // Complex extraction tasks use Opus 4.6 with adaptive thinking
   awardExtraction: 'claude-opus-4-6',
 
@@ -107,6 +110,7 @@ export const TASK_THINKING = {
   drinkRecommendations: 'low',
   zoneReconfigurationPlan: 'low',
   // Opus 4.6 tasks with adaptive thinking
+  moveAudit: 'medium',
   zoneCapacityAdvice: 'medium',
   awardExtraction: 'medium'
 };

@@ -25,6 +25,7 @@ import {
   generateCompactionMoves
 } from './cellarSuggestions.js';
 import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
+import { auditMoveSuggestions } from './moveAuditor.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
 
@@ -118,6 +119,34 @@ export async function analyseCellar(wines) {
   const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine, { allowFallback, cellarId });
   report.suggestedMoves = suggestedMoves;
   report.movesHaveSwaps = suggestedMoves._hasSwaps || false;
+
+  // ── Opus 4.6 move audit (optional) ──────────────────────
+  // Quality-checks the algorithmic moves for logical errors,
+  // missed swaps, capacity violations, etc.
+  const auditResult = await auditMoveSuggestions(
+    suggestedMoves,
+    report.misplacedWines,
+    report.summary,
+    report.zoneNarratives
+  );
+  if (auditResult.audited) {
+    report.moveAudit = {
+      verdict: auditResult.verdict,
+      issues: auditResult.issues,
+      reasoning: auditResult.reasoning,
+      confidence: auditResult.confidence,
+      latencyMs: auditResult.latencyMs
+    };
+    // Apply optimised moves if the auditor provided them
+    if (auditResult.verdict === 'optimize' && auditResult.optimizedMoves) {
+      report.suggestedMoves = auditResult.optimizedMoves;
+      // Preserve metadata from original
+      report.suggestedMoves._hasSwaps = suggestedMoves._hasSwaps || false;
+      report.suggestedMoves._zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
+    }
+  } else if (!auditResult.skipped) {
+    report.moveAudit = { skipped: true, reason: auditResult.reason };
+  }
 
   // Attach zone capacity issues (if any)
   const zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
