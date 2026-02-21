@@ -16,7 +16,7 @@ import db from '../../src/db/index.js';
 
 describe('Multi-User Isolation', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('Wine Search Cache Isolation', () => {

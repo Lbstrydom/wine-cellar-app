@@ -35,7 +35,7 @@ describe('PairingSession Service', () => {
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.clearAllMocks();
   });
 
   describe('FAILURE_REASONS', () => {

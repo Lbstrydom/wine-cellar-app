@@ -48,7 +48,7 @@ const TEST_CELLAR = 'cellar-unit-test-001';
 
 describe('wineAddOrchestrator (unit)', () => {
   beforeEach(() => {
-    vi.resetAllMocks();
+    vi.clearAllMocks();
 
     // Default DB mocks: no duplicates, metrics insert succeeds
     const mockAll = vi.fn().mockResolvedValue([]);
