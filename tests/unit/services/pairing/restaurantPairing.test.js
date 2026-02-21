@@ -38,6 +38,11 @@ vi.mock('../../../../src/services/shared/fetchUtils.js', () => ({
   }))
 }));
 
+const mockAuditPairingRecommendations = vi.fn(async () => ({ skipped: true, reason: 'disabled' }));
+vi.mock('../../../../src/services/pairing/pairingAuditor.js', () => ({
+  auditPairingRecommendations: mockAuditPairingRecommendations
+}));
+
 vi.mock('../../../../src/services/shared/inputSanitizer.js', () => ({
   sanitize: vi.fn((v) => v || ''),
   sanitizeChatMessage: vi.fn(m => m)
@@ -58,6 +63,7 @@ const {
 const { getModelForTask } = await import('../../../../src/config/aiModels.js');
 const { createTimeoutAbort } = await import('../../../../src/services/shared/fetchUtils.js');
 const { sanitizeChatMessage } = await import('../../../../src/services/shared/inputSanitizer.js');
+const { auditPairingRecommendations } = await import('../../../../src/services/pairing/pairingAuditor.js');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -126,6 +132,17 @@ beforeEach(() => {
 afterEach(() => {
   process.env = originalEnv;
   cleanupChatContexts();
+});
+
+afterAll(() => {
+  vi.doUnmock('../../../../src/services/ai/claudeClient.js');
+  vi.doUnmock('../../../../src/config/aiModels.js');
+  vi.doUnmock('../../../../src/services/ai/claudeResponseUtils.js');
+  vi.doUnmock('../../../../src/services/shared/fetchUtils.js');
+  vi.doUnmock('../../../../src/services/pairing/pairingAuditor.js');
+  vi.doUnmock('../../../../src/services/shared/inputSanitizer.js');
+  vi.doUnmock('../../../../src/utils/logger.js');
+  vi.resetModules();
 });
 
 // ---------------------------------------------------------------------------
@@ -209,6 +226,54 @@ describe('getRecommendations', () => {
       expect(result.fallback).toBe(false);
       expect(result.pairings).toHaveLength(1);
       expect(result.table_summary).toBe('Great pairing for a steak dinner');
+      expect(result.pairingAudit).toEqual(expect.objectContaining({ skipped: true }));
+    });
+
+    it('calls pairing auditor with wines/dishes/constraints context', async () => {
+      mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+      await getRecommendations(makeParams(), 'user1', 1);
+      expect(auditPairingRecommendations).toHaveBeenCalledWith(
+        expect.objectContaining({ pairings: expect.any(Array) }),
+        expect.objectContaining({
+          wines: expect.any(Array),
+          dishes: expect.any(Array),
+          constraints: expect.any(Object)
+        })
+      );
+    });
+
+    it('applies optimized recommendation from pairing auditor', async () => {
+      mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+      mockAuditPairingRecommendations.mockResolvedValueOnce({
+        audited: true,
+        verdict: 'optimize',
+        issues: [],
+        optimizedRecommendation: {
+          table_summary: 'Optimized summary',
+          pairings: [{
+            rank: 1,
+            dish_name: 'Beef Steak',
+            wine_id: 1,
+            wine_name: 'Kanonkop Pinotage',
+            wine_colour: 'red',
+            wine_price: 350,
+            currency: null,
+            by_the_glass: false,
+            why: 'Optimized why',
+            serving_tip: '',
+            confidence: 'high'
+          }],
+          table_wine: null
+        },
+        reasoning: 'Cleaner logic',
+        confidence: 'high',
+        latencyMs: 120
+      });
+
+      const result = await getRecommendations(makeParams(), 'user1', 1);
+      expect(result.table_summary).toBe('Optimized summary');
+      expect(result.pairings[0].why).toBe('Optimized why');
+      expect(result.pairingAudit).toEqual(expect.objectContaining({ verdict: 'optimize' }));
     });
 
     it('creates chat context with correct ownership', async () => {
@@ -638,7 +703,7 @@ describe('deterministic fallback', () => {
 // continueChat
 // ---------------------------------------------------------------------------
 
-describe('continueChat', () => {
+  describe('continueChat', () => {
 
   /** Create a chat context by running getRecommendations, return chatId */
   async function createChat(userId = 'user1', cellarId = 1) {
@@ -691,6 +756,46 @@ describe('continueChat', () => {
     const result = await continueChat(chatId, 'Give me new pairings', 'user1', 1);
     expect(result.type).toBe('recommendations');
     expect(result.pairings).toHaveLength(1);
+    expect(result.pairingAudit).toEqual(expect.objectContaining({ skipped: true }));
+  });
+
+  it('applies optimized chat recommendations from pairing auditor', async () => {
+    const chatId = await createChat();
+    const json = JSON.stringify({
+      table_summary: 'Original',
+      pairings: [{ wine_id: 1, wine_name: 'Merlot', dish_name: 'Beef Steak', rank: 1 }]
+    });
+    mockCreate.mockResolvedValue(claudeText('```json\n' + json + '\n```'));
+    mockAuditPairingRecommendations.mockResolvedValueOnce({
+      audited: true,
+      verdict: 'optimize',
+      issues: [],
+      optimizedRecommendation: {
+        table_summary: 'Optimized chat',
+        pairings: [{
+          rank: 1,
+          dish_name: 'Beef Steak',
+          wine_id: 1,
+          wine_name: 'Kanonkop Pinotage',
+          wine_colour: 'red',
+          wine_price: 350,
+          currency: null,
+          by_the_glass: false,
+          why: 'Updated',
+          serving_tip: '',
+          confidence: 'high'
+        }],
+        table_wine: null
+      },
+      reasoning: 'Cleaner',
+      confidence: 'high',
+      latencyMs: 55
+    });
+
+    const result = await continueChat(chatId, 'Give me new pairings', 'user1', 1);
+    expect(result.table_summary).toBe('Optimized chat');
+    expect(result.pairings[0].why).toBe('Updated');
+    expect(result.pairingAudit).toEqual(expect.objectContaining({ verdict: 'optimize' }));
   });
 
   it('treats JSON without pairings array as explanation', async () => {

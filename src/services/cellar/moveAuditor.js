@@ -15,11 +15,20 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { isCircuitOpen, recordSuccess, recordFailure } from '../shared/circuitBreaker.js';
+import { createTimeoutAbort } from '../shared/fetchUtils.js';
+import {
+  parseEnvBool, parseTimeoutMs, extractJsonFromText,
+  VALID_VERDICTS, VALID_CONFIDENCES, VALID_SEVERITIES
+} from '../shared/auditUtils.js';
 import logger from '../../utils/logger.js';
 
 const CB_SOURCE = 'claude-move-auditor';
 const DEFAULT_TIMEOUT_MS = 45_000;
+const MIN_TIMEOUT_MS = 5_000;
+const MAX_TIMEOUT_MS = 120_000;
 const ENV_FLAG = 'CLAUDE_AUDIT_CELLAR_MOVES';
+const MAX_MOVES_IN_PROMPT = 120;
+const MAX_MISPLACED_IN_PROMPT = 160;
 
 // ───────────────────────────────────────────────────────────
 // Feature flag
@@ -31,8 +40,7 @@ const ENV_FLAG = 'CLAUDE_AUDIT_CELLAR_MOVES';
  * @returns {boolean}
  */
 export function isMoveAuditEnabled() {
-  const val = process.env[ENV_FLAG];
-  return val === 'true' || val === '1';
+  return parseEnvBool(ENV_FLAG);
 }
 
 // ───────────────────────────────────────────────────────────
@@ -48,21 +56,43 @@ export function isMoveAuditEnabled() {
  * @returns {string} Prompt text
  */
 export function buildAuditPrompt(suggestedMoves, misplacedWines, summary, zoneNarratives) {
-  const movesJSON = JSON.stringify(suggestedMoves.map(m => ({
-    type: m.type,
-    wineId: m.wineId,
-    wineName: m.wineName,
-    from: m.from,
-    to: m.to,
-    toZone: m.toZone,
-    reason: m.reason,
-    confidence: m.confidence,
-    isOverflow: m.isOverflow,
-    priority: m.priority,
-    isDisplacementSwap: m.isDisplacementSwap || false
-  })), null, 2);
+  const moveList = Array.isArray(suggestedMoves)
+    ? suggestedMoves.slice(0, MAX_MOVES_IN_PROMPT)
+    : [];
+  const misplacedList = Array.isArray(misplacedWines)
+    ? misplacedWines.slice(0, MAX_MISPLACED_IN_PROMPT)
+    : [];
 
-  const misplacedJSON = JSON.stringify(misplacedWines.map(m => ({
+  const movesJSON = JSON.stringify(moveList.map(m => {
+    if (m?.type === 'manual') {
+      return {
+        type: 'manual',
+        wineId: m.wineId,
+        wineName: m.wineName,
+        currentSlot: m.currentSlot,
+        suggestedZone: m.suggestedZone,
+        suggestedZoneId: m.suggestedZoneId,
+        reason: m.reason,
+        confidence: m.confidence,
+        priority: m.priority
+      };
+    }
+    return {
+      type: 'move',
+      wineId: m?.wineId,
+      wineName: m?.wineName,
+      from: m?.from,
+      to: m?.to,
+      toZone: m?.toZone,
+      reason: m?.reason,
+      confidence: m?.confidence,
+      isOverflow: Boolean(m?.isOverflow),
+      priority: m?.priority,
+      isDisplacementSwap: Boolean(m?.isDisplacementSwap)
+    };
+  }), null, 2);
+
+  const misplacedJSON = JSON.stringify(misplacedList.map(m => ({
     wineId: m.wineId,
     name: m.name,
     currentSlot: m.currentSlot,
@@ -93,6 +123,10 @@ ${misplacedJSON}
 
 ## Suggested Moves (Algorithm Output)
 ${movesJSON}
+
+## Prompt Notes
+- Suggested moves included: ${moveList.length}/${Array.isArray(suggestedMoves) ? suggestedMoves.length : 0}
+- Misplaced wines included: ${misplacedList.length}/${Array.isArray(misplacedWines) ? misplacedWines.length : 0}
 
 ## Audit Checks
 Evaluate the move list for:
@@ -143,15 +177,16 @@ Rules:
  * @returns {Object} Validated result
  */
 function validateAuditSchema(parsed) {
-  const VALID_VERDICTS = new Set(['approve', 'optimize', 'flag']);
+  // Domain-specific issue types for move auditing
   const VALID_ISSUE_TYPES = new Set([
     'circular_chain', 'missed_swap', 'capacity_violation',
     'displacing_correct', 'ordering_issue', 'orphaned_move',
     'duplicate_target', 'unresolved'
   ]);
-  const VALID_SEVERITIES = new Set(['error', 'warning', 'info']);
-  const VALID_CONFIDENCES = new Set(['high', 'medium', 'low']);
 
+  // Verdict is hard-rejected: a wrong verdict means the LLM misunderstood the task.
+  // Confidence is soft-fixed to 'medium': a missing/invalid confidence is cosmetic,
+  // not structural — safe to default rather than discard the entire audit.
   if (!VALID_VERDICTS.has(parsed.verdict)) {
     throw new Error(`Invalid verdict: ${parsed.verdict}`);
   }
@@ -163,7 +198,9 @@ function validateAuditSchema(parsed) {
   const issues = Array.isArray(parsed.issues) ? parsed.issues : [];
   for (const issue of issues) {
     if (!VALID_ISSUE_TYPES.has(issue.type)) {
-      issue.type = 'ordering_issue'; // safe fallback
+      // Fallback to 'ordering_issue' — the safest move-domain default
+      // (ordering warnings are non-destructive and always relevant)
+      issue.type = 'ordering_issue';
     }
     if (!VALID_SEVERITIES.has(issue.severity)) {
       issue.severity = 'warning';
@@ -195,27 +232,94 @@ function validateAuditSchema(parsed) {
  * @returns {boolean} True if valid
  */
 function validateMoveIntegrity(optimizedMoves, originalMoves) {
-  if (!Array.isArray(optimizedMoves) || optimizedMoves.length === 0) return false;
+  if (!Array.isArray(originalMoves) || originalMoves.length === 0) return false;
+  if (!Array.isArray(optimizedMoves) || optimizedMoves.length !== originalMoves.length) return false;
 
-  const originalWineIds = new Set(originalMoves.map(m => m.wineId));
-  const optimizedWineIds = new Set(optimizedMoves.map(m => m.wineId));
-
-  // Every optimized wine must come from the original set
-  for (const id of optimizedWineIds) {
-    if (!originalWineIds.has(id)) return false;
+  const originalByWineId = new Map();
+  for (const original of originalMoves) {
+    if (!original?.wineId || originalByWineId.has(original.wineId)) return false;
+    originalByWineId.set(original.wineId, original);
   }
 
-  // Every move must have required fields
-  for (const m of optimizedMoves) {
-    if (!m.from || !m.to || !m.wineId) return false;
+  const usedWineIds = new Set();
+  const moveTargets = new Set();
+
+  for (const optimized of optimizedMoves) {
+    const original = originalByWineId.get(optimized?.wineId);
+    if (!original) return false;
+    if (usedWineIds.has(optimized.wineId)) return false;
+    usedWineIds.add(optimized.wineId);
+
+    const optimizedType = optimized?.type || original.type;
+    if (optimizedType !== 'move' && optimizedType !== 'manual') return false;
+
+    // Keep the shape stable for downstream UI/renderers.
+    if (optimizedType === 'move') {
+      const from = typeof optimized?.from === 'string' ? optimized.from.trim() : '';
+      const to = typeof optimized?.to === 'string' ? optimized.to.trim() : '';
+      if (!from || !to) return false;
+      if (moveTargets.has(to)) return false;
+      moveTargets.add(to);
+      continue;
+    }
+
+    const currentSlot = typeof optimized?.currentSlot === 'string'
+      ? optimized.currentSlot.trim()
+      : (typeof original.currentSlot === 'string' ? original.currentSlot.trim() : '');
+    const suggestedZone = typeof optimized?.suggestedZone === 'string'
+      ? optimized.suggestedZone.trim()
+      : (typeof original.suggestedZone === 'string' ? original.suggestedZone.trim() : '');
+
+    if (!currentSlot || !suggestedZone) return false;
   }
 
-  // No duplicate targets
-  const targets = optimizedMoves.map(m => m.to);
-  if (new Set(targets).size !== targets.length) return false;
-
-  return true;
+  return usedWineIds.size === originalMoves.length;
 }
+
+function normalizeOptimizedMoves(optimizedMoves, originalMoves) {
+  const originalByWineId = new Map(originalMoves.map(m => [m.wineId, m]));
+  const normalized = optimizedMoves.map(optimized => {
+    const original = originalByWineId.get(optimized?.wineId);
+    if (!original) return null;
+
+    const resolvedType = optimized?.type || original.type;
+    if (resolvedType === 'manual') {
+      return {
+        type: 'manual',
+        wineId: original.wineId,
+        wineName: original.wineName,
+        currentSlot: typeof optimized?.currentSlot === 'string' ? optimized.currentSlot : original.currentSlot,
+        suggestedZone: typeof optimized?.suggestedZone === 'string' ? optimized.suggestedZone : original.suggestedZone,
+        suggestedZoneId: optimized?.suggestedZoneId || original.suggestedZoneId,
+        reason: typeof optimized?.reason === 'string' ? optimized.reason : original.reason,
+        zoneFullReason: original.zoneFullReason,
+        confidence: optimized?.confidence || original.confidence,
+        priority: Number.isFinite(optimized?.priority) ? optimized.priority : original.priority
+      };
+    }
+
+    return {
+      type: 'move',
+      wineId: original.wineId,
+      wineName: original.wineName,
+      from: typeof optimized?.from === 'string' ? optimized.from : original.from,
+      to: typeof optimized?.to === 'string' ? optimized.to : original.to,
+      toZone: optimized?.toZone || original.toZone,
+      reason: typeof optimized?.reason === 'string' ? optimized.reason : original.reason,
+      confidence: optimized?.confidence || original.confidence,
+      isOverflow: typeof optimized?.isOverflow === 'boolean' ? optimized.isOverflow : Boolean(original.isOverflow),
+      isDisplacementSwap: typeof optimized?.isDisplacementSwap === 'boolean'
+        ? optimized.isDisplacementSwap
+        : Boolean(original.isDisplacementSwap),
+      priority: Number.isFinite(optimized?.priority) ? optimized.priority : original.priority
+    };
+  });
+
+  if (normalized.some(m => !m)) return null;
+  return normalized;
+}
+
+// parseTimeoutMs is now imported from shared/auditUtils.js
 
 // ───────────────────────────────────────────────────────────
 // Main audit function
@@ -259,31 +363,28 @@ export async function auditMoveSuggestions(suggestedMoves, misplacedWines, repor
 
     const prompt = buildAuditPrompt(suggestedMoves, misplacedWines, reportSummary, zoneNarratives);
 
-    const timeoutMs = parseInt(process.env.CLAUDE_AUDIT_TIMEOUT_MS, 10) || DEFAULT_TIMEOUT_MS;
+    const timeoutMs = parseTimeoutMs(process.env.CLAUDE_AUDIT_TIMEOUT_MS, DEFAULT_TIMEOUT_MS, MIN_TIMEOUT_MS, MAX_TIMEOUT_MS);
+    const { controller, cleanup } = createTimeoutAbort(timeoutMs);
 
-    const apiCall = anthropic.messages.create({
-      model: modelId,
-      max_tokens: 16000,
-      messages: [{ role: 'user', content: prompt }],
-      ...(thinkingCfg || {})
-    });
-
-    const response = await Promise.race([
-      apiCall,
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Move audit timed out')), timeoutMs)
-      )
-    ]);
-
-    const text = extractText(response);
-    const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/\{[\s\S]*\}/);
-
-    if (!jsonMatch) {
-      throw new Error('No JSON found in audit response');
+    let response;
+    try {
+      response = await anthropic.messages.create({
+        model: modelId,
+        max_tokens: 16000,
+        messages: [{ role: 'user', content: prompt }],
+        ...(thinkingCfg || {})
+      }, { signal: controller.signal });
+    } catch (err) {
+      if (err?.name === 'AbortError') {
+        throw new Error(`Move audit timed out after ${timeoutMs}ms`);
+      }
+      throw err;
+    } finally {
+      cleanup();
     }
 
-    const jsonStr = jsonMatch[1] || jsonMatch[0];
-    const parsed = JSON.parse(jsonStr);
+    const text = extractText(response);
+    const parsed = extractJsonFromText(text);
     const validated = validateAuditSchema(parsed);
 
     // Extra integrity check for optimized moves
@@ -298,6 +399,13 @@ export async function auditMoveSuggestions(suggestedMoves, misplacedWines, repor
           description: 'Auditor-proposed moves failed integrity validation — using original moves',
           affectedMoveIndices: []
         });
+      } else {
+        validated.optimizedMoves = normalizeOptimizedMoves(validated.optimizedMoves, suggestedMoves);
+        if (!validated.optimizedMoves) {
+          logger.warn('MoveAuditor', 'Optimized moves failed normalization, downgrading to flag');
+          validated.verdict = 'flag';
+          validated.optimizedMoves = null;
+        }
       }
     }
 

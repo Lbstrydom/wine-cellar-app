@@ -26,8 +26,19 @@ import {
 } from './cellarSuggestions.js';
 import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { auditMoveSuggestions } from './moveAuditor.js';
+import { toAuditMetadata } from '../shared/auditUtils.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 // Re-exported below via barrel re-exports
+
+function hasMoveDependencies(suggestions) {
+  const moveSuggestions = Array.isArray(suggestions)
+    ? suggestions.filter(s => s?.type === 'move')
+    : [];
+  if (moveSuggestions.length === 0) return false;
+  const sources = new Set(moveSuggestions.map(m => m.from));
+  const targets = new Set(moveSuggestions.map(m => m.to));
+  return [...sources].some(slot => targets.has(slot));
+}
 
 // ───────────────────────────────────────────────────────────
 // Main orchestrator
@@ -118,7 +129,8 @@ export async function analyseCellar(wines) {
   // Generate move suggestions
   const suggestedMoves = await generateMoveSuggestions(report.misplacedWines, wines, slotToWine, { allowFallback, cellarId });
   report.suggestedMoves = suggestedMoves;
-  report.movesHaveSwaps = suggestedMoves._hasSwaps || false;
+  report.movesHaveSwaps = hasMoveDependencies(report.suggestedMoves);
+  report.suggestedMoves._hasSwaps = report.movesHaveSwaps;
 
   // ── Opus 4.6 move audit (optional) ──────────────────────
   // Quality-checks the algorithmic moves for logical errors,
@@ -129,27 +141,24 @@ export async function analyseCellar(wines) {
     report.summary,
     report.zoneNarratives
   );
+  report.moveAudit = toAuditMetadata(auditResult);
   if (auditResult.audited) {
-    report.moveAudit = {
-      verdict: auditResult.verdict,
-      issues: auditResult.issues,
-      reasoning: auditResult.reasoning,
-      confidence: auditResult.confidence,
-      latencyMs: auditResult.latencyMs
-    };
     // Apply optimised moves if the auditor provided them
     if (auditResult.verdict === 'optimize' && auditResult.optimizedMoves) {
       report.suggestedMoves = auditResult.optimizedMoves;
-      // Preserve metadata from original
-      report.suggestedMoves._hasSwaps = suggestedMoves._hasSwaps || false;
-      report.suggestedMoves._zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
+      // Preserve upstream capacity metadata (auditor only optimizes move logistics).
+      report.suggestedMoves._zoneCapacityIssues = Array.isArray(suggestedMoves._zoneCapacityIssues)
+        ? suggestedMoves._zoneCapacityIssues
+        : [];
+      report.movesHaveSwaps = hasMoveDependencies(report.suggestedMoves);
+      report.suggestedMoves._hasSwaps = report.movesHaveSwaps;
     }
-  } else if (!auditResult.skipped) {
-    report.moveAudit = { skipped: true, reason: auditResult.reason };
   }
 
   // Attach zone capacity issues (if any)
-  const zoneCapacityIssues = suggestedMoves._zoneCapacityIssues || [];
+  const zoneCapacityIssues = Array.isArray(report.suggestedMoves?._zoneCapacityIssues)
+    ? report.suggestedMoves._zoneCapacityIssues
+    : [];
   report.zoneCapacityIssues = zoneCapacityIssues;
 
   const capacityAlerts = await buildZoneCapacityAlerts(zoneCapacityIssues, report.needsZoneSetup, allowFallback, cellarId);

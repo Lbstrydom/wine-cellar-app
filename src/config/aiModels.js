@@ -75,6 +75,7 @@ export const TASK_MODELS = {
 
   // Move auditor uses Opus 4.6 to validate algorithmic move suggestions
   moveAudit: 'claude-opus-4-6',
+  pairingAudit: 'claude-opus-4-6',
 
   // Complex extraction tasks use Opus 4.6 with adaptive thinking
   awardExtraction: 'claude-opus-4-6',
@@ -111,6 +112,7 @@ export const TASK_THINKING = {
   zoneReconfigurationPlan: 'low',
   // Opus 4.6 tasks with adaptive thinking
   moveAudit: 'medium',
+  pairingAudit: 'medium',
   zoneCapacityAdvice: 'medium',
   awardExtraction: 'medium'
 };

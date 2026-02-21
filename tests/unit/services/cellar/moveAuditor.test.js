@@ -1,213 +1,253 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from 'vitest';
 
-// Mock dependencies before import
-vi.mock('../../../../src/services/ai/claudeClient.js', () => ({ default: null }));
+const mockCreate = vi.hoisted(() => vi.fn());
+const mockExtractText = vi.hoisted(() => vi.fn(() => ''));
+const mockIsCircuitOpen = vi.hoisted(() => vi.fn(() => false));
+const mockRecordSuccess = vi.hoisted(() => vi.fn());
+const mockRecordFailure = vi.hoisted(() => vi.fn());
+const mockLoggerWarn = vi.hoisted(() => vi.fn());
+const mockLoggerInfo = vi.hoisted(() => vi.fn());
+
+vi.mock('../../../../src/services/ai/claudeClient.js', () => ({
+  default: {
+    messages: {
+      create: mockCreate
+    }
+  }
+}));
+
 vi.mock('../../../../src/config/aiModels.js', () => ({
   getModelForTask: () => 'claude-opus-4-6',
-  getThinkingConfig: () => ({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } }),
+  getThinkingConfig: () => ({ thinking: { type: 'adaptive' }, output_config: { effort: 'medium' } })
 }));
+
 vi.mock('../../../../src/services/ai/claudeResponseUtils.js', () => ({
-  extractText: vi.fn(() => ''),
+  extractText: mockExtractText
 }));
+
 vi.mock('../../../../src/services/shared/circuitBreaker.js', () => ({
-  isCircuitOpen: vi.fn(() => false),
-  recordSuccess: vi.fn(),
-  recordFailure: vi.fn(),
+  isCircuitOpen: mockIsCircuitOpen,
+  recordSuccess: mockRecordSuccess,
+  recordFailure: mockRecordFailure
 }));
+
 vi.mock('../../../../src/utils/logger.js', () => ({
-  default: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+  default: {
+    error: vi.fn(),
+    warn: mockLoggerWarn,
+    info: mockLoggerInfo
+  }
 }));
 
 import {
   isMoveAuditEnabled,
   buildAuditPrompt,
-  auditMoveSuggestions,
+  auditMoveSuggestions
 } from '../../../../src/services/cellar/moveAuditor.js';
 
-// ───────────────────────────────────────────────────────────
-// Feature flag
-// ───────────────────────────────────────────────────────────
+describe('moveAuditor', () => {
+  const originalEnv = process.env;
 
-describe('isMoveAuditEnabled', () => {
-  const origEnv = process.env.CLAUDE_AUDIT_CELLAR_MOVES;
+  beforeEach(() => {
+    process.env = { ...originalEnv };
+    vi.clearAllMocks();
+    mockIsCircuitOpen.mockReturnValue(false);
+  });
 
   afterEach(() => {
-    if (origEnv !== undefined) {
-      process.env.CLAUDE_AUDIT_CELLAR_MOVES = origEnv;
-    } else {
+    process.env = originalEnv;
+  });
+
+  afterAll(() => {
+    vi.doUnmock('../../../../src/services/ai/claudeClient.js');
+    vi.doUnmock('../../../../src/config/aiModels.js');
+    vi.doUnmock('../../../../src/services/ai/claudeResponseUtils.js');
+    vi.doUnmock('../../../../src/services/shared/circuitBreaker.js');
+    vi.doUnmock('../../../../src/utils/logger.js');
+    vi.resetModules();
+  });
+
+  describe('isMoveAuditEnabled', () => {
+    it('returns false when env var is not set', () => {
       delete process.env.CLAUDE_AUDIT_CELLAR_MOVES;
-    }
+      expect(isMoveAuditEnabled()).toBe(false);
+    });
+
+    it('returns true for true/1', () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      expect(isMoveAuditEnabled()).toBe(true);
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = '1';
+      expect(isMoveAuditEnabled()).toBe(true);
+    });
   });
 
-  it('returns false when env var is not set', () => {
-    delete process.env.CLAUDE_AUDIT_CELLAR_MOVES;
-    expect(isMoveAuditEnabled()).toBe(false);
+  describe('buildAuditPrompt', () => {
+    it('includes manual move shape and truncation notes', () => {
+      const prompt = buildAuditPrompt(
+        [{ type: 'manual', wineId: 5, wineName: 'W', currentSlot: 'R1C1', suggestedZone: 'Shiraz', suggestedZoneId: 'shiraz', reason: 'full', confidence: 'low', priority: 3 }],
+        [{ wineId: 5, name: 'W', currentSlot: 'R1C1', currentZone: 'X', suggestedZone: 'Shiraz', confidence: 'low', reason: 'full' }],
+        { totalBottles: 10, misplacedBottles: 1, zonesUsed: 2 },
+        []
+      );
+
+      expect(prompt).toContain('"type": "manual"');
+      expect(prompt).toContain('"currentSlot": "R1C1"');
+      expect(prompt).toContain('Suggested moves included: 1/1');
+      expect(prompt).toContain('Misplaced wines included: 1/1');
+    });
   });
 
-  it('returns true when env var is "true"', () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
-    expect(isMoveAuditEnabled()).toBe(true);
-  });
+  describe('auditMoveSuggestions', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage', reason: 'fix', confidence: 'high', isOverflow: false, priority: 1 },
+      { type: 'move', wineId: 2, wineName: 'Wine B', from: 'R5C3', to: 'R3C1', toZone: 'Shiraz', reason: 'fix', confidence: 'medium', isOverflow: false, priority: 2 }
+    ];
+    const misplaced = [
+      { wineId: 1, name: 'Wine A', currentSlot: 'R3C1', currentZone: 'SB', suggestedZone: 'Pinotage', confidence: 'high', reason: 'fix' },
+      { wineId: 2, name: 'Wine B', currentSlot: 'R5C3', currentZone: 'PN', suggestedZone: 'Shiraz', confidence: 'medium', reason: 'fix' }
+    ];
+    const summary = { totalBottles: 40, misplacedBottles: 2, zonesUsed: 5 };
 
-  it('returns true when env var is "1"', () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = '1';
-    expect(isMoveAuditEnabled()).toBe(true);
-  });
-
-  it('returns false when env var is "false"', () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'false';
-    expect(isMoveAuditEnabled()).toBe(false);
-  });
-});
-
-// ───────────────────────────────────────────────────────────
-// Prompt builder
-// ───────────────────────────────────────────────────────────
-
-describe('buildAuditPrompt', () => {
-  const moves = [
-    { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage', reason: 'colour mismatch', confidence: 'high', isOverflow: false, priority: 1 },
-    { type: 'move', wineId: 2, wineName: 'Wine B', from: 'R5C3', to: 'R3C1', toZone: 'Sauvignon Blanc', reason: 'colour mismatch', confidence: 'high', isOverflow: false, priority: 1 },
-  ];
-  const misplaced = [
-    { wineId: 1, name: 'Wine A', currentSlot: 'R3C1', currentZone: 'Sauvignon Blanc', suggestedZone: 'Pinotage', confidence: 'high', reason: 'colour mismatch' },
-  ];
-  const summary = { totalBottles: 40, misplacedBottles: 2, zonesUsed: 5 };
-  const narratives = [{ zoneId: 'pinotage', zoneName: 'Pinotage', rows: ['R5', 'R6'], bottleCount: 8 }];
-
-  it('includes all moves in the prompt', () => {
-    const prompt = buildAuditPrompt(moves, misplaced, summary, narratives);
-    expect(prompt).toContain('Wine A');
-    expect(prompt).toContain('Wine B');
-    expect(prompt).toContain('R3C1');
-    expect(prompt).toContain('R5C2');
-  });
-
-  it('includes cellar summary', () => {
-    const prompt = buildAuditPrompt(moves, misplaced, summary, narratives);
-    expect(prompt).toContain('Total bottles: 40');
-    expect(prompt).toContain('Misplaced bottles: 2');
-  });
-
-  it('includes zone layout', () => {
-    const prompt = buildAuditPrompt(moves, misplaced, summary, narratives);
-    expect(prompt).toContain('Pinotage');
-    expect(prompt).toContain('R5, R6');
-    expect(prompt).toContain('8 bottles');
-  });
-
-  it('includes audit check categories', () => {
-    const prompt = buildAuditPrompt(moves, misplaced, summary, narratives);
-    expect(prompt).toContain('Circular chains');
-    expect(prompt).toContain('Missed swap opportunities');
-    expect(prompt).toContain('Capacity violations');
-    expect(prompt).toContain('Displacing correct wines');
-  });
-
-  it('handles missing summary gracefully', () => {
-    const prompt = buildAuditPrompt(moves, misplaced, null, null);
-    expect(prompt).toContain('Total bottles: ?');
-    expect(prompt).toContain('No zone narratives available.');
-  });
-});
-
-// ───────────────────────────────────────────────────────────
-// Main audit function (with mocked Claude client)
-// ───────────────────────────────────────────────────────────
-
-describe('auditMoveSuggestions', () => {
-  const moves = [
-    { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R3C1', to: 'R5C2', toZone: 'Pinotage', reason: 'test', confidence: 'high', isOverflow: false, priority: 1 },
-  ];
-  const misplaced = [
-    { wineId: 1, name: 'Wine A', currentSlot: 'R3C1', currentZone: 'SB', suggestedZone: 'Pinotage', confidence: 'high', reason: 'test' },
-  ];
-  const summary = { totalBottles: 40, misplacedBottles: 1, zonesUsed: 5 };
-  const origEnv = process.env.CLAUDE_AUDIT_CELLAR_MOVES;
-
-  afterEach(() => {
-    if (origEnv !== undefined) {
-      process.env.CLAUDE_AUDIT_CELLAR_MOVES = origEnv;
-    } else {
+    it('returns skipped when feature flag is off', async () => {
       delete process.env.CLAUDE_AUDIT_CELLAR_MOVES;
-    }
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('disabled');
+    });
+
+    it('returns skipped when no moves are provided', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      const result = await auditMoveSuggestions([], misplaced, summary, []);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('No moves');
+    });
+
+    it('returns skipped when circuit breaker is open', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      mockIsCircuitOpen.mockReturnValueOnce(true);
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('Circuit breaker open');
+      expect(mockCreate).not.toHaveBeenCalled();
+    });
+
+    it('returns approve result for valid reviewer JSON', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      mockCreate.mockResolvedValueOnce({ id: 'resp_1' });
+      mockExtractText.mockReturnValueOnce(`\`\`\`json
+{"verdict":"approve","issues":[],"optimizedMoves":null,"reasoning":"Looks good","confidence":"high"}
+\`\`\``);
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.audited).toBe(true);
+      expect(result.verdict).toBe('approve');
+      expect(result.optimizedMoves).toBeNull();
+      expect(mockRecordSuccess).toHaveBeenCalled();
+    });
+
+    it('normalizes optimize output to stable move shape', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      mockCreate.mockResolvedValueOnce({ id: 'resp_2' });
+      mockExtractText.mockReturnValueOnce(`\`\`\`json
+{
+  "verdict":"optimize",
+  "issues":[{"type":"ordering_issue","severity":"warning","description":"reorder","affectedMoveIndices":[0,1]}],
+  "optimizedMoves":[
+    {"wineId":1,"from":"R3C1","to":"R5C2","reason":"leg 1"},
+    {"wineId":2,"from":"R5C3","to":"R3C1","reason":"leg 2"}
+  ],
+  "reasoning":"Reordered safely",
+  "confidence":"medium"
+}
+\`\`\``);
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.audited).toBe(true);
+      expect(result.verdict).toBe('optimize');
+      expect(result.optimizedMoves).toHaveLength(2);
+      expect(result.optimizedMoves[0].type).toBe('move');
+      expect(result.optimizedMoves[0].wineName).toBe('Wine A');
+      expect(result.optimizedMoves[0].toZone).toBe('Pinotage');
+    });
+
+    it('downgrades to flag when optimize output fails integrity checks', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      mockCreate.mockResolvedValueOnce({ id: 'resp_3' });
+      mockExtractText.mockReturnValueOnce(`\`\`\`json
+{
+  "verdict":"optimize",
+  "issues":[{"type":"duplicate_target","severity":"error","description":"dup","affectedMoveIndices":[0,1]}],
+  "optimizedMoves":[
+    {"wineId":1,"from":"R3C1","to":"R5C2"},
+    {"wineId":2,"from":"R5C3","to":"R5C2"}
+  ],
+  "reasoning":"Try this",
+  "confidence":"high"
+}
+\`\`\``);
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.audited).toBe(true);
+      expect(result.verdict).toBe('flag');
+      expect(result.optimizedMoves).toBeNull();
+      expect(result.issues.length).toBeGreaterThan(1);
+    });
+
+    it('handles abort timeout as skipped with reason', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      process.env.CLAUDE_AUDIT_TIMEOUT_MS = '5000';
+      const abortErr = new Error('aborted');
+      abortErr.name = 'AbortError';
+      mockCreate.mockRejectedValueOnce(abortErr);
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.skipped).toBe(true);
+      expect(result.reason).toContain('timed out');
+      expect(mockRecordFailure).toHaveBeenCalled();
+    });
+
+    it('returns skipped when LLM returns non-JSON text', async () => {
+      process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
+      mockCreate.mockResolvedValueOnce({ id: 'resp_bad' });
+      mockExtractText.mockReturnValueOnce('I cannot process this request. Please try again later.');
+
+      const result = await auditMoveSuggestions(moves, misplaced, summary, []);
+      expect(result.skipped).toBe(true);
+      expect(mockRecordFailure).toHaveBeenCalled();
+    });
   });
 
-  it('returns skipped when feature flag is off', async () => {
-    delete process.env.CLAUDE_AUDIT_CELLAR_MOVES;
-    const result = await auditMoveSuggestions(moves, misplaced, summary);
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain('disabled');
-  });
+  describe('buildAuditPrompt - truncation', () => {
+    it('truncates moves to MAX_MOVES_IN_PROMPT (120)', () => {
+      const largeMoves = Array.from({ length: 150 }, (_, i) => ({
+        type: 'move',
+        wineId: i,
+        wineName: `Wine ${i}`,
+        from: `R${i}C1`,
+        to: `R${i}C2`,
+        toZone: 'Pinotage',
+        reason: 'test',
+        confidence: 'high',
+        isOverflow: false,
+        priority: i
+      }));
+      const prompt = buildAuditPrompt(largeMoves, [], { totalBottles: 200, misplacedBottles: 150, zonesUsed: 5 }, []);
+      expect(prompt).toContain('Suggested moves included: 120/150');
+    });
 
-  it('returns skipped when no moves to audit', async () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
-    const result = await auditMoveSuggestions([], misplaced, summary);
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain('No moves');
-  });
-
-  it('returns skipped when Claude client is null', async () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
-    const result = await auditMoveSuggestions(moves, misplaced, summary);
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toContain('API key not configured');
-  });
-
-  it('returns skipped when circuit breaker is open', async () => {
-    process.env.CLAUDE_AUDIT_CELLAR_MOVES = 'true';
-    const { isCircuitOpen } = await import('../../../../src/services/shared/circuitBreaker.js');
-    isCircuitOpen.mockReturnValueOnce(true);
-
-    // Need a real client for this path — but since client is null, it'll hit
-    // the client check first. This test validates the circuit breaker order.
-    // The CB check happens before the API call but after the client check.
-    const result = await auditMoveSuggestions(moves, misplaced, summary);
-    // With null client, it returns 'API key not configured' first
-    expect(result.skipped).toBe(true);
-  });
-});
-
-// ───────────────────────────────────────────────────────────
-// Schema validation (indirectly via prompt structure)
-// ───────────────────────────────────────────────────────────
-
-describe('buildAuditPrompt output format', () => {
-  it('requests JSON with correct verdict enum', () => {
-    const prompt = buildAuditPrompt(
-      [{ type: 'move', wineId: 1, wineName: 'W', from: 'R1C1', to: 'R2C1', toZone: 'Z', reason: 'r', confidence: 'high', isOverflow: false, priority: 1 }],
-      [],
-      { totalBottles: 10 },
-      []
-    );
-    expect(prompt).toContain('"approve"');
-    expect(prompt).toContain('"optimize"');
-    expect(prompt).toContain('"flag"');
-  });
-
-  it('requests all issue types', () => {
-    const prompt = buildAuditPrompt(
-      [{ type: 'move', wineId: 1, wineName: 'W', from: 'R1C1', to: 'R2C1', toZone: 'Z', reason: 'r', confidence: 'high', isOverflow: false, priority: 1 }],
-      [],
-      {},
-      []
-    );
-    expect(prompt).toContain('circular_chain');
-    expect(prompt).toContain('missed_swap');
-    expect(prompt).toContain('capacity_violation');
-    expect(prompt).toContain('displacing_correct');
-    expect(prompt).toContain('duplicate_target');
-    expect(prompt).toContain('unresolved');
-  });
-
-  it('strips displacement swap metadata to prevent bias', () => {
-    const prompt = buildAuditPrompt(
-      [{ type: 'move', wineId: 1, wineName: 'W', from: 'R1C1', to: 'R2C1', toZone: 'Z', reason: 'r', confidence: 'high', isOverflow: false, priority: 1, isDisplacementSwap: true }],
-      [],
-      {},
-      []
-    );
-    // isDisplacementSwap should be included (it's part of the move shape the auditor sees)
-    expect(prompt).toContain('"isDisplacementSwap": true');
+    it('truncates misplaced wines to MAX_MISPLACED_IN_PROMPT (160)', () => {
+      const largeMisplaced = Array.from({ length: 200 }, (_, i) => ({
+        wineId: i,
+        name: `Wine ${i}`,
+        currentSlot: `R${i}C1`,
+        currentZone: 'X',
+        suggestedZone: 'Y',
+        confidence: 'low',
+        reason: 'test'
+      }));
+      const prompt = buildAuditPrompt([], largeMisplaced, { totalBottles: 300, misplacedBottles: 200, zonesUsed: 5 }, []);
+      expect(prompt).toContain('Misplaced wines included: 160/200');
+    });
   });
 });

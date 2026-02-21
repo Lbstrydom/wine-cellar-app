@@ -13,6 +13,8 @@ import { extractText } from '../ai/claudeResponseUtils.js';
 import { createTimeoutAbort } from '../shared/fetchUtils.js';
 import { sanitize, sanitizeChatMessage } from '../shared/inputSanitizer.js';
 import { recommendResponseSchema } from '../../schemas/restaurantPairing.js';
+import { auditPairingRecommendations } from './pairingAuditor.js';
+import { toAuditMetadata } from '../shared/auditUtils.js';
 import logger from '../../utils/logger.js';
 
 /** Per-call timeout for Claude API calls (ms) */
@@ -271,6 +273,22 @@ export async function getRecommendations(params, userId, cellarId) {
       return buildFallbackResponse(params);
     }
 
+    const pairingAudit = await auditPairingRecommendations(validated, {
+      wines: params.wines,
+      dishes: params.dishes,
+      constraints: {
+        colour_preferences: params.colour_preferences || [],
+        budget_max: params.budget_max ?? null,
+        prefer_by_glass: params.prefer_by_glass === true
+      }
+    });
+
+    let finalRecommendation = validated;
+    const pairingAuditMetadata = toAuditMetadata(pairingAudit);
+    if (pairingAudit.audited && pairingAudit.verdict === 'optimize' && pairingAudit.optimizedRecommendation) {
+      finalRecommendation = pairingAudit.optimizedRecommendation;
+    }
+
     // Create chat context for follow-up
     const chatId = randomUUID();
     chatContexts.set(chatId, {
@@ -278,12 +296,22 @@ export async function getRecommendations(params, userId, cellarId) {
       cellarId,
       wines: params.wines,
       dishes: params.dishes,
-      initialResponse: validated,
+      constraints: {
+        colour_preferences: params.colour_preferences || [],
+        budget_max: params.budget_max ?? null,
+        prefer_by_glass: params.prefer_by_glass === true
+      },
+      initialResponse: finalRecommendation,
       chatHistory: [],
       createdAt: Date.now()
     });
 
-    return { ...validated, chatId, fallback: false };
+    return {
+      ...finalRecommendation,
+      chatId,
+      fallback: false,
+      pairingAudit: pairingAuditMetadata
+    };
   } catch (error) {
     if (error.name === 'AbortError') {
       logger.error('RestaurantPairing', `Recommend timed out after ${RECOMMEND_TIMEOUT_MS}ms`);
@@ -516,21 +544,31 @@ export async function continueChat(chatId, message, userId, cellarId) {
     let parsed;
 
     try {
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) ||
-                        responseText.match(/```\s*([\s\S]*?)\s*```/);
-      if (jsonMatch) {
-        const raw = JSON.parse(jsonMatch[1].trim());
-        // Basic shape validation: must be an object with pairings array
-        if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.pairings)) {
-          // Filter to only pairings with valid wine_ids
-          raw.pairings = raw.pairings.filter(p => p && typeof p === 'object' && p.wine_id != null && p.wine_id > 0);
-          parsed = { ...raw, type: 'recommendations' };
-        } else {
-          // JSON present but wrong shape — treat as explanation
-          logger.warn('RestaurantPairing', 'Chat returned JSON without valid pairings array');
-          parsed = { type: 'explanation', message: responseText.trim() };
+      let raw;
+      try {
+        const { extractJsonFromText } = await import('../shared/auditUtils.js');
+        raw = extractJsonFromText(responseText);
+      } catch { raw = null; }
+
+      if (raw && typeof raw === 'object' && !Array.isArray(raw) && Array.isArray(raw.pairings)) {
+        // Filter to only pairings with valid wine_ids
+        raw.pairings = raw.pairings.filter(p => p && typeof p === 'object' && p.wine_id != null && p.wine_id > 0);
+        const pairingAudit = await auditPairingRecommendations(raw, {
+          wines: context.wines,
+          dishes: context.dishes,
+          constraints: context.constraints || {}
+        });
+
+        let finalRaw = raw;
+        const pairingAuditMetadata = toAuditMetadata(pairingAudit);
+        if (pairingAudit.audited && pairingAudit.verdict === 'optimize' && pairingAudit.optimizedRecommendation) {
+          finalRaw = pairingAudit.optimizedRecommendation;
         }
+
+        parsed = { ...finalRaw, type: 'recommendations', pairingAudit: pairingAuditMetadata };
       } else {
+        // JSON missing or wrong shape — treat as explanation
+        if (raw) logger.warn('RestaurantPairing', 'Chat returned JSON without valid pairings array');
         parsed = { type: 'explanation', message: responseText.trim() };
       }
     } catch (_parseError) {

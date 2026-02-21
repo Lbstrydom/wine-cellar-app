@@ -80,7 +80,7 @@ describe('aiModels', () => {
         'drinkRecommendations', 'tastingExtraction',
         'menuParsing', 'restaurantPairing',
         'cellarAnalysis', 'zoneCapacityAdvice', 'zoneReconfigurationPlan',
-        'webSearch', 'awardExtraction',
+        'webSearch', 'awardExtraction', 'pairingAudit',
         'wineClassification', 'simpleValidation'
       ];
       for (const task of expectedTasks) {
@@ -91,6 +91,7 @@ describe('aiModels', () => {
     it('should map complex tasks to Opus 4.6', () => {
       expect(TASK_MODELS.zoneCapacityAdvice).toBe('claude-opus-4-6');
       expect(TASK_MODELS.awardExtraction).toBe('claude-opus-4-6');
+      expect(TASK_MODELS.pairingAudit).toBe('claude-opus-4-6');
     });
 
     it('should map cellarAnalysis to Sonnet 4.6 with adaptive thinking', () => {
@@ -233,6 +234,13 @@ describe('aiModels', () => {
 
     it('should return adaptive thinking with medium effort for awardExtraction', () => {
       expect(getThinkingConfig('awardExtraction')).toEqual({
+        thinking: { type: 'adaptive' },
+        output_config: { effort: 'medium' }
+      });
+    });
+
+    it('should return adaptive thinking with medium effort for pairingAudit', () => {
+      expect(getThinkingConfig('pairingAudit')).toEqual({
         thinking: { type: 'adaptive' },
         output_config: { effort: 'medium' }
       });
