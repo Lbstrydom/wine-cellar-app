@@ -3407,6 +3407,21 @@
   cursor: default;
 }
 
+/* Pairing feedback radio group */
+.radio-group {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.35rem;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
 /* Sommelier / Natural pairing styles */
 .natural-pairing {
   background: var(--bg-card);

@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260220a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260220b">
 </head>
 <body>
   <header>
@@ -429,7 +429,7 @@
         <form id="pairing-feedback-form">
           <div class="form-group">
             <label for="feedback-rating">How well did this pairing work?</label>
-            <select id="feedback-rating" name="rating" required>
+            <select id="feedback-rating" name="pairingFitRating" required>
               <option value="">Select...</option>
               <option value="5">Perfect</option>
               <option value="4">Very Good</option>
@@ -439,12 +439,19 @@
             </select>
           </div>
           <div class="form-group">
+            <label>Would you pair these again?</label>
+            <div class="radio-group">
+              <label class="radio-label"><input type="radio" name="wouldPairAgain" value="true" required> Yes</label>
+              <label class="radio-label"><input type="radio" name="wouldPairAgain" value="false"> No</label>
+            </div>
+          </div>
+          <div class="form-group">
             <label for="feedback-notes">Notes (optional)</label>
             <textarea id="feedback-notes" name="notes" rows="3" maxlength="300" placeholder="What worked, what didn't, etc."></textarea>
           </div>
           <div class="modal-actions">
             <button type="submit" class="btn btn-primary">Submit Feedback</button>
-            <button type="button" class="btn btn-secondary" id="cancel-feedback">Cancel</button>
+            <button type="button" class="btn btn-secondary" id="cancel-feedback">Skip</button>
           </div>
         </form>
       </div>

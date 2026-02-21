@@ -86,7 +86,11 @@ export function renderRecommendation(rec, rank) {
  */
 async function handleChooseWine(rec, rank, buttonElement, card) {
   if (!currentSessionId) {
-    console.warn('No session ID available');
+    showToast('Session expired — please re-run the pairing', 'error');
+    return;
+  }
+  if (!rec.wine_id) {
+    showToast('This wine could not be matched to your cellar', 'error');
     return;
   }
   try {
@@ -115,6 +119,8 @@ async function handleChooseWine(rec, rank, buttonElement, card) {
     console.error('Error recording wine choice:', error);
     buttonElement.disabled = false;
     buttonElement.textContent = 'Choose This Wine';
+    buttonElement.classList.remove('chosen');
+    showToast(`Could not record choice: ${error.message}`, 'error');
   }
 }
 

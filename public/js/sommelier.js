@@ -89,57 +89,22 @@ function renderSommelierResponse(data) {
   }
 
 
+  // Track card DOM elements to append after innerHTML (preserves event listeners)
+  const cardElements = [];
+
   if (!data.recommendations || data.recommendations.length === 0) {
     html += `<div class="no-match"><p>No suitable wines found.</p></div>`;
   } else {
-    // Use new pairing.js card rendering with Choose button
-    html += '<div class="recommendation-cards">';
+    // Placeholder div — card DOM elements are appended after innerHTML to keep listeners
+    html += '<div class="recommendation-cards"></div>';
     data.recommendations.forEach((rec, idx) => {
-      const card = renderRecommendation(rec, idx + 1);
-      html += card.outerHTML;
+      cardElements.push(renderRecommendation(rec, idx + 1));
     });
-    html += '</div>';
     // Store sessionId for feedback/choice
     if (data.sessionId) {
       displayRecommendations(data);
     }
   }
-// Feedback modal logic
-document.addEventListener('DOMContentLoaded', () => {
-  const feedbackModal = document.getElementById('pairing-feedback-modal');
-  const cancelBtn = document.getElementById('cancel-feedback');
-  if (cancelBtn) {
-    cancelBtn.onclick = () => {
-      feedbackModal.style.display = 'none';
-    };
-  }
-  const form = document.getElementById('pairing-feedback-form');
-  if (form) {
-    form.onsubmit = async (e) => {
-      e.preventDefault();
-      const modal = feedbackModal;
-      const sessionId = modal.dataset.sessionId;
-      const rating = document.getElementById('feedback-rating').value;
-      const notes = document.getElementById('feedback-notes').value;
-      if (!sessionId || !rating) {
-        showToast('Please select a rating.');
-        return;
-      }
-      try {
-        await submitPairingFeedback(sessionId, { rating: Number(rating), notes });
-        modal.style.display = 'none';
-        showToast('Thank you for your feedback!');
-        form.reset();
-      } catch (err) {
-        if (err instanceof Error) {
-          showToast('Error submitting feedback: ' + err.message);
-        } else {
-          showToast('Error submitting feedback.');
-        }
-      }
-    };
-  }
-});
 
   html += '</div>';
 
@@ -164,7 +129,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   container.innerHTML = html;
 
-  // Add click handlers to recommendations
+  // Append recommendation card DOM elements (preserves addEventListener bindings)
+  const cardsContainer = container.querySelector('.recommendation-cards');
+  if (cardsContainer) {
+    cardElements.forEach(card => cardsContainer.appendChild(card));
+  }
+
+  // Add click handlers to old-format recommendations (chat follow-ups)
   container.querySelectorAll('.recommendation.clickable').forEach(el => {
     el.addEventListener('click', () => {
       const wineId = Number.parseInt(el.dataset.wineId, 10);
@@ -462,4 +433,47 @@ export function initSommelier() {
 
   document.getElementById('get-pairing')?.addEventListener('click', handleGetPairing);
   document.getElementById('clear-signals')?.addEventListener('click', clearSignals);
+
+  // Feedback modal logic (wired once at init, not inside renderSommelierResponse)
+  const feedbackModal = document.getElementById('pairing-feedback-modal');
+  const cancelBtn = document.getElementById('cancel-feedback');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', () => {
+      feedbackModal.style.display = 'none';
+    });
+  }
+  const form = document.getElementById('pairing-feedback-form');
+  if (form) {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const sessionId = feedbackModal.dataset.sessionId;
+      const rating = document.getElementById('feedback-rating').value;
+      const wouldPairAgainEl = form.querySelector('input[name="wouldPairAgain"]:checked');
+      const notes = document.getElementById('feedback-notes').value;
+      if (!sessionId || !rating) {
+        showToast('Please select a rating.');
+        return;
+      }
+      if (!wouldPairAgainEl) {
+        showToast('Please indicate if you would pair these again.');
+        return;
+      }
+      try {
+        await submitPairingFeedback(sessionId, {
+          pairingFitRating: Number(rating),
+          wouldPairAgain: wouldPairAgainEl.value === 'true',
+          notes: notes || undefined
+        });
+        feedbackModal.style.display = 'none';
+        showToast('Thank you for your feedback!');
+        form.reset();
+      } catch (err) {
+        if (err instanceof Error) {
+          showToast('Error submitting feedback: ' + err.message);
+        } else {
+          showToast('Error submitting feedback.');
+        }
+      }
+    });
+  }
 }
