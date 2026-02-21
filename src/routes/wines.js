@@ -492,19 +492,21 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     paramIdx++;
   };
 
-  addUpdate('style', style);
-  addUpdate('colour', colour);
-  addUpdate('wine_name', wine_name);
-  addUpdate('vintage', vintage || null);
-  addUpdate('vivino_rating', vivino_rating || null);
-  addUpdate('price_eur', price_eur || null);
-  addUpdate('country', country || null);
-  addUpdate('producer', producer || null);
-  addUpdate('region', region || null);
-  addUpdate('grapes', normalizedGrapes === undefined ? (existing.grapes ?? null) : (normalizedGrapes || null));
-  addUpdate('drink_from', drink_from || null);
-  addUpdate('drink_peak', drink_peak || null);
-  addUpdate('drink_until', drink_until || null);
+  // Only update fields that are present in the request body
+  const body = req.body;
+  if ('style' in body) addUpdate('style', style);
+  if ('colour' in body) addUpdate('colour', colour);
+  if ('wine_name' in body) addUpdate('wine_name', wine_name);
+  if ('vintage' in body) addUpdate('vintage', vintage || null);
+  if ('vivino_rating' in body) addUpdate('vivino_rating', vivino_rating || null);
+  if ('price_eur' in body) addUpdate('price_eur', price_eur || null);
+  if ('country' in body) addUpdate('country', country || null);
+  if ('producer' in body) addUpdate('producer', producer || null);
+  if ('region' in body) addUpdate('region', region || null);
+  if ('grapes' in body) addUpdate('grapes', normalizedGrapes === undefined ? (existing.grapes ?? null) : (normalizedGrapes || null));
+  if ('drink_from' in body) addUpdate('drink_from', drink_from || null);
+  if ('drink_peak' in body) addUpdate('drink_peak', drink_peak || null);
+  if ('drink_until' in body) addUpdate('drink_until', drink_until || null);
 
   const fingerprintData = WineFingerprint.generateWithVersion({
     wine_name: wine_name ?? existing.wine_name,
@@ -531,6 +533,10 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
   if (vivino_confirmed !== undefined) {
     addUpdate('vivino_confirmed', vivino_confirmed ? 1 : 0);
     addUpdate('vivino_confirmed_at', vivino_confirmed ? new Date().toISOString() : null);
+  }
+
+  if (updates.length === 0) {
+    return res.json({ message: 'Wine updated (no changes)', warnings: [] });
   }
 
   updates.push('updated_at = CURRENT_TIMESTAMP');
