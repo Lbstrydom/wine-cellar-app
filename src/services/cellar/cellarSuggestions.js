@@ -184,6 +184,44 @@ export function detectNaturalSwapPairs(misplacedWines) {
   return pairs;
 }
 
+/**
+ * Detect displacement swap opportunities among misplaced wines.
+ * A displacement swap is weaker than a natural swap: Wine A needs to go
+ * to a zone where Wine B currently sits, and Wine B is also misplaced
+ * (but may target a DIFFERENT zone than A's current zone).
+ * The pair resolves to: A → B's slot, B → A's slot (freeing both for
+ * zone-correct placement in a second pass or later execution).
+ * @param {Array} misplacedWines - Misplaced wine entries
+ * @param {Set} usedIndices - Indices already consumed by natural swaps
+ * @returns {Array<[number, number]>} Array of [needsSlotIdx, displacedIdx] pairs
+ */
+export function detectDisplacementSwaps(misplacedWines, usedIndices) {
+  const pairs = [];
+  const used = new Set(usedIndices);
+
+  for (let i = 0; i < misplacedWines.length; i++) {
+    if (used.has(i)) continue;
+    const wineA = misplacedWines[i];
+    if (!wineA.currentZoneId || !wineA.suggestedZoneId) continue;
+
+    for (let j = 0; j < misplacedWines.length; j++) {
+      if (i === j || used.has(j)) continue;
+      const wineB = misplacedWines[j];
+      if (!wineB.currentZoneId || !wineB.suggestedZoneId) continue;
+
+      // Displacement: A wants B's zone, and B is misplaced (going anywhere)
+      if (wineA.suggestedZoneId === wineB.currentZoneId) {
+        pairs.push([i, j]);
+        used.add(i);
+        used.add(j);
+        break; // Wine A is paired, move to next
+      }
+    }
+  }
+
+  return pairs;
+}
+
 // ───────────────────────────────────────────────────────────
 // Move suggestion generation
 // ───────────────────────────────────────────────────────────
@@ -271,6 +309,65 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
     allocatedTargets.add(wineB.currentSlot);
   }
 
+  // ── Pre-detect displacement swap pairs ────────────────────
+  // Weaker than natural swaps: Wine A needs to go to the zone where
+  // Wine B sits, and Wine B is also misplaced (but targets a different
+  // zone, not necessarily A's zone).  We swap A↔B: A lands in B's
+  // zone (correct), B lands in A's slot (still misplaced, but the
+  // sequential loop can now route B to an empty slot since A's slot
+  // is vacated in B's new zone context).
+  const displacementPairs = detectDisplacementSwaps(sortedMisplaced, usedInSwaps);
+
+  for (const [i, j] of displacementPairs) {
+    usedInSwaps.add(i);
+    usedInSwaps.add(j);
+
+    const wineA = sortedMisplaced[i]; // Needs B's zone
+    const wineB = sortedMisplaced[j]; // Currently in A's target zone
+
+    const higherPriority = Math.min(
+      wineA.confidence === 'high' ? 1 : wineA.confidence === 'medium' ? 2 : 3,
+      wineB.confidence === 'high' ? 1 : wineB.confidence === 'medium' ? 2 : 3
+    );
+
+    // A → B's slot (A is now in the correct zone)
+    suggestions.push({
+      type: 'move',
+      wineId: wineA.wineId,
+      wineName: wineA.name,
+      from: wineA.currentSlot,
+      to: wineB.currentSlot,
+      toZone: wineA.suggestedZone,
+      reason: wineA.reason,
+      confidence: wineA.confidence,
+      isOverflow: false,
+      priority: higherPriority
+    });
+
+    // B → A's slot (B is displaced but now the sequential loop can re-process)
+    suggestions.push({
+      type: 'move',
+      wineId: wineB.wineId,
+      wineName: wineB.name,
+      from: wineB.currentSlot,
+      to: wineA.currentSlot,
+      toZone: wineB.suggestedZone,
+      reason: `${wineB.reason} (displaced swap — will need follow-up move to reach ${wineB.suggestedZone})`,
+      confidence: wineB.confidence,
+      isOverflow: false,
+      isDisplacementSwap: true,
+      priority: higherPriority
+    });
+
+    // Both slots stay occupied (swapped), mark as allocated
+    allocatedTargets.add(wineA.currentSlot);
+    allocatedTargets.add(wineB.currentSlot);
+
+    // Track that A's old slot now holds B (for the sequential loop)
+    pendingMoves.set(wineB.currentSlot, wineA.currentSlot);
+    pendingMoves.set(wineA.currentSlot, wineB.currentSlot);
+  }
+
   // ── Sequential processing for remaining wines ─────────────
   for (let idx = 0; idx < sortedMisplaced.length; idx++) {
     if (usedInSwaps.has(idx)) continue;
@@ -336,6 +433,113 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
         priority: 3
       });
     }
+  }
+
+  // ── Second pass: resolve manual suggestions via displacement swaps ──
+  // For each `manual` suggestion (zone was full), find a misplaced wine
+  // occupying the target zone and swap them.  The Manual wine lands in
+  // the correct zone; the displaced wine moves to Manual's old slot
+  // and can be re-routed in a future analysis run or manual step.
+  const manualIndices = [];
+  suggestions.forEach((s, idx) => {
+    if (s.type === 'manual') manualIndices.push(idx);
+  });
+
+  // Build a lookup: slot → misplaced wine info (for wines not yet resolved)
+  const slotToMisplaced = new Map();
+  for (const mw of sortedMisplaced) {
+    if (!mw.currentSlot) continue;
+    // Only include wines that haven't already been resolved as a 'move'
+    const alreadyResolved = suggestions.some(
+      s => s.type === 'move' && s.wineId === mw.wineId
+    );
+    if (!alreadyResolved) {
+      slotToMisplaced.set(mw.currentSlot, mw);
+    }
+  }
+
+  // Also build: slot → wine (for ALL wines, to find zone occupants)
+  const slotToWineMap = new Map();
+  for (const w of allWines) {
+    const slotId = w.slot_id || w.location_code;
+    if (slotId) slotToWineMap.set(slotId, w);
+  }
+
+  // Track which manuals we've resolved to avoid double-processing
+  const resolvedManualIndices = new Set();
+  const resolvedWineIds = new Set();
+
+  for (const mIdx of manualIndices) {
+    const manual = suggestions[mIdx];
+    if (resolvedManualIndices.has(mIdx)) continue;
+
+    // Find a misplaced wine currently in the target zone that we can swap with
+    let swapPartner = null;
+    for (const mw of sortedMisplaced) {
+      if (mw.wineId === manual.wineId) continue;
+      if (resolvedWineIds.has(mw.wineId)) continue;
+      // Partner must be in the manual wine's target zone AND also be misplaced
+      if (mw.currentZoneId === manual.suggestedZoneId &&
+          mw.suggestedZoneId !== mw.currentZoneId) {
+        swapPartner = mw;
+        break;
+      }
+    }
+
+    if (!swapPartner) continue;
+
+    // Convert this manual into a displacement swap pair
+    resolvedManualIndices.add(mIdx);
+    resolvedWineIds.add(manual.wineId);
+    resolvedWineIds.add(swapPartner.wineId);
+
+    // Remove the partner's existing suggestion (manual or otherwise)
+    const partnerSuggIdx = suggestions.findIndex(
+      s => s.wineId === swapPartner.wineId && s !== suggestions[mIdx]
+    );
+    if (partnerSuggIdx !== -1) {
+      resolvedManualIndices.add(partnerSuggIdx);
+    }
+
+    const higherPriority = Math.min(
+      manual.confidence === 'high' ? 1 : manual.confidence === 'medium' ? 2 : 3,
+      swapPartner.confidence === 'high' ? 1 : swapPartner.confidence === 'medium' ? 2 : 3
+    );
+
+    // Manual wine → partner's slot (now in correct zone)
+    suggestions.push({
+      type: 'move',
+      wineId: manual.wineId,
+      wineName: manual.wineName,
+      from: manual.currentSlot,
+      to: swapPartner.currentSlot,
+      toZone: manual.suggestedZone,
+      reason: manual.reason,
+      confidence: manual.confidence,
+      isOverflow: false,
+      priority: higherPriority
+    });
+
+    // Partner → manual wine's old slot (displaced, may need follow-up)
+    suggestions.push({
+      type: 'move',
+      wineId: swapPartner.wineId,
+      wineName: swapPartner.name,
+      from: swapPartner.currentSlot,
+      to: manual.currentSlot,
+      toZone: swapPartner.suggestedZone,
+      reason: `${swapPartner.reason} (displaced swap — will need follow-up move to reach ${swapPartner.suggestedZone})`,
+      confidence: swapPartner.confidence,
+      isOverflow: false,
+      isDisplacementSwap: true,
+      priority: higherPriority
+    });
+  }
+
+  // Remove resolved manual suggestions (iterate in reverse to preserve indices)
+  const indicesToRemove = [...resolvedManualIndices].sort((a, b) => b - a);
+  for (const idx of indicesToRemove) {
+    suggestions.splice(idx, 1);
   }
 
   const sortedSuggestions = suggestions.sort((a, b) => a.priority - b.priority);
