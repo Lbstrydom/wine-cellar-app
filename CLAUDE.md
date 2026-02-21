@@ -715,7 +715,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 1944 unit tests (~1s) | ❌ No |
+| `npm run test:unit` | Runs 2123 unit tests (~3s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -773,6 +773,14 @@ This means you can run `npm run test:integration` with zero manual setup.
 DEBUG_INTEGRATION=1 npm run test:integration
 ```
 
+### No-Isolate Mock Hygiene (CRITICAL)
+
+Unit tests run with `--no-isolate`, so leaked mocks can break unrelated suites.
+
+- If a test file needs real implementations despite global mocks, import them with `vi.importActual(...)` in `beforeAll`.
+- Avoid `vi.resetModules()` in shared-process test runs unless strictly necessary; it can reset module state used by later suites.
+- Reset mutable mocks in `beforeEach` (`vi.clearAllMocks()` or `vi.restoreAllMocks()`) when tests override mock behavior.
+
 ### Test Structure
 
 ```javascript
@@ -826,6 +834,10 @@ refactor/modular-structure
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
 | `CLAUDE_MODEL` | Override Claude model for ALL tasks | No (default: per-task mapping) |
 | `CLAUDE_MODEL_<TASK>` | Override model for specific task (e.g., `CLAUDE_MODEL_CELLARANALYSIS`) | No |
+| `CLAUDE_AUDIT_CELLAR_MOVES` | Enable Opus move auditor in cellar analysis (`true`/`1`) | No (default: false) |
+| `CLAUDE_AUDIT_RESTAURANT_PAIRINGS` | Enable Opus pairing auditor (`true`/`1`) | No (default: false) |
+| `CLAUDE_AUDIT_TIMEOUT_MS` | Move auditor timeout in ms (clamped 5000-120000) | No (default: 45000) |
+| `CLAUDE_AUDIT_RESTAURANT_PAIRINGS_TIMEOUT_MS` | Pairing auditor timeout in ms (clamped 5000-90000) | No (default: 30000) |
 | `BRIGHTDATA_API_KEY` | BrightData API key | For web scraping |
 | `BRIGHTDATA_SERP_ZONE` | BrightData SERP zone name | For search results |
 | `BRIGHTDATA_WEB_ZONE` | BrightData Web Unlocker zone | For blocked sites |
@@ -1080,6 +1092,8 @@ All model selection is centralized in `src/config/aiModels.js`. Tasks map to mod
 | `restaurantPairing` | Sonnet 4.6 | low |
 | `drinkRecommendations` | Sonnet 4.6 | low |
 | `zoneReconfigurationPlan` | Sonnet 4.6 | low |
+| `moveAudit` | Opus 4.6 | medium |
+| `pairingAudit` | Opus 4.6 | medium |
 | `webSearch` | Sonnet 4.6 | none |
 | `sommelier`, `parsing`, `ratings` | Sonnet 4.6 | none |
 | `wineClassification` | Haiku 4.5 | none |
@@ -1158,9 +1172,20 @@ Thinking tokens count against `max_tokens`. Set limits high enough for thinking 
 | Cellar analysis (Sonnet 4.6) | 16000 | ~2K JSON output + low-effort thinking |
 | Restaurant pairing (Sonnet 4.6) | 16000 | Pairing reasoning + low-effort thinking |
 | Zone reconfiguration (Sonnet 4.6) | 8000 | Algorithmic solver does primary planning; LLM refines |
+| Move audit (Opus 4.6) | 16000 | Audits move plans with medium thinking before advice rendering |
+| Pairing audit (Opus 4.6) | 12000 | Validates and normalizes pairing outputs before response |
 | Zone capacity advice (Opus 4.6) | 16000 | ~1.2K JSON output + up to 5K thinking |
 | Award extraction (Opus 4.6) | 32000 | Large JSON output + thinking |
 | Sommelier (Sonnet 4.6, no thinking) | 8192 | Speed-sensitive, no thinking needed |
+
+### Auditor Module Pattern (CRITICAL)
+
+All LLM auditors should follow the shared pattern used by move and pairing auditors.
+
+- Reuse `src/services/shared/auditUtils.js` for `parseEnvBool`, `parseTimeoutMs`, `extractJsonFromText`, `toAuditMetadata`, and shared enum sets.
+- Keep optimization integrity checks strict: if normalized optimized output fails validation, downgrade verdict to `flag` and return original domain output.
+- Keep graceful degradation: timeout/API/schema errors must return `{ skipped: true, reason, latencyMs }` instead of throwing into the main flow.
+- Prefer `toAuditMetadata()` at integration points (`cellarAnalysis`, `restaurantPairing`) instead of duplicating audited/skipped metadata blocks.
 
 ---
 
@@ -1541,6 +1566,8 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Write queries without `WHERE cellar_id = $1` filter - causes cross-tenant data leaks
 - Bypass `requireCellarContext` middleware for data routes
 - Use raw `fetch()` for `/api/*` calls in frontend - use `api.js` functions instead (they add auth headers)
+- Parse LLM JSON with ad-hoc greedy regex when `extractJsonFromText()` already exists in `src/services/shared/auditUtils.js`
+- Use `vi.resetModules()` in `--no-isolate` unit tests unless there is no safer alternative
 
 ---
 
@@ -1564,3 +1591,5 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
 - Apply `requireAuth` + `requireCellarContext` middleware to all data routes
 - Use `api.js` exported functions for all frontend API calls (automatic auth headers)
+- Reuse `src/services/shared/auditUtils.js` when implementing any new LLM auditor module
+- Use `vi.importActual()` for real-module imports in `--no-isolate` test files to avoid cross-suite mock leakage

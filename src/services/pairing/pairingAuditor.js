@@ -187,13 +187,8 @@ function normalizeOptimizedRecommendation(optimized, original, context) {
         !constraints.colour_preferences.includes(wine.colour)) {
       return null;
     }
-    // "prefer" by-the-glass is a soft preference, not a hard constraint.
-    // Only reject if ALL wines on the list are available by-the-glass,
-    // meaning there was a strictly-better option the LLM ignored.
-    if (constraints.prefer_by_glass === true && hasGlassOptions && !wine.by_the_glass) {
-      const allWinesAvailableByGlass = wines.every(w => w.by_the_glass);
-      if (allWinesAvailableByGlass) return null;
-    }
+    // "prefer_by_glass" remains a soft preference; do not hard-reject
+    // individual pairings that use bottle-only wines.
 
     const originalPairing = originalPairings[index] || {};
     return {
@@ -216,6 +211,13 @@ function normalizeOptimizedRecommendation(optimized, original, context) {
   });
 
   if (normalizedPairings.some(p => !p)) return null;
+
+  // Soft preference check: when by-the-glass options exist and the user prefers them,
+  // require at least one by-the-glass pairing in the optimized recommendation.
+  if (constraints.prefer_by_glass === true && hasGlassOptions) {
+    const hasAnyByGlassPairing = normalizedPairings.some(pairing => pairing.by_the_glass);
+    if (!hasAnyByGlassPairing) return null;
+  }
 
   let tableWine = null;
   if (optimized.table_wine != null) {
@@ -338,4 +340,3 @@ export async function auditPairingRecommendations(recommendation, context) {
     cleanup();
   }
 }
-

@@ -63,13 +63,88 @@ export function extractJsonFromText(text) {
   if (typeof text !== 'string' || text.trim().length === 0) {
     throw new Error('No JSON found: empty response text');
   }
-  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) ||
-                    text.match(/```\s*([\s\S]*?)\s*```/) ||
-                    text.match(/(\{[\s\S]*\})/);
-  if (!jsonMatch) {
-    throw new Error('No JSON found in response text');
+
+  // Prefer fenced JSON if present.
+  const fencedCandidates = [
+    text.match(/```json\s*([\s\S]*?)\s*```/i),
+    text.match(/```\s*([\s\S]*?)\s*```/)
+  ]
+    .filter(Boolean)
+    .map(match => (match[1] || match[0]).trim());
+
+  for (const candidate of fencedCandidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch {
+      // Keep trying other extraction strategies.
+    }
   }
-  return JSON.parse((jsonMatch[1] || jsonMatch[0]).trim());
+
+  // Fallback: scan for balanced JSON objects and return the first parseable one.
+  const parsedObject = tryParseFirstBalancedObject(text);
+  if (parsedObject != null) {
+    return parsedObject;
+  }
+
+  throw new Error('No JSON found in response text');
+}
+
+/**
+ * Attempt to parse the first balanced JSON object found in free-form text.
+ * Handles brace characters inside quoted strings.
+ * @param {string} text
+ * @returns {Object|null}
+ */
+function tryParseFirstBalancedObject(text) {
+  for (let start = 0; start < text.length; start++) {
+    if (text[start] !== '{') continue;
+
+    let depth = 0;
+    let inString = false;
+    let escaping = false;
+
+    for (let end = start; end < text.length; end++) {
+      const ch = text[end];
+
+      if (inString) {
+        if (escaping) {
+          escaping = false;
+          continue;
+        }
+        if (ch === '\\') {
+          escaping = true;
+          continue;
+        }
+        if (ch === '"') {
+          inString = false;
+        }
+        continue;
+      }
+
+      if (ch === '"') {
+        inString = true;
+        continue;
+      }
+      if (ch === '{') {
+        depth += 1;
+        continue;
+      }
+      if (ch === '}') {
+        depth -= 1;
+        if (depth !== 0) continue;
+
+        const candidate = text.slice(start, end + 1).trim();
+        try {
+          return JSON.parse(candidate);
+        } catch {
+          // Continue scanning for the next opening brace.
+          break;
+        }
+      }
+    }
+  }
+
+  return null;
 }
 
 // ───────────────────────────────────────────────────────────

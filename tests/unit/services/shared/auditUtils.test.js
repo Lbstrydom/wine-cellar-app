@@ -174,6 +174,12 @@ describe('auditUtils', () => {
       expect(result.issues).toEqual([]);
     });
 
+    it('extracts JSON object when text contains extra braces before/after payload', () => {
+      const text = 'prefix {not json} and payload {"verdict":"approve"} trailing {x}';
+      const result = extractJsonFromText(text);
+      expect(result).toEqual({ verdict: 'approve' });
+    });
+
     it('throws on empty string', () => {
       expect(() => extractJsonFromText('')).toThrow('empty response text');
     });

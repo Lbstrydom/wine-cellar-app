@@ -305,6 +305,37 @@ describe('pairingAuditor', () => {
     expect(result.optimizedRecommendation.pairings[0].wine_name).toBe('Wine A');
   });
 
+  it('flags optimize when prefer_by_glass is true and no by-the-glass pairing is selected', async () => {
+    process.env.CLAUDE_AUDIT_RESTAURANT_PAIRINGS = 'true';
+    mockCreate.mockResolvedValueOnce({ id: 'resp' });
+    mockExtractText.mockReturnValueOnce(`\`\`\`json
+{
+  "verdict":"optimize",
+  "issues":[],
+  "optimizedRecommendation":{
+    "table_summary":"No glass picks",
+    "pairings":[
+      {"rank":1,"dish_name":"Steak","wine_id":1,"why":"Great"},
+      {"rank":2,"dish_name":"Salmon","wine_id":1,"why":"Still good"}
+    ],
+    "table_wine":null
+  },
+  "reasoning":"Kept bottle-only wines",
+  "confidence":"high"
+}
+\`\`\``);
+
+    const preferGlassContext = {
+      ...context,
+      constraints: { ...context.constraints, prefer_by_glass: true }
+    };
+
+    const result = await auditPairingRecommendations(recommendation, preferGlassContext);
+    expect(result.audited).toBe(true);
+    expect(result.verdict).toBe('flag');
+    expect(result.optimizedRecommendation).toBeNull();
+  });
+
   it('matches table_wine via fuzzy substring when LLM paraphrases name', async () => {
     process.env.CLAUDE_AUDIT_RESTAURANT_PAIRINGS = 'true';
     mockCreate.mockResolvedValueOnce({ id: 'resp' });

@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 17 February 2026
+## 21 February 2026
 
 ---
 
@@ -9,7 +9,14 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 17 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 21 Feb 2026**:
+- **Phase 14 - LLM Auditor Reliability Hardening - COMPLETE** ✅:
+  - Centralized shared auditor utilities in `src/services/shared/auditUtils.js` and aligned move/pairing auditors to use shared env parsing, timeout clamping, JSON extraction, and metadata shaping.
+  - Hardened free-form JSON extraction by scanning for balanced objects after fenced-code attempts, preventing greedy-regex mis-parses when responses contain stray braces.
+  - Tightened pairing auditor normalization for `prefer_by_glass`: keeps it as a soft preference per pairing but now requires at least one by-the-glass pairing when options exist, otherwise downgrades optimize output to `flag`.
+  - Fixed no-isolate test stability regression by replacing global module reset usage with `vi.importActual()` in `cellarSuggestions` tests to avoid cross-suite mock leakage.
+  - Validation status: `npm run test:unit` passes at **2123/2123 tests across 80 files**.
+
 - **Production SW Cache Fix + Regression Prevention — COMPLETE** ✅:
   - **Root cause**: Service Worker `CACHE_VERSION` not bumped across 7 frontend-changing commits. Cache-first strategy served stale `api/index.js` and `api/cellar.js` from commit `3931f2a` — missing `backfillGrapes` export caused `SyntaxError` on import, crashing the entire `app.js` module tree → blank UI, no wines, no click handlers
   - **Fix (v141→v143)**: Added ~20 missing modules to `STATIC_ASSETS` in `sw.js` (cellarAnalysis/*, bottles/*, restaurantPairing/*, storageBuilder.js, tastingService.js, consolidation.js). Bumped `CACHE_VERSION` v141→v142→v143. Aligned CSS `?v=` strings between `index.html` and `sw.js`
@@ -26,7 +33,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Audit review**: Fixed blocker (wrong `findBestZone` shape + `updateZoneWineCount` call signature), medium (wineIds validation), low (dead variable). Shared `resolveZoneId()` helper handles both `{ zoneId }` and `{ zone: { id } }` shapes
   - **Test count**: 1881 unit tests passing across 67 files (now 1944 across 72 files after SW fix)
 
-**Previous Enhancements** (16 Feb 2026):
+**Previous Enhancements** (17 Feb 2026):
 - **Cellar Analysis UX Restructure (4-Phase Plan) — COMPLETE** ✅:
   - Plan document: `.claude/plans/tender-greeting-pizza.md` (critical review of `anal-plan.md` + corrected 4-phase implementation)
   - **Phase 1 — Semantics, Microcopy & Toggle Scaffold**: Renamed "AI Zone Structure" → "AI Cellar Review" in `labels.js`. Added helper microcopy under CTA buttons. Refresh button tooltip. Vertical button stack CSS. 3-way workspace toggle (Zone Analysis | Cellar Placement | Fridge) as segmented control
@@ -2539,7 +2546,7 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Rating Sources** | 50+ |
 | **Cellar Zones** | 40+ |
 | **Database Migrations** | 38 |
-| **Unit Tests** | 817 ✅ |
+| **Unit Tests** | 2123 ✅ |
 | **Browser Tests** | 46 |
 | **Test Coverage** | ~85% services, ~60% routes |
 | **Lines of Code** | ~15,000+ |
@@ -2547,14 +2554,21 @@ See [ROADMAP.md](ROADMAP.md) for future features and improvements.
 | **Performance Indexes** | 15+ |
 | **MCP Servers** | 4 (PDF Reader, Filesystem, Memory, Bright Data) |
 | **Claude Code Skills** | 4 (Award Extractor, Wine Importer, Cellar Health, DB Migrator) |
-| **Service Worker Version** | v65 |
+| **Service Worker Version** | v151 |
 
 ---
 
-*Last updated: 15 January 2026*
-*Version: 4.7 (SQL Security Hardening Complete)*
+*Last updated: 21 February 2026*
+*Version: 4.8 (LLM Auditor Reliability Hardening)*
 
 **Recent Initiatives:**
+- **Phase 14 - LLM Auditor Reliability Hardening**: Completed 21 February 2026 ✅
+  - Shared `auditUtils` utilities adopted by move and pairing auditors
+  - Balanced-object JSON extraction added for resilient LLM response parsing
+  - `prefer_by_glass` soft-preference normalization tightened in pairing auditor
+  - `--no-isolate` test stability hardened via `vi.importActual()` (no global module reset)
+  - Current unit suite status: 2123/2123 passing
+
 - **SQL Injection Security Refactor (Issue #1)**: Completed 15 January 2026 ✅
   - Eliminated all unsafe SQL template literal patterns across 20+ files
   - Converted template interpolations to parameterized queries with safe concatenation

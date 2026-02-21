@@ -3,6 +3,8 @@
  * @module tests/unit/services/cellar/cellarSuggestions
  */
 
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
+
 vi.mock('../../../../src/db/index.js', () => ({
   default: { prepare: vi.fn() }
 }));
@@ -24,9 +26,21 @@ vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
   detectRowGaps: vi.fn().mockReturnValue([])
 }));
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { detectNaturalSwapPairs, detectDisplacementSwaps, generateMoveSuggestions } from '../../../../src/services/cellar/cellarSuggestions.js';
-import { findAvailableSlot } from '../../../../src/services/cellar/cellarPlacement.js';
+let detectNaturalSwapPairs;
+let detectDisplacementSwaps;
+let generateMoveSuggestions;
+let findAvailableSlot;
+
+beforeAll(async () => {
+  // Guard against cross-suite module mock leakage in --no-isolate runs
+  // while avoiding global module reset side effects.
+  const suggestionModule = await vi.importActual('../../../../src/services/cellar/cellarSuggestions.js');
+  detectNaturalSwapPairs = suggestionModule.detectNaturalSwapPairs;
+  detectDisplacementSwaps = suggestionModule.detectDisplacementSwaps;
+  generateMoveSuggestions = suggestionModule.generateMoveSuggestions;
+  const placementModule = await import('../../../../src/services/cellar/cellarPlacement.js');
+  findAvailableSlot = placementModule.findAvailableSlot;
+});
 
 describe('detectNaturalSwapPairs', () => {
   it('detects a simple swap pair', () => {
