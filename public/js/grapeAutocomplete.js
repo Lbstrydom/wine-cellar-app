@@ -279,6 +279,23 @@ export function initGrapeAutocomplete(inputId) {
       searchInput.value = '';
       hideDropdown();
     },
+    /**
+     * Commit any uncommitted text sitting in the search input.
+     * Useful when the user types a grape name but clicks Save without
+     * pressing Enter or selecting from the dropdown.
+     * @returns {boolean} true if pending text was committed
+     */
+    commitPending() {
+      const pending = searchInput.value.trim();
+      if (!pending) return false;
+      if (!selectedGrapes.includes(pending)) {
+        selectedGrapes.push(pending);
+        renderTags();
+      }
+      searchInput.value = '';
+      hideDropdown();
+      return true;
+    },
     destroy() {
       document.removeEventListener('click', handleOutsideClick);
       input.style.display = '';

@@ -4153,6 +4153,19 @@
   font-style: italic;
 }
 
+.grape-ac-shake {
+  animation: grape-ac-shake-anim 0.4s ease;
+  border-color: var(--danger, #e74c3c) !important;
+}
+
+@keyframes grape-ac-shake-anim {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-4px); }
+  40% { transform: translateX(4px); }
+  60% { transform: translateX(-3px); }
+  80% { transform: translateX(3px); }
+}
+
 .grape-ac-option {
   padding: 0.5rem 0.75rem;
   cursor: pointer;

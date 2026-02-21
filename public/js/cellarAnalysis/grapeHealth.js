@@ -9,8 +9,8 @@ import { escapeHtml } from '../utils.js';
 import { initGrapeAutocomplete } from '../grapeAutocomplete.js';
 
 let _onRefreshAnalysis = null;
-/** @type {{ destroy: Function }[]} */
-let _grapeAcInstances = [];
+/** @type {Map<string, { destroy: Function, commitPending: Function }>} */
+let _grapeAcInstances = new Map();
 
 /**
  * Render the grape health banner in the analysis panel.
@@ -86,10 +86,10 @@ function renderBannerSummary(el, dryRun) {
   el.innerHTML = html;
 
   // Clean up previous autocomplete instances
-  for (const ac of _grapeAcInstances) {
+  for (const ac of _grapeAcInstances.values()) {
     try { ac.destroy(); } catch { /* ignore */ }
   }
-  _grapeAcInstances = [];
+  _grapeAcInstances = new Map();
 
   // Wire preview button
   const previewBtn = document.getElementById('grape-health-preview-btn');
@@ -101,7 +101,7 @@ function renderBannerSummary(el, dryRun) {
   for (const u of manualWines) {
     const inputId = `grape-health-manual-${u.wineId}`;
     const ac = initGrapeAutocomplete(inputId);
-    if (ac) _grapeAcInstances.push(ac);
+    if (ac) _grapeAcInstances.set(inputId, ac);
   }
 
   // Wire individual Save buttons
@@ -118,10 +118,10 @@ function renderBannerSummary(el, dryRun) {
  */
 function renderPreviewTable(el, suggestions, undetectable) {
   // Clean up previous autocomplete instances
-  for (const ac of _grapeAcInstances) {
+  for (const ac of _grapeAcInstances.values()) {
     try { ac.destroy(); } catch { /* ignore */ }
   }
-  _grapeAcInstances = [];
+  _grapeAcInstances = new Map();
 
   let html = '<div class="grape-health-banner">';
   html += '<div class="grape-health-header">';
@@ -201,7 +201,7 @@ function renderPreviewTable(el, suggestions, undetectable) {
   for (const u of manualWines) {
     const inputId = `grape-health-preview-manual-${u.wineId}`;
     const ac = initGrapeAutocomplete(inputId);
-    if (ac) _grapeAcInstances.push(ac);
+    if (ac) _grapeAcInstances.set(inputId, ac);
   }
 
   // Wire individual Save buttons for manual entries
@@ -253,8 +253,20 @@ async function saveManualGrapeHealth(btn, el) {
   const input = document.getElementById(inputId);
   if (!input) return;
 
+  // Auto-commit any text the user typed but didn't confirm via Enter/dropdown
+  const acInstance = _grapeAcInstances.get(inputId);
+  if (acInstance?.commitPending) acInstance.commitPending();
+
   const grapes = input.value.trim();
-  if (!grapes) return;
+  if (!grapes) {
+    // Briefly flash the autocomplete wrapper to draw attention
+    const wrapper = input.nextElementSibling;
+    if (wrapper?.classList.contains('grape-ac-wrapper')) {
+      wrapper.classList.add('grape-ac-shake');
+      setTimeout(() => wrapper.classList.remove('grape-ac-shake'), 600);
+    }
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Saving…';
