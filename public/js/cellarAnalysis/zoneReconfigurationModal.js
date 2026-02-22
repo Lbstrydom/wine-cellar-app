@@ -5,6 +5,7 @@
 
 import { getReconfigurationPlan, applyReconfigurationPlan, analyseCellar } from '../api.js';
 import { escapeHtml, showToast } from '../utils.js';
+import { refreshLayout } from '../app.js';
 
 let current = null;
 
@@ -177,6 +178,9 @@ async function handleApply(onRenderAnalysis) {
       ? ` (${result.applied.actionsAutoSkipped} action(s) skipped due to stale data)`
       : '';
     showToast(`Applied zone reconfiguration${skippedMsg}`);
+
+    // Refresh the cellar grid so zone labels update immediately
+    refreshLayout().catch(err => console.warn('[ZoneReconfig] grid refresh failed:', err));
 
     if (typeof onRenderAnalysis === 'function') {
       const refreshed = await analyseCellar(true);
