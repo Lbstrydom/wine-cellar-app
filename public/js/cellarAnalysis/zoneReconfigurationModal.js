@@ -182,7 +182,22 @@ async function handleApply(onRenderAnalysis) {
     // Surface colour order warnings if any zones ended up in the wrong vertical region
     if (Array.isArray(result.warnings) && result.warnings.length > 0) {
       setTimeout(() => {
-        showToast(`Colour order: ${result.warnings.length} zone(s) in unexpected region`, 'error', 6000);
+        // Extract zone names from warning messages for actionable detail.
+        // Warning format: "ZoneName (colour) in R# is in the ... section"
+        const zoneNames = result.warnings
+          .map(w => { const m = w.match(/^(.+?)\s*\(/); return m ? m[1].trim() : null; })
+          .filter(Boolean);
+        const unique = [...new Set(zoneNames)];
+
+        let detail;
+        if (unique.length === 0) {
+          detail = `${result.warnings.length} zone(s) in unexpected region`;
+        } else if (unique.length <= 2) {
+          detail = `${unique.join(', ')} in unexpected region`;
+        } else {
+          detail = `${unique.slice(0, 2).join(', ')} +${unique.length - 2} more in unexpected region`;
+        }
+        showToast(`Colour order: ${detail}`, 'error', 6000);
       }, 1200);
     }
 

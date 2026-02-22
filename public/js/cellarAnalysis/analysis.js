@@ -177,8 +177,9 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
   const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
   const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
   const adjacencyAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
+  const colourOrderAlerts = alerts.filter(a => a.type === 'colour_order_violation');
 
-  if (capacityAlerts.length === 0 && adjacencyAlerts.length === 0) return;
+  if (capacityAlerts.length === 0 && adjacencyAlerts.length === 0 && colourOrderAlerts.length === 0) return;
 
   // Capacity alerts — reuse the full interactive component
   if (capacityAlerts.length > 0) {
@@ -206,6 +207,31 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
 
     // Wire Reorganise Zones button
     el.querySelector('.zone-adjacency-reconfig-btn')?.addEventListener('click', () => {
+      openReconfigurationModal({ onRenderAnalysis });
+    });
+  }
+
+  // Colour order violations — zones in the wrong vertical region.
+  // Shown here in Cellar Review workspace with actionable reconfig button.
+  if (colourOrderAlerts.length > 0) {
+    const issues = colourOrderAlerts.flatMap(a => a.data?.issues || []);
+    const count = issues.length || colourOrderAlerts.length;
+    const bannerHtml = `
+      <div class="zone-adjacency-banner">
+        <div class="zone-adjacency-banner-header">🔃 Colour Order ${count === 1 ? 'Issue' : 'Issues'}</div>
+        <div class="zone-adjacency-banner-body">
+          <p>${count} zone(s) in the wrong vertical region — colour order preference not met.</p>
+          <ul class="zone-adjacency-list">
+            ${issues.map(v => `<li>${escapeHtml(v.message || v.zoneName || 'Zone in wrong region')}</li>`).join('')}
+          </ul>
+          <p class="zone-adjacency-hint">Zone reconfiguration can fix colour order by reassigning rows to the correct region.</p>
+          <button class="btn btn-primary zone-colour-order-reconfig-btn">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
+        </div>
+      </div>
+    `;
+    el.insertAdjacentHTML('beforeend', bannerHtml);
+
+    el.querySelector('.zone-colour-order-reconfig-btn')?.addEventListener('click', () => {
       openReconfigurationModal({ onRenderAnalysis });
     });
   }

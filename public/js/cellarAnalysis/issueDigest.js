@@ -70,6 +70,13 @@ function classifyAlert(alert, summary) {
     return null;
   }
 
+  // Colour order violations are shown in detail inside Cellar Review
+  // workspace (#zone-issue-actions). Suppress from digest to avoid
+  // duplicating what the user sees when they navigate there.
+  if (type === 'colour_order_violation') {
+    return null;
+  }
+
   // Reorganisation recommended is a meta-alert that restates issues already
   // covered by dedicated alerts (capacity, color boundary, scattered wines).
   // Suppress from digest to avoid duplication.
@@ -124,7 +131,7 @@ function classifyAlert(alert, summary) {
  * @param {Object} analysis - Full analysis report
  * @returns {{ structure: DigestItem[], placement: DigestItem[], fridge: DigestItem[] }}
  */
-function buildDigestGroups(analysis) {
+export function buildDigestGroups(analysis) {
   const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
   const summary = analysis?.summary || {};
 
@@ -143,6 +150,19 @@ function buildDigestGroups(analysis) {
       workspace: 'structure',
       severity: 'warning',
       message: `${colorAlerts.length} color boundary violation(s)`,
+      cta: TAB_CELLAR_REVIEW,
+      ctaWorkspace: 'zones'
+    });
+  }
+
+  // Add colour order violation summary (suppressed from classifyAlert, shown as one line)
+  const colourOrderAlerts = alerts.filter(a => a.type === 'colour_order_violation');
+  if (colourOrderAlerts.length > 0) {
+    const issueCount = colourOrderAlerts[0]?.data?.issues?.length || colourOrderAlerts.length;
+    groups.structure.push({
+      workspace: 'structure',
+      severity: 'warning',
+      message: `${issueCount} colour order violation(s)`,
       cta: TAB_CELLAR_REVIEW,
       ctaWorkspace: 'zones'
     });
