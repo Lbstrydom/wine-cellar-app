@@ -202,7 +202,7 @@ async function handleApply(onRenderAnalysis) {
     }
 
     // Refresh the cellar grid so zone labels update immediately
-    refreshLayout().catch(err => console.warn('[ZoneReconfig] grid refresh failed:', err));
+    await refreshLayout().catch(err => console.warn('[ZoneReconfig] grid refresh failed:', err));
 
     if (typeof onRenderAnalysis === 'function') {
       const refreshed = await analyseCellar(true);
