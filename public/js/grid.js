@@ -220,7 +220,8 @@ export async function renderCellar() {
   // Measure actual row height from rendered rows
   const firstRow = grid.querySelector('.cellar-row:not(.col-headers):not(.grid-legend)');
   if (firstRow) {
-    rowHeight = firstRow.offsetHeight;
+    void firstRow.offsetWidth; // force reflow before measuring height
+    rowHeight = firstRow.offsetHeight || 55;
   }
 
   // Render zone labels spanning multiple rows
@@ -306,6 +307,11 @@ export async function renderStorageAreas() {
   const hasZoneConfig = Object.keys(zoneMapCache).length > 0;
 
   container.innerHTML = '';
+
+  // Hide static zone-labels element (only used by legacy renderCellar path)
+  // to avoid an empty 110px-wide sidebar from the HTML template.
+  const staticZoneLabels = document.getElementById('zone-labels');
+  if (staticZoneLabels) staticZoneLabels.style.display = 'none';
 
   for (const area of state.layout.areas) {
     const isCellar = area.storage_type === 'cellar' || area.name === 'Main Cellar';
@@ -446,7 +452,10 @@ export async function renderStorageAreas() {
       let rowHeight = 55; // fallback
       const firstRow = grid.querySelector('.cellar-row:not(.col-headers):not(.grid-legend)');
       if (firstRow) {
-        rowHeight = firstRow.offsetHeight;
+        // Force synchronous reflow — offsetWidth read flushes pending layout
+        // so the subsequent offsetHeight returns the actual rendered height.
+        void firstRow.offsetWidth;
+        rowHeight = firstRow.offsetHeight || 55;
       }
 
       // Align with grid rows (offset past col-headers + legend)
