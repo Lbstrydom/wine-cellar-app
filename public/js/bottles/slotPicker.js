@@ -4,7 +4,7 @@
  */
 
 import { addBottles, getSuggestedPlacement } from '../api.js';
-import { showToast } from '../utils.js';
+import { showToast, maybeShowAnalysisHint } from '../utils.js';
 import { refreshData } from '../app.js';
 import { bottleState, resetSlotPickerState } from './state.js';
 
@@ -130,6 +130,7 @@ export async function handleSlotPickerClick(slotEl) {
       showToast(message);
       closeSlotPickerModal();
       await refreshData();
+      maybeShowAnalysisHint(bottleState.pendingQuantity);
     } else {
       const remaining = bottleState.pendingQuantity - bottleState.placedCount;
       showToast(`Added to ${location} - ${remaining} more to place`);
@@ -221,6 +222,7 @@ async function handleAutoFillPlacement(startLocation) {
     showToast(`Added ${successCount} bottle${successCount > 1 ? 's' : ''}`);
     closeSlotPickerModal();
     await refreshData();
+    maybeShowAnalysisHint(successCount);
   }
 }
 

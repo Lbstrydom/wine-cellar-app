@@ -14,14 +14,23 @@ import { renderMoves } from './moves.js';
 import { renderAIFridgeAnnotations } from './fridge.js';
 
 
+/** In-flight guard — prevents duplicate concurrent AI runs. */
+let _aiInFlight = false;
+
 /**
  * Get AI advice for cellar organisation.
+ * @param {Object} [options]
+ * @param {boolean} [options.autoTriggered=false] - When true, suppresses scroll-to-advice
+ *   so the current workspace focus (e.g. Placement after zone reconfig) is preserved.
  */
-export async function handleGetAIAdvice() {
+export async function handleGetAIAdvice({ autoTriggered = false } = {}) {
+  if (_aiInFlight) return; // Prevent duplicate concurrent runs
+  _aiInFlight = true;
+
   const btn = document.getElementById('get-ai-advice-btn');
   const adviceEl = document.getElementById('analysis-ai-advice');
   const statusEl = document.getElementById('ai-advice-status');
-  if (!adviceEl) return;
+  if (!adviceEl) { _aiInFlight = false; return; }
 
   // Inline button spinner — no page jump
   if (btn) { btn.disabled = true; btn.dataset.originalText = btn.textContent; btn.textContent = 'Analysing\u2026'; }
@@ -71,13 +80,17 @@ export async function handleGetAIAdvice() {
       notifyWorkspaceTab('fridge');
     }
 
-    adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    // Only scroll to advice when manually triggered; auto-triggers preserve current focus
+    if (!autoTriggered) {
+      adviceEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
     if (statusEl) statusEl.textContent = '';
   } catch (err) {
     adviceEl.style.display = 'block';
     adviceEl.innerHTML = `<div class="ai-advice-error">Error: ${escapeHtml(err.message)}</div>`;
     if (statusEl) statusEl.textContent = '';
   } finally {
+    _aiInFlight = false;
     if (btn) { btn.disabled = false; btn.textContent = btn.dataset.originalText || CTA_AI_RECOMMENDATIONS; }
   }
 }

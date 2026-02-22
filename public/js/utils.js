@@ -70,6 +70,17 @@ export function showToast(message, type = 'info', duration = 3000) {
 }
 
 /**
+ * Show a delayed analysis hint toast after bulk bottle additions.
+ * No-op for fewer than 3 bottles.
+ * @param {number} addedCount - Number of bottles just added
+ */
+export function maybeShowAnalysisHint(addedCount) {
+  if (addedCount >= 3) {
+    setTimeout(() => showToast('Tip: Check Cellar Analysis for placement review', 4000), 1500);
+  }
+}
+
+/**
  * Shorten wine name to fit in slot.
  * @param {string} name - Full wine name
  * @returns {string} Shortened name

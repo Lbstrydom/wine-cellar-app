@@ -244,11 +244,19 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   updateActionButton(analysis, onRenderAnalysis);
 
   // After reconfiguration, auto-switch to Placement workspace so the user
-  // sees the moves they need to execute.
+  // sees the moves they need to execute, then auto-trigger AI review.
   if (analysis?.__justReconfigured) {
     switchWorkspace('placement');
     const panel = document.getElementById('workspace-placement');
     if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+    // Auto-trigger AI review since zone structure changed.
+    // Dynamic import avoids circular deps; rAF fires after current paint.
+    requestAnimationFrame(() => {
+      import('./aiAdvice.js')
+        .then(m => m.handleGetAIAdvice({ autoTriggered: true }))
+        .catch(err => console.warn('[Analysis] auto AI review failed:', err));
+    });
   }
 
   // Accept an optional report parameter so callers (e.g. zone reconfig modal)
