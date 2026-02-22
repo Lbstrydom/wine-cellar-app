@@ -80,6 +80,66 @@ function renderBannerMarkup(summary) {
 }
 
 /**
+ * Build a compact zone-to-row layout summary from zone narratives.
+ * Ordered by first row number (top-to-bottom matching the physical grid).
+ * @param {Array} narratives - analysis.zoneNarratives
+ * @returns {string} HTML string for the layout summary, or '' if no data
+ */
+function buildZoneLayoutSummary(narratives) {
+  if (!Array.isArray(narratives) || narratives.length === 0) return '';
+
+  // Sort by first row number (R1 before R3 before R12, etc.)
+  const sorted = [...narratives].sort((a, b) => {
+    const aRow = parseRowNumber(a.rows?.[0]);
+    const bRow = parseRowNumber(b.rows?.[0]);
+    return aRow - bRow;
+  });
+
+  const rows = sorted.map(zone => {
+    const name = escapeHtml(zone.displayName || zone.zoneId);
+    const rowList = (zone.rows || []).join(', ');
+    const bottles = zone.health?.bottleCount ?? zone.currentComposition?.bottleCount ?? 0;
+    const util = zone.health?.utilizationPercent ?? 0;
+    const status = zone.health?.status || 'healthy';
+
+    // Compact utilisation bar (visual indicator)
+    const barWidth = Math.min(util, 100);
+    const barClass = status === 'overcrowded' ? 'bar-warning'
+      : status === 'critical' ? 'bar-danger'
+        : util >= 80 ? 'bar-high' : 'bar-normal';
+
+    return `
+      <div class="zone-layout-row">
+        <div class="zone-layout-name">${name}</div>
+        <div class="zone-layout-rows">${escapeHtml(rowList)}</div>
+        <div class="zone-layout-bar">
+          <div class="zone-layout-bar-fill ${barClass}" style="width: ${barWidth}%"></div>
+        </div>
+        <div class="zone-layout-stats">${bottles} btl · ${util}%</div>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="zone-layout-summary">
+      <div class="zone-layout-title">Updated Zone Layout</div>
+      ${rows}
+    </div>
+  `;
+}
+
+/**
+ * Parse a row label like 'R3' into its numeric part for sorting.
+ * @param {string} row - Row label (e.g. 'R3', 'R12')
+ * @returns {number}
+ */
+function parseRowNumber(row) {
+  if (!row) return 999;
+  const match = row.match(/\d+/);
+  return match ? Number.parseInt(match[0], 10) : 999;
+}
+
+/**
  * Render a success banner after reconfiguration was just applied.
  * Shows bottles that need to physically move to their new zones.
  */
@@ -90,6 +150,9 @@ function renderPostReconfigBanner(analysis) {
 
   // Get misplaced wines - these need to physically move to their new zones
   const misplacedWines = Array.isArray(analysis?.misplacedWines) ? analysis.misplacedWines : [];
+
+  // Build zone layout summary from fresh zone narratives
+  const layoutSummary = buildZoneLayoutSummary(analysis?.zoneNarratives);
 
   let contentHtml = '';
 
@@ -152,6 +215,7 @@ function renderPostReconfigBanner(analysis) {
       <div class="zone-reconfig-banner-header">Zone Reconfiguration Complete</div>
       <div class="zone-reconfig-banner-body">
         ${contentHtml}
+        ${layoutSummary}
         <div class="zone-reconfig-banner-actions">
           <button class="btn btn-primary" data-action="scroll-to-moves">Review Moves Below</button>
           <button class="btn btn-secondary" data-action="open-move-guide">Visual Guide</button>

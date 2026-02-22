@@ -1331,6 +1331,99 @@
   font-style: italic;
 }
 
+/* ─── Zone Layout Summary (post-reconfig) ─────────────── */
+.zone-layout-summary {
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  border: 1px solid var(--border-muted, rgba(255, 255, 255, 0.1));
+}
+
+.zone-layout-title {
+  font-weight: 600;
+  font-size: 0.9em;
+  margin-bottom: 0.5rem;
+  color: var(--text-primary, #fff);
+}
+
+.zone-layout-row {
+  display: grid;
+  grid-template-columns: 1fr auto 60px auto;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border-muted, rgba(255, 255, 255, 0.06));
+  font-size: 0.85em;
+}
+
+.zone-layout-row:last-child {
+  border-bottom: none;
+}
+
+.zone-layout-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zone-layout-rows {
+  color: var(--text-muted);
+  font-size: 0.9em;
+  white-space: nowrap;
+}
+
+.zone-layout-bar {
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.zone-layout-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.zone-layout-bar-fill.bar-normal {
+  background: var(--color-success);
+}
+
+.zone-layout-bar-fill.bar-high {
+  background: var(--color-warning);
+}
+
+.zone-layout-bar-fill.bar-warning {
+  background: var(--color-warning);
+}
+
+.zone-layout-bar-fill.bar-danger {
+  background: var(--color-danger, #e74c3c);
+}
+
+.zone-layout-stats {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  white-space: nowrap;
+  text-align: right;
+}
+
+/* Responsive: stack on narrow screens */
+@media (max-width: 480px) {
+  .zone-layout-row {
+    grid-template-columns: 1fr 1fr;
+    gap: 0.25rem;
+  }
+  .zone-layout-bar {
+    grid-column: 1 / -1;
+  }
+  .zone-layout-stats {
+    text-align: left;
+  }
+}
+
 .modal.modal-large {
   max-width: 720px;
 }
