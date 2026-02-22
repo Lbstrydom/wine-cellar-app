@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 21 February 2026
+## 22 February 2026
 
 ---
 
@@ -9,13 +9,30 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 21 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 22 Feb 2026**:
+- **Colour Order Validation After Zone Reconfiguration — COMPLETE** ✅:
+  - New `detectColourOrderViolations()` in `cellarMetrics.js` — checks each allocated row against the user's colour-order preference (`whites-top` / `reds-top`) and dynamic row ranges. Skips fallback/curated zones (`'any'` colour) to avoid false positives.
+  - Wired into `cellarAnalysis.js` — colour order violations appear as warnings in the analysis report, contribute to `shouldReorg` flag, and generate alert cards in the issue digest.
+  - Post-apply validation in `cellarReconfiguration.js` — after zone reconfig apply, the route validates colour order and returns non-blocking `warnings` array in the response.
+  - Frontend warning toast in `zoneReconfigurationModal.js` — displays colour-order warning after successful reconfig apply (error-styled, 6s duration, 1.2s delay to avoid overlap with success toast).
+  - Fixed `dynamicRanges` fallback in `cellarAnalysis.js` to include `whiteRows: [], redRows: []` arrays (previously missing, caused empty violation results on error paths).
+  - 13 new unit tests covering correct placement, red-in-white-region, white-in-red-region, reds-top ordering, multiple violations, fallback/curated zone skipping, edge cases.
+  - Validation status: `npm run test:unit` passes at **2174/2174 tests across 84 files**.
+
+- **Zone Reconfig Workflow Improvements — COMPLETE** ✅:
+  - **Auto-trigger AI review after zone reconfig**: `renderAnalysis()` uses `requestAnimationFrame` + dynamic import to auto-run `handleGetAIAdvice({ autoTriggered: true })` after reconfig, replacing brittle `setTimeout`.
+  - **In-flight guard for AI advice**: `_aiInFlight` flag in `aiAdvice.js` prevents duplicate concurrent AI runs from auto-trigger + manual click overlap.
+  - **autoTriggered scroll suppression**: When auto-triggered, `handleGetAIAdvice` skips `scrollIntoView` to keep placement workspace focused.
+  - **Bulk intake analysis hints**: Shared `maybeShowAnalysisHint()` in `utils.js` shows delayed toast ("Tip: Check Cellar Analysis for placement review") after adding 3+ bottles — wired into both manual multi-place and auto-fill completion paths in `slotPicker.js`.
+  - **Button order swap**: "Setup Zones" (primary) before "AI Cellar Review" (secondary) in `index.html`.
+  - **Grid refresh after zone reconfig**: `refreshLayout()` called after successful zone reconfig apply.
+  - 7 new unit tests (4 in-flight guard tests, 2 autoTriggered tests, 5 analysis hint tests).
+
 - **Phase 14 - LLM Auditor Reliability Hardening - COMPLETE** ✅:
   - Centralized shared auditor utilities in `src/services/shared/auditUtils.js` and aligned move/pairing auditors to use shared env parsing, timeout clamping, JSON extraction, and metadata shaping.
   - Hardened free-form JSON extraction by scanning for balanced objects after fenced-code attempts, preventing greedy-regex mis-parses when responses contain stray braces.
   - Tightened pairing auditor normalization for `prefer_by_glass`: keeps it as a soft preference per pairing but now requires at least one by-the-glass pairing when options exist, otherwise downgrades optimize output to `flag`.
   - Fixed no-isolate test stability regression by replacing global module reset usage with `vi.importActual()` in `cellarSuggestions` tests to avoid cross-suite mock leakage.
-  - Validation status: `npm run test:unit` passes at **2123/2123 tests across 80 files**.
 
 - **Production SW Cache Fix + Regression Prevention — COMPLETE** ✅:
   - **Root cause**: Service Worker `CACHE_VERSION` not bumped across 7 frontend-changing commits. Cache-first strategy served stale `api/index.js` and `api/cellar.js` from commit `3931f2a` — missing `backfillGrapes` export caused `SyntaxError` on import, crashing the entire `app.js` module tree → blank UI, no wines, no click handlers

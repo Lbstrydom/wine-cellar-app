@@ -179,6 +179,13 @@ async function handleApply(onRenderAnalysis) {
       : '';
     showToast(`Applied zone reconfiguration${skippedMsg}`);
 
+    // Surface colour order warnings if any zones ended up in the wrong vertical region
+    if (Array.isArray(result.warnings) && result.warnings.length > 0) {
+      setTimeout(() => {
+        showToast(`Colour order: ${result.warnings.length} zone(s) in unexpected region`, 'error', 6000);
+      }, 1200);
+    }
+
     // Refresh the cellar grid so zone labels update immediately
     refreshLayout().catch(err => console.warn('[ZoneReconfig] grid refresh failed:', err));
 

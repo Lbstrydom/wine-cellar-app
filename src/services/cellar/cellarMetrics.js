@@ -181,6 +181,58 @@ export function detectColorAdjacencyIssues(rowToZoneId) {
   return issues;
 }
 
+/**
+ * Detect colour order violations where zones are placed in the wrong vertical region
+ * relative to the user's colour order preference (whites-top or reds-top).
+ * @param {Object} rowToZoneId - Row-to-zone mapping { R1: 'sauvignon_blanc', R8: 'cabernet', ... }
+ * @param {'whites-top'|'reds-top'} colourOrder - User's colour order preference
+ * @param {number[]} whiteRows - Row numbers expected for white-family zones
+ * @param {number[]} redRows - Row numbers expected for red zones
+ * @returns {Array} Colour order violation objects
+ */
+export function detectColourOrderViolations(rowToZoneId, colourOrder, whiteRows, redRows) {
+  if (!colourOrder || !whiteRows?.length || !redRows?.length) return [];
+
+  const whiteRowSet = new Set(whiteRows);
+  const redRowSet = new Set(redRows);
+  const issues = [];
+
+  for (let row = 1; row <= 19; row++) {
+    const zoneId = rowToZoneId[`R${row}`];
+    if (!zoneId) continue;
+
+    const zone = getZoneById(zoneId);
+    if (!zone) continue;
+
+    const zoneColor = getEffectiveZoneColor(zone);
+    if (zoneColor === 'any') continue;
+
+    if (zoneColor === 'white' && redRowSet.has(row)) {
+      issues.push({
+        row: `R${row}`,
+        zoneId,
+        zoneName: zone.displayName,
+        zoneColor,
+        expectedColor: 'red',
+        colourOrder,
+        message: `${zone.displayName} (white) in R${row} is in the ${colourOrder === 'whites-top' ? 'red (bottom)' : 'red (top)'} section`
+      });
+    } else if (zoneColor === 'red' && whiteRowSet.has(row)) {
+      issues.push({
+        row: `R${row}`,
+        zoneId,
+        zoneName: zone.displayName,
+        zoneColor,
+        expectedColor: 'white',
+        colourOrder,
+        message: `${zone.displayName} (red) in R${row} is in the ${colourOrder === 'whites-top' ? 'white (top)' : 'white (bottom)'} section`
+      });
+    }
+  }
+
+  return issues;
+}
+
 // ───────────────────────────────────────────────────────────
 // Placement helpers
 // ───────────────────────────────────────────────────────────

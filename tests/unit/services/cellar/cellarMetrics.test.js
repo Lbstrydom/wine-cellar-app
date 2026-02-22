@@ -11,6 +11,7 @@ vi.mock('../../../../src/db/index.js', () => ({
 import {
   detectScatteredWines,
   detectColorAdjacencyIssues,
+  detectColourOrderViolations,
   getEffectiveZoneColor,
   parseSlot,
   calculateFragmentation,
@@ -634,5 +635,110 @@ describe('isLegitimateBufferPlacement', () => {
   it('returns true for any wine in a buffer zone (buffers accept all colours)', () => {
     const wine = { zone_id: 'unclassified', colour: 'red', wine_name: 'Shiraz' };
     expect(isLegitimateBufferPlacement(wine, bufferZone)).toBe(true);
+  });
+});
+
+// ─── detectColourOrderViolations ─────────────────────────
+
+describe('detectColourOrderViolations', () => {
+  // whites-top: rows 1-7 = white, rows 8-19 = red
+  const whiteRows = [1, 2, 3, 4, 5, 6, 7];
+  const redRows = [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+
+  it('returns empty when no zones allocated', () => {
+    expect(detectColourOrderViolations({}, 'whites-top', whiteRows, redRows)).toEqual([]);
+  });
+
+  it('returns empty when all zones are in correct regions (whites-top)', () => {
+    const rowToZone = {
+      R1: 'sauvignon_blanc',  // white in white region
+      R2: 'chenin_blanc',     // white in white region
+      R10: 'cabernet',        // red in red region
+      R12: 'shiraz'           // red in red region
+    };
+    expect(detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows)).toEqual([]);
+  });
+
+  it('detects red zone in white region (whites-top)', () => {
+    const rowToZone = {
+      R3: 'cabernet'  // red zone in white region (rows 1-7)
+    };
+    const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      row: 'R3',
+      zoneId: 'cabernet',
+      zoneColor: 'red',
+      expectedColor: 'white',
+      colourOrder: 'whites-top'
+    });
+  });
+
+  it('detects white zone in red region (whites-top)', () => {
+    const rowToZone = {
+      R12: 'sauvignon_blanc'  // white zone in red region (rows 8-19)
+    };
+    const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({
+      row: 'R12',
+      zoneId: 'sauvignon_blanc',
+      zoneColor: 'white',
+      expectedColor: 'red'
+    });
+  });
+
+  it('detects violations with reds-top ordering', () => {
+    // reds-top: rows 1-12 = red, rows 13-19 = white
+    const redRowsTop = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+    const whiteRowsBottom = [13, 14, 15, 16, 17, 18, 19];
+
+    const rowToZone = {
+      R2: 'sauvignon_blanc',  // white in red region
+      R15: 'cabernet'         // red in white region
+    };
+    const result = detectColourOrderViolations(rowToZone, 'reds-top', whiteRowsBottom, redRowsTop);
+    expect(result).toHaveLength(2);
+    expect(result.find(v => v.row === 'R2')).toMatchObject({ zoneColor: 'white', expectedColor: 'red' });
+    expect(result.find(v => v.row === 'R15')).toMatchObject({ zoneColor: 'red', expectedColor: 'white' });
+  });
+
+  it('detects multiple violations in same region', () => {
+    const rowToZone = {
+      R1: 'cabernet',  // red in white region
+      R3: 'shiraz',    // red in white region
+      R10: 'cabernet'  // red in red region (correct)
+    };
+    const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
+    expect(result).toHaveLength(2);
+    expect(result.every(v => v.zoneColor === 'red')).toBe(true);
+  });
+
+  it('skips fallback/curated zones (any colour)', () => {
+    const rowToZone = {
+      R3: 'unclassified',  // fallback — any colour, no violation
+      R5: 'curiosities'    // curated — any colour, no violation
+    };
+    const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
+    expect(result).toEqual([]);
+  });
+
+  it('returns empty when whiteRows or redRows are empty', () => {
+    const rowToZone = { R1: 'cabernet' };
+    expect(detectColourOrderViolations(rowToZone, 'whites-top', [], redRows)).toEqual([]);
+    expect(detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, [])).toEqual([]);
+  });
+
+  it('returns empty when colourOrder is not provided', () => {
+    const rowToZone = { R1: 'cabernet' };
+    expect(detectColourOrderViolations(rowToZone, null, whiteRows, redRows)).toEqual([]);
+    expect(detectColourOrderViolations(rowToZone, undefined, whiteRows, redRows)).toEqual([]);
+  });
+
+  it('includes descriptive message in violation', () => {
+    const rowToZone = { R3: 'cabernet' };
+    const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
+    expect(result[0].message).toContain('white (top)');
+    expect(result[0].message).toContain('red');
   });
 });

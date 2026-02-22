@@ -15,7 +15,7 @@ import { getActiveZoneMap } from './cellarAllocation.js';
 import {
   parseSlot, analyseZone, getWinesInRows,
   detectScatteredWines, detectColorAdjacencyIssues,
-  detectDuplicatePlacements
+  detectColourOrderViolations, detectDuplicatePlacements
 } from './cellarMetrics.js';
 import { generateZoneNarratives } from './cellarNarratives.js';
 import {
@@ -182,7 +182,7 @@ export async function analyseCellar(wines) {
     dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
   } catch (err) {
     console.error('[CellarAnalysis] Failed to load dynamic row ranges, using defaults:', err.message);
-    dynamicRanges = { whiteRowCount: 0, redRowCount: 0, whiteCount: 0, redCount: 0 };
+    dynamicRanges = { whiteRows: [], redRows: [], whiteRowCount: 0, redRowCount: 0, whiteCount: 0, redCount: 0 };
   }
   report.layoutSettings = {
     colourOrder: layoutSettings.colourOrder,
@@ -216,6 +216,7 @@ export async function analyseCellar(wines) {
   }
 
   // Detect color adjacency issues (red zones next to white zones)
+  // and colour order violations (zones in wrong vertical region)
   if (hasZoneAllocations) {
     const { rowToZoneId } = await getCurrentZoneAllocation(cellarId);
     const colorAdjacencyIssues = detectColorAdjacencyIssues(rowToZoneId);
@@ -230,6 +231,26 @@ export async function analyseCellar(wines) {
         severity: 'warning',
         message: `${colorAdjacencyIssues.length} color boundary violation(s): ${examples.join('; ')}.`,
         data: { issues: colorAdjacencyIssues }
+      });
+    }
+
+    // Colour order violations: zones in the wrong vertical region
+    const colourOrderViolations = detectColourOrderViolations(
+      rowToZoneId,
+      layoutSettings.colourOrder,
+      dynamicRanges.whiteRows || [],
+      dynamicRanges.redRows || []
+    );
+    report.colourOrderViolations = colourOrderViolations;
+    report.summary.colourOrderViolations = colourOrderViolations.length;
+
+    if (colourOrderViolations.length > 0) {
+      const examples = colourOrderViolations.slice(0, 3).map(v => v.message);
+      report.alerts.push({
+        type: 'colour_order_violation',
+        severity: 'warning',
+        message: `${colourOrderViolations.length} colour order violation(s) (${layoutSettings.colourOrder}): ${examples.join('; ')}.`,
+        data: { issues: colourOrderViolations, colourOrder: layoutSettings.colourOrder }
       });
     }
   }
@@ -254,13 +275,15 @@ export async function analyseCellar(wines) {
     (report.summary.totalBottles > 0 &&
       (report.summary.misplacedBottles / report.summary.totalBottles * 100) >= REORG_THRESHOLDS.minMisplacedPercent) ||
     scatteredWines.length > 0 ||
-    (report.colorAdjacencyIssues?.length ?? 0) > 0;
+    (report.colorAdjacencyIssues?.length ?? 0) > 0 ||
+    (report.colourOrderViolations?.length ?? 0) > 0;
 
   if (shouldReorg && hasZoneAllocations) {
     const reasons = [];
     if (report.summary.misplacedBottles > 0) reasons.push(`${report.summary.misplacedBottles} misplaced`);
     if (scatteredWines.length > 0) reasons.push(`${scatteredWines.length} scattered`);
     if (report.colorAdjacencyIssues?.length > 0) reasons.push(`${report.colorAdjacencyIssues.length} color boundary issue(s)`);
+    if (report.colourOrderViolations?.length > 0) reasons.push(`${report.colourOrderViolations.length} colour order violation(s)`);
     report.alerts.push({
       type: 'reorganisation_recommended',
       severity: 'info',

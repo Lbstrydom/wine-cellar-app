@@ -12,6 +12,8 @@ import { validateMovePlan } from '../services/cellar/movePlanner.js';
 import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
 import { putPlan, getPlan, deletePlan } from '../services/zone/reconfigurationPlanStore.js';
 import { generateReconfigurationPlan } from '../services/zone/zoneReconfigurationPlanner.js';
+import { detectColourOrderViolations } from '../services/cellar/cellarMetrics.js';
+import { getCurrentZoneAllocation } from '../services/cellar/cellarSuggestions.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
 import { getAllWinesWithSlots } from './cellar.js';
@@ -497,6 +499,22 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
   deletePlan(planId);
   await invalidateAnalysisCache(null, req.cellarId);
 
+  // Post-apply colour order validation
+  let colourOrderWarnings = [];
+  try {
+    const layoutSettings = await getCellarLayoutSettings(req.cellarId);
+    const dynamicRanges = await getDynamicColourRowRanges(req.cellarId, layoutSettings.colourOrder);
+    const { rowToZoneId } = await getCurrentZoneAllocation(req.cellarId);
+    colourOrderWarnings = detectColourOrderViolations(
+      rowToZoneId,
+      layoutSettings.colourOrder,
+      dynamicRanges.whiteRows || [],
+      dynamicRanges.redRows || []
+    );
+  } catch (err) {
+    logger.warn('Reconfig', `Post-apply colour order check failed: ${err.message}`);
+  }
+
   res.json({
     success: true,
     reconfigurationId: result.reconfigurationId,
@@ -505,7 +523,10 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
       actionsAutoSkipped: result.actionsAutoSkipped,
       bottlesMoved: 0
     },
-    canUndo: true
+    canUndo: true,
+    ...(colourOrderWarnings.length > 0 && {
+      warnings: colourOrderWarnings.map(v => v.message)
+    })
   });
 }));
 
