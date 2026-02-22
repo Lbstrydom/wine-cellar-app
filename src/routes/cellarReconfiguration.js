@@ -109,33 +109,47 @@ function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
  * Generate a holistic zone reconfiguration plan.
  */
 router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
-  const {
-    includeRetirements = true,
-    includeNewZones = true,
-    stabilityBias = 'moderate'
-  } = req.body || {};
+  const ROUTE_TIMEOUT_MS = 90_000; // 90s — well under Cloudflare's 100s proxy timeout
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      logger.error('Reconfig', 'Plan generation timed out after 90s');
+      res.status(504).json({ error: 'Plan generation timed out — please try again' });
+    }
+  }, ROUTE_TIMEOUT_MS);
 
-  const wines = await getAllWinesWithSlots(req.cellarId);
-  const report = await runAnalysis(wines, req.cellarId);
+  try {
+    const {
+      includeRetirements = true,
+      includeNewZones = true,
+      stabilityBias = 'moderate'
+    } = req.body || {};
 
-  const plan = await generateReconfigurationPlan(report, {
-    includeRetirements,
-    includeNewZones,
-    stabilityBias,
-    cellarId: req.cellarId
-  });
+    const wines = await getAllWinesWithSlots(req.cellarId);
+    const report = await runAnalysis(wines, req.cellarId);
 
-  const planId = putPlan({
-    generatedAt: new Date().toISOString(),
-    options: { includeRetirements, includeNewZones, stabilityBias },
-    plan
-  });
+    const plan = await generateReconfigurationPlan(report, {
+      includeRetirements,
+      includeNewZones,
+      stabilityBias,
+      cellarId: req.cellarId
+    });
 
-  res.json({
-    success: true,
-    planId,
-    plan
-  });
+    const planId = putPlan({
+      generatedAt: new Date().toISOString(),
+      options: { includeRetirements, includeNewZones, stabilityBias },
+      plan
+    });
+
+    if (!res.headersSent) {
+      res.json({
+        success: true,
+        planId,
+        plan
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }));
 
 /**
@@ -144,33 +158,47 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
  * Uses the same 3-layer pipeline but filters output to relevant actions.
  */
 router.post('/reconfiguration-plan/zone/:zoneId', asyncHandler(async (req, res) => {
-  const { zoneId } = req.params;
-  const zone = getZoneById(zoneId);
-  if (!zone) {
-    return res.status(400).json({ success: false, error: `Unknown zone: ${zoneId}` });
+  const ROUTE_TIMEOUT_MS = 90_000;
+  const timeout = setTimeout(() => {
+    if (!res.headersSent) {
+      logger.error('Reconfig', 'Zone plan generation timed out after 90s');
+      res.status(504).json({ error: 'Plan generation timed out — please try again' });
+    }
+  }, ROUTE_TIMEOUT_MS);
+
+  try {
+    const { zoneId } = req.params;
+    const zone = getZoneById(zoneId);
+    if (!zone) {
+      return res.status(400).json({ success: false, error: `Unknown zone: ${zoneId}` });
+    }
+
+    const wines = await getAllWinesWithSlots(req.cellarId);
+    const report = await runAnalysis(wines, req.cellarId);
+
+    const plan = await generateReconfigurationPlan(report, {
+      stabilityBias: 'high',
+      includeRetirements: false,
+      cellarId: req.cellarId,
+      focusZoneId: zoneId
+    });
+
+    const planId = putPlan({
+      generatedAt: new Date().toISOString(),
+      options: { stabilityBias: 'high', includeRetirements: false, focusZoneId: zoneId },
+      plan
+    });
+
+    if (!res.headersSent) {
+      res.json({
+        success: true,
+        planId,
+        plan
+      });
+    }
+  } finally {
+    clearTimeout(timeout);
   }
-
-  const wines = await getAllWinesWithSlots(req.cellarId);
-  const report = await runAnalysis(wines, req.cellarId);
-
-  const plan = await generateReconfigurationPlan(report, {
-    stabilityBias: 'high',
-    includeRetirements: false,
-    cellarId: req.cellarId,
-    focusZoneId: zoneId
-  });
-
-  const planId = putPlan({
-    generatedAt: new Date().toISOString(),
-    options: { stabilityBias: 'high', includeRetirements: false, focusZoneId: zoneId },
-    plan
-  });
-
-  res.json({
-    success: true,
-    planId,
-    plan
-  });
 }));
 
 /**
@@ -253,7 +281,7 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
   }
 
   // If no preferred row available, try colour-compatible rows using dynamic ranges
-  if (!assignedRow) {
+  if (!assignedRow && Array.isArray(colorRange)) {
     for (const rowNum of colorRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
@@ -261,9 +289,11 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
         break;
       }
     }
+  }
 
+  if (!assignedRow) {
     // Hard rule for reconfiguration: do not cross colour regions.
-    if (!assignedRow && effectiveColor !== 'any') {
+    if (effectiveColor !== 'any') {
       throw new Error(`No colour-compatible rows available for zone ${zoneId}`);
     }
 

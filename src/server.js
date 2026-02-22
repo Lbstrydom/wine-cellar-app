@@ -163,3 +163,13 @@ async function gracefulShutdown(signal) {
 // Handle shutdown signals
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
+
+// Prevent silent crashes that cause 502s at the proxy level
+process.on('unhandledRejection', (reason) => {
+  logger.error('Server', 'Unhandled rejection: ' + (reason instanceof Error ? reason.stack : String(reason)));
+});
+process.on('uncaughtException', (err) => {
+  logger.error('Server', 'Uncaught exception: ' + (err.stack || err.message));
+  // Give the logger time to flush, then exit (container orchestrator restarts)
+  setTimeout(() => process.exit(1), 1000);
+});
