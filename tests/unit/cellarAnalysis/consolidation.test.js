@@ -10,14 +10,12 @@ vi.mock('../../../public/js/utils.js', () => ({
 import { renderConsolidationCards } from '../../../public/js/cellarAnalysis/consolidation.js';
 
 describe('renderConsolidationCards', () => {
-  let originalDocument;
   let containerEl;
   let movesEl;
   let buttonEl;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    originalDocument = global.document;
 
     buttonEl = {
       _clickHandler: null,
@@ -36,17 +34,20 @@ describe('renderConsolidationCards', () => {
       scrollIntoView: vi.fn()
     };
 
-    global.document = {
+    // Use vi.stubGlobal instead of direct assignment to avoid corrupting
+    // property descriptors for downstream test files (e.g. aiAdviceGuard.test.js)
+    // that also use vi.stubGlobal('document', ...).
+    vi.stubGlobal('document', {
       getElementById: vi.fn((id) => {
         if (id === 'zone-consolidation') return containerEl;
         if (id === 'analysis-moves') return movesEl;
         return null;
       })
-    };
+    });
   });
 
   afterEach(() => {
-    global.document = originalDocument;
+    vi.unstubAllGlobals();
   });
 
   it('hides the section when there are no consolidation opportunities', () => {
@@ -87,4 +88,3 @@ describe('renderConsolidationCards', () => {
     expect(movesEl.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
   });
 });
-

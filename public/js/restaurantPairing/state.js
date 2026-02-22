@@ -545,6 +545,26 @@ export function clearState() {
 }
 
 /**
+ * Re-read all state from sessionStorage, mimicking module initialisation.
+ * Test-only helper — allows verifying rehydration behaviour without
+ * vi.resetModules() (which corrupts the shared module registry in
+ * --no-isolate mode).
+ */
+export function _rehydrateFromStorage() {
+  // Deep-copy defaults to avoid shared-reference mutation across calls.
+  // The load() helper returns the fallback reference as-is on shape-guard
+  // failure, so we pass fresh copies to prevent DEFAULT_STATE corruption.
+  state.step       = Math.max(1, Math.min(4, load(KEYS.step, DEFAULT_STATE.step)));
+  state.wines      = load(KEYS.wines, []);
+  state.dishes     = load(KEYS.dishes, []);
+  state.selections = load(KEYS.selections, { wines: {}, dishes: {} });
+  state.results    = load(KEYS.results, null);
+  state.chatId     = load(KEYS.chatId, null);
+  nextWineId = state.wines.reduce((max, w) => Math.max(max, w.id ?? 0), 0) + 1;
+  nextDishId = state.dishes.reduce((max, d) => Math.max(max, d.id ?? 0), 0) + 1;
+}
+
+/**
  * @typedef {typeof KEYS} StateKeys
  * @internal exported only for tests that need to verify storage key names
  */

@@ -15,6 +15,15 @@ import { getSavedZoneLayout, proposeZoneLayout } from '../../../../src/services/
 describe('zoneLayoutProposal type robustness', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Defensive: always re-establish db.prepare as a fresh vi.fn() with safe
+    // defaults for all chained methods. In --no-isolate mode, other test files'
+    // vi.clearAllMocks() can reset the mock return value, causing downstream
+    // calls (e.g. getCellarLayoutSettings → db.prepare().all()) to fail.
+    db.prepare = vi.fn().mockReturnValue({
+      all: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    });
   });
 
   it('parses assigned_rows when returned as an array value', async () => {

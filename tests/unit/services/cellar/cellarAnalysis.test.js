@@ -306,13 +306,7 @@ describe('analyseCellar buffer zone colour-violation detection (Phase 3.2)', () 
     expect(report.movesHaveSwaps).toBe(true);
   });
 
-  afterAll(() => {
-    vi.doUnmock('../../../../src/db/index.js');
-    vi.doUnmock('../../../../src/services/cellar/cellarAllocation.js');
-    vi.doUnmock('../../../../src/services/cellar/cellarSuggestions.js');
-    vi.doUnmock('../../../../src/services/cellar/cellarNarratives.js');
-    vi.doUnmock('../../../../src/services/cellar/moveAuditor.js');
-    vi.doUnmock('../../../../src/services/shared/cellarLayoutSettings.js');
-    vi.resetModules();
-  });
+  // NOTE: Do NOT add afterAll with vi.doUnmock/vi.resetModules here.
+  // In --no-isolate mode, un-mocking corrupts the module registry for
+  // downstream suites (e.g. cellarAllocation.test.js, cellarLayoutSettings.test.js).
 });

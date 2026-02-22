@@ -58,14 +58,8 @@ describe('moveAuditor', () => {
     process.env = originalEnv;
   });
 
-  afterAll(() => {
-    vi.doUnmock('../../../../src/services/ai/claudeClient.js');
-    vi.doUnmock('../../../../src/config/aiModels.js');
-    vi.doUnmock('../../../../src/services/ai/claudeResponseUtils.js');
-    vi.doUnmock('../../../../src/services/shared/circuitBreaker.js');
-    vi.doUnmock('../../../../src/utils/logger.js');
-    vi.resetModules();
-  });
+  // NOTE: Do NOT add afterAll with vi.doUnmock/vi.resetModules here.
+  // In --no-isolate mode, this corrupts the module registry for downstream suites.
 
   describe('isMoveAuditEnabled', () => {
     it('returns false when env var is not set', () => {

@@ -164,11 +164,14 @@ describe('computeDynamicRowSplit', () => {
 describe('getCellarLayoutSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    // Defensive: re-establish db.prepare as vi.fn() in case an upstream
-    // vi.resetModules() in --no-isolate mode corrupted the mock factory.
-    if (typeof db.prepare !== 'function') {
-      db.prepare = vi.fn();
-    }
+    // Defensive: always re-establish db.prepare with safe defaults.
+    // In --no-isolate mode other test files' vi.clearAllMocks() can reset
+    // the mock return value, causing chained calls like .get()/.all() to fail.
+    db.prepare = vi.fn().mockReturnValue({
+      all: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    });
   });
 
   it('returns defaults when cellarId is null', async () => {

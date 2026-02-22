@@ -32,6 +32,14 @@ import { allocateRowToZone, adjustZoneCountAfterBottleCrud } from '../../../../s
 describe('allocateRowToZone cross-colour safety (Phase 3.1)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Defensive: always re-establish db.prepare with safe defaults.
+    // In --no-isolate mode other test files' vi.clearAllMocks() can reset
+    // the mock return value, causing chained calls like .get()/.all() to fail.
+    db.prepare = vi.fn().mockReturnValue({
+      all: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    });
   });
 
   it('throws when no colour-compatible rows are available for a white zone', async () => {
@@ -84,6 +92,8 @@ describe('allocateRowToZone cross-colour safety (Phase 3.1)', () => {
 describe('adjustZoneCountAfterBottleCrud (Phase C)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Defensive: always re-establish db.prepare as a fresh vi.fn()
+    db.prepare = vi.fn();
   });
 
   it('increments zone count when first bottle of a wine enters cellar', async () => {

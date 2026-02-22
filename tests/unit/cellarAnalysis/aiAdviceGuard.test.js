@@ -5,6 +5,9 @@ const mockBtn = { disabled: false, dataset: {}, textContent: '' };
 const mockAdviceEl = { style: { display: '' }, innerHTML: '', scrollIntoView: vi.fn() };
 const mockStatusEl = { textContent: '' };
 
+// Initial stub — needed before import so module-level code that references
+// document at import-time doesn't throw. Re-established in beforeEach to
+// survive vi.unstubAllGlobals() calls from other suites in --no-isolate mode.
 vi.stubGlobal('document', {
   getElementById: vi.fn((id) => {
     if (id === 'get-ai-advice-btn') return mockBtn;
@@ -49,7 +52,7 @@ vi.mock('../../../public/js/cellarAnalysis/fridge.js', () => ({
   renderAIFridgeAnnotations: vi.fn(),
 }));
 
-import { handleGetAIAdvice } from '../../../public/js/cellarAnalysis/aiAdvice.js';
+import { handleGetAIAdvice, _resetAiInFlight } from '../../../public/js/cellarAnalysis/aiAdvice.js';
 import { analyseCellarAI } from '../../../public/js/api.js';
 
 const mockAIResult = {
@@ -62,9 +65,23 @@ const mockAIResult = {
   },
 };
 
+/** Re-establish document stub — survives vi.unstubAllGlobals() from other suites. */
+function stubDocument() {
+  vi.stubGlobal('document', {
+    getElementById: vi.fn((id) => {
+      if (id === 'get-ai-advice-btn') return mockBtn;
+      if (id === 'analysis-ai-advice') return mockAdviceEl;
+      if (id === 'ai-advice-status') return mockStatusEl;
+      return null;
+    }),
+  });
+}
+
 describe('handleGetAIAdvice in-flight guard', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetAiInFlight(); // Ensure clean state from prior suites in --no-isolate mode
+    stubDocument(); // Re-establish after potential vi.unstubAllGlobals() from other suites
     mockBtn.disabled = false;
     mockBtn.textContent = 'AI Cellar Review';
     mockBtn.dataset.originalText = undefined;
@@ -106,6 +123,8 @@ describe('handleGetAIAdvice in-flight guard', () => {
 describe('handleGetAIAdvice autoTriggered option', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetAiInFlight(); // Ensure clean state from prior suites in --no-isolate mode
+    stubDocument(); // Re-establish after potential vi.unstubAllGlobals() from other suites
     mockBtn.disabled = false;
     mockBtn.textContent = 'AI Cellar Review';
     mockBtn.dataset.originalText = undefined;

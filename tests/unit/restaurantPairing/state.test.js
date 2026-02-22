@@ -1,6 +1,9 @@
 /**
  * @fileoverview Unit tests for restaurant pairing state module.
  * Tests dedup/merge logic, sessionStorage persistence, and edge cases.
+ *
+ * NOTE: Uses clearState() + _rehydrateFromStorage() instead of vi.resetModules()
+ * to avoid corrupting the shared module registry in --no-isolate mode.
  */
 
 // --- sessionStorage mock ---
@@ -15,20 +18,12 @@ const sessionStorageMock = {
 
 globalThis.sessionStorage = sessionStorageMock;
 
-const MODULE_PATH = '../../../public/js/restaurantPairing/state.js';
-
-/** Fresh import of state module (resets module-level state). */
-async function freshImport() {
-  vi.resetModules();
-  return import(MODULE_PATH);
-}
+import * as mod from '../../../public/js/restaurantPairing/state.js';
 
 describe('Restaurant Pairing State', () => {
-  let mod;
-
-  beforeEach(async () => {
+  beforeEach(() => {
     storage.clear();
-    mod = await freshImport();
+    mod.clearState();
   });
 
   // =========================================================================
@@ -61,10 +56,10 @@ describe('Restaurant Pairing State', () => {
       expect(mod.getStep()).toBe(1);
     });
 
-    it('restores step from sessionStorage', async () => {
+    it('restores step from sessionStorage', () => {
       storage.set('wineapp.restaurant.step', '3');
-      const mod2 = await freshImport();
-      expect(mod2.getStep()).toBe(3);
+      mod._rehydrateFromStorage();
+      expect(mod.getStep()).toBe(3);
     });
   });
 
@@ -486,90 +481,92 @@ describe('Restaurant Pairing State', () => {
 
   // =========================================================================
   // Corrupted sessionStorage (Finding 1)
+  // Uses _rehydrateFromStorage() instead of vi.resetModules() to avoid
+  // corrupting the shared module registry in --no-isolate mode.
   // =========================================================================
 
   describe('corrupted sessionStorage recovery', () => {
-    it('recovers when wines is stored as an object instead of array', async () => {
+    it('recovers when wines is stored as an object instead of array', () => {
       storage.set('wineapp.restaurant.wines', '{"not": "an array"}');
-      const mod2 = await freshImport();
-      expect(mod2.getWines()).toEqual([]);
+      mod._rehydrateFromStorage();
+      expect(mod.getWines()).toEqual([]);
     });
 
-    it('recovers when wines is stored as a string', async () => {
+    it('recovers when wines is stored as a string', () => {
       storage.set('wineapp.restaurant.wines', '"just a string"');
-      const mod2 = await freshImport();
-      expect(mod2.getWines()).toEqual([]);
+      mod._rehydrateFromStorage();
+      expect(mod.getWines()).toEqual([]);
     });
 
-    it('recovers when wines is stored as null JSON', async () => {
+    it('recovers when wines is stored as null JSON', () => {
       storage.set('wineapp.restaurant.wines', 'null');
-      const mod2 = await freshImport();
-      expect(mod2.getWines()).toEqual([]);
+      mod._rehydrateFromStorage();
+      expect(mod.getWines()).toEqual([]);
     });
 
-    it('recovers when storage contains invalid JSON', async () => {
+    it('recovers when storage contains invalid JSON', () => {
       storage.set('wineapp.restaurant.wines', '{broken json!!!');
-      const mod2 = await freshImport();
-      expect(mod2.getWines()).toEqual([]);
+      mod._rehydrateFromStorage();
+      expect(mod.getWines()).toEqual([]);
     });
 
-    it('recovers when dishes is stored as non-array', async () => {
+    it('recovers when dishes is stored as non-array', () => {
       storage.set('wineapp.restaurant.dishes', '42');
-      const mod2 = await freshImport();
-      expect(mod2.getDishes()).toEqual([]);
+      mod._rehydrateFromStorage();
+      expect(mod.getDishes()).toEqual([]);
     });
 
-    it('recovers when selections is stored as a string', async () => {
+    it('recovers when selections is stored as a string', () => {
       storage.set('wineapp.restaurant.selections', '"bad"');
-      const mod2 = await freshImport();
+      mod._rehydrateFromStorage();
       // selections should fall back to default object shape
-      const sel = mod2.getSelections();
+      const sel = mod.getSelections();
       expect(sel).toEqual({ wines: {}, dishes: {} });
       // setWineSelected must not crash
-      mod2.addWine({ name: 'Test', by_the_glass: false });
-      expect(() => mod2.setWineSelected(1, true)).not.toThrow();
+      mod.addWine({ name: 'Test', by_the_glass: false });
+      expect(() => mod.setWineSelected(1, true)).not.toThrow();
     });
 
-    it('recovers when selections is stored as an array', async () => {
+    it('recovers when selections is stored as an array', () => {
       storage.set('wineapp.restaurant.selections', '[1,2,3]');
-      const mod2 = await freshImport();
-      expect(mod2.getSelections()).toEqual({ wines: {}, dishes: {} });
+      mod._rehydrateFromStorage();
+      expect(mod.getSelections()).toEqual({ wines: {}, dishes: {} });
     });
 
-    it('recovers when selections is stored as null', async () => {
+    it('recovers when selections is stored as null', () => {
       storage.set('wineapp.restaurant.selections', 'null');
-      const mod2 = await freshImport();
-      expect(mod2.getSelections()).toEqual({ wines: {}, dishes: {} });
+      mod._rehydrateFromStorage();
+      expect(mod.getSelections()).toEqual({ wines: {}, dishes: {} });
     });
 
-    it('recovers when step is stored as a string', async () => {
+    it('recovers when step is stored as a string', () => {
       storage.set('wineapp.restaurant.step', '"banana"');
-      const mod2 = await freshImport();
-      expect(mod2.getStep()).toBe(1);
+      mod._rehydrateFromStorage();
+      expect(mod.getStep()).toBe(1);
     });
 
-    it('recovers when step is stored as an object', async () => {
+    it('recovers when step is stored as an object', () => {
       storage.set('wineapp.restaurant.step', '{"bad": true}');
-      const mod2 = await freshImport();
-      expect(mod2.getStep()).toBe(1);
+      mod._rehydrateFromStorage();
+      expect(mod.getStep()).toBe(1);
     });
 
-    it('clamps out-of-range step from storage', async () => {
+    it('clamps out-of-range step from storage', () => {
       storage.set('wineapp.restaurant.step', '999');
-      const mod2 = await freshImport();
-      expect(mod2.getStep()).toBe(4);
+      mod._rehydrateFromStorage();
+      expect(mod.getStep()).toBe(4);
     });
 
-    it('recovers when results is stored as invalid JSON', async () => {
+    it('recovers when results is stored as invalid JSON', () => {
       storage.set('wineapp.restaurant.results', '{broken!!!');
-      const mod2 = await freshImport();
-      expect(mod2.getResults()).toBeNull();
+      mod._rehydrateFromStorage();
+      expect(mod.getResults()).toBeNull();
     });
 
-    it('recovers when chatId is stored as invalid JSON', async () => {
+    it('recovers when chatId is stored as invalid JSON', () => {
       storage.set('wineapp.restaurant.chatId', '{broken!!!');
-      const mod2 = await freshImport();
-      expect(mod2.getChatId()).toBeNull();
+      mod._rehydrateFromStorage();
+      expect(mod.getChatId()).toBeNull();
     });
   });
 
@@ -689,36 +686,65 @@ describe('Restaurant Pairing State', () => {
 
   // =========================================================================
   // Persistence across reloads
+  // Uses _rehydrateFromStorage() instead of vi.resetModules() to simulate
+  // a page reload without corrupting the shared module registry.
   // =========================================================================
 
   describe('persistence across reloads', () => {
-    it('restores wines from sessionStorage', async () => {
+    it('restores wines from sessionStorage', () => {
       mod.mergeWines([
         { name: 'Preserved Wine', vintage: 2020, by_the_glass: false, confidence: 'high' }
       ]);
 
-      const mod2 = await freshImport();
-      expect(mod2.getWines()).toHaveLength(1);
-      expect(mod2.getWines()[0].name).toBe('Preserved Wine');
+      // Capture what's in storage
+      const winesJson = storage.get('wineapp.restaurant.wines');
+      const selectionsJson = storage.get('wineapp.restaurant.selections');
+
+      // Reset in-memory state without clearing storage
+      mod.clearState();
+
+      // Re-set storage to simulate a reload scenario
+      storage.set('wineapp.restaurant.wines', winesJson);
+      if (selectionsJson) storage.set('wineapp.restaurant.selections', selectionsJson);
+
+      mod._rehydrateFromStorage();
+      expect(mod.getWines()).toHaveLength(1);
+      expect(mod.getWines()[0].name).toBe('Preserved Wine');
     });
 
-    it('restores selections from sessionStorage', async () => {
+    it('restores selections from sessionStorage', () => {
       mod.mergeWines([
         { name: 'Wine A', vintage: 2020, by_the_glass: false, confidence: 'high' },
         { name: 'Wine B', vintage: 2021, by_the_glass: false, confidence: 'high' }
       ]);
       mod.setWineSelected(2, false);
 
-      const mod2 = await freshImport();
-      expect(mod2.getSelectedWines()).toHaveLength(1);
+      // Capture storage
+      const winesJson = storage.get('wineapp.restaurant.wines');
+      const selectionsJson = storage.get('wineapp.restaurant.selections');
+
+      // Simulate reload
+      mod.clearState();
+      storage.set('wineapp.restaurant.wines', winesJson);
+      storage.set('wineapp.restaurant.selections', selectionsJson);
+      mod._rehydrateFromStorage();
+
+      expect(mod.getSelectedWines()).toHaveLength(1);
     });
 
-    it('continues ID sequence after reload', async () => {
+    it('continues ID sequence after reload', () => {
       mod.addWine({ name: 'Wine 1', by_the_glass: false });
       mod.addWine({ name: 'Wine 2', by_the_glass: false });
 
-      const mod2 = await freshImport();
-      const wine3 = mod2.addWine({ name: 'Wine 3', by_the_glass: false });
+      // Capture storage
+      const winesJson = storage.get('wineapp.restaurant.wines');
+
+      // Simulate reload
+      mod.clearState();
+      storage.set('wineapp.restaurant.wines', winesJson);
+      mod._rehydrateFromStorage();
+
+      const wine3 = mod.addWine({ name: 'Wine 3', by_the_glass: false });
       expect(wine3.id).toBe(3);
     });
   });

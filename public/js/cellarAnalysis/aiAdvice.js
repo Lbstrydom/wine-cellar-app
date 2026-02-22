@@ -18,6 +18,12 @@ import { renderAIFridgeAnnotations } from './fridge.js';
 let _aiInFlight = false;
 
 /**
+ * Reset in-flight guard — test-only, enables clean state between test suites
+ * in --no-isolate mode where the module is shared across all files.
+ */
+export function _resetAiInFlight() { _aiInFlight = false; }
+
+/**
  * Get AI advice for cellar organisation.
  * @param {Object} [options]
  * @param {boolean} [options.autoTriggered=false] - When true, suppresses scroll-to-advice
