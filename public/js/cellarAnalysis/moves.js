@@ -374,7 +374,7 @@ async function executeSwap(index) {
       return;
     }
 
-    showToast(`Swapped ${moveA.wineName} with ${moveB.wineName}`);
+    showToast(`Swapped: ${moveA.wineName} (${moveA.from} → ${moveA.to}) ↔ ${moveB.wineName} (${moveB.from} → ${moveB.to})`);
 
     // Remove both moves from list (remove higher index first)
     const indices = [index, partnerIndex].sort((a, b) => b - a);

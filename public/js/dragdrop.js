@@ -251,7 +251,7 @@ async function showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, t
   if (result) {
     try {
       await directSwapBottles(fromLocation, toLocation);
-      showToast(`Swapped ${fromLocation} ↔ ${toLocation}`);
+      showToast(`Swapped: ${sourceWineName} (${fromLocation}) ↔ ${targetWineName} (${toLocation})`);
       await refreshData();
     } catch (err) {
       showToast('Error: ' + err.message);

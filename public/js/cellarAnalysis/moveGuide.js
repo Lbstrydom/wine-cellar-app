@@ -459,7 +459,7 @@ async function executeCurrentMove() {
     guideState.completedIndices.add(idx);
     if (isSwap) {
       guideState.completedIndices.add(partnerIdx);
-      showToast(`Swapped ${move.wineName} ↔ ${guideState.moves[partnerIdx].wineName}`);
+      showToast(`Swapped: ${move.wineName} (${move.from} → ${move.to}) ↔ ${guideState.moves[partnerIdx].wineName} (${guideState.moves[partnerIdx].from} → ${guideState.moves[partnerIdx].to})`);
     } else {
       showToast(`Moved ${move.wineName} to ${move.to}`);
     }

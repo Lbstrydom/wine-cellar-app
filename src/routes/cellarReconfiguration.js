@@ -12,7 +12,7 @@ import { validateMovePlan } from '../services/cellar/movePlanner.js';
 import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
 import { putPlan, getPlan, deletePlan } from '../services/zone/reconfigurationPlanStore.js';
 import { generateReconfigurationPlan } from '../services/zone/zoneReconfigurationPlanner.js';
-import { detectColourOrderViolations } from '../services/cellar/cellarMetrics.js';
+import { detectColourOrderViolations, getEffectiveZoneColor } from '../services/cellar/cellarMetrics.js';
 import { getCurrentZoneAllocation } from '../services/cellar/cellarSuggestions.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
@@ -39,6 +39,69 @@ function parseAssignedRows(value) {
   } catch {
     return [];
   }
+}
+
+/**
+ * Parse a row ID like "R13" to a numeric row number.
+ * @param {string} rowId
+ * @returns {number}
+ */
+function parseRowNumber(rowId) {
+  const match = String(rowId || '').match(/^R(\d+)$/i);
+  if (!match) return NaN;
+  return parseInt(match[1], 10);
+}
+
+/**
+ * Validate zone allocation integrity (no duplicate rows and no colour-region violations).
+ * @param {Map<string, string[]>} zoneAllocMap
+ * @param {{whiteRows?: number[], redRows?: number[]}|null} dynamicRanges
+ * @returns {{valid: boolean, errors: string[]}}
+ */
+function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
+  const errors = [];
+  const rowOwners = new Map();
+  const whiteRowSet = new Set((dynamicRanges?.whiteRows || []).map(Number));
+  const redRowSet = new Set((dynamicRanges?.redRows || []).map(Number));
+
+  for (const [zoneId, rows] of zoneAllocMap) {
+    const zoneRows = Array.isArray(rows) ? rows.map(String).filter(Boolean) : [];
+    const seenWithinZone = new Set();
+    const zone = getZoneById(zoneId);
+    const zoneColor = getEffectiveZoneColor(zone);
+
+    for (const rowId of zoneRows) {
+      if (seenWithinZone.has(rowId)) {
+        errors.push(`Duplicate row ${rowId} appears multiple times in ${zoneId}`);
+        continue;
+      }
+      seenWithinZone.add(rowId);
+
+      if (!rowOwners.has(rowId)) {
+        rowOwners.set(rowId, []);
+      }
+      rowOwners.get(rowId).push(zoneId);
+
+      if (dynamicRanges && zoneColor !== 'any') {
+        const rowNum = parseRowNumber(rowId);
+        if (!Number.isFinite(rowNum)) continue;
+
+        if (zoneColor === 'white' && redRowSet.has(rowNum)) {
+          errors.push(`Colour violation: ${zoneId} (white) assigned to ${rowId} in red region`);
+        } else if (zoneColor === 'red' && whiteRowSet.has(rowNum)) {
+          errors.push(`Colour violation: ${zoneId} (red) assigned to ${rowId} in white region`);
+        }
+      }
+    }
+  }
+
+  for (const [rowId, owners] of rowOwners) {
+    if (owners.length > 1) {
+      errors.push(`Duplicate assignment: ${rowId} belongs to ${owners.join(', ')}`);
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
 }
 
 /**
@@ -147,18 +210,43 @@ function getAffectedZoneIdsFromPlan(plan) {
  * @param {string} cellarId - Cellar ID
  * @param {string} zoneId - Zone ID to allocate to
  * @param {Set<string>} usedRows - Set of already-used row IDs
+ * @param {{whiteRows?: number[], redRows?: number[]}|null} [dynamicRanges]
  * @returns {Promise<string>} Assigned row ID
  */
-async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
+async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dynamicRanges = null) {
   const zone = getZoneById(zoneId);
   if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
 
   const preferredRange = zone.preferredRowRange || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+  const zoneColor = zone.color;
+  const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
+  const zoneIsWhite = isWhiteFamily(primaryColor);
+  const effectiveColor = getEffectiveZoneColor(zone);
   let assignedRow = null;
+  let colorRange = null;
+
+  if (effectiveColor !== 'any') {
+    if (dynamicRanges?.whiteRows && dynamicRanges?.redRows) {
+      colorRange = effectiveColor === 'white' ? dynamicRanges.whiteRows : dynamicRanges.redRows;
+    } else {
+      try {
+        const layoutSettings = await getCellarLayoutSettings(cellarId);
+        const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+        colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
+      } catch (_err) {
+        colorRange = zoneIsWhite
+          ? [1, 2, 3, 4, 5, 6, 7]
+          : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
+      }
+    }
+  }
+
+  const colorSet = Array.isArray(colorRange) ? new Set(colorRange.map(Number)) : null;
 
   for (const rowNum of preferredRange) {
     const rowId = `R${rowNum}`;
-    if (!usedRows.has(rowId)) {
+    const isColorCompatible = !colorSet || colorSet.has(rowNum);
+    if (!usedRows.has(rowId) && isColorCompatible) {
       assignedRow = rowId;
       break;
     }
@@ -166,21 +254,6 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
 
   // If no preferred row available, try colour-compatible rows using dynamic ranges
   if (!assignedRow) {
-    const zoneColor = zone.color;
-    const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
-    const zoneIsWhite = isWhiteFamily(primaryColor);
-
-    let colorRange;
-    try {
-      const layoutSettings = await getCellarLayoutSettings(cellarId);
-      const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
-      colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
-    } catch (_err) {
-      colorRange = zoneIsWhite
-        ? [1, 2, 3, 4, 5, 6, 7]
-        : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-    }
-
     for (const rowNum of colorRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
@@ -189,7 +262,12 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
       }
     }
 
-    // Last resort: any available row
+    // Hard rule for reconfiguration: do not cross colour regions.
+    if (!assignedRow && effectiveColor !== 'any') {
+      throw new Error(`No colour-compatible rows available for zone ${zoneId}`);
+    }
+
+    // Last resort for flexible zones only (fallback/curated/buffer)
     if (!assignedRow) {
       for (let rowNum = 1; rowNum <= 19; rowNum++) {
         const rowId = `R${rowNum}`;
@@ -210,7 +288,9 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows) {
 
   if (existing.rows.length > 0) {
     const rows = parseAssignedRows(existing.rows[0].assigned_rows);
-    rows.push(assignedRow);
+    if (!rows.includes(assignedRow)) {
+      rows.push(assignedRow);
+    }
     await client.query(
       'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
       [JSON.stringify(rows), cellarId, zoneId]
@@ -248,7 +328,7 @@ async function mergeZonesTransactional(client, cellarId, sourceZoneId, targetZon
 
   const sourceRows = parseAssignedRows(sourceAlloc.rows[0]?.assigned_rows);
   const targetRows = parseAssignedRows(targetAlloc.rows[0]?.assigned_rows);
-  const mergedRows = [...targetRows, ...sourceRows].filter(Boolean);
+  const mergedRows = [...new Set([...targetRows, ...sourceRows])].filter(Boolean);
 
   await client.query('UPDATE wines SET zone_id = $1 WHERE cellar_id = $2 AND zone_id = $3', [targetZoneId, cellarId, sourceZoneId]);
 
@@ -279,12 +359,34 @@ async function mergeZonesTransactional(client, cellarId, sourceZoneId, targetZon
  * @param {string} fromZoneId - Source zone
  * @param {string} toZoneId - Target zone
  * @param {number|string} rowNumber - Row number or ID to reallocate
+ * @param {{whiteRows?: number[], redRows?: number[]}|null} [dynamicRanges]
  * @returns {Promise<Object>} Result with success/skipped status
  */
-async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId, rowNumber) {
+async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId, rowNumber, dynamicRanges = null) {
   if (fromZoneId === toZoneId) return { success: true, skipped: true, reason: 'same zone' };
 
   const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
+
+  // Colour boundary guard at write-time.
+  if (toZoneId !== '__unassigned' && dynamicRanges) {
+    const toZone = getZoneById(toZoneId);
+    if (toZone) {
+      const toColor = getEffectiveZoneColor(toZone);
+      if (toColor !== 'any') {
+        const rowNum = parseRowNumber(rowId);
+        const whiteRowSet = new Set((dynamicRanges.whiteRows || []).map(Number));
+        const redRowSet = new Set((dynamicRanges.redRows || []).map(Number));
+        if (toColor === 'white' && redRowSet.has(rowNum)) {
+          logger.warn('Reconfig', `Blocked: ${rowId} is in red region, cannot assign to white zone ${toZoneId}`);
+          return { success: false, skipped: true, reason: `Colour violation: ${rowId} in red region, target ${toZoneId} is white` };
+        }
+        if (toColor === 'red' && whiteRowSet.has(rowNum)) {
+          logger.warn('Reconfig', `Blocked: ${rowId} is in white region, cannot assign to red zone ${toZoneId}`);
+          return { success: false, skipped: true, reason: `Colour violation: ${rowId} in white region, target ${toZoneId} is red` };
+        }
+      }
+    }
+  }
 
   // Get current source allocation
   const fromAlloc = await client.query(
@@ -329,7 +431,7 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
     [cellarId, toZoneId]
   );
   const toRows = parseAssignedRows(toAlloc.rows[0]?.assigned_rows);
-  const updatedToRows = [...toRows, rowId].filter(Boolean);
+  const updatedToRows = [...toRows.filter(r => r !== rowId), rowId].filter(Boolean);
 
   // Update or create target zone allocation
   if (toAlloc.rows.length > 0) {
@@ -398,6 +500,10 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
       zoneAllocMap.set(r.zone_id, parseAssignedRows(r.assigned_rows));
     }
 
+    // Pre-compute colour ranges once for apply-time hard guards.
+    const layoutSettings = await getCellarLayoutSettings(req.cellarId);
+    const dynamicRanges = await getDynamicColourRowRanges(req.cellarId, layoutSettings.colourOrder);
+
     let zonesChanged = 0;
     let actionsAutoSkipped = 0;
 
@@ -413,7 +519,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         if (!fromZoneId || !toZoneId || rowNumber == null) continue;
 
         // reallocateRowTransactional now handles validation internally and returns status
-        const result = await reallocateRowTransactional(client, req.cellarId, fromZoneId, toZoneId, rowNumber);
+        const result = await reallocateRowTransactional(client, req.cellarId, fromZoneId, toZoneId, rowNumber, dynamicRanges);
 
         if (result.skipped) {
           logger.warn('Reconfig', `Apply skipped reallocate_row action: ${result.reason}`);
@@ -427,7 +533,9 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         zoneAllocMap.set(fromZoneId, fromRows.filter(r => r !== rowId));
         if (toZoneId !== '__unassigned') {
           const toRows = zoneAllocMap.get(toZoneId) || [];
-          zoneAllocMap.set(toZoneId, [...toRows, rowId]);
+          if (!toRows.includes(rowId)) {
+            zoneAllocMap.set(toZoneId, [...toRows, rowId]);
+          }
         }
         zonesChanged++;
       } else if (action.type === 'expand_zone') {
@@ -439,7 +547,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         const needed = Math.max(1, proposedRows.length - currentRows.length);
 
         for (let n = 0; n < needed; n++) {
-          await allocateRowTransactional(client, req.cellarId, zoneId, usedRows);
+          await allocateRowTransactional(client, req.cellarId, zoneId, usedRows, dynamicRanges);
         }
         zonesChanged++;
       } else if (action.type === 'merge_zones') {
@@ -457,6 +565,22 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         await mergeZonesTransactional(client, req.cellarId, zoneId, mergeIntoZoneId);
         zonesChanged++;
       }
+    }
+
+    // Final transactional integrity check (defence-in-depth):
+    // - no duplicate row assignments across zones
+    // - no colour-region violations
+    const finalAlloc = await client.query(
+      'SELECT zone_id, assigned_rows FROM zone_allocations WHERE cellar_id = $1',
+      [req.cellarId]
+    );
+    const finalZoneAllocMap = new Map();
+    for (const r of finalAlloc.rows) {
+      finalZoneAllocMap.set(r.zone_id, parseAssignedRows(r.assigned_rows));
+    }
+    const integrity = validateAllocationIntegrity(finalZoneAllocMap, dynamicRanges);
+    if (!integrity.valid) {
+      throw new Error(`Reconfiguration integrity check failed: ${integrity.errors.join('; ')}`);
     }
 
     const planJson = {

@@ -314,6 +314,39 @@ if (afterCount.count !== beforeCount.count) {
 }
 ```
 
+### Zone Reconfiguration Defence-in-Depth
+
+The zone reconfiguration pipeline (`cellarReconfiguration.js` + `zoneReconfigurationPlanner.js`) uses multiple layers of validation to prevent duplicate row assignments and colour-region violations:
+
+**Pipeline layers** (solver → LLM refinement → heuristic gap-fill → OpenAI reviewer):
+
+```
+Solver (rowAllocationSolver.js)     ← Handles colour + dedup correctly
+  ↓
+LLM refinement                      ← filterLLMActions() REJECTS violations
+  ↓
+Heuristic gap-fill                  ← Uses live post-pipeline zone row map
+  ↓
+OpenAI reviewer patches             ← Post-patch revalidation re-runs filterLLMActions
+  ↓
+DB apply (reallocateRowTransactional) ← Colour guard + dedup at write time
+  ↓
+In-transaction integrity gate       ← validateAllocationIntegrity() fails TX on dupes
+```
+
+**Key invariants**:
+- No row may appear in more than one zone after reconfiguration
+- White-family zones (white, rosé, orange, sparkling, dessert, fortified) must stay in white-region rows
+- Red zones must stay in red-region rows
+- `buildMutatedZoneRowMap()` replays all action types to maintain accurate post-pipeline state
+- `heuristicGapFill` receives live (not stale) zone row map and checks colour compatibility before donating rows
+
+**When modifying the reconfiguration pipeline**:
+1. Always dedup rows before appending: `[...rows.filter(r => r !== newRow), newRow]`
+2. Always check colour compatibility using `getEffectiveZoneColor()` + dynamic row ranges
+3. Run `filterLLMActions` after any external modifications (e.g., reviewer patches)
+4. Keep `validateAllocationIntegrity` as the last-resort gate inside the transaction
+
 ---
 
 ## Multi-User / Cellar-Scoped Patterns (CRITICAL)

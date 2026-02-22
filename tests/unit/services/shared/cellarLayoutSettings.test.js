@@ -164,6 +164,11 @@ describe('computeDynamicRowSplit', () => {
 describe('getCellarLayoutSettings', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Defensive: re-establish db.prepare as vi.fn() in case an upstream
+    // vi.resetModules() in --no-isolate mode corrupted the mock factory.
+    if (typeof db.prepare !== 'function') {
+      db.prepare = vi.fn();
+    }
   });
 
   it('returns defaults when cellarId is null', async () => {

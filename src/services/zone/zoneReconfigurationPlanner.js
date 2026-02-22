@@ -11,7 +11,7 @@ import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
 import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
-import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
+import { getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import {
@@ -461,8 +461,8 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
         return false;
       }
       if (wouldCreateColorViolation(a, zoneRowMap)) {
-        logger.warn('Reconfig', `reallocate_row ${rowId} from ${a.fromZoneId} to ${a.toZoneId} would create color adjacency violation`);
-        a._colorViolationWarning = true;
+        logger.warn('Reconfig', `Filtering reallocate_row: ${rowId} from ${a.fromZoneId} to ${a.toZoneId} — colour adjacency violation`);
+        return false;  // REJECT, not just warn
       }
       return true;
     }
@@ -473,14 +473,37 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
     }
     if (a.type === 'merge_zones') {
       if (!Array.isArray(a.sourceZones)) return false;
-      if (!getZoneById(a.targetZoneId)) return false;
+      const targetZoneDef = getZoneById(a.targetZoneId);
+      if (!targetZoneDef) return false;
       const allValid = a.sourceZones.every(z => !!getZoneById(z));
       if (!allValid) return false;
-      return a.sourceZones.every(z => !neverMerge.has(z));
+      if (!a.sourceZones.every(z => !neverMerge.has(z))) return false;
+      // Colour compatibility: reject merges across colour families
+      const targetColor = getEffectiveZoneColor(targetZoneDef);
+      if (targetColor !== 'any') {
+        for (const srcId of a.sourceZones) {
+          const srcColor = getEffectiveZoneColor(getZoneById(srcId));
+          if (srcColor !== 'any' && srcColor !== targetColor) {
+            logger.warn('Reconfig', `Filtering merge_zones: source ${srcId} (${srcColor}) incompatible with target ${a.targetZoneId} (${targetColor})`);
+            return false;
+          }
+        }
+      }
+      return true;
     }
     if (a.type === 'retire_zone') {
-      if (!getZoneById(a.zoneId) || !getZoneById(a.mergeIntoZoneId)) return false;
-      return !neverMerge.has(a.zoneId);
+      const retireZoneDef = getZoneById(a.zoneId);
+      const mergeIntoDef = getZoneById(a.mergeIntoZoneId);
+      if (!retireZoneDef || !mergeIntoDef) return false;
+      if (neverMerge.has(a.zoneId)) return false;
+      // Colour compatibility: reject cross-colour retirements
+      const retireColor = getEffectiveZoneColor(retireZoneDef);
+      const mergeColor = getEffectiveZoneColor(mergeIntoDef);
+      if (retireColor !== 'any' && mergeColor !== 'any' && retireColor !== mergeColor) {
+        logger.warn('Reconfig', `Filtering retire_zone: ${a.zoneId} (${retireColor}) incompatible with ${a.mergeIntoZoneId} (${mergeColor})`);
+        return false;
+      }
+      return true;
     }
     logger.warn('Reconfig', `Filtering unknown action type: ${a.type}`);
     return false;
@@ -497,6 +520,63 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * Replay actions on initial zone row map to produce post-pipeline state.
+ * Handles reallocate_row, merge_zones, and retire_zone actions.
+ * @param {Map<string, string[]>} initialMap - Initial zone → rows mapping
+ * @param {Array} actions - Actions to replay
+ * @returns {Map<string, string[]>} Mutated map reflecting post-action state
+ */
+function buildMutatedZoneRowMap(initialMap, actions) {
+  const map = new Map();
+  for (const [zoneId, rows] of initialMap) {
+    map.set(zoneId, [...rows]);
+  }
+  for (const action of actions) {
+    if (action.type === 'reallocate_row') {
+      const rowId = typeof action.rowNumber === 'number' ? `R${action.rowNumber}` : String(action.rowNumber);
+      // Remove from source
+      const fromRows = map.get(action.fromZoneId) || [];
+      map.set(action.fromZoneId, fromRows.filter(r => r !== rowId));
+      // Add to target (deduplicated)
+      if (action.toZoneId !== '__unassigned') {
+        const toRows = map.get(action.toZoneId) || [];
+        if (!toRows.includes(rowId)) toRows.push(rowId);
+        map.set(action.toZoneId, toRows);
+      }
+    } else if (action.type === 'merge_zones') {
+      // Move all source zone rows into the target zone
+      const targetRows = map.get(action.targetZoneId) || [];
+      const targetSet = new Set(targetRows);
+      for (const srcId of (action.sourceZones || [])) {
+        const srcRows = map.get(srcId) || [];
+        for (const r of srcRows) {
+          if (!targetSet.has(r)) {
+            targetRows.push(r);
+            targetSet.add(r);
+          }
+        }
+        map.set(srcId, []);
+      }
+      map.set(action.targetZoneId, targetRows);
+    } else if (action.type === 'retire_zone') {
+      // Move retired zone's rows into the merge-into target
+      const retiredRows = map.get(action.zoneId) || [];
+      const targetRows = map.get(action.mergeIntoZoneId) || [];
+      const targetSet = new Set(targetRows);
+      for (const r of retiredRows) {
+        if (!targetSet.has(r)) {
+          targetRows.push(r);
+          targetSet.add(r);
+        }
+      }
+      map.set(action.mergeIntoZoneId, targetRows);
+      map.set(action.zoneId, []);
+    }
+  }
+  return map;
+}
+
+/**
  * Patch remaining capacity deficits that the solver and LLM both missed.
  * Adds simple single-donor-per-overflow reallocation actions.
  *
@@ -511,7 +591,8 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
  */
 function heuristicGapFill(
   existingActions, capacityIssues, underutilizedZones,
-  mergeCandidates, neverMerge, zonesWithAllocations, stability
+  mergeCandidates, neverMerge, zonesWithAllocations, stability,
+  liveZoneRowMap  // Post-pipeline zone row map (avoids stale pre-solver state)
 ) {
   // Check which overflow zones were already addressed
   const addressedZones = new Set(
@@ -532,21 +613,38 @@ function heuristicGapFill(
   );
 
   const newActions = [];
-  const zoneRowMapHeuristic = new Map();
-  for (const z of zonesWithAllocations) {
-    zoneRowMapHeuristic.set(z.id, z.actualAssignedRows || []);
+
+  // Use live (post-pipeline) zone row map if provided; otherwise fall back to initial state
+  const zoneRowMapHeuristic = liveZoneRowMap
+    ? new Map([...liveZoneRowMap].map(([k, v]) => [k, [...v]]))
+    : new Map();
+  if (!liveZoneRowMap) {
+    for (const z of zonesWithAllocations) {
+      zoneRowMapHeuristic.set(z.id, [...(z.actualAssignedRows || [])]);
+    }
   }
 
   // Patch unaddressed capacity issues
   for (const issue of capacityIssues) {
     const toZoneId = issue.overflowingZoneId;
     if (addressedZones.has(toZoneId)) continue;
-    if (!getZoneById(toZoneId)) continue;
+    const toZoneDef = getZoneById(toZoneId);
+    if (!toZoneDef) continue;
+    const toColor = getEffectiveZoneColor(toZoneDef);
 
     for (const donor of underutilizedZones) {
       if (donor.zoneId === toZoneId) continue;
       if (donor.rowCount <= 1) continue;
       if (neverMerge.has(donor.zoneId)) continue;
+
+      // Colour compatibility: skip cross-colour donations
+      const donorZoneDef = getZoneById(donor.zoneId);
+      if (donorZoneDef) {
+        const donorColor = getEffectiveZoneColor(donorZoneDef);
+        if (toColor !== 'any' && donorColor !== 'any' && toColor !== donorColor) {
+          continue;
+        }
+      }
 
       const donorRows = zoneRowMapHeuristic.get(donor.zoneId) || [];
       const availableRow = donorRows.find(r => !rowsAlreadyMoved.has(r));
@@ -784,9 +882,13 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const baseReasoning = llmActions ? llmReasoning : solverReasoning;
   const baseSource = llmActions ? 'solver+llm' : (solverActions.length > 0 ? 'solver' : 'heuristic');
 
+  // Build a live zone row map reflecting all actions applied so far
+  // (solver + LLM), so heuristic gap-fill uses current state, not stale pre-solver state
+  const mutatedZoneRowMap = buildMutatedZoneRowMap(zoneRowMap, baseActions);
   const patchedActions = heuristicGapFill(
     baseActions, capacityIssues, underutilizedZones,
-    mergeCandidates, neverMerge, zonesWithAllocations, stability
+    mergeCandidates, neverMerge, zonesWithAllocations, stability,
+    mutatedZoneRowMap
   );
 
   const planResult = {
@@ -823,6 +925,17 @@ export async function generateReconfigurationPlan(report, options = {}) {
       finalPlan = { ...planWithSummary };
     } else if (reviewResult.verdict === 'patch') {
       finalPlan = applyPatches(planWithSummary, reviewResult.patches);
+      // Re-validate patched actions — reviewer patches can reintroduce
+      // colour violations or invalid zone IDs that filterLLMActions already rejected
+      if (Array.isArray(finalPlan.actions) && finalPlan.actions.length > 0) {
+        const preRevalidateCount = finalPlan.actions.length;
+        // Build post-patch zone row map for accurate colour violation detection
+        const postPatchRowMap = buildMutatedZoneRowMap(zoneRowMap, finalPlan.actions);
+        finalPlan.actions = filterLLMActions(finalPlan.actions, postPatchRowMap, neverMerge);
+        if (finalPlan.actions.length < preRevalidateCount) {
+          logger.warn('Reconfig', `Post-patch revalidation filtered ${preRevalidateCount - finalPlan.actions.length} invalid action(s) introduced by reviewer`);
+        }
+      }
       if (reviewTelemetry) {
         reviewTelemetry.output_plan_hash = hashPlan(finalPlan);
         reviewTelemetry.output_action_count = finalPlan.actions?.length || 0;

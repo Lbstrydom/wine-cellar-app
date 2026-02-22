@@ -10,6 +10,29 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 22 Feb 2026**:
+- **Zone Reconfiguration Duplicate Row & Colour Violation Fixes — COMPLETE** ✅:
+  - **Root cause**: After zone reconfiguration, rows could appear in multiple zones (duplicates) and white-family zones could be placed in red-region rows (colour violations). Six code paths lacked deduplication and three lacked colour-boundary enforcement.
+  - **Defence-in-depth fixes across 2 files** (`cellarReconfiguration.js`, `zoneReconfigurationPlanner.js`):
+    - `reallocateRowTransactional`: colour guard blocks cross-region moves at DB-write time + dedup with `filter(r => r !== rowId)` before append
+    - `allocateRowTransactional`: dedup guard prevents duplicate row push
+    - `mergeZonesTransactional`: `[...new Set([...targetRows, ...sourceRows])]` dedup
+    - `zoneAllocMap` local tracking: `includes()` check before append
+    - `filterLLMActions`: now **rejects** (returns false) colour violations instead of only warning; added colour checks for `merge_zones` and `retire_zone` action types
+    - `heuristicGapFill`: receives live post-pipeline zone row map via `buildMutatedZoneRowMap()` instead of stale pre-solver state; colour-compatible donor check skips cross-colour donations
+    - `buildMutatedZoneRowMap()`: replays `reallocate_row`, `merge_zones`, and `retire_zone` actions on initial map
+    - Post-patch revalidation: after OpenAI reviewer patches are applied, `filterLLMActions` re-runs to catch violations reintroduced by the reviewer
+    - In-transaction `validateAllocationIntegrity` gate: fails transaction if any row appears in multiple zones after all moves
+  - Defensive `beforeEach` in `cellarLayoutSettings.test.js` for `--no-isolate` mock hygiene
+  - Validation status: `npm run test:unit` passes at **2152+ tests**
+
+- **Swap Toast UX Improvement — COMPLETE** ✅:
+  - All swap toast messages now show both wine names AND slot coordinates for clear feedback
+  - `dragdrop.js`: `Swapped: {wine1} ({loc1}) ↔ {wine2} ({loc2})`
+  - `moves.js`: `Swapped: {wine1} ({from} → {to}) ↔ {wine2} ({from} → {to})`
+  - `moveGuide.js`: `Swapped: {wine1} ({from} → {to}) ↔ {wine2} ({from} → {to})`
+  - `fridge.js` already had both wine names and coordinates (gold standard, unchanged)
+  - Cache version bumped v155→v156
+
 - **Colour Order Validation After Zone Reconfiguration — COMPLETE** ✅:
   - New `detectColourOrderViolations()` in `cellarMetrics.js` — checks each allocated row against the user's colour-order preference (`whites-top` / `reds-top`) and dynamic row ranges. Skips fallback/curated zones (`'any'` colour) to avoid false positives.
   - Wired into `cellarAnalysis.js` — colour order violations appear as warnings in the analysis report, contribute to `shouldReorg` flag, and generate alert cards in the issue digest.
