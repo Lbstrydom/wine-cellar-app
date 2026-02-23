@@ -134,7 +134,7 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
       cellarId: req.cellarId
     });
 
-    const planId = putPlan({
+    const planId = await putPlan(req.cellarId, {
       generatedAt: new Date().toISOString(),
       options: { includeRetirements, includeNewZones, stabilityBias },
       plan
@@ -183,7 +183,7 @@ router.post('/reconfiguration-plan/zone/:zoneId', asyncHandler(async (req, res) 
       focusZoneId: zoneId
     });
 
-    const planId = putPlan({
+    const planId = await putPlan(req.cellarId, {
       generatedAt: new Date().toISOString(),
       options: { stabilityBias: 'high', includeRetirements: false, focusZoneId: zoneId },
       plan
@@ -489,7 +489,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, error: 'planId required' });
   }
 
-  const stored = getPlan(planId);
+  const stored = await getPlan(planId, req.cellarId);
   if (!stored?.plan) {
     return res.status(400).json({ success: false, error: 'Plan not found or expired. Generate a new plan.' });
   }
@@ -650,7 +650,7 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     };
   });
 
-  deletePlan(planId);
+  await deletePlan(planId);
   await invalidateAnalysisCache(null, req.cellarId);
 
   // Post-apply colour order validation
