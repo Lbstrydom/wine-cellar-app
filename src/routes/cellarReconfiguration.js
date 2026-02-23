@@ -675,11 +675,10 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
       throw new Error(`Reconfiguration integrity check failed: ${integrity.errors.join('; ')}`);
     }
 
-    // Soft contiguity check — log warnings but don't block (contiguity is
-    // best-effort given fixed rows + colour constraints)
+    // Contiguity check — surface issues to client and log
     const contiguityWarnings = checkContiguity(finalZoneAllocMap);
     if (contiguityWarnings.length > 0) {
-      logger.warn('Reconfig', `Contiguity warnings after apply: ${contiguityWarnings.join('; ')}`);
+      logger.warn('Reconfig', `Contiguity issues after apply: ${contiguityWarnings.join('; ')}`);
     }
 
     const planJson = {
@@ -715,7 +714,8 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     return {
       reconfigurationId: insert.rows[0].id,
       zonesChanged,
-      actionsAutoSkipped
+      actionsAutoSkipped,
+      contiguityWarnings
     };
   });
 
@@ -749,6 +749,9 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     canUndo: true,
     ...(colourOrderWarnings.length > 0 && {
       warnings: colourOrderWarnings.map(v => v.message)
+    }),
+    ...(result.contiguityWarnings?.length > 0 && {
+      contiguityWarnings: result.contiguityWarnings
     })
   });
 }));

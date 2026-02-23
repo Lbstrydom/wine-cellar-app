@@ -703,10 +703,28 @@ function heuristicGapFill(
   const maxActions = stability === 'high' ? 3 : stability === 'moderate' ? 6 : 10;
 
   // Post-pass contiguity repair: detect non-contiguous zones and attempt
-  // local swaps with adjacent zones if colour-compatible
+  // local swaps with adjacent zones if colour-compatible.
+  // Contiguity swaps are exempt from the action cap — they are low-cost
+  // (priority 4, 0 bottlesAffected) and essential for layout quality.
   const postRepairActions = repairContiguityGaps(combined, liveZoneRowMap, maxActions);
 
-  return postRepairActions.slice(0, maxActions);
+  // Split: capped non-repair actions + uncapped repair actions
+  const coreActions = postRepairActions.filter(a => !a.reason?.includes('[contiguity repair]'));
+  const repairActions = postRepairActions.filter(a => a.reason?.includes('[contiguity repair]'));
+
+  // Keep swap pairs atomic in the core slice
+  const slicedCore = coreActions.slice(0, maxActions);
+  if (slicedCore.length < coreActions.length) {
+    const last = slicedCore[slicedCore.length - 1];
+    const nextIdx = coreActions.indexOf(last) + 1;
+    const next = coreActions[nextIdx];
+    if (last && next && last.type === 'reallocate_row' && next.type === 'reallocate_row' &&
+        next.fromZoneId === last.toZoneId && next.toZoneId === last.fromZoneId) {
+      slicedCore.push(next);
+    }
+  }
+
+  return [...slicedCore, ...repairActions];
 }
 
 /**
@@ -732,11 +750,11 @@ function repairContiguityGaps(actions, zoneRowMap, maxActions) {
   }
 
   const repairActions = [];
-  const MAX_REPAIRS = 3; // Limit repair swaps to avoid plan bloat
+  const MAX_REPAIR_PAIRS = 3; // Limit to 3 swap pairs (6 actions) to avoid plan bloat
 
   for (const [zoneId, rows] of postMap) {
     if (rows.length < 2) continue;
-    if (repairActions.length >= MAX_REPAIRS) break;
+    if (repairActions.length >= MAX_REPAIR_PAIRS * 2) break;
 
     const nums = rows.map(r => {
       const n = typeof r === 'string' ? parseInt(r.replace(/^R/i, ''), 10) : r;
@@ -748,7 +766,7 @@ function repairContiguityGaps(actions, zoneRowMap, maxActions) {
     // Check for gaps
     for (let i = 1; i < nums.length; i++) {
       if (nums[i] - nums[i - 1] <= 1) continue; // Contiguous
-      if (repairActions.length >= MAX_REPAIRS) break;
+      if (repairActions.length >= MAX_REPAIR_PAIRS * 2) break;
 
       // There's a gap between nums[i-1] and nums[i].
       // Try to swap the outlier row with an adjacent row from another zone.

@@ -1065,5 +1065,116 @@ describe('rowAllocationSolver', () => {
       // No surplus/deficit → no actions
       expect(result.actions).toHaveLength(0);
     });
-  });
+
+    describe('contiguity regression', () => {
+      it('emits swap actions for two fragmented zones in moderate mode', () => {
+        // Scenario: cabernet has R11,R19 (gap of 7) and loire_light has R3,R8 (gap of 4).
+        // Both are non-contiguous. pinot_noir at R12 could swap with cabernet's R19,
+        // and shiraz at R4 could swap with loire_light's R8.
+        const zones = [
+          makeZone('cabernet', ['R11', 'R19'], 14),
+          makeZone('pinot_noir', ['R12', 'R13'], 10),
+          makeZone('chenin_blanc', ['R3', 'R4'], 10),
+          makeZone('sauvignon_blanc', ['R7', 'R8'], 10),
+          makeZone('shiraz', ['R14', 'R15'], 10),
+          makeZone('merlot', ['R16', 'R17'], 10),
+          makeZone('southern_france', ['R18'], 5),
+          makeZone('iberian_fresh', ['R9', 'R10'], 10),
+          makeZone('curiosities', ['R1'], 3),
+          makeZone('aromatic_whites', ['R2'], 5),
+          makeZone('chardonnay', ['R5', 'R6'], 10)
+        ];
+        const utilization = {
+          cabernet: makeUtil(14, 2),
+          pinot_noir: makeUtil(10, 2),
+          chenin_blanc: makeUtil(10, 2),
+          sauvignon_blanc: makeUtil(10, 2),
+          shiraz: makeUtil(10, 2),
+          merlot: makeUtil(10, 2),
+          southern_france: makeUtil(5, 1),
+          iberian_fresh: makeUtil(10, 2),
+          curiosities: makeUtil(3, 1),
+          aromatic_whites: makeUtil(5, 1),
+          chardonnay: makeUtil(10, 2)
+        };
+
+        // Mark cabernet as a scattered wine since R11 and R19 are far apart
+        const scatteredWines = [
+          { wineName: 'Cab Sauv', bottleCount: 14, rows: ['R11', 'R19'], zoneId: 'cabernet' }
+        ];
+
+        const result = solveRowAllocation({
+          zones,
+          utilization,
+          overflowingZones: [],
+          underutilizedZones: [],
+          scatteredWines,
+          mergeCandidates: [],
+          neverMerge: new Set(),
+          stabilityBias: 'moderate'
+        });
+
+        // Solver should produce consolidation swaps for fragmented zones.
+        // We need at least one swap pair for the scattered cabernet.
+        const swapActions = result.actions.filter(a =>
+          a.type === 'reallocate_row' && a.reason?.includes('Consolidate')
+        );
+        expect(swapActions.length).toBeGreaterThanOrEqual(2); // At least one swap pair
+
+        // Both legs of each swap must be present (atomic pairs)
+        const swapPairs = new Map();
+        for (const a of swapActions) {
+          const pairKey = `${Math.min(a.rowNumber, 999)}-${a.fromZoneId}-${a.toZoneId}`;
+          const reverseKey = `${Math.min(a.rowNumber, 999)}-${a.toZoneId}-${a.fromZoneId}`;
+          // Each action should have a partner with mirrored fromZone/toZone
+          const hasPartner = swapActions.some(b =>
+            b !== a && b.fromZoneId === a.toZoneId && b.toZoneId === a.fromZoneId
+          );
+          expect(hasPartner).toBe(true);
+        }
+      });
+
+      it('does not drop swap legs when maxActions limit clips actions', () => {
+        // Create enough actions to hit the moderate limit (6).
+        // Simulate via high-stability (limit=3) with a fragmented zone that needs a swap.
+        const zones = [
+          makeZone('cabernet', ['R11', 'R19'], 20),   // fragmented + overflowing
+          makeZone('curiosities', ['R14', 'R15', 'R16'], 3),
+          makeZone('pinot_noir', ['R12', 'R13'], 10),
+          makeZone('shiraz', ['R17', 'R18'], 10)
+        ];
+        const utilization = {
+          cabernet: makeUtil(20, 2),
+          curiosities: makeUtil(3, 3),
+          pinot_noir: makeUtil(10, 2),
+          shiraz: makeUtil(10, 2)
+        };
+        utilization.cabernet.isOverflowing = true;
+
+        const result = solveRowAllocation({
+          zones,
+          utilization,
+          overflowingZones: [{ zoneId: 'cabernet' }],
+          underutilizedZones: [{ zoneId: 'curiosities', utilizationPct: 11, rowCount: 3, bottleCount: 3 }],
+          scatteredWines: [
+            { wineName: 'Cab Sauv', bottleCount: 20, rows: ['R11', 'R19'], zoneId: 'cabernet' }
+          ],
+          mergeCandidates: [],
+          neverMerge: new Set(),
+          stabilityBias: 'moderate'
+        });
+
+        // All swap pairs must be atomic — no solo legs
+        const allActions = result.actions.filter(a => a.type === 'reallocate_row');
+        for (const a of allActions) {
+          // If this is a consolidation swap leg, its partner must also be present
+          if (a.reason?.includes('swap') || a.reason?.includes('Consolidate')) {
+            const hasPartner = allActions.some(b =>
+              b !== a && b.fromZoneId === a.toZoneId && b.toZoneId === a.fromZoneId
+            );
+            expect(hasPartner).toBe(true);
+          }
+        }
+      });
+    });  });
 });

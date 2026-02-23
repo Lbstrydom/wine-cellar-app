@@ -956,7 +956,8 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
   if (stabilityBias === 'high') return [];
   if (!scatteredWines || scatteredWines.length === 0) return [];
 
-  const maxConsolidations = stabilityBias === 'moderate' ? 2 : 4;
+  // Count in actions (each swap = 2 actions): moderate allows 2 swap pairs, low allows 4
+  const maxConsolidations = stabilityBias === 'moderate' ? 4 : 8;
   const actions = [];
   const alreadySwapped = new Set();
 
@@ -1107,7 +1108,12 @@ function prioritizeAndLimit(actions, maxActions) {
       if (prev) {
         // Allow if this is the return leg of a swap (zones mirror)
         const isSwapPair = prev.fromZoneId === a.toZoneId && prev.toZoneId === a.fromZoneId;
-        if (!isSwapPair) return false;
+        // Allow if this is a chain: prev assigned row to X, now X gives it to Y
+        // (e.g., capacity phase gives R14 to cabernet, then consolidation gives
+        //  R14 from cabernet to pinot_noir — both actions are needed so the swap
+        //  partner for the return leg is present)
+        const isChain = prev.toZoneId === a.fromZoneId;
+        if (!isSwapPair && !isChain) return false;
       }
       seenRows.set(key, a);
     }
@@ -1117,7 +1123,22 @@ function prioritizeAndLimit(actions, maxActions) {
   // Sort by priority (lower = more important)
   deduplicated.sort((a, b) => (a.priority ?? 5) - (b.priority ?? 5));
 
-  return deduplicated.slice(0, maxActions);
+  // Slice to maxActions but keep swap pairs atomic: if the last included
+  // action is one leg of a swap, include its partner too.
+  const sliced = deduplicated.slice(0, maxActions);
+  if (sliced.length < deduplicated.length) {
+    const last = sliced[sliced.length - 1];
+    if (last && last.type === 'reallocate_row') {
+      // Check if the very next action is the swap partner
+      const next = deduplicated[sliced.length];
+      if (next && next.type === 'reallocate_row' &&
+          next.fromZoneId === last.toZoneId && next.toZoneId === last.fromZoneId) {
+        sliced.push(next);
+      }
+    }
+  }
+
+  return sliced;
 }
 
 // ═══════════════════════════════════════════
