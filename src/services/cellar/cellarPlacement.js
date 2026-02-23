@@ -10,6 +10,7 @@ import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAlloca
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
 import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
 import { detectGrapesFromWine } from '../wine/grapeEnrichment.js';
+import db from '../../db/index.js';
 
 /**
  * Determine the best zone for a wine based on its attributes.
@@ -339,7 +340,20 @@ export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
     }
 
     if (rows.length > 0) {
-      const slot = findSlotInRows(rows, occupied, fillDirection);
+      // Query existing same-wine bottle locations for adjacency grouping
+      let sameWineSlots = null;
+      if (wine?.id && cellarId) {
+        try {
+          const existing = await db.prepare(
+            'SELECT s.location_code FROM slots s WHERE s.cellar_id = ? AND s.wine_id = ? AND s.location_code IS NOT NULL'
+          ).all(cellarId, wine.id);
+          sameWineSlots = existing.map(r => r.location_code).filter(Boolean);
+        } catch (_err) {
+          // Non-critical — fall back to default placement order
+        }
+      }
+
+      const slot = findSlotInRows(rows, occupied, fillDirection, sameWineSlots);
       if (slot) {
         return { slotId: slot, zoneId, isOverflow: false, requiresSwap: false };
       }
@@ -498,19 +512,73 @@ function addTokens(tokenSet, values, prefix) {
 }
 
 /**
+ * Find empty slot adjacent to existing same-wine bottles in given rows.
+ * Prefers the closest empty slot to any same-wine bottle for visual grouping.
+ * @param {string[]} rows - Row IDs to constrain search to
+ * @param {Set} occupiedSet - All occupied slot IDs
+ * @param {string[]} sameWineSlots - Slot IDs where the same wine already lives
+ * @returns {string|null} Adjacent slot ID or null
+ */
+function findAdjacentToSameWine(rows, occupiedSet, sameWineSlots) {
+  const rowSet = new Set(rows);
+
+  // Parse same-wine slots into row → [column numbers] map
+  const sameWineByRow = new Map();
+  for (const slot of sameWineSlots) {
+    const match = slot.match(/^R(\d+)C(\d+)$/);
+    if (!match) continue;
+    const row = `R${match[1]}`;
+    if (!rowSet.has(row)) continue;
+    const col = parseInt(match[2], 10);
+    if (!sameWineByRow.has(row)) sameWineByRow.set(row, []);
+    sameWineByRow.get(row).push(col);
+  }
+
+  if (sameWineByRow.size === 0) return null;
+
+  let bestSlot = null;
+  let bestDist = Infinity;
+
+  for (const [row, wineCols] of sameWineByRow) {
+    const maxCol = row === 'R1' ? 7 : 9;
+    for (let col = 1; col <= maxCol; col++) {
+      const slotId = `${row}C${col}`;
+      if (occupiedSet.has(slotId)) continue;
+      const dist = Math.min(...wineCols.map(wc => Math.abs(col - wc)));
+      if (dist < bestDist || (dist === bestDist && (!bestSlot || col < parseInt(bestSlot.match(/C(\d+)$/)[1], 10)))) {
+        bestDist = dist;
+        bestSlot = slotId;
+      }
+    }
+  }
+
+  return bestSlot;
+}
+
+/**
  * Find first available slot in given rows.
+ * When sameWineSlots are provided, prefers slots adjacent to existing
+ * bottles of the same wine for visual grouping.
  * @param {string[]} rows - Row IDs to search
  * @param {Set} occupiedSet - Set of occupied slot IDs
  * @param {string} [fillDirection='left'] - Fill from 'left' or 'right'
+ * @param {string[]} [sameWineSlots=null] - Existing slot IDs of the same wine
  * @returns {string|null} Slot ID or null
  */
-function findSlotInRows(rows, occupiedSet, fillDirection = 'left') {
+function findSlotInRows(rows, occupiedSet, fillDirection = 'left', sameWineSlots = null) {
   const sortedRows = [...rows].sort((a, b) => {
     const numA = parseInt(a.replace('R', ''));
     const numB = parseInt(b.replace('R', ''));
     return numA - numB;
   });
 
+  // If same-wine context provided, try adjacency-aware placement first
+  if (sameWineSlots && sameWineSlots.length > 0) {
+    const adjacentSlot = findAdjacentToSameWine(sortedRows, occupiedSet, sameWineSlots);
+    if (adjacentSlot) return adjacentSlot;
+  }
+
+  // Default: first available slot in fill direction
   for (const row of sortedRows) {
     const maxCol = row === 'R1' ? 7 : 9;
     if (fillDirection === 'right') {

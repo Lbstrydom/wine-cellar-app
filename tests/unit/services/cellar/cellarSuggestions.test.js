@@ -23,12 +23,18 @@ vi.mock('../../../../src/services/cellar/cellarAllocation.js', () => ({
 }));
 
 vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
-  detectRowGaps: vi.fn().mockReturnValue([])
+  detectRowGaps: vi.fn().mockReturnValue([]),
+  parseSlot(slotId) {
+    if (!slotId) return null;
+    const match = slotId.match(/R(\d+)C(\d+)/);
+    return match ? { row: parseInt(match[1], 10), col: parseInt(match[2], 10) } : null;
+  }
 }));
 
 let detectNaturalSwapPairs;
 let detectDisplacementSwaps;
 let generateMoveSuggestions;
+let generateSameWineGroupingMoves;
 let findAvailableSlot;
 
 beforeAll(async () => {
@@ -38,6 +44,7 @@ beforeAll(async () => {
   detectNaturalSwapPairs = suggestionModule.detectNaturalSwapPairs;
   detectDisplacementSwaps = suggestionModule.detectDisplacementSwaps;
   generateMoveSuggestions = suggestionModule.generateMoveSuggestions;
+  generateSameWineGroupingMoves = suggestionModule.generateSameWineGroupingMoves;
   const placementModule = await import('../../../../src/services/cellar/cellarPlacement.js');
   findAvailableSlot = placementModule.findAvailableSlot;
 });
@@ -340,5 +347,150 @@ describe('generateMoveSuggestions', () => {
     const manuals = result.filter(s => s.type === 'manual');
     expect(manuals).toHaveLength(1);
     expect(manuals[0].wineId).toBe(1);
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// generateSameWineGroupingMoves
+// ───────────────────────────────────────────────────────────
+
+describe('generateSameWineGroupingMoves', () => {
+  /** Helper to build a slotToWine map from simple entries */
+  function buildSlotMap(entries) {
+    const map = new Map();
+    for (const { slot, id, wine_name } of entries) {
+      map.set(slot, { id, wine_name });
+    }
+    return map;
+  }
+
+  it('returns empty array when slotToWine is empty', () => {
+    expect(generateSameWineGroupingMoves(new Map(), {})).toEqual([]);
+  });
+
+  it('returns empty when all wines have only one bottle', () => {
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C3', id: 2, wine_name: 'Wine B' }
+    ]);
+    expect(generateSameWineGroupingMoves(slotToWine, {})).toEqual([]);
+  });
+
+  it('returns empty when same-wine bottles are already contiguous', () => {
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C3', id: 1, wine_name: 'Wine A' }
+    ]);
+    expect(generateSameWineGroupingMoves(slotToWine, {})).toEqual([]);
+  });
+
+  it('generates move to empty slot when scattered bottles exist', () => {
+    // Wine A at C1 and C5 with C2 empty — should move C5 to C2
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({
+      type: 'grouping',
+      wineId: 1,
+      wineName: 'Wine A',
+      from: 'R3C5',
+      to: 'R3C2',
+      priority: 5,
+      confidence: 'medium'
+    });
+  });
+
+  it('generates swap pair when adjacent slot is occupied by different wine', () => {
+    // Wine A at C1, C5; Wine B at C2 — should swap C5↔C2
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 2, wine_name: 'Wine B' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    expect(moves).toHaveLength(2);
+
+    // First move: scattered Wine A → adjacent slot
+    expect(moves[0]).toMatchObject({
+      type: 'grouping',
+      wineId: 1,
+      from: 'R3C5',
+      to: 'R3C2'
+    });
+    // Second move: displaced Wine B → scattered bottle's old slot
+    expect(moves[1]).toMatchObject({
+      type: 'grouping',
+      wineId: 2,
+      from: 'R3C2',
+      to: 'R3C5'
+    });
+  });
+
+  it('respects R1 column limit (7 columns)', () => {
+    // Wine A at C1 and C7 in R1 — max column is 7
+    const slotToWine = buildSlotMap([
+      { slot: 'R1C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R1C7', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    expect(moves).toHaveLength(1);
+    // Target must be C2 (adjacent to anchor C1) — not C0 or C8
+    expect(moves[0].to).toBe('R1C2');
+  });
+
+  it('handles multiple wines scattered in the same row', () => {
+    // Wine A at C1, C5; Wine B at C3, C7 — both need grouping
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C3', id: 2, wine_name: 'Wine B' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C7', id: 2, wine_name: 'Wine B' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    // Both wines should get grouping moves
+    const wineAMoves = moves.filter(m => m.wineId === 1);
+    const wineBMoves = moves.filter(m => m.wineId === 2);
+    expect(wineAMoves.length).toBeGreaterThanOrEqual(1);
+    expect(wineBMoves.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('does not generate moves across different rows', () => {
+    // Wine A at R3C1 and R5C1 — different rows, no grouping within a single row
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R5C1', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    expect(moves).toEqual([]);
+  });
+
+  it('skips bottles that are already part of contiguous block', () => {
+    // Wine A at C1, C2, C5 — C1 and C2 form a block, only C5 needs to move
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    expect(moves).toHaveLength(1);
+    expect(moves[0].from).toBe('R3C5');
+    expect(moves[0].to).toBe('R3C3'); // Next to C2
+  });
+
+  it('all generated moves have type grouping and priority 5', () => {
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 2, wine_name: 'Wine B' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    for (const move of moves) {
+      expect(move.type).toBe('grouping');
+      expect(move.priority).toBe(5);
+    }
   });
 });

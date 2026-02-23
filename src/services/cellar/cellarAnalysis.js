@@ -22,7 +22,8 @@ import {
   generateMoveSuggestions,
   buildZoneCapacityAlerts,
   getCurrentZoneAllocation,
-  generateCompactionMoves
+  generateCompactionMoves,
+  generateSameWineGroupingMoves
 } from './cellarSuggestions.js';
 import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { auditMoveSuggestions } from './moveAuditor.js';
@@ -176,6 +177,11 @@ export async function analyseCellar(wines) {
   report.compactionMoves = compactionMoves;
   report.summary.gapCount = compactionMoves.length;
 
+  // Generate same-wine grouping moves (swap scattered bottles within rows)
+  const groupingMoves = generateSameWineGroupingMoves(slotToWine, zoneMap);
+  report.groupingMoves = groupingMoves;
+  report.summary.groupingMoveCount = groupingMoves.length;
+
   // Dynamic row allocation based on current inventory
   let dynamicRanges;
   try {
@@ -198,6 +204,15 @@ export async function analyseCellar(wines) {
       type: 'row_gaps',
       severity: 'info',
       message: `${compactionMoves.length} gap(s) detected in rows. Bottles can be shifted ${layoutSettings.fillDirection === 'left' ? 'left' : 'right'} to keep rows tidy.`
+    });
+  }
+
+  if (groupingMoves.length > 0) {
+    const wineCount = new Set(groupingMoves.filter(m => !m.reason.startsWith('Make room')).map(m => m.wineId)).size;
+    report.alerts.push({
+      type: 'wine_grouping',
+      severity: 'info',
+      message: `${wineCount} wine(s) have bottles scattered within the same row. ${groupingMoves.length} swap(s) suggested to group them adjacently.`
     });
   }
 

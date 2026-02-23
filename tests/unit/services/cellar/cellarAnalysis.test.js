@@ -20,7 +20,8 @@ vi.mock('../../../../src/services/cellar/cellarSuggestions.js', () => ({
   generateMoveSuggestions: vi.fn().mockResolvedValue([]),
   buildZoneCapacityAlerts: vi.fn().mockResolvedValue([]),
   getCurrentZoneAllocation: vi.fn().mockResolvedValue({ zoneToRows: {}, rowToZoneId: {} }),
-  generateCompactionMoves: vi.fn().mockReturnValue([])
+  generateCompactionMoves: vi.fn().mockReturnValue([]),
+  generateSameWineGroupingMoves: vi.fn().mockReturnValue([])
 }));
 
 vi.mock('../../../../src/services/cellar/cellarNarratives.js', () => ({

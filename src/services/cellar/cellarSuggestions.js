@@ -7,7 +7,7 @@
 import { getZoneById } from '../../config/cellarZones.js';
 import { findAvailableSlot } from './cellarPlacement.js';
 import { getActiveZoneMap, getAllocatedRowMap } from './cellarAllocation.js';
-import { detectRowGaps } from './cellarMetrics.js';
+import { detectRowGaps, parseSlot } from './cellarMetrics.js';
 
 // ───────────────────────────────────────────────────────────
 // Zone allocation queries
@@ -583,4 +583,149 @@ export function generateCompactionMoves(slotToWine, fillDirection = 'left') {
     confidence: 'high',
     priority: 4 // Lower priority than zone moves (1-3)
   }));
+}
+
+// ───────────────────────────────────────────────────────────
+// Same-wine grouping within zone rows
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Generate swap moves that group same-wine bottles adjacently within each
+ * zone's rows. For example, if Kleine Zalze Cab Sauv has bottles at R11C2
+ * and R11C7, this suggests swaps so they end up next to each other.
+ *
+ * Only generates moves within the same row to keep swaps simple and
+ * low-risk. Cross-row grouping is handled by the initial placement
+ * adjacency logic in findSlotInRows.
+ *
+ * @param {Map} slotToWine - Map of slotId → wine object (with .id, .wine_name)
+ * @param {Object} zoneMap - Row-to-zone mapping from getActiveZoneMap()
+ * @returns {Array<Object>} Grouping swap suggestions (priority 5)
+ */
+export function generateSameWineGroupingMoves(slotToWine, zoneMap) {
+  const moves = [];
+
+  // Build per-row wine groups: row → Map<wineId, [{slotId, col}]>
+  const rowWineGroups = new Map();
+  for (const [slotId, wine] of slotToWine) {
+    const parsed = parseSlot(slotId);
+    if (!parsed) continue;
+    const rowId = `R${parsed.row}`;
+    if (!rowWineGroups.has(rowId)) rowWineGroups.set(rowId, new Map());
+    const wineMap = rowWineGroups.get(rowId);
+    if (!wineMap.has(wine.id)) wineMap.set(wine.id, []);
+    wineMap.get(wine.id).push({ slotId, col: parsed.col, wine });
+  }
+
+  // For each row, find wines with 2+ bottles that aren't all adjacent
+  for (const [rowId, wineMap] of rowWineGroups) {
+    for (const [wineId, bottles] of wineMap) {
+      if (bottles.length < 2) continue;
+
+      // Sort by column
+      bottles.sort((a, b) => a.col - b.col);
+
+      // Check if already contiguous
+      const isContiguous = bottles.every((b, i) =>
+        i === 0 || b.col === bottles[i - 1].col + 1
+      );
+      if (isContiguous) continue;
+
+      // Find the ideal contiguous block position.
+      // Anchor on the leftmost bottle and try to consolidate others near it.
+      const anchorCol = bottles[0].col;
+      const wineName = bottles[0].wine.wine_name;
+
+      // Build the current contiguous block starting from anchor
+      const blockCols = new Set([anchorCol]);
+      for (const b of bottles) {
+        let adjacent = false;
+        for (const bc of blockCols) {
+          if (Math.abs(b.col - bc) === 1) {
+            adjacent = true;
+            break;
+          }
+        }
+        if (adjacent) blockCols.add(b.col);
+      }
+
+      // Scattered bottles = those not in the contiguous block
+      const scattered = bottles.filter(b => !blockCols.has(b.col));
+      if (scattered.length === 0) continue;
+
+      // For each scattered bottle, find best adjacent slot via swap
+      const maxCol = rowId === 'R1' ? 7 : 9;
+      const usedInThisRound = new Set();
+
+      for (const scatteredBottle of scattered) {
+        // Find adjacent slots near the anchor block
+        const targetCols = [];
+        for (const bc of blockCols) {
+          if (bc - 1 >= 1) targetCols.push(bc - 1);
+          if (bc + 1 <= maxCol) targetCols.push(bc + 1);
+        }
+        // Also consider slots adjacent to already-placed scattered bottles
+        for (const placed of usedInThisRound) {
+          if (placed - 1 >= 1) targetCols.push(placed - 1);
+          if (placed + 1 <= maxCol) targetCols.push(placed + 1);
+        }
+
+        // Sort target columns by distance to anchor block center
+        const blockCenter = [...blockCols].reduce((a, b) => a + b, 0) / blockCols.size;
+        const uniqueTargets = [...new Set(targetCols)]
+          .filter(c => c !== scatteredBottle.col && !blockCols.has(c) && !usedInThisRound.has(c))
+          .sort((a, b) => Math.abs(a - blockCenter) - Math.abs(b - blockCenter));
+
+        for (const targetCol of uniqueTargets) {
+          const targetSlot = `${rowId}C${targetCol}`;
+          const occupant = slotToWine.get(targetSlot);
+
+          if (!occupant) {
+            // Empty slot — simple move
+            moves.push({
+              type: 'grouping',
+              wineId,
+              wineName,
+              from: scatteredBottle.slotId,
+              to: targetSlot,
+              reason: `Group ${wineName} bottles together in ${rowId}`,
+              confidence: 'medium',
+              priority: 5
+            });
+            blockCols.add(targetCol);
+            usedInThisRound.add(targetCol);
+            break;
+          } else if (occupant.id !== wineId) {
+            // Occupied by a different wine — propose swap
+            moves.push({
+              type: 'grouping',
+              wineId,
+              wineName,
+              from: scatteredBottle.slotId,
+              to: targetSlot,
+              reason: `Group ${wineName} bottles together in ${rowId}`,
+              confidence: 'medium',
+              priority: 5
+            });
+            moves.push({
+              type: 'grouping',
+              wineId: occupant.id,
+              wineName: occupant.wine_name,
+              from: targetSlot,
+              to: scatteredBottle.slotId,
+              reason: `Make room for ${wineName} grouping in ${rowId}`,
+              confidence: 'medium',
+              priority: 5
+            });
+            blockCols.add(targetCol);
+            usedInThisRound.add(targetCol);
+            break;
+          }
+          // If occupied by same wine, skip (already grouped)
+        }
+      }
+    }
+  }
+
+  return moves;
 }

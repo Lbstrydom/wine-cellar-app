@@ -271,23 +271,59 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
 
   const colorSet = Array.isArray(colorRange) ? new Set(colorRange.map(Number)) : null;
 
+  // Query zone's existing rows to prefer adjacent rows (contiguity)
+  const existingAlloc = await client.query(
+    'SELECT assigned_rows FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+    [cellarId, zoneId]
+  );
+  const existingRowNums = existingAlloc.rows.length > 0
+    ? parseAssignedRows(existingAlloc.rows[0].assigned_rows)
+      .map(r => parseInt(String(r).replace('R', ''), 10))
+      .filter(n => !isNaN(n))
+    : [];
+
+  /**
+   * Sort row numbers by distance to the zone's existing rows.
+   * Rows adjacent (distance=1) to existing rows are preferred.
+   * When no existing rows, original order is preserved.
+   */
+  function sortByAdjacency(rowNums) {
+    if (existingRowNums.length === 0) return rowNums;
+    return [...rowNums].sort((a, b) => {
+      const distA = Math.min(...existingRowNums.map(r => Math.abs(a - r)));
+      const distB = Math.min(...existingRowNums.map(r => Math.abs(b - r)));
+      return distA - distB;
+    });
+  }
+
+  // Build colour-compatible candidates from preferred range
+  const preferredCandidates = [];
   for (const rowNum of preferredRange) {
     const rowId = `R${rowNum}`;
     const isColorCompatible = !colorSet || colorSet.has(rowNum);
     if (!usedRows.has(rowId) && isColorCompatible) {
-      assignedRow = rowId;
-      break;
+      preferredCandidates.push(rowNum);
     }
+  }
+
+  // Sort by adjacency to existing zone rows and pick closest
+  const sortedPreferred = sortByAdjacency(preferredCandidates);
+  if (sortedPreferred.length > 0) {
+    assignedRow = `R${sortedPreferred[0]}`;
   }
 
   // If no preferred row available, try colour-compatible rows using dynamic ranges
   if (!assignedRow && Array.isArray(colorRange)) {
+    const colorCandidates = [];
     for (const rowNum of colorRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
-        assignedRow = rowId;
-        break;
+        colorCandidates.push(rowNum);
       }
+    }
+    const sortedColor = sortByAdjacency(colorCandidates);
+    if (sortedColor.length > 0) {
+      assignedRow = `R${sortedColor[0]}`;
     }
   }
 
