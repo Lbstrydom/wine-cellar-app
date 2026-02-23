@@ -19,6 +19,7 @@ import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './label
 import { escapeHtml } from '../utils.js';
 import { renderGrapeHealthBanner } from './grapeHealth.js';
 import { renderConsolidationCards } from './consolidation.js';
+import { renderLayoutProposalCTA } from './layoutDiffOrchestrator.js';
 
 let _onRenderAnalysis = null;
 
@@ -264,6 +265,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderZoneNarratives(analysis.zoneNarratives);
   renderZoneIssueActions(analysis, onRenderAnalysis);
   renderConsolidationCards(analysis);
+  renderLayoutProposalCTA(analysis);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);
@@ -317,6 +319,12 @@ function updateActionButton(analysis, onRenderAnalysis) {
       hint: 'Walk through the moves needed after reconfiguration.',
       handler: () => {
         const currentAnalysis = getCurrentAnalysis();
+        // Prefer unified layout proposal CTA (Phase 4-7)
+        const ctaEl = document.getElementById('layout-proposal-cta');
+        if (ctaEl && ctaEl.style.display !== 'none' && currentAnalysis?.layoutProposal?.sortPlan?.length) {
+          ctaEl.scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
         if (currentAnalysis?.suggestedMoves?.some(m => m.type === 'move')) {
           openMoveGuide(currentAnalysis.suggestedMoves);
         } else {

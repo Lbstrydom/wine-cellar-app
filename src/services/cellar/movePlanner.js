@@ -9,6 +9,7 @@ import { getActiveZoneMap } from './cellarAllocation.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 import { inferColor } from './cellarPlacement.js';
+import { parseSlot, extractRowNumber } from './slotUtils.js';
 
 /**
  * Move types with effort scores.
@@ -236,31 +237,7 @@ async function findSwapOpportunity(wine, allWines, _availableSlots) {
   return null;
 }
 
-/**
- * Parse slot into row and column.
- * @param {string} slot - Slot code (e.g., "R3C5", "F2")
- * @returns {Object} {row, col}
- */
-function parseSlot(slot) {
-  if (slot.startsWith('F')) {
-    return { row: 0, col: parseInt(slot.slice(1)) };
-  }
-  const match = slot.match(/^R(\d+)C(\d+)$/);
-  if (match) {
-    return { row: parseInt(match[1]), col: parseInt(match[2]) };
-  }
-  return { row: 0, col: 0 };
-}
-
-/**
- * Extract row number from slot.
- * @param {string} slot - Slot code
- * @returns {number} Row number
- */
-function extractRowNumber(slot) {
-  const match = slot.match(/^R(\d+)C/);
-  return match ? parseInt(match[1]) : 0;
-}
+// parseSlot and extractRowNumber imported from slotUtils.js
 
 /**
  * Get zone for a slot based on zone layout.
@@ -404,7 +381,7 @@ export function validatePlan(plan) {
 export async function validateMovePlan(moves, cellarId) {
   const errors = [];
   const targetSlots = new Set();
-  const movedWineIds = new Set();
+  const movedInstanceKeys = new Set();
 
   // Fetch current occupancy from DB (canonical source of truth)
   const slots = await db.prepare(
@@ -416,17 +393,21 @@ export async function validateMovePlan(moves, cellarId) {
   const vacatedSlots = new Set(moves.map(m => m.from));
 
   for (const move of moves) {
-    // Rule 1: Each wine can only be moved once
-    if (movedWineIds.has(move.wineId)) {
+    // Rule 1: Each (wineId, from) instance can only be moved once.
+    // A wine with multiple bottles may appear in multiple moves (different
+    // from slots), but the same bottle (same from slot) cannot be moved twice.
+    const moveKey = `${move.wineId}:${move.from}`;
+    if (movedInstanceKeys.has(moveKey)) {
       errors.push({
-        type: 'duplicate_wine',
-        message: `Wine ${move.wineName || move.wineId} (ID: ${move.wineId}) appears in multiple moves`,
+        type: 'duplicate_move_instance',
+        message: `Wine ${move.wineName || move.wineId} (ID: ${move.wineId}) at ${move.from} appears in multiple moves`,
         move,
         wineId: move.wineId,
-        wineName: move.wineName
+        wineName: move.wineName,
+        fromSlot: move.from
       });
     }
-    movedWineIds.add(move.wineId);
+    movedInstanceKeys.add(moveKey);
 
     // Rule 2: Each target slot can only be used once in this plan
     if (targetSlots.has(move.to)) {
@@ -545,7 +526,7 @@ export async function validateMovePlan(moves, cellarId) {
       duplicateTargets: errors.filter(e => e.type === 'duplicate_target').length,
       occupiedTargets: errors.filter(e => e.type === 'target_occupied').length,
       sourceMismatches: errors.filter(e => e.type === 'source_mismatch').length,
-      duplicateWines: errors.filter(e => e.type === 'duplicate_wine').length,
+      duplicateInstances: errors.filter(e => e.type === 'duplicate_move_instance').length,
       noopMoves: errors.filter(e => e.type === 'noop_move').length,
       zoneColourViolations: errors.filter(e => e.type === 'zone_colour_violation').length
     }

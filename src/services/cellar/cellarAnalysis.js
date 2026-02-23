@@ -30,17 +30,10 @@ import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { auditMoveSuggestions } from './moveAuditor.js';
 import { toAuditMetadata } from '../shared/auditUtils.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
+import { hasMoveDependencies } from './moveUtils.js';
+import { proposeIdealLayout } from './layoutProposer.js';
+import { computeSortPlan } from './layoutSorter.js';
 // Re-exported below via barrel re-exports
-
-function hasMoveDependencies(suggestions) {
-  const moveSuggestions = Array.isArray(suggestions)
-    ? suggestions.filter(s => s?.type === 'move')
-    : [];
-  if (moveSuggestions.length === 0) return false;
-  const sources = new Set(moveSuggestions.map(m => m.from));
-  const targets = new Set(moveSuggestions.map(m => m.to));
-  return [...sources].some(slot => targets.has(slot));
-}
 
 // ───────────────────────────────────────────────────────────
 // Main orchestrator
@@ -148,9 +141,13 @@ export async function analyseCellar(wines) {
     });
   }
 
-  // ── Opus 4.6 move audit (optional) ──────────────────────
-  // Quality-checks the algorithmic moves for logical errors,
-  // missed swaps, capacity violations, etc.
+  // ── Opus 4.6 move audit (optional, legacy path) ─────────
+  // Quality-checks the old fragmented suggestedMoves for logical
+  // errors, missed swaps, capacity violations, etc.
+  // With the unified layout proposal (Phase 3+), the sort plan is
+  // algorithmically generated and doesn't need LLM auditing.
+  // The auditor remains active for suggestedMoves during the
+  // transition period; will be deprecated in Phase 10.
   const auditResult = await auditMoveSuggestions(
     suggestedMoves,
     report.misplacedWines,
@@ -319,6 +316,28 @@ export async function analyseCellar(wines) {
       severity: 'info',
       message: `Reorganisation recommended: ${reasons.join(', ')}. Review suggested moves.`
     });
+  }
+
+  // ── Unified layout proposal (Phase 3) ─────────────────────
+  // Compute ideal target layout respecting all rules simultaneously.
+  // Null when no zones are configured (signal frontend to show zone wizard).
+  if (hasZoneAllocations) {
+    try {
+      const proposal = await proposeIdealLayout(wines, { cellarId });
+      const sortPlan = computeSortPlan(proposal.currentLayout, proposal.targetLayout);
+      report.layoutProposal = {
+        currentLayout: Object.fromEntries(proposal.currentLayout),
+        targetLayout: Object.fromEntries(proposal.targetLayout),
+        sortPlan: sortPlan.moves,
+        stats: { ...proposal.stats, ...sortPlan.stats },
+        issues: proposal.issues
+      };
+    } catch (err) {
+      console.error('[CellarAnalysis] Layout proposal failed:', err.message);
+      report.layoutProposal = null;
+    }
+  } else {
+    report.layoutProposal = null;
   }
 
   return report;

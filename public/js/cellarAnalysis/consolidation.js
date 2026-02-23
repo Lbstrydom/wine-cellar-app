@@ -91,9 +91,22 @@ export function renderConsolidationCards(analysis) {
   el.innerHTML = html;
   el.style.display = 'block';
 
-  // Wire "View Moves" buttons — scroll to the Suggested Moves section
+  // Wire "View Moves" buttons — scroll to layout diff if visible, else Suggested Moves
   el.querySelectorAll('.consolidation-view-moves-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      // Prefer the unified layout diff container (Phase 4-7)
+      const diffEl = document.getElementById('layout-diff-container');
+      if (diffEl && diffEl.style.display !== 'none') {
+        diffEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      // Try the proposal CTA (diff view not yet opened)
+      const ctaEl = document.getElementById('layout-proposal-cta');
+      if (ctaEl && ctaEl.style.display !== 'none') {
+        ctaEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        return;
+      }
+      // Fallback: legacy Suggested Moves section
       const movesEl = document.getElementById('analysis-moves');
       if (movesEl) {
         movesEl.scrollIntoView({ behavior: 'smooth', block: 'start' });

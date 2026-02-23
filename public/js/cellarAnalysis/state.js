@@ -33,7 +33,15 @@ export const analysisState = {
   fridgeOrganizeMoves: null,
   activeWorkspace: loadPersistedWorkspace(),
   /** @type {Map<number, {judgment: 'confirmed'|'modified'|'rejected', reason?: string, to?: string, toZone?: string}>|null} */
-  aiMoveJudgments: null
+  aiMoveJudgments: null,
+
+  // ── Unified layout proposal (Phase 4-7) ──
+  /** @type {Object|null} Full layout proposal from API (currentLayout, targetLayout, sortPlan, stats) */
+  layoutProposal: null,
+  /** @type {'idle'|'proposed'|'adjusting'|'executing'} */
+  layoutFlowState: 'idle',
+  /** @type {string|null} Hash of currentLayout at proposal time (stale detection) */
+  currentLayoutSnapshot: null
 };
 
 /**
@@ -202,6 +210,56 @@ export function setAIMoveJudgments(judgments) {
   analysisState.aiMoveJudgments = judgments;
 }
 
+// ── Layout proposal state helpers (Phase 4-7) ──
+
+/**
+ * Get the unified layout proposal.
+ * @returns {Object|null}
+ */
+export function getLayoutProposal() {
+  return analysisState.layoutProposal;
+}
+
+/**
+ * Set the unified layout proposal.
+ * @param {Object|null} proposal
+ */
+export function setLayoutProposal(proposal) {
+  analysisState.layoutProposal = proposal;
+}
+
+/**
+ * Get the current layout flow state.
+ * @returns {'idle'|'proposed'|'adjusting'|'executing'}
+ */
+export function getLayoutFlowState() {
+  return analysisState.layoutFlowState;
+}
+
+/**
+ * Set the current layout flow state.
+ * @param {'idle'|'proposed'|'adjusting'|'executing'} flowState
+ */
+export function setLayoutFlowState(flowState) {
+  analysisState.layoutFlowState = flowState;
+}
+
+/**
+ * Get the current layout snapshot hash (for stale detection).
+ * @returns {string|null}
+ */
+export function getCurrentLayoutSnapshot() {
+  return analysisState.currentLayoutSnapshot;
+}
+
+/**
+ * Set the current layout snapshot hash.
+ * @param {string|null} hash
+ */
+export function setCurrentLayoutSnapshot(hash) {
+  analysisState.currentLayoutSnapshot = hash;
+}
+
 /**
  * Reset zone chat state.
  */
@@ -222,5 +280,8 @@ function resetAnalysisState() {
   analysisState.fridgeOrganizeMoves = null;
   analysisState.activeWorkspace = DEFAULT_WORKSPACE;
   analysisState.aiMoveJudgments = null;
+  analysisState.layoutProposal = null;
+  analysisState.layoutFlowState = 'idle';
+  analysisState.currentLayoutSnapshot = null;
   try { localStorage.removeItem(WORKSPACE_STORAGE_KEY); } catch (_) { /* noop */ }
 }

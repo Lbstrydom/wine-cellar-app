@@ -370,3 +370,27 @@ export async function reassignWineZone(wineId, newZoneId, reason = '') {
   });
   return handleResponse(res, 'Failed to reassign wine zone');
 }
+
+/**
+ * Get proposed ideal bottle layout for the cellar.
+ * Returns current layout, target layout, sort plan, stats, and issues.
+ * @returns {Promise<Object>} Layout proposal with sortPlan
+ */
+export async function getProposedBottleLayout() {
+  const res = await fetch(`${API_BASE}/api/cellar/bottle-layout/propose`);
+  return handleResponse(res, 'Failed to compute layout proposal');
+}
+
+/**
+ * Preview-validate a set of moves without executing them.
+ * @param {Array<{wineId: number, from: string, to: string}>} moves - Move objects
+ * @returns {Promise<Object>} Validation result with errors and summary
+ */
+export async function validateMoves(moves) {
+  const res = await fetch(`${API_BASE}/api/cellar/validate-moves`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ moves })
+  });
+  return handleResponse(res, 'Move validation failed');
+}

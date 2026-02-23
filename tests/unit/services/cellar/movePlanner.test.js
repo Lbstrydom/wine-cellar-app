@@ -40,27 +40,48 @@ describe('validateMovePlan', () => {
     vi.clearAllMocks();
   });
 
-  describe('Rule 1: Each wine can only be moved once', () => {
-    it('should reject moves with duplicate wine IDs', async () => {
-      // Setup: Mock empty slots table (no occupancy conflicts)
+  describe('Rule 1: Each (wineId, from) instance can only be moved once', () => {
+    it('should allow same wineId with distinct from slots (multi-bottle wine)', async () => {
+      // Setup: Both slots occupied by same wine (multi-bottle)
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R1C2', wine_id: 1 }
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' },
+        { wineId: 1, wineName: 'Chianti', from: 'R1C2', to: 'R2C2' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      // Same wineId with different from slots is now allowed
+      const instanceError = result.errors.find(e => e.type === 'duplicate_move_instance');
+      expect(instanceError).toBeUndefined();
+    });
+
+    it('should reject duplicate (wineId, from) instance', async () => {
+      // Setup: Mock empty slots table
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([])
       });
 
       const moves = [
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' },
-        { wineId: 1, wineName: 'Chianti', from: 'R1C2', to: 'R2C2' } // Duplicate wine ID
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C2' } // Same wineId AND same from
       ];
 
       const result = await validateMovePlan(moves, 'test-cellar-id');
 
       expect(result.valid).toBe(false);
-      expect(result.summary.duplicateWines).toBe(1);
-      // Note: May have multiple errors due to source mismatches (wine not at expected location)
+      expect(result.summary.duplicateInstances).toBe(1);
       expect(result.errors.length).toBeGreaterThanOrEqual(1);
-      const duplicateWineError = result.errors.find(e => e.type === 'duplicate_wine');
-      expect(duplicateWineError).toBeDefined();
-      expect(duplicateWineError.wineId).toBe(1);
+      const instanceError = result.errors.find(e => e.type === 'duplicate_move_instance');
+      expect(instanceError).toBeDefined();
+      expect(instanceError.wineId).toBe(1);
+      expect(instanceError.fromSlot).toBe('R1C1');
     });
 
     it('should allow moves with unique wine IDs', async () => {
@@ -78,7 +99,7 @@ describe('validateMovePlan', () => {
 
       const result = await validateMovePlan(moves, 'test-cellar-id');
 
-      expect(result.summary.duplicateWines).toBe(0);
+      expect(result.summary.duplicateInstances).toBe(0);
     });
   });
 
@@ -344,7 +365,7 @@ describe('validateMovePlan', () => {
       expect(result.summary).toHaveProperty('duplicateTargets');
       expect(result.summary).toHaveProperty('occupiedTargets');
       expect(result.summary).toHaveProperty('sourceMismatches');
-      expect(result.summary).toHaveProperty('duplicateWines');
+      expect(result.summary).toHaveProperty('duplicateInstances');
       expect(result.summary).toHaveProperty('noopMoves');
       expect(result.summary).toHaveProperty('zoneColourViolations');
     });

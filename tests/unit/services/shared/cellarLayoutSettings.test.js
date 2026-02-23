@@ -10,12 +10,19 @@ vi.mock('../../../../src/db/index.js', () => ({
 }));
 
 import db from '../../../../src/db/index.js';
-import {
-  getCellarLayoutSettings,
-  getColourRowRanges,
-  isWhiteFamily,
-  computeDynamicRowSplit
-} from '../../../../src/services/shared/cellarLayoutSettings.js';
+
+// In --no-isolate mode, other test files may vi.mock() the entire
+// cellarLayoutSettings module (e.g. layoutProposerIntegration.test.js,
+// cellarAnalysis.test.js), replacing real exports with mocks.
+// Use vi.importActual() to guarantee we test the REAL implementations.
+let getCellarLayoutSettings, getColourRowRanges, isWhiteFamily, computeDynamicRowSplit;
+beforeAll(async () => {
+  const actual = await vi.importActual('../../../../src/services/shared/cellarLayoutSettings.js');
+  getCellarLayoutSettings = actual.getCellarLayoutSettings;
+  getColourRowRanges = actual.getColourRowRanges;
+  isWhiteFamily = actual.isWhiteFamily;
+  computeDynamicRowSplit = actual.computeDynamicRowSplit;
+});
 
 // ─── isWhiteFamily ────────────────────────────────────────
 

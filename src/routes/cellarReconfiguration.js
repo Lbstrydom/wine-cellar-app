@@ -9,6 +9,8 @@ import { getZoneById } from '../config/cellarZones.js';
 import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges } from '../services/shared/cellarLayoutSettings.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { validateMovePlan } from '../services/cellar/movePlanner.js';
+import { proposeIdealLayout } from '../services/cellar/layoutProposer.js';
+import { computeSortPlan } from '../services/cellar/layoutSorter.js';
 import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
 import { putPlan, getPlan, deletePlan } from '../services/zone/reconfigurationPlanStore.js';
 import { generateReconfigurationPlan } from '../services/zone/zoneReconfigurationPlanner.js';
@@ -908,6 +910,41 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     results,
     validation
   });
+}));
+
+// ── Bottle Layout Proposal ──────────────────────────────────────────
+
+/**
+ * GET /bottle-layout/propose
+ * Compute the ideal bottle-to-slot layout for the entire cellar.
+ * Returns current layout, target layout, sort plan, stats, and issues.
+ */
+router.get('/bottle-layout/propose', asyncHandler(async (req, res) => {
+  const wines = await getAllWinesWithSlots(req.cellarId);
+  const proposal = await proposeIdealLayout(wines, { cellarId: req.cellarId });
+  const sortPlan = computeSortPlan(proposal.currentLayout, proposal.targetLayout);
+
+  res.json({
+    currentLayout: Object.fromEntries(proposal.currentLayout),
+    targetLayout: Object.fromEntries(proposal.targetLayout),
+    sortPlan: sortPlan.moves,
+    stats: { ...proposal.stats, ...sortPlan.stats },
+    issues: proposal.issues
+  });
+}));
+
+/**
+ * POST /validate-moves
+ * Preview-validate a set of moves without executing them.
+ * Useful for the frontend to show validation results before committing.
+ */
+router.post('/validate-moves', asyncHandler(async (req, res) => {
+  const { moves } = req.body;
+  if (!Array.isArray(moves) || moves.length === 0) {
+    return res.status(400).json({ error: 'Moves array required' });
+  }
+  const validation = await validateMovePlan(moves, req.cellarId);
+  res.json({ validation });
 }));
 
 export default router;

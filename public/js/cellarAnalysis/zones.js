@@ -104,6 +104,8 @@ export async function startZoneSetup() {
   document.getElementById('analysis-fridge')?.style.setProperty('display', 'none');
   document.getElementById('analysis-zones')?.style.setProperty('display', 'none');
   document.getElementById('analysis-moves')?.style.setProperty('display', 'none');
+  document.getElementById('layout-proposal-cta')?.style.setProperty('display', 'none');
+  document.getElementById('layout-diff-container')?.style.setProperty('display', 'none');
   document.getElementById('analysis-ai-advice')?.style.setProperty('display', 'none');
 
   proposalList.innerHTML = '<div class="analysis-loading">Generating zone layout proposal...</div>';

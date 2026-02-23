@@ -560,7 +560,7 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 6;  // v6: include bottle_count + zone_allocations in cache fingerprint to prevent stale AI/analysis state
+const ANALYSIS_LOGIC_VERSION = 7;  // v7: add layoutProposal (unified bottle-to-slot layout computation) to analysis report
 
 /**
  * Parse assigned_rows from TEXT JSON or JSONB-decoded array.

@@ -113,22 +113,25 @@ function enrichMovesWithNames(moves) {
   const analysis = getCurrentAnalysis();
   const misplaced = analysis?.misplacedWines || [];
   const suggested = analysis?.suggestedMoves || [];
+  // Also check unified layout proposal sort plan for name enrichment (Phase 4-7)
+  const layoutMoves = analysis?.layoutProposal?.sortPlan || [];
 
   return moves.map(m => {
-    // Name lookup: misplacedWines first, then suggestedMoves
+    // Name lookup: misplacedWines first, then suggestedMoves, then layout sort plan
     const mp = misplaced.find(w => w.wineId === m.wineId);
     const sg = suggested.find(s => s.wineId === m.wineId);
-    const wineName = m.wineName || mp?.name || sg?.wineName || `Wine #${m.wineId}`;
+    const lm = layoutMoves.find(l => l.wineId === m.wineId);
+    const wineName = m.wineName || mp?.name || sg?.wineName || lm?.wineName || `Wine #${m.wineId}`;
 
     // Wine's physical position — original suggestedMoves is authoritative.
     // AI may return zone names instead of slot coordinates.
-    const from = sg?.from || m.from || null;
+    const from = sg?.from || lm?.from || m.from || null;
 
     // Target slot — prefer AI's value (may be modified), fall back to original
-    const to = m.to || sg?.to || null;
+    const to = m.to || sg?.to || lm?.to || null;
 
     // Zone display name for UI context (e.g. "SA Blends", "Shiraz")
-    const toZone = m.toZone || sg?.toZone || null;
+    const toZone = m.toZone || sg?.toZone || lm?.zoneId || null;
 
     return { ...m, wineName, from, to, toZone };
   });

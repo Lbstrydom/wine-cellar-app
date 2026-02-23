@@ -28,8 +28,9 @@ describe('parseSlot', () => {
     expect(parseSlot('R3C7')).toEqual({ row: 3, col: 7 });
   });
 
-  it('returns null for fridge slots', () => {
-    expect(parseSlot('F1')).toBeNull();
+  it('parses fridge slots with row 0', () => {
+    expect(parseSlot('F1')).toEqual({ row: 0, col: 1 });
+    expect(parseSlot('F12')).toEqual({ row: 0, col: 12 });
   });
 
   it('returns null for null/undefined', () => {

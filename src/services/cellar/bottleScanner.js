@@ -6,7 +6,7 @@
  */
 
 import { findBestZone, inferColor } from './cellarPlacement.js';
-import { parseSlot } from './cellarMetrics.js';
+import { parseSlot } from './slotUtils.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 

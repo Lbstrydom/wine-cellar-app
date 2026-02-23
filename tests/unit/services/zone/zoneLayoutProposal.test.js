@@ -9,6 +9,30 @@ vi.mock('../../../../src/db/index.js', () => ({
   }
 }));
 
+// Also mock cellarLayoutSettings to prevent import-chain issues in --no-isolate
+// mode. When other test files (e.g. layoutProposerIntegration.test.js) mock
+// cellarLayoutSettings, proposeZoneLayout's internal getCellarLayoutSettings call
+// would get the wrong mock. By mocking it here with sensible defaults, we ensure
+// consistent behaviour regardless of test ordering.
+vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', async () => {
+  const actual = await vi.importActual('../../../../src/services/shared/cellarLayoutSettings.js');
+  return {
+    ...actual,
+    getCellarLayoutSettings: vi.fn().mockResolvedValue({
+      fillDirection: 'left',
+      colourOrder: 'whites-top'
+    }),
+    getDynamicColourRowRanges: actual.getDynamicColourRowRanges ?? vi.fn().mockResolvedValue({
+      whiteRows: [1, 2, 3, 4, 5, 6, 7],
+      redRows: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      whiteRowCount: 7,
+      redRowCount: 12,
+      whiteCount: 10,
+      redCount: 30
+    })
+  };
+});
+
 import db from '../../../../src/db/index.js';
 import { getSavedZoneLayout, proposeZoneLayout } from '../../../../src/services/zone/zoneLayoutProposal.js';
 

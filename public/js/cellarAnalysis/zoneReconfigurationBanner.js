@@ -245,10 +245,20 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
   // Just applied a reconfiguration - show success banner instead of issues
   if (analysis?.__justReconfigured) {
     el.innerHTML = renderPostReconfigBanner(analysis);
-    // Wire "Review Moves Below" button
+    // Wire "Review Moves Below" button — prefer layout diff container (Phase 4-7)
     const scrollBtn = el.querySelector('[data-action="scroll-to-moves"]');
     if (scrollBtn) {
       scrollBtn.addEventListener('click', () => {
+        const diffEl = document.getElementById('layout-diff-container');
+        if (diffEl && diffEl.style.display !== 'none') {
+          diffEl.scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
+        const ctaEl = document.getElementById('layout-proposal-cta');
+        if (ctaEl && ctaEl.style.display !== 'none') {
+          ctaEl.scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
         document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
       });
     }

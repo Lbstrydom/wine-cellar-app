@@ -7,21 +7,10 @@
 import { getZoneById } from '../../config/cellarZones.js';
 import { findBestZone, inferColor } from './cellarPlacement.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
+import { parseSlot } from './slotUtils.js';
 
-// ───────────────────────────────────────────────────────────
-// Slot parsing
-// ───────────────────────────────────────────────────────────
-
-/**
- * Parse slot ID into row and column numbers.
- * @param {string} slotId - e.g. "R3C7"
- * @returns {{row: number, col: number}|null}
- */
-export function parseSlot(slotId) {
-  if (!slotId) return null;
-  const match = slotId.match(/R(\d+)C(\d+)/);
-  return match ? { row: parseInt(match[1], 10), col: parseInt(match[2], 10) } : null;
-}
+// Re-export parseSlot so existing consumers (bottleScanner, slots.js, cellarSuggestions) keep working
+export { parseSlot };
 
 // ───────────────────────────────────────────────────────────
 // Fragmentation

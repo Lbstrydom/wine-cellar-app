@@ -124,7 +124,9 @@ export {
   zoneChatMessage,
   reassignWineZone,
   backfillGrapes,
-  searchGrapes
+  searchGrapes,
+  getProposedBottleLayout,
+  validateMoves
 } from './cellar.js';
 
 // Awards database
