@@ -674,15 +674,23 @@ function scoreDonorCandidates(
         score -= 20; // Different color — penalize heavily
       }
 
-      // Adjacency to recipient's existing rows — improves contiguity
+      // Adjacency to recipient's existing rows — strongly preferred for contiguity
       const candidateRowNum = rowNum(candidateRow);
       const recipientRowNums = recipientRows.map(r => rowNum(r));
       const minDist = recipientRowNums.length > 0
         ? Math.min(...recipientRowNums.map(n => Math.abs(n - candidateRowNum)))
         : TOTAL_ROWS;
-      if (minDist <= 1) score += 20;
-      else if (minDist <= 2) score += 10;
+      if (minDist <= 1) score += 30;      // Adjacent — strong bonus
+      else if (minDist <= 2) score += 15;
       else if (minDist <= 3) score += 5;
+      else score -= 10;                   // Distant — penalize fragmentation
+
+      // Donor fragmentation penalty: prefer taking a row from the edge of
+      // the donor's block so the donor stays contiguous too
+      const donorRowNums = donorRows.map(r => rowNum(r)).sort((a, b) => a - b);
+      const isEdgeRow = candidateRowNum === donorRowNums[0] || candidateRowNum === donorRowNums[donorRowNums.length - 1];
+      if (isEdgeRow) score += 10;          // Edge row — donor stays contiguous
+      else if (donorRowNums.length > 2) score -= 10; // Interior row — splits donor
 
       // Lower donor utilization = better to take from
       score += Math.round(20 * (1 - donorUtilPct / 100));
@@ -789,9 +797,13 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
       const rowToFree = zoneRows[i];
       if (!rowToFree) break;
 
-      // Try to route to a colour-compatible deficit zone first
+      // Try to route to a colour-compatible deficit zone, preferring adjacency
       let targetZoneId = '__unassigned';
       let targetName = 'unassigned (freed for future use)';
+
+      const freedRowNum = rowNum(rowToFree);
+      let bestDeficitIdx = -1;
+      let bestScore = -Infinity;
 
       for (let d = 0; d < deficitZones.length; d++) {
         const deficit = deficitZones[d];
@@ -801,10 +813,24 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
         const compatible = fromColor === 'any' || deficit.color === 'any' || fromColor === deficit.color;
         if (!compatible) continue;
 
+        // Score by proximity of freed row to the deficit zone's existing rows
+        const deficitRows = (zoneRowMap.get(deficit.zoneId) || []).map(r => rowNum(r));
+        const minDist = deficitRows.length > 0
+          ? Math.min(...deficitRows.map(n => Math.abs(n - freedRowNum)))
+          : TOTAL_ROWS; // No existing rows — lowest priority
+        // Lower distance is better; invert for scoring
+        const score = TOTAL_ROWS - minDist;
+        if (score > bestScore) {
+          bestScore = score;
+          bestDeficitIdx = d;
+        }
+      }
+
+      if (bestDeficitIdx >= 0) {
+        const deficit = deficitZones[bestDeficitIdx];
         targetZoneId = deficit.zoneId;
         targetName = getZoneDisplayName(deficit.zoneId, zones);
         deficit.shortfall--;
-        break;
       }
 
       const fromName = getZoneDisplayName(fromZoneId, zones);
@@ -940,12 +966,17 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
     for (const r of rows) rowToZone.set(r, zoneId);
   }
 
-  // Extract unique zone IDs from scattered wines
-  const scatteredZoneIds = [...new Set(
-    scatteredWines.map(sw => sw.zoneId).filter(Boolean)
-  )];
+  // Expand to ALL non-contiguous multi-row zones, not just scatteredWines zones
+  const allMultiRowZones = new Set();
+  for (const [zoneId, rows] of zoneRowMap) {
+    if (rows.length >= 2) allMultiRowZones.add(zoneId);
+  }
+  // Also include zones from scatteredWines input
+  for (const sw of scatteredWines) {
+    if (sw.zoneId) allMultiRowZones.add(sw.zoneId);
+  }
 
-  for (const zoneId of scatteredZoneIds) {
+  for (const zoneId of allMultiRowZones) {
     if (actions.length >= maxConsolidations) break;
     if (neverMerge.has(zoneId)) continue;
 
@@ -1065,13 +1096,20 @@ function findContiguousBlocks(sortedRows) {
  * @returns {Array}
  */
 function prioritizeAndLimit(actions, maxActions) {
-  // Deduplicate: filter actions that reallocate the same row
-  const seenRows = new Set();
+  // Deduplicate: filter actions that reallocate the same row,
+  // but preserve swap pairs (consolidation). Two actions referencing the same
+  // row are a valid swap if their from/to zones mirror each other.
+  const seenRows = new Map(); // key → action
   const deduplicated = actions.filter(a => {
     if (a.type === 'reallocate_row') {
       const key = `R${a.rowNumber}`;
-      if (seenRows.has(key)) return false;
-      seenRows.add(key);
+      const prev = seenRows.get(key);
+      if (prev) {
+        // Allow if this is the return leg of a swap (zones mirror)
+        const isSwapPair = prev.fromZoneId === a.toZoneId && prev.toZoneId === a.fromZoneId;
+        if (!isSwapPair) return false;
+      }
+      seenRows.set(key, a);
     }
     return true;
   });

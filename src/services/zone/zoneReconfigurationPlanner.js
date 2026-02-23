@@ -379,6 +379,7 @@ A solver has already produced a draft plan. Your job is to:
 
 COLOR BOUNDARY RULE: ${colourOrder === 'reds-top' ? 'Red wines in lower rows, white wines in higher rows' : 'White wines in lower rows, red wines in higher rows'}. Never adjacent.
 CONSOLIDATION RULE: Same wine type should be physically near each other.
+CONTIGUITY RULE: A zone's rows MUST be contiguous (adjacent) where feasible. A zone at R3 and R8 is BAD; R3+R4 is GOOD. Prefer swapping to achieve contiguous blocks.
 
 You MUST respond with valid JSON only. Be concise.`;
 
@@ -647,7 +648,22 @@ function heuristicGapFill(
       }
 
       const donorRows = zoneRowMapHeuristic.get(donor.zoneId) || [];
-      const availableRow = donorRows.find(r => !rowsAlreadyMoved.has(r));
+      // Score donor rows by adjacency to recipient zone's existing rows (not first-fit)
+      const recipientRows = zoneRowMapHeuristic.get(toZoneId) || [];
+      const recipientRowNums = recipientRows.map(r => parseInt(String(r).replace(/^R/i, ''), 10));
+
+      const scoredRows = donorRows
+        .filter(r => !rowsAlreadyMoved.has(r))
+        .map(r => {
+          const rNum = parseInt(String(r).replace(/^R/i, ''), 10);
+          const minDist = recipientRowNums.length > 0
+            ? Math.min(...recipientRowNums.map(n => Math.abs(n - rNum)))
+            : 999;
+          return { row: r, dist: minDist };
+        })
+        .sort((a, b) => a.dist - b.dist);
+
+      const availableRow = scoredRows.length > 0 ? scoredRows[0].row : null;
       if (availableRow) {
         rowsAlreadyMoved.add(availableRow);
         // Normalize rowNumber to numeric (donorRows stores strings like "R5")
@@ -685,7 +701,103 @@ function heuristicGapFill(
 
   const combined = [...existingActions, ...newActions];
   const maxActions = stability === 'high' ? 3 : stability === 'moderate' ? 6 : 10;
-  return combined.slice(0, maxActions);
+
+  // Post-pass contiguity repair: detect non-contiguous zones and attempt
+  // local swaps with adjacent zones if colour-compatible
+  const postRepairActions = repairContiguityGaps(combined, liveZoneRowMap, maxActions);
+
+  return postRepairActions.slice(0, maxActions);
+}
+
+/**
+ * Post-pass contiguity repair. After all pipeline layers, detect zones whose
+ * assigned rows would be non-contiguous and attempt local swap actions with
+ * adjacent zones to close the gaps. Only adds swaps that are colour-compatible.
+ *
+ * @param {Array} actions   - Actions produced so far
+ * @param {Map}   zoneRowMap - Live zone→rows map (post-pipeline)
+ * @param {number} maxActions - Budget cap
+ * @returns {Array} Actions with contiguity repair swaps appended
+ */
+function repairContiguityGaps(actions, zoneRowMap, maxActions) {
+  if (!zoneRowMap || zoneRowMap.size === 0) return actions;
+
+  // Replay actions onto a mutable copy of the zone row map
+  const postMap = buildMutatedZoneRowMap(zoneRowMap, actions);
+
+  // Build reverse map: row → zone
+  const rowToZone = new Map();
+  for (const [zoneId, rows] of postMap) {
+    for (const r of rows) rowToZone.set(String(r), zoneId);
+  }
+
+  const repairActions = [];
+  const MAX_REPAIRS = 3; // Limit repair swaps to avoid plan bloat
+
+  for (const [zoneId, rows] of postMap) {
+    if (rows.length < 2) continue;
+    if (repairActions.length >= MAX_REPAIRS) break;
+
+    const nums = rows.map(r => {
+      const n = typeof r === 'string' ? parseInt(r.replace(/^R/i, ''), 10) : r;
+      return Number.isFinite(n) ? n : 0;
+    }).filter(n => n > 0).sort((a, b) => a - b);
+
+    if (nums.length < 2) continue;
+
+    // Check for gaps
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] - nums[i - 1] <= 1) continue; // Contiguous
+      if (repairActions.length >= MAX_REPAIRS) break;
+
+      // There's a gap between nums[i-1] and nums[i].
+      // Try to swap the outlier row with an adjacent row from another zone.
+      const outlierRow = nums[nums.length - 1]; // Furthest row in the block
+      const targetRow = nums[i - 1] + 1;        // Row just after the contiguous block
+
+      // Check if the target row is owned by another zone
+      const targetRowKey = `R${targetRow}`;
+      const otherZone = rowToZone.get(targetRowKey) || rowToZone.get(String(targetRow));
+      if (!otherZone || otherZone === zoneId) continue;
+
+      // Colour compatibility check
+      const zone = getZoneById(zoneId);
+      const other = getZoneById(otherZone);
+      const zoneColor = zone ? getEffectiveZoneColor(zone) : 'any';
+      const otherColor = other ? getEffectiveZoneColor(other) : 'any';
+      if (zoneColor !== 'any' && otherColor !== 'any' && zoneColor !== otherColor) continue;
+
+      // Don't swap if outlierRow is already being acted on
+      const outlierKey = `R${outlierRow}`;
+      const alreadyActedOn = actions.some(a =>
+        a.type === 'reallocate_row' && a.rowNumber === outlierRow
+      ) || repairActions.some(a => a.rowNumber === outlierRow || a.rowNumber === targetRow);
+      if (alreadyActedOn) continue;
+
+      // Emit swap pair: give outlier to otherZone, take targetRow from otherZone
+      repairActions.push({
+        type: 'reallocate_row',
+        priority: 4,
+        fromZoneId: zoneId,
+        toZoneId: otherZone,
+        rowNumber: outlierRow,
+        reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
+        bottlesAffected: 0
+      });
+      repairActions.push({
+        type: 'reallocate_row',
+        priority: 4,
+        fromZoneId: otherZone,
+        toZoneId: zoneId,
+        rowNumber: targetRow,
+        reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
+        bottlesAffected: 0
+      });
+      break; // Only one repair per zone per pass
+    }
+  }
+
+  return [...actions, ...repairActions];
 }
 
 function computeSummary(report, actions) {

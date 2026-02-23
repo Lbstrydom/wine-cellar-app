@@ -105,6 +105,32 @@ function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
 }
 
 /**
+ * Soft contiguity check — detects zones with non-contiguous row assignments.
+ * Returns warning strings (informational, never blocking).
+ * @param {Map<string, string[]>} zoneAllocMap
+ * @returns {string[]}
+ */
+function checkContiguity(zoneAllocMap) {
+  const warnings = [];
+  for (const [zoneId, rows] of zoneAllocMap) {
+    if (!Array.isArray(rows) || rows.length < 2) continue;
+    const nums = rows
+      .map(r => parseRowNumber(r))
+      .filter(n => Number.isFinite(n))
+      .sort((a, b) => a - b);
+    if (nums.length < 2) continue;
+    // Check for gaps
+    for (let i = 1; i < nums.length; i++) {
+      if (nums[i] - nums[i - 1] > 1) {
+        warnings.push(`${zoneId} has non-contiguous rows: ${nums.map(n => `R${n}`).join(', ')}`);
+        break;
+      }
+    }
+  }
+  return warnings;
+}
+
+/**
  * POST /api/cellar/reconfiguration-plan
  * Generate a holistic zone reconfiguration plan.
  */
@@ -647,6 +673,13 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
     const integrity = validateAllocationIntegrity(finalZoneAllocMap, dynamicRanges);
     if (!integrity.valid) {
       throw new Error(`Reconfiguration integrity check failed: ${integrity.errors.join('; ')}`);
+    }
+
+    // Soft contiguity check — log warnings but don't block (contiguity is
+    // best-effort given fixed rows + colour constraints)
+    const contiguityWarnings = checkContiguity(finalZoneAllocMap);
+    if (contiguityWarnings.length > 0) {
+      logger.warn('Reconfig', `Contiguity warnings after apply: ${contiguityWarnings.join('; ')}`);
     }
 
     const planJson = {
