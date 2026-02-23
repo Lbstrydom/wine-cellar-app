@@ -954,7 +954,6 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
  */
 function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias) {
   if (stabilityBias === 'high') return [];
-  if (!scatteredWines || scatteredWines.length === 0) return [];
 
   // Count in actions (each swap = 2 actions): moderate allows 2 swap pairs, low allows 4
   const maxConsolidations = stabilityBias === 'moderate' ? 4 : 8;
@@ -973,9 +972,13 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
     if (rows.length >= 2) allMultiRowZones.add(zoneId);
   }
   // Also include zones from scatteredWines input
-  for (const sw of scatteredWines) {
-    if (sw.zoneId) allMultiRowZones.add(sw.zoneId);
+  if (scatteredWines) {
+    for (const sw of scatteredWines) {
+      if (sw.zoneId) allMultiRowZones.add(sw.zoneId);
+    }
   }
+
+  if (allMultiRowZones.size === 0) return [];
 
   for (const zoneId of allMultiRowZones) {
     if (actions.length >= maxConsolidations) break;

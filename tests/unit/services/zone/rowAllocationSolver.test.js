@@ -9,6 +9,7 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
     { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: { grapes: ['sauvignon blanc'] } },
     { id: 'chenin_blanc', displayName: 'Chenin Blanc', color: 'white', rules: { grapes: ['chenin blanc'] } },
     { id: 'chardonnay', displayName: 'Chardonnay', color: 'white', rules: { grapes: ['chardonnay'] } },
+    { id: 'loire_light', displayName: 'Loire & Light', color: 'white', rules: {} },
     { id: 'aromatic_whites', displayName: 'Aromatic Whites', color: 'white', rules: { grapes: ['riesling', 'viognier'] } },
     { id: 'cabernet', displayName: 'Cabernet Sauvignon', color: 'red', rules: { grapes: ['cabernet sauvignon'] } },
     { id: 'shiraz', displayName: 'Shiraz', color: 'red', rules: { grapes: ['shiraz', 'syrah'] } },
@@ -49,7 +50,7 @@ function makeZone(id, rows, bottles) {
 }
 
 function getColorForId(id) {
-  const whites = ['sauvignon_blanc', 'chenin_blanc', 'chardonnay', 'aromatic_whites', 'white_buffer'];
+  const whites = ['sauvignon_blanc', 'chenin_blanc', 'chardonnay', 'aromatic_whites', 'white_buffer', 'loire_light'];
   if (whites.includes(id)) return 'white';
   if (id === 'unclassified') return ['red', 'white'];
   return 'red';
@@ -390,6 +391,8 @@ describe('rowAllocationSolver', () => {
 
     it('deduplicates row reallocations', () => {
       // If somehow the same row would be reallocated twice, it should be deduplicated
+      // (unless the second action is a valid chain: e.g. Phase 3 gives R14 to cabernet,
+      //  then Phase 5 consolidation moves R14 from cabernet to shiraz — a chain)
       const zones = [
         makeZone('cabernet', ['R10', 'R11'], 25),
         makeZone('shiraz', ['R12'], 12),
@@ -413,12 +416,25 @@ describe('rowAllocationSolver', () => {
         stabilityBias: 'moderate'
       });
 
-      // Each row should appear at most once
-      const rowNumbers = result.actions
-        .filter(a => a.type === 'reallocate_row')
-        .map(a => a.rowNumber);
-      const uniqueRows = new Set(rowNumbers);
-      expect(uniqueRows.size).toBe(rowNumbers.length);
+      // Each row that appears multiple times must form a valid chain
+      // (action N.toZoneId === action N+1.fromZoneId for the same row)
+      const reallocations = result.actions.filter(a => a.type === 'reallocate_row');
+      const rowOccurrences = new Map();
+      for (const a of reallocations) {
+        if (!rowOccurrences.has(a.rowNumber)) rowOccurrences.set(a.rowNumber, []);
+        rowOccurrences.get(a.rowNumber).push(a);
+      }
+      for (const [row, actions] of rowOccurrences) {
+        if (actions.length === 1) continue; // Unique — fine
+        // Verify chain: each subsequent action's fromZoneId = previous action's toZoneId
+        for (let i = 1; i < actions.length; i++) {
+          const prev = actions[i - 1];
+          const curr = actions[i];
+          const isChain = prev.toZoneId === curr.fromZoneId;
+          const isSwapPartner = prev.fromZoneId === curr.toZoneId && prev.toZoneId === curr.fromZoneId;
+          expect(isChain || isSwapPartner).toBe(true);
+        }
+      }
     });
 
     it('completes in under 50ms for a realistic cellar', () => {
@@ -1175,6 +1191,87 @@ describe('rowAllocationSolver', () => {
             expect(hasPartner).toBe(true);
           }
         }
+      });
+    });
+
+    describe('zone interleaving regression', () => {
+      it('resolves Chenin [R5,R8] / Loire [R6,R7] sandwich via consolidation swap', () => {
+        // Real bug: Chenin Blanc at R5+R8 with Loire & Light at R6+R7 sandwiched between.
+        // Phase 5 should detect the non-contiguous Chenin and swap R8↔R6 (or R5↔R7).
+        const zones = [
+          makeZone('sauvignon_blanc', ['R2'], 5),
+          makeZone('chardonnay', ['R3', 'R4'], 10),
+          makeZone('chenin_blanc', ['R5', 'R8'], 12),
+          makeZone('loire_light', ['R6', 'R7'], 10),
+          makeZone('shiraz', ['R9', 'R10'], 10),
+          makeZone('southern_france', ['R11'], 5),
+          makeZone('cabernet', ['R12', 'R13'], 10),
+          makeZone('pinot_noir', ['R14', 'R15'], 10),
+          makeZone('merlot', ['R16', 'R17'], 10),
+          makeZone('iberian_fresh', ['R18', 'R19'], 10),
+          makeZone('curiosities', ['R1'], 3)
+        ];
+        const utilization = {
+          sauvignon_blanc: makeUtil(5, 1),
+          chardonnay: makeUtil(10, 2),
+          chenin_blanc: makeUtil(12, 2),
+          loire_light: makeUtil(10, 2),
+          shiraz: makeUtil(10, 2),
+          southern_france: makeUtil(5, 1),
+          cabernet: makeUtil(10, 2),
+          pinot_noir: makeUtil(10, 2),
+          merlot: makeUtil(10, 2),
+          iberian_fresh: makeUtil(10, 2),
+          curiosities: makeUtil(3, 1)
+        };
+
+        const result = solveRowAllocation({
+          zones,
+          utilization,
+          overflowingZones: [],
+          underutilizedZones: [],
+          scatteredWines: [],
+          mergeCandidates: [],
+          neverMerge: new Set(),
+          stabilityBias: 'moderate'
+        });
+
+        // Verify a consolidation swap was emitted for the interleaving
+        const consolidateActions = result.actions.filter(a =>
+          a.type === 'reallocate_row' && a.reason?.includes('Consolidate')
+        );
+        expect(consolidateActions.length).toBeGreaterThanOrEqual(2); // At least one swap pair
+
+        // Simulate the result by applying actions to the zone row map
+        const postZoneRows = new Map();
+        for (const z of zones) {
+          postZoneRows.set(z.id, [...z.actualAssignedRows]);
+        }
+        for (const a of result.actions) {
+          if (a.type !== 'reallocate_row') continue;
+          const rowId = `R${a.rowNumber}`;
+          // Remove from source
+          const from = postZoneRows.get(a.fromZoneId) || [];
+          postZoneRows.set(a.fromZoneId, from.filter(r => r !== rowId));
+          // Add to target
+          const to = postZoneRows.get(a.toZoneId) || [];
+          if (!to.includes(rowId)) to.push(rowId);
+          postZoneRows.set(a.toZoneId, to);
+        }
+
+        // Chenin should now be contiguous
+        const cheninRows = (postZoneRows.get('chenin_blanc') || [])
+          .map(r => parseInt(r.replace('R', ''), 10))
+          .sort((a, b) => a - b);
+        expect(cheninRows.length).toBe(2);
+        expect(cheninRows[1] - cheninRows[0]).toBe(1);
+
+        // Loire should also be contiguous
+        const loireRows = (postZoneRows.get('loire_light') || [])
+          .map(r => parseInt(r.replace('R', ''), 10))
+          .sort((a, b) => a - b);
+        expect(loireRows.length).toBe(2);
+        expect(loireRows[1] - loireRows[0]).toBe(1);
       });
     });  });
 });

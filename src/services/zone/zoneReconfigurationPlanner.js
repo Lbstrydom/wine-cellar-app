@@ -527,7 +527,7 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
  * @param {Array} actions - Actions to replay
  * @returns {Map<string, string[]>} Mutated map reflecting post-action state
  */
-function buildMutatedZoneRowMap(initialMap, actions) {
+export function buildMutatedZoneRowMap(initialMap, actions) {
   const map = new Map();
   for (const [zoneId, rows] of initialMap) {
     map.set(zoneId, [...rows]);
@@ -737,7 +737,7 @@ function heuristicGapFill(
  * @param {number} maxActions - Budget cap
  * @returns {Array} Actions with contiguity repair swaps appended
  */
-function repairContiguityGaps(actions, zoneRowMap, maxActions) {
+export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
   if (!zoneRowMap || zoneRowMap.size === 0) return actions;
 
   // Replay actions onto a mutable copy of the zone row map
@@ -750,6 +750,7 @@ function repairContiguityGaps(actions, zoneRowMap, maxActions) {
   }
 
   const repairActions = [];
+  const repairedRows = new Set(); // rows already in a repair swap
   const MAX_REPAIR_PAIRS = 3; // Limit to 3 swap pairs (6 actions) to avoid plan bloat
 
   for (const [zoneId, rows] of postMap) {
@@ -769,49 +770,107 @@ function repairContiguityGaps(actions, zoneRowMap, maxActions) {
       if (repairActions.length >= MAX_REPAIR_PAIRS * 2) break;
 
       // There's a gap between nums[i-1] and nums[i].
-      // Try to swap the outlier row with an adjacent row from another zone.
-      const outlierRow = nums[nums.length - 1]; // Furthest row in the block
-      const targetRow = nums[i - 1] + 1;        // Row just after the contiguous block
+      // Strategy: swap an outlier row from this zone with the row just after
+      // the contiguous block (owned by another zone). Try both directions:
+      // (a) give the furthest row, take the adjacent row
+      // (b) give the first row of a remote block, take an adjacent row from the other side
+      const gapStart = nums[i - 1]; // last row before the gap
+      const gapEnd = nums[i];       // first row after the gap
 
-      // Check if the target row is owned by another zone
-      const targetRowKey = `R${targetRow}`;
-      const otherZone = rowToZone.get(targetRowKey) || rowToZone.get(String(targetRow));
-      if (!otherZone || otherZone === zoneId) continue;
+      // Candidate A: outlier = furthest row (last in zone), target = row right after gap start
+      // Candidate B: outlier = first row in remote block (gapEnd), target = row right before gap end
+      const candidates = [
+        { outlier: nums[nums.length - 1], target: gapStart + 1 },
+        { outlier: nums[0], target: gapEnd - 1 }
+      ];
+      // Deduplicate (both candidates may be the same if zone has exactly 2 rows)
+      const seen = new Set();
 
-      // Colour compatibility check
-      const zone = getZoneById(zoneId);
-      const other = getZoneById(otherZone);
-      const zoneColor = zone ? getEffectiveZoneColor(zone) : 'any';
-      const otherColor = other ? getEffectiveZoneColor(other) : 'any';
-      if (zoneColor !== 'any' && otherColor !== 'any' && zoneColor !== otherColor) continue;
+      let repaired = false;
+      for (const { outlier: outlierRow, target: targetRow } of candidates) {
+        const candKey = `${outlierRow}-${targetRow}`;
+        if (seen.has(candKey)) continue;
+        seen.add(candKey);
 
-      // Don't swap if outlierRow is already being acted on
-      const outlierKey = `R${outlierRow}`;
-      const alreadyActedOn = actions.some(a =>
-        a.type === 'reallocate_row' && a.rowNumber === outlierRow
-      ) || repairActions.some(a => a.rowNumber === outlierRow || a.rowNumber === targetRow);
-      if (alreadyActedOn) continue;
+        if (targetRow < 1 || targetRow > 19) continue;
+        if (outlierRow === targetRow) continue;
+        if (repairedRows.has(outlierRow) || repairedRows.has(targetRow)) continue;
 
-      // Emit swap pair: give outlier to otherZone, take targetRow from otherZone
-      repairActions.push({
-        type: 'reallocate_row',
-        priority: 4,
-        fromZoneId: zoneId,
-        toZoneId: otherZone,
-        rowNumber: outlierRow,
-        reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
-        bottlesAffected: 0
-      });
-      repairActions.push({
-        type: 'reallocate_row',
-        priority: 4,
-        fromZoneId: otherZone,
-        toZoneId: zoneId,
-        rowNumber: targetRow,
-        reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
-        bottlesAffected: 0
-      });
-      break; // Only one repair per zone per pass
+        // Check if the target row is owned by another zone
+        const targetRowKey = `R${targetRow}`;
+        const otherZone = rowToZone.get(targetRowKey) || rowToZone.get(String(targetRow));
+        if (!otherZone || otherZone === zoneId) continue;
+
+        // Colour compatibility check
+        const zone = getZoneById(zoneId);
+        const other = getZoneById(otherZone);
+        const zoneColor = zone ? getEffectiveZoneColor(zone) : 'any';
+        const otherColor = other ? getEffectiveZoneColor(other) : 'any';
+        if (zoneColor !== 'any' && otherColor !== 'any' && zoneColor !== otherColor) continue;
+
+        // Only skip if another repair already claimed these rows
+        const alreadyInRepair = repairActions.some(a =>
+          a.rowNumber === outlierRow || a.rowNumber === targetRow
+        );
+        if (alreadyInRepair) continue;
+
+        // Verify the swap doesn't break the other zone's contiguity.
+        // Simulate: otherZone loses targetRow, gains outlierRow.
+        const otherRows = (postMap.get(otherZone) || [])
+          .map(r => typeof r === 'string' ? parseInt(r.replace(/^R/i, ''), 10) : r)
+          .filter(n => Number.isFinite(n) && n > 0);
+        const otherAfterSwap = otherRows.filter(n => n !== targetRow);
+        otherAfterSwap.push(outlierRow);
+        otherAfterSwap.sort((a, b) => a - b);
+
+        // Check if otherZone would be contiguous after the swap
+        const otherStaysContiguous = otherAfterSwap.length <= 1 ||
+          otherAfterSwap.every((n, idx) => idx === 0 || n === otherAfterSwap[idx - 1] + 1);
+
+        if (!otherStaysContiguous) continue; // Skip — would break the other zone
+
+        // Emit swap pair: give outlier to otherZone, take targetRow from otherZone
+        repairActions.push({
+          type: 'reallocate_row',
+          priority: 4,
+          fromZoneId: zoneId,
+          toZoneId: otherZone,
+          rowNumber: outlierRow,
+          reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
+          bottlesAffected: 0
+        });
+        repairActions.push({
+          type: 'reallocate_row',
+          priority: 4,
+          fromZoneId: otherZone,
+          toZoneId: zoneId,
+          rowNumber: targetRow,
+          reason: `[contiguity repair] Swap R${outlierRow} (${zoneId}) ↔ R${targetRow} (${otherZone}) to make ${zoneId} contiguous`,
+          bottlesAffected: 0
+        });
+        repairedRows.add(outlierRow);
+        repairedRows.add(targetRow);
+
+        // Update postMap and rowToZone so subsequent zones see corrected state
+        const zoneRowList = postMap.get(zoneId) || [];
+        postMap.set(zoneId, [...zoneRowList.filter(r => {
+          const n = typeof r === 'string' ? parseInt(r.replace(/^R/i, ''), 10) : r;
+          return n !== outlierRow;
+        }), `R${targetRow}`]);
+        const otherRowList = postMap.get(otherZone) || [];
+        postMap.set(otherZone, [...otherRowList.filter(r => {
+          const n = typeof r === 'string' ? parseInt(r.replace(/^R/i, ''), 10) : r;
+          return n !== targetRow;
+        }), `R${outlierRow}`]);
+        rowToZone.set(`R${outlierRow}`, otherZone);
+        rowToZone.set(String(outlierRow), otherZone);
+        rowToZone.set(`R${targetRow}`, zoneId);
+        rowToZone.set(String(targetRow), zoneId);
+
+        repaired = true;
+        break; // One repair per gap
+      }
+      if (repaired) break; // One repair per zone per pass
     }
   }
 
