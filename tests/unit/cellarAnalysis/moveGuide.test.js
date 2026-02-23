@@ -90,6 +90,12 @@ vi.stubGlobal('requestAnimationFrame', vi.fn(cb => cb()));
 
 import { detectSwapPairs, openMoveGuide, closeMoveGuide, isMoveGuideActive } from '../../../public/js/cellarAnalysis/moveGuide.js';
 
+// Clean up module-scope vi.stubGlobal calls (document, window, requestAnimationFrame)
+// to prevent leaking into downstream test files in --no-isolate mode.
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
 // ============================================================
 // detectSwapPairs
 // ============================================================

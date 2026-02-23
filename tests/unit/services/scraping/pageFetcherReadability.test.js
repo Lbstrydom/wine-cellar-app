@@ -73,6 +73,12 @@ vi.stubGlobal('fetch', mockFetch);
 
 import { fetchPageContent } from '../../../../src/services/scraping/pageFetcher.js';
 
+// Clean up module-scope vi.stubGlobal('fetch') to prevent leaking
+// into downstream test files in --no-isolate mode.
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('pageFetcher — Readability integration', () => {
   beforeEach(() => {
     vi.clearAllMocks();

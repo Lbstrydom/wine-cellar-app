@@ -18,8 +18,10 @@ import { renderAIFridgeAnnotations } from './fridge.js';
 let _aiInFlight = false;
 
 /**
- * Reset in-flight guard — test-only, enables clean state between test suites
+ * Reset in-flight guard — enables clean state between test suites
  * in --no-isolate mode where the module is shared across all files.
+ * @internal Test-only — prefixed with underscore to signal non-public API.
+ * Must not be called from production code.
  */
 export function _resetAiInFlight() { _aiInFlight = false; }
 

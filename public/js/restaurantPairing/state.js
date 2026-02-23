@@ -546,9 +546,10 @@ export function clearState() {
 
 /**
  * Re-read all state from sessionStorage, mimicking module initialisation.
- * Test-only helper — allows verifying rehydration behaviour without
- * vi.resetModules() (which corrupts the shared module registry in
- * --no-isolate mode).
+ * Allows verifying rehydration behaviour without vi.resetModules()
+ * (which corrupts the shared module registry in --no-isolate mode).
+ * @internal Test-only — prefixed with underscore to signal non-public API.
+ * Must not be called from production code.
  */
 export function _rehydrateFromStorage() {
   // Deep-copy defaults to avoid shared-reference mutation across calls.

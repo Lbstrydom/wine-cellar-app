@@ -55,12 +55,10 @@ function makeElement() {
 }
 
 describe('cellarAnalysis/zones CTA wiring', () => {
-  let originalDocument;
   let elements;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    originalDocument = global.document;
 
     elements = {
       'zone-setup-wizard': makeElement(),
@@ -70,13 +68,15 @@ describe('cellarAnalysis/zones CTA wiring', () => {
       'confirm-layout-btn': makeElement()
     };
 
-    global.document = {
+    // Use vi.stubGlobal instead of direct assignment to avoid corrupting
+    // property descriptors for downstream test files in --no-isolate mode.
+    vi.stubGlobal('document', {
       getElementById: vi.fn((id) => elements[id] || null)
-    };
+    });
   });
 
   afterEach(() => {
-    global.document = originalDocument;
+    vi.unstubAllGlobals();
   });
 
   it('keeps Confirm Layout disabled when no zones qualify for dedicated rows', async () => {

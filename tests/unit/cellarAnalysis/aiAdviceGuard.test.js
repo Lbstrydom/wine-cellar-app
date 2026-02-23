@@ -65,6 +65,12 @@ const mockAIResult = {
   },
 };
 
+// Clean up module-scope vi.stubGlobal('document') to prevent leaking
+// into downstream test files in --no-isolate mode.
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
 /** Re-establish document stub — survives vi.unstubAllGlobals() from other suites. */
 function stubDocument() {
   vi.stubGlobal('document', {

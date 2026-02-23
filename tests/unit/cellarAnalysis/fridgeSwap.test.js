@@ -35,6 +35,12 @@ import {
   findEmptyFridgeSlot
 } from '../../../public/js/cellarAnalysis/fridge.js';
 
+// Clean up module-scope vi.stubGlobal('document') to prevent leaking
+// into downstream test files in --no-isolate mode.
+afterAll(() => {
+  vi.unstubAllGlobals();
+});
+
 describe('computeUrgency', () => {
   it('should return 2 for null drinkByYear', () => {
     expect(computeUrgency(null)).toBe(2);
