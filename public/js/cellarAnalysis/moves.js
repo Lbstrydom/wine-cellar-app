@@ -364,7 +364,8 @@ async function executeSwap(index) {
     wineId: m.wineId,
     wineName: m.wineName,
     from: m.from,
-    to: m.to
+    to: m.to,
+    ...(m.toZoneId ? { zoneId: m.toZoneId, confidence: m.confidence } : {})
   }));
 
   try {
@@ -403,7 +404,8 @@ async function executeMove(index) {
     await executeCellarMoves([{
       wineId: move.wineId,
       from: move.from,
-      to: move.to
+      to: move.to,
+      ...(move.toZoneId ? { zoneId: move.toZoneId, confidence: move.confidence } : {})
     }]);
     showToast(`Moved ${move.wineName} to ${move.to}`);
 
@@ -464,7 +466,8 @@ export async function handleExecuteAllMoves() {
       wineId: m.wineId,
       wineName: m.wineName, // Include wine name for validation messages
       from: m.from,
-      to: m.to
+      to: m.to,
+      ...(m.toZoneId ? { zoneId: m.toZoneId, confidence: m.confidence } : {})
     }));
 
   if (movesToExecute.length === 0) {

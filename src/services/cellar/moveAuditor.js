@@ -84,6 +84,8 @@ export function buildAuditPrompt(suggestedMoves, misplacedWines, summary, zoneNa
       from: m?.from,
       to: m?.to,
       toZone: m?.toZone,
+      toZoneId: m?.toZoneId,
+      actualTargetZoneId: m?.actualTargetZoneId,
       reason: m?.reason,
       confidence: m?.confidence,
       isOverflow: Boolean(m?.isOverflow),
@@ -103,7 +105,7 @@ export function buildAuditPrompt(suggestedMoves, misplacedWines, summary, zoneNa
   })), null, 2);
 
   const zonesBlock = (zoneNarratives || []).map(z =>
-    `- ${z.zoneName || z.zoneId}: ${z.rows?.join(', ') || 'no rows'} (${z.bottleCount ?? '?'} bottles)`
+    `- ${z.displayName || z.zoneName || z.zoneId} [${z.zoneId}]: ${z.rows?.join(', ') || 'no rows'} (${z.health?.bottleCount ?? z.bottleCount ?? '?'} bottles, ${z.health?.status ?? 'unknown'})`
   ).join('\n');
 
   return `You are a wine cellar logistics auditor. An algorithm has generated a set of
@@ -138,6 +140,8 @@ Evaluate the move list for:
 6. **Orphaned moves** — Moves whose "from" slot doesn't match any misplaced wine
 7. **Duplicate targets** — Two moves targeting the same destination slot
 8. **Unresolved misplacements** — Misplaced wines that received no move suggestion at all
+9. **Zone/row mismatch** — A move's "to" slot (e.g. R5C3) is in a row not allocated to the declared toZone. Cross-reference the Zone Layout above: if toZone says "Stellenbosch Cabernet" but the target row belongs to a different zone, flag it
+10. **Colour policy violation** — A move targets a row whose zone has an incompatible colour (e.g. a red wine moving to a white-only zone's row)
 
 ## Output Format
 Return a JSON object (wrapped in \`\`\`json code fence) with exactly this structure:
@@ -145,7 +149,7 @@ Return a JSON object (wrapped in \`\`\`json code fence) with exactly this struct
   "verdict": "approve" | "optimize" | "flag",
   "issues": [
     {
-      "type": "circular_chain" | "missed_swap" | "capacity_violation" | "displacing_correct" | "ordering_issue" | "orphaned_move" | "duplicate_target" | "unresolved",
+      "type": "circular_chain" | "missed_swap" | "capacity_violation" | "displacing_correct" | "ordering_issue" | "orphaned_move" | "duplicate_target" | "unresolved" | "zone_row_mismatch" | "colour_policy_violation",
       "severity": "error" | "warning" | "info",
       "description": "Human-readable explanation",
       "affectedMoveIndices": [0, 1]
@@ -181,7 +185,8 @@ function validateAuditSchema(parsed) {
   const VALID_ISSUE_TYPES = new Set([
     'circular_chain', 'missed_swap', 'capacity_violation',
     'displacing_correct', 'ordering_issue', 'orphaned_move',
-    'duplicate_target', 'unresolved'
+    'duplicate_target', 'unresolved', 'zone_row_mismatch',
+    'colour_policy_violation'
   ]);
 
   // Verdict is hard-rejected: a wrong verdict means the LLM misunderstood the task.
@@ -305,6 +310,8 @@ function normalizeOptimizedMoves(optimizedMoves, originalMoves) {
       from: typeof optimized?.from === 'string' ? optimized.from : original.from,
       to: typeof optimized?.to === 'string' ? optimized.to : original.to,
       toZone: optimized?.toZone || original.toZone,
+      toZoneId: optimized?.toZoneId || original.toZoneId,
+      actualTargetZoneId: optimized?.actualTargetZoneId || original.actualTargetZoneId,
       reason: typeof optimized?.reason === 'string' ? optimized.reason : original.reason,
       confidence: optimized?.confidence || original.confidence,
       isOverflow: typeof optimized?.isOverflow === 'boolean' ? optimized.isOverflow : Boolean(original.isOverflow),

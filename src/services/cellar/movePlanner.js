@@ -5,6 +5,10 @@
  */
 
 import db from '../../db/index.js';
+import { getActiveZoneMap } from './cellarAllocation.js';
+import { getZoneById } from '../../config/cellarZones.js';
+import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
+import { inferColor } from './cellarPlacement.js';
 
 /**
  * Move types with effort scores.
@@ -475,6 +479,63 @@ export async function validateMovePlan(moves, cellarId) {
     }
   }
 
+  // ── Rule 6: Zone/colour policy checks ──────────────────────
+  // Validate that each move targets a slot whose zone is colour-compatible
+  // with the wine being moved. This prevents collision-free but policy-
+  // violating moves from being executed (e.g. red wine → white zone row).
+  const zoneMap = await getActiveZoneMap(cellarId);
+  if (Object.keys(zoneMap).length > 0) {
+    // Build wine colour lookup (batch query to avoid N+1)
+    const wineIds = [...new Set(moves.map(m => m.wineId).filter(Boolean))];
+    const wineColourMap = new Map();
+    if (wineIds.length > 0) {
+      const placeholders = wineIds.map((_, i) => '$' + (i + 2)).join(',');
+      const sql = 'SELECT id, colour, color, wine_name, grapes, style FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';
+      const wineRows = await db.prepare(sql).all(cellarId, ...wineIds);
+      for (const w of wineRows) {
+        const wineColour = (w.colour || w.color || inferColor(w) || '').toLowerCase();
+        wineColourMap.set(w.id, wineColour);
+      }
+    }
+
+    for (const move of moves) {
+      const targetMatch = move.to?.match?.(/^R(\d+)C\d+$/);
+      if (!targetMatch) continue; // Fridge slots etc. — skip
+
+      const targetRowId = `R${targetMatch[1]}`;
+      const zoneInfo = zoneMap[targetRowId];
+      if (!zoneInfo) continue; // Unallocated row — no zone constraint
+
+      const zone = getZoneById(zoneInfo.zoneId);
+      if (!zone || zone.isFallbackZone || zone.isCuratedZone || zone.isBufferZone) continue;
+      if (!zone.color) continue; // Zone has no colour constraint
+
+      const wineColour = wineColourMap.get(move.wineId);
+      if (!wineColour) continue; // Can't determine wine colour — don't penalise
+
+      const zoneColors = Array.isArray(zone.color) ? zone.color : [zone.color];
+
+      // Direct match: wine colour is one of the zone's accepted colours
+      if (zoneColors.some(c => c.toLowerCase() === wineColour)) continue;
+
+      // Family-level check: white-family zone rejects red, red zone rejects white-family
+      const allWhiteFamily = zoneColors.every(c => isWhiteFamily(c));
+      const allRed = zoneColors.every(c => c.toLowerCase() === 'red');
+
+      if ((allWhiteFamily && wineColour === 'red') || (allRed && isWhiteFamily(wineColour))) {
+        errors.push({
+          type: 'zone_colour_violation',
+          message: `${move.wineName || `Wine ${move.wineId}`} (${wineColour}) would move to ${move.to} in ${zone.displayName} (${zoneColors.join('/')}) — colour violation`,
+          move,
+          wineColour,
+          targetZone: zone.displayName,
+          targetZoneId: zone.id,
+          zoneColors
+        });
+      }
+    }
+  }
+
   return {
     valid: errors.length === 0,
     errors,
@@ -485,7 +546,8 @@ export async function validateMovePlan(moves, cellarId) {
       occupiedTargets: errors.filter(e => e.type === 'target_occupied').length,
       sourceMismatches: errors.filter(e => e.type === 'source_mismatch').length,
       duplicateWines: errors.filter(e => e.type === 'duplicate_wine').length,
-      noopMoves: errors.filter(e => e.type === 'noop_move').length
+      noopMoves: errors.filter(e => e.type === 'noop_move').length,
+      zoneColourViolations: errors.filter(e => e.type === 'zone_colour_violation').length
     }
   };
 }

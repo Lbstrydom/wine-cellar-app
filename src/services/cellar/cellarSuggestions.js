@@ -285,6 +285,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: wineA.currentSlot,
       to: wineB.currentSlot,
       toZone: wineA.suggestedZone,
+      toZoneId: wineA.suggestedZoneId,
       reason: wineA.reason,
       confidence: wineA.confidence,
       isOverflow: false,
@@ -298,6 +299,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: wineB.currentSlot,
       to: wineA.currentSlot,
       toZone: wineB.suggestedZone,
+      toZoneId: wineB.suggestedZoneId,
       reason: wineB.reason,
       confidence: wineB.confidence,
       isOverflow: false,
@@ -338,6 +340,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: wineA.currentSlot,
       to: wineB.currentSlot,
       toZone: wineA.suggestedZone,
+      toZoneId: wineA.suggestedZoneId,
       reason: wineA.reason,
       confidence: wineA.confidence,
       isOverflow: false,
@@ -352,6 +355,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: wineB.currentSlot,
       to: wineA.currentSlot,
       toZone: wineB.suggestedZone,
+      toZoneId: wineB.suggestedZoneId,
       reason: `${wineB.reason} (displaced swap — will need follow-up move to reach ${wineB.suggestedZone})`,
       confidence: wineB.confidence,
       isOverflow: false,
@@ -402,6 +406,8 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
         from: wine.currentSlot,
         to: slot.slotId,
         toZone: wine.suggestedZone,
+        toZoneId: wine.suggestedZoneId,
+        actualTargetZoneId: slot.zoneId, // May differ from toZoneId when overflow
         reason: wine.reason,
         confidence: wine.confidence,
         isOverflow: slot.isOverflow,
@@ -514,6 +520,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: manual.currentSlot,
       to: swapPartner.currentSlot,
       toZone: manual.suggestedZone,
+      toZoneId: manual.suggestedZoneId,
       reason: manual.reason,
       confidence: manual.confidence,
       isOverflow: false,
@@ -528,6 +535,7 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
       from: swapPartner.currentSlot,
       to: manual.currentSlot,
       toZone: swapPartner.suggestedZone,
+      toZoneId: swapPartner.suggestedZoneId,
       reason: `${swapPartner.reason} (displaced swap — will need follow-up move to reach ${swapPartner.suggestedZone})`,
       confidence: swapPartner.confidence,
       isOverflow: false,
@@ -557,6 +565,71 @@ export async function generateMoveSuggestions(misplacedWines, allWines, _slotToW
   sortedSuggestions._zoneCapacityIssues = zoneCapacityIssues;
 
   return sortedSuggestions;
+}
+
+// ───────────────────────────────────────────────────────────
+// Post-generation zone validator
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Validate that each non-overflow move's target slot is in a row allocated
+ * to the declared toZoneId. Overflow moves are exempt because the placement
+ * engine may have spilled them into a different zone intentionally.
+ *
+ * Does NOT remove invalid moves — it annotates them with a `zoneRowMismatch`
+ * flag so that the auditor and UI can surface them as warnings.
+ *
+ * @param {Array} moves - Move suggestions from generateMoveSuggestions()
+ * @param {Object} zoneMap - Row-to-zone mapping from getActiveZoneMap()
+ * @returns {{annotatedMoves: Array, violations: Array}} Annotated moves and violation list
+ */
+export function validateMoveZoneAlignment(moves, zoneMap) {
+  if (!Array.isArray(moves) || Object.keys(zoneMap).length === 0) {
+    return { annotatedMoves: moves || [], violations: [] };
+  }
+
+  // Build reverse lookup: zoneId → Set of row IDs
+  const zoneToRows = new Map();
+  for (const [rowId, info] of Object.entries(zoneMap)) {
+    if (!zoneToRows.has(info.zoneId)) zoneToRows.set(info.zoneId, new Set());
+    zoneToRows.get(info.zoneId).add(rowId);
+  }
+
+  const violations = [];
+
+  for (const move of moves) {
+    // Only check type:'move' with a declared toZoneId that isn't overflow
+    if (move.type !== 'move') continue;
+    if (move.isOverflow) continue;
+    if (!move.toZoneId) continue;
+    if (!move.to) continue;
+
+    const targetMatch = move.to.match?.(/^R(\d+)C\d+$/);
+    if (!targetMatch) continue; // Fridge slots etc. — skip
+
+    const targetRowId = `R${targetMatch[1]}`;
+    const zoneRows = zoneToRows.get(move.toZoneId);
+
+    if (!zoneRows || !zoneRows.has(targetRowId)) {
+      // Target slot is NOT in a row allocated to the declared toZoneId
+      const actualZoneInfo = zoneMap[targetRowId];
+      move.zoneRowMismatch = true;
+      move.actualTargetZoneId = actualZoneInfo?.zoneId || null;
+
+      violations.push({
+        wineId: move.wineId,
+        wineName: move.wineName,
+        from: move.from,
+        to: move.to,
+        declaredZoneId: move.toZoneId,
+        actualZoneId: actualZoneInfo?.zoneId || null,
+        targetRow: targetRowId,
+        message: `${move.wineName || `Wine ${move.wineId}`} targets ${move.to} (${targetRowId}) but toZoneId "${move.toZoneId}" owns rows [${zoneRows ? [...zoneRows].join(', ') : 'none'}]`
+      });
+    }
+  }
+
+  return { annotatedMoves: moves, violations };
 }
 
 // ───────────────────────────────────────────────────────────

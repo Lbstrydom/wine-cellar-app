@@ -35,6 +35,7 @@ let detectNaturalSwapPairs;
 let detectDisplacementSwaps;
 let generateMoveSuggestions;
 let generateSameWineGroupingMoves;
+let validateMoveZoneAlignment;
 let findAvailableSlot;
 
 beforeAll(async () => {
@@ -45,6 +46,7 @@ beforeAll(async () => {
   detectDisplacementSwaps = suggestionModule.detectDisplacementSwaps;
   generateMoveSuggestions = suggestionModule.generateMoveSuggestions;
   generateSameWineGroupingMoves = suggestionModule.generateSameWineGroupingMoves;
+  validateMoveZoneAlignment = suggestionModule.validateMoveZoneAlignment;
   const placementModule = await import('../../../../src/services/cellar/cellarPlacement.js');
   findAvailableSlot = placementModule.findAvailableSlot;
 });
@@ -492,5 +494,104 @@ describe('generateSameWineGroupingMoves', () => {
       expect(move.type).toBe('grouping');
       expect(move.priority).toBe(5);
     }
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// validateMoveZoneAlignment
+// ───────────────────────────────────────────────────────────
+
+describe('validateMoveZoneAlignment', () => {
+  const zoneMap = {
+    R1: { zoneId: 'sauvignon_blanc' },
+    R2: { zoneId: 'sauvignon_blanc' },
+    R3: { zoneId: 'chenin_blanc' },
+    R10: { zoneId: 'cabernet_sauvignon' },
+    R11: { zoneId: 'cabernet_sauvignon' }
+  };
+
+  it('returns no violations for empty moves', () => {
+    const { violations } = validateMoveZoneAlignment([], zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('returns no violations when zoneMap is empty', () => {
+    const moves = [
+      { type: 'move', wineId: 1, to: 'R5C3', toZoneId: 'red', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, {});
+    expect(violations).toEqual([]);
+  });
+
+  it('returns no violations when move targets correct zone row', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R10C1', to: 'R1C3', toZoneId: 'sauvignon_blanc', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('flags move targeting row not owned by declared toZoneId', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R1C1', to: 'R10C3', toZoneId: 'sauvignon_blanc', isOverflow: false }
+    ];
+    const { violations, annotatedMoves } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].declaredZoneId).toBe('sauvignon_blanc');
+    expect(violations[0].actualZoneId).toBe('cabernet_sauvignon');
+    expect(violations[0].targetRow).toBe('R10');
+    expect(annotatedMoves[0].zoneRowMismatch).toBe(true);
+  });
+
+  it('skips overflow moves (they are allowed to cross zones)', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R1C1', to: 'R10C3', toZoneId: 'sauvignon_blanc', isOverflow: true }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('skips manual suggestions', () => {
+    const moves = [
+      { type: 'manual', wineId: 1, wineName: 'Wine A', currentSlot: 'R1C1', suggestedZoneId: 'red' }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('skips moves without toZoneId', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R1C1', to: 'R10C3', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('skips fridge slots', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R1C1', to: 'F3', toZoneId: 'sauvignon_blanc', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toEqual([]);
+  });
+
+  it('handles move to unallocated row (no zone info)', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'Wine A', from: 'R1C1', to: 'R19C1', toZoneId: 'sauvignon_blanc', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].actualZoneId).toBeNull();
+  });
+
+  it('validates multiple moves and only flags mismatches', () => {
+    const moves = [
+      { type: 'move', wineId: 1, wineName: 'OK Move', from: 'R10C1', to: 'R1C1', toZoneId: 'sauvignon_blanc', isOverflow: false },
+      { type: 'move', wineId: 2, wineName: 'Bad Move', from: 'R1C2', to: 'R10C1', toZoneId: 'sauvignon_blanc', isOverflow: false },
+      { type: 'move', wineId: 3, wineName: 'Also OK', from: 'R3C1', to: 'R11C1', toZoneId: 'cabernet_sauvignon', isOverflow: false }
+    ];
+    const { violations } = validateMoveZoneAlignment(moves, zoneMap);
+    expect(violations).toHaveLength(1);
+    expect(violations[0].wineId).toBe(2);
   });
 });

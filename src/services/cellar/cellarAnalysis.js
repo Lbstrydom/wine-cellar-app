@@ -20,6 +20,7 @@ import {
 import { generateZoneNarratives } from './cellarNarratives.js';
 import {
   generateMoveSuggestions,
+  validateMoveZoneAlignment,
   buildZoneCapacityAlerts,
   getCurrentZoneAllocation,
   generateCompactionMoves,
@@ -132,6 +133,20 @@ export async function analyseCellar(wines) {
   report.suggestedMoves = suggestedMoves;
   report.movesHaveSwaps = hasMoveDependencies(report.suggestedMoves);
   report.suggestedMoves._hasSwaps = report.movesHaveSwaps;
+
+  // ── Post-generation zone alignment validator ─────────────
+  // Checks that non-overflow moves target rows owned by their
+  // declared toZoneId. Annotates mismatches so auditor & UI can surface them.
+  const { violations: zoneAlignmentViolations } = validateMoveZoneAlignment(report.suggestedMoves, zoneMap);
+  if (zoneAlignmentViolations.length > 0) {
+    report.zoneAlignmentViolations = zoneAlignmentViolations;
+    report.alerts.push({
+      type: 'zone_alignment_mismatch',
+      severity: 'warning',
+      message: `${zoneAlignmentViolations.length} move(s) target rows not owned by the declared zone. These may indicate stale zone allocations.`,
+      data: { violations: zoneAlignmentViolations }
+    });
+  }
 
   // ── Opus 4.6 move audit (optional) ──────────────────────
   // Quality-checks the algorithmic moves for logical errors,

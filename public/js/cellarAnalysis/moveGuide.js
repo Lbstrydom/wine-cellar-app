@@ -435,7 +435,8 @@ async function executeCurrentMove() {
     wineId: move.wineId,
     wineName: move.wineName,
     from: move.from,
-    to: move.to
+    to: move.to,
+    ...(move.toZoneId ? { zoneId: move.toZoneId, confidence: move.confidence } : {})
   }];
 
   if (isSwap) {
@@ -444,7 +445,8 @@ async function executeCurrentMove() {
       wineId: partner.wineId,
       wineName: partner.wineName,
       from: partner.from,
-      to: partner.to
+      to: partner.to,
+      ...(partner.toZoneId ? { zoneId: partner.toZoneId, confidence: partner.confidence } : {})
     });
   }
 

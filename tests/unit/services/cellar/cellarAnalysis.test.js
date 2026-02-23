@@ -18,6 +18,7 @@ vi.mock('../../../../src/services/cellar/cellarAllocation.js', () => ({
 
 vi.mock('../../../../src/services/cellar/cellarSuggestions.js', () => ({
   generateMoveSuggestions: vi.fn().mockResolvedValue([]),
+  validateMoveZoneAlignment: vi.fn().mockReturnValue({ annotatedMoves: [], violations: [] }),
   buildZoneCapacityAlerts: vi.fn().mockResolvedValue([]),
   getCurrentZoneAllocation: vi.fn().mockResolvedValue({ zoneToRows: {}, rowToZoneId: {} }),
   generateCompactionMoves: vi.fn().mockReturnValue([]),
