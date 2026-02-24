@@ -833,7 +833,16 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   }
 
   // Validate move plan before execution
-  const validation = await validateMovePlan(moves, req.cellarId);
+  let validation;
+  try {
+    validation = await validateMovePlan(moves, req.cellarId);
+  } catch (valErr) {
+    logger.error('execute-moves', `Validation threw: ${valErr.message}`);
+    return res.status(500).json({
+      error: `Move validation failed: ${valErr.message}`,
+      phase: 'validation'
+    });
+  }
 
   if (!validation.valid) {
     return res.status(400).json({
@@ -851,55 +860,70 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   // lose wine_B if done sequentially as clear-A, set-B, clear-B, set-A).
   const results = [];
 
-  await db.transaction(async (client) => {
-    // Capture bottle count before moves for invariant check
-    const beforeResult = await client.query(
-      'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
-      [req.cellarId]
-    );
-    const beforeCount = Number(beforeResult.rows[0].count);
-
-    // Phase 1: Clear all source slots
-    for (const move of moves) {
-      await client.query(
-        'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
-        [null, req.cellarId, move.from]
+  try {
+    await db.transaction(async (client) => {
+      // Capture bottle count before moves for invariant check
+      const beforeResult = await client.query(
+        'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
+        [req.cellarId]
       );
-    }
+      const beforeCount = Number(beforeResult.rows[0].count);
 
-    // Phase 2: Place all wines in target slots
-    for (const move of moves) {
-      await client.query(
-        'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
-        [move.wineId, req.cellarId, move.to]
-      );
-
-      // Update wine zone assignment
-      if (move.zoneId) {
-        await client.query(
-          'UPDATE wines SET zone_id = $1, zone_confidence = $2 WHERE cellar_id = $3 AND id = $4',
-          [move.zoneId, move.confidence || 'medium', req.cellarId, move.wineId]
+      // Phase 1: Clear all source slots
+      for (const move of moves) {
+        const clearResult = await client.query(
+          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
+          [null, req.cellarId, move.from]
         );
+        if (clearResult.rowCount === 0) {
+          logger.error('execute-moves', `Phase 1: No slot found for cellar=${req.cellarId} location=${move.from}`);
+        }
       }
 
-      results.push({
-        wineId: move.wineId,
-        from: move.from,
-        to: move.to,
-        success: true
-      });
-    }
+      // Phase 2: Place all wines in target slots
+      for (const move of moves) {
+        const placeResult = await client.query(
+          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
+          [move.wineId, req.cellarId, move.to]
+        );
+        if (placeResult.rowCount === 0) {
+          logger.error('execute-moves', `Phase 2: No slot found for cellar=${req.cellarId} location=${move.to} wineId=${move.wineId}`);
+        }
 
-    // Invariant check: bottle count must not change after moves
-    const afterResult = await client.query(
-      'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
-      [req.cellarId]
-    );
-    const afterCount = Number(afterResult.rows[0].count);
-    if (afterCount !== beforeCount) {
-      throw new Error(`Invariant violation: bottle count changed from ${beforeCount} to ${afterCount}`);
-    }
-  });
+        // Update wine zone assignment
+        if (move.zoneId) {
+          await client.query(
+            'UPDATE wines SET zone_id = $1, zone_confidence = $2 WHERE cellar_id = $3 AND id = $4',
+            [move.zoneId, move.confidence || 'medium', req.cellarId, move.wineId]
+          );
+        }
+
+        results.push({
+          wineId: move.wineId,
+          from: move.from,
+          to: move.to,
+          success: true
+        });
+      }
+
+      // Invariant check: bottle count must not change after moves
+      const afterResult = await client.query(
+        'SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL AND cellar_id = $1',
+        [req.cellarId]
+      );
+      const afterCount = Number(afterResult.rows[0].count);
+      if (afterCount !== beforeCount) {
+        throw new Error(`Invariant violation: bottle count changed from ${beforeCount} to ${afterCount}`);
+      }
+    });
+  } catch (txErr) {
+    logger.error('execute-moves', `Transaction failed: ${txErr.message} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
+    return res.status(500).json({
+      error: `Move execution failed: ${txErr.message}`,
+      phase: 'transaction',
+      moveCount: moves.length
+    });
+  }
 
   // Invalidate analysis cache after successful moves
   await invalidateAnalysisCache(null, req.cellarId);
