@@ -7,7 +7,7 @@
 import { getZoneById } from '../../config/cellarZones.js';
 import { findBestZone, inferColor } from './cellarPlacement.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
-import { parseSlot } from './slotUtils.js';
+import { parseSlot, getRowCapacity } from './slotUtils.js';
 
 // Re-export parseSlot so existing consumers (bottleScanner, slots.js, cellarSuggestions) keep working
 export { parseSlot };
@@ -394,14 +394,15 @@ export function getWinesInRows(rows, slotToWine) {
  * @returns {Object} Zone analysis
  */
 export function analyseZone(zone, zoneWines, rowId) {
+  const rowSlotCount = getRowCapacity(rowId) || 9;
   const analysis = {
     zoneId: zone.id,
     displayName: zone.displayName,
     row: rowId,
-    capacity: 9,
+    capacity: rowSlotCount,
     currentCount: zoneWines.length,
-    utilizationPercent: Math.round((zoneWines.length / 9) * 100),
-    isOverflowing: zoneWines.length > 9,
+    utilizationPercent: Math.round((zoneWines.length / rowSlotCount) * 100),
+    isOverflowing: zoneWines.length > rowSlotCount,
     correctlyPlaced: [],
     misplaced: [],
     bufferOccupants: [],

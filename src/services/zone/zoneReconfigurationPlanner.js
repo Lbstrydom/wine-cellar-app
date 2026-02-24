@@ -330,7 +330,8 @@ async function refinePlanWithLLM(ctx) {
     physicalConstraints: {
       totalRows: TOTAL_CELLAR_ROWS,
       slotsPerRow: SLOTS_PER_ROW,
-      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+      row1Slots: 7,
+      totalCapacity: (TOTAL_CELLAR_ROWS - 1) * SLOTS_PER_ROW + 7  // R1 has 7, rest have 9
     },
     currentState: { totalBottles, misplaced: misplacedBottles, misplacementPct },
     zones: zonesWithAllocations,
@@ -964,6 +965,74 @@ export async function generateReconfigurationPlan(report, options = {}) {
     zoneRowMap.set(z.id, [...(z.actualAssignedRows || [])]);
   }
 
+  // ─── Phase 0: Recover orphaned rows ─────────────────────────
+  // Rows that were freed to '__unassigned' in a previous reconfiguration
+  // become invisible to the pipeline. Detect them and re-inject into the
+  // zone row map so the solver can allocate them.
+  const assignedRows = new Set();
+  for (const rows of zoneRowMap.values()) {
+    for (const r of rows) assignedRows.add(r);
+  }
+  const orphanedRows = [];
+  for (let i = 1; i <= TOTAL_CELLAR_ROWS; i++) {
+    if (!assignedRows.has(`R${i}`)) orphanedRows.push(`R${i}`);
+  }
+  if (orphanedRows.length > 0) {
+    logger.info('Reconfig', `Recovered ${orphanedRows.length} orphaned row(s): ${orphanedRows.join(', ')}`);
+    // Find the best deficit zone for each orphaned row, or the zone with
+    // lowest utilization as fallback, respecting colour compatibility.
+    for (const orphan of orphanedRows) {
+      // Find the zone that benefits most from this row
+      let bestZoneId = null;
+      let bestScore = -Infinity;
+
+      const orphanNum = parseInt(orphan.replace('R', ''), 10);
+      const dynamicRanges = await getDynamicColourRowRanges(cellarId);
+      const isWhiteRow = dynamicRanges
+        ? orphanNum >= dynamicRanges.white.start && orphanNum <= dynamicRanges.white.end
+        : orphanNum <= 8; // Legacy default
+
+      for (const z of zonesWithAllocations) {
+        const zoneColor = getEffectiveZoneColor(getZoneById(z.id));
+        // Check colour compatibility
+        const isWhiteZone = zoneColor === 'white';
+        if (zoneColor !== 'any' && isWhiteRow !== isWhiteZone) continue;
+
+        const zoneRows = zoneRowMap.get(z.id) || [];
+        const util = utilization[z.id];
+        const utilizationPct = util?.utilizationPct ?? 0;
+
+        // Score: prefer overflowing zones, then high utilization, then adjacency
+        let score = 0;
+        if (util?.isOverflowing) score += 1000;
+        score += utilizationPct * 10;
+        // Adjacency bonus: closer to existing rows is better
+        if (zoneRows.length > 0) {
+          const zoneRowNums = zoneRows.map(r => parseInt(r.replace('R', ''), 10));
+          const minDist = Math.min(...zoneRowNums.map(n => Math.abs(n - orphanNum)));
+          score += (TOTAL_CELLAR_ROWS - minDist) * 5;
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestZoneId = z.id;
+        }
+      }
+
+      if (bestZoneId) {
+        const rows = zoneRowMap.get(bestZoneId) || [];
+        if (!rows.includes(orphan)) rows.push(orphan);
+        zoneRowMap.set(bestZoneId, rows);
+        // Also update the zone's actualAssignedRows so the solver sees it
+        const zoneObj = zonesWithAllocations.find(z => z.id === bestZoneId);
+        if (zoneObj && !zoneObj.actualAssignedRows.includes(orphan)) {
+          zoneObj.actualAssignedRows.push(orphan);
+        }
+        logger.info('Reconfig', `  Assigned orphaned ${orphan} to ${bestZoneId}`);
+      }
+    }
+  }
+
   // ─── Layer 1: Deterministic solver ───────────────────────────
   let solverActions = [];
   let solverReasoning = '';
@@ -1094,7 +1163,8 @@ export async function generateReconfigurationPlan(report, options = {}) {
     physicalConstraints: {
       totalRows: TOTAL_CELLAR_ROWS,
       slotsPerRow: SLOTS_PER_ROW,
-      totalCapacity: TOTAL_CELLAR_ROWS * SLOTS_PER_ROW
+      row1Slots: 7,
+      totalCapacity: (TOTAL_CELLAR_ROWS - 1) * SLOTS_PER_ROW + 7
     },
     currentState: {
       totalBottles,

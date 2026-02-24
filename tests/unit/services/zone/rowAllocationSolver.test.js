@@ -41,6 +41,15 @@ vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
   }
 }));
 
+// Mock slotUtils (getRowCapacity: R1 = 7, others = 9)
+vi.mock('../../../../src/services/cellar/slotUtils.js', () => ({
+  getRowCapacity: (rowId) => {
+    const n = parseInt(String(rowId).replace('R', ''), 10);
+    if (isNaN(n)) return 0;
+    return n === 1 ? 7 : 9;
+  }
+}));
+
 import { solveRowAllocation, MIN_BOTTLES_FOR_ROW } from '../../../../src/services/zone/rowAllocationSolver.js';
 
 // ─── Test helpers ───
@@ -1274,4 +1283,80 @@ describe('rowAllocationSolver', () => {
         expect(loireRows[1] - loireRows[0]).toBe(1);
       });
     });  });
+
+  // ─── Row-aware capacity tests ───────────────────────────────
+
+  describe('row-aware capacity (R1 = 7 slots)', () => {
+    it('does not reclaim R1 from a zone with 7 bottles', () => {
+      // R1 has 7 slots. A zone with R1 and 7 bottles has 100% utilization.
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1'], 7),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        sauvignon_blanc: { bottleCount: 7, rowCount: 1, capacity: 7, utilizationPct: 100, isOverflowing: false },
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // Should NOT reclaim R1 — it's 100% utilized
+      const fromSB = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'sauvignon_blanc'
+      );
+      expect(fromSB).toHaveLength(0);
+    });
+
+    it('correctly computes demand >= 1 for 7 bottles when zone has R1', () => {
+      // 7 bottles in R1 (7 slots) = exactly 1 row needed. Surplus = 0.
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1'], 7),
+        makeZone('shiraz', ['R12'], 8)
+      ];
+      const utilization = {
+        sauvignon_blanc: { bottleCount: 7, rowCount: 1, capacity: 7, utilizationPct: 100, isOverflowing: false },
+        shiraz: makeUtil(8, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      const fromSB = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'sauvignon_blanc'
+      );
+      expect(fromSB).toHaveLength(0);
+    });
+
+    it('merge capacity check accounts for R1 having 7 slots', () => {
+      // R1 (7) + R2 (9) = 16 combined capacity. 16 bottles should fit.
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1'], 2),
+        makeZone('chardonnay', ['R2'], 14),
+      ];
+      const utilization = {
+        sauvignon_blanc: { bottleCount: 2, rowCount: 1, capacity: 7, utilizationPct: 29, isOverflowing: false },
+        chardonnay: { bottleCount: 14, rowCount: 1, capacity: 9, utilizationPct: 156, isOverflowing: true }
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        mergeCandidates: [{ sourceZone: 'sauvignon_blanc', targetZone: 'chardonnay', affinity: 0.5, reason: 'small zone', combinedBottles: 16 }],
+        stabilityBias: 'low'
+      });
+
+      // Combined 16 ≤ 16 (7+9), so merge should be allowed
+      const mergeAction = result.actions.find(a =>
+        a.type === 'merge_zones' || a.type === 'retire_zone'
+      );
+      expect(mergeAction).toBeDefined();
+    });
+  });
 });

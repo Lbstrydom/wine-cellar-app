@@ -8,6 +8,17 @@ vi.mock('../../../../src/db/index.js', () => ({
   default: { prepare: vi.fn() }
 }));
 
+vi.mock('../../../../src/services/cellar/slotUtils.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    getRowCapacity: (rowId) => {
+      const n = typeof rowId === 'number' ? rowId : parseInt(String(rowId).replace(/\D/g, ''), 10);
+      return n === 1 ? 7 : 9;
+    }
+  };
+});
+
 import {
   detectScatteredWines,
   detectColorAdjacencyIssues,
@@ -18,7 +29,8 @@ import {
   wineViolatesZoneColour,
   isCorrectlyPlaced,
   isLegitimateBufferPlacement,
-  detectDuplicatePlacements
+  detectDuplicatePlacements,
+  analyseZone
 } from '../../../../src/services/cellar/cellarMetrics.js';
 
 // ─── parseSlot ────────────────────────────────────────────
@@ -741,5 +753,55 @@ describe('detectColourOrderViolations', () => {
     const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
     expect(result[0].message).toContain('white (top)');
     expect(result[0].message).toContain('red');
+  });
+});
+
+// ─── analyseZone (row-aware capacity) ─────────────────────
+
+describe('analyseZone', () => {
+  const mockZone = { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: {} };
+
+  it('uses capacity 7 for Row 1', () => {
+    const wines = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      wine_name: `Wine ${i}`,
+      zone_id: 'sauvignon_blanc'
+    }));
+    const result = analyseZone(mockZone, wines, 'R1');
+    expect(result.capacity).toBe(7);
+    expect(result.utilizationPercent).toBe(Math.round((5 / 7) * 100));
+    expect(result.isOverflowing).toBe(false);
+  });
+
+  it('uses capacity 9 for Row 2', () => {
+    const wines = Array.from({ length: 5 }, (_, i) => ({
+      id: i + 1,
+      wine_name: `Wine ${i}`,
+      zone_id: 'sauvignon_blanc'
+    }));
+    const result = analyseZone(mockZone, wines, 'R2');
+    expect(result.capacity).toBe(9);
+    expect(result.utilizationPercent).toBe(Math.round((5 / 9) * 100));
+  });
+
+  it('reports overflowing when wines exceed R1 capacity of 7', () => {
+    const wines = Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      wine_name: `Wine ${i}`,
+      zone_id: 'sauvignon_blanc'
+    }));
+    const result = analyseZone(mockZone, wines, 'R1');
+    expect(result.capacity).toBe(7);
+    expect(result.isOverflowing).toBe(true);
+  });
+
+  it('does not report overflowing for 9 wines in Row 2', () => {
+    const wines = Array.from({ length: 9 }, (_, i) => ({
+      id: i + 1,
+      wine_name: `Wine ${i}`,
+      zone_id: 'sauvignon_blanc'
+    }));
+    const result = analyseZone(mockZone, wines, 'R2');
+    expect(result.isOverflowing).toBe(false);
   });
 });

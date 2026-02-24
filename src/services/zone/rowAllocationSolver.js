@@ -20,9 +20,30 @@
 
 import { getZoneById } from '../../config/cellarZones.js';
 import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
+import { getRowCapacity } from '../cellar/slotUtils.js';
 
 const TOTAL_ROWS = 19;
 const SLOTS_PER_ROW = 9;
+
+/**
+ * Get the slot capacity for a given row number.
+ * Row 1 has 7 slots, all others have 9.
+ * @param {number|string} row - Row number or row ID (e.g. 1 or 'R1')
+ * @returns {number}
+ */
+function rowCapacity(row) {
+  const n = typeof row === 'string' ? parseInt(row.replace('R', ''), 10) : row;
+  return getRowCapacity(`R${n}`);
+}
+
+/**
+ * Compute total capacity for a set of rows, respecting per-row slot counts.
+ * @param {Array<string>} rows - Row IDs like ['R1', 'R5']
+ * @returns {number}
+ */
+function sumRowCapacity(rows) {
+  return rows.reduce((sum, r) => sum + getRowCapacity(r), 0);
+}
 
 /**
  * Minimum bottles a zone needs to justify its own dedicated row.
@@ -193,7 +214,17 @@ function computeDemand(zones, utilization, idealBottleCounts = null) {
     // Only allocate rows to zones that meet the minimum bottle threshold.
     // Zones below MIN_BOTTLES_FOR_ROW get demand=0 — their bottles stay
     // in buffer/overflow zones rather than consuming a full row.
-    const required = bottles >= MIN_BOTTLES_FOR_ROW ? Math.ceil(bottles / SLOTS_PER_ROW) : 0;
+    // Row-aware demand: account for R1 having 7 slots instead of 9.
+    // If the zone owns R1, subtract its capacity first, then ceil the remainder.
+    const zoneRows = zones.find(z => z.id === zone.id)?.actualAssignedRows || [];
+    let required = 0;
+    if (bottles >= MIN_BOTTLES_FOR_ROW) {
+      // Sum actual capacity of currently-assigned rows to estimate rows needed
+      const avgCapacity = zoneRows.length > 0
+        ? sumRowCapacity(zoneRows) / zoneRows.length
+        : SLOTS_PER_ROW;
+      required = Math.ceil(bottles / avgCapacity);
+    }
     demand.set(zone.id, required);
   }
   return demand;
@@ -899,7 +930,7 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
     // Check if combined bottles fit in target's current + source's rows
     const targetRows = zoneRowMap.get(candidate.targetZone) || [];
     const sourceRows = zoneRowMap.get(candidate.sourceZone) || [];
-    const combinedCapacity = (targetRows.length + sourceRows.length) * SLOTS_PER_ROW;
+    const combinedCapacity = sumRowCapacity([...targetRows, ...sourceRows]);
     if (sourceBottles + targetBottles > combinedCapacity) continue;
 
     if (sourceBottles <= 2) {

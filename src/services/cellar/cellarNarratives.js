@@ -7,6 +7,7 @@
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
 import { getZoneWithIntent } from '../zone/zoneMetadata.js';
 import { calculateFragmentation } from './cellarMetrics.js';
+import { getRowCapacity } from './slotUtils.js';
 
 // ───────────────────────────────────────────────────────────
 // Zone composition
@@ -163,8 +164,8 @@ export function generateZoneNarratives(zoneWineMap) {
     // Calculate composition
     const composition = getZoneComposition(wines);
 
-    // Calculate capacity (9 slots per row)
-    const capacity = rows.length * 9;
+    // Calculate capacity (R1 has 7 slots, others have 9)
+    const capacity = rows.reduce((sum, r) => sum + (getRowCapacity(r) || 9), 0);
     const utilizationPercent = Math.round((wines.length / capacity) * 100);
 
     // Calculate fragmentation
