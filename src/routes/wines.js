@@ -25,6 +25,7 @@ import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { normalizeColour } from '../utils/wineNormalization.js';
 import { updateZoneWineCount } from '../services/cellar/cellarAllocation.js';
 import { detectGrapesFromWine } from '../services/wine/grapeEnrichment.js';
+import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 
 const router = Router();
 
@@ -577,21 +578,24 @@ router.delete('/:id', validateParams(wineIdSchema), asyncHandler(async (req, res
     return res.status(404).json({ error: 'Wine not found' });
   }
 
-  // Decrement zone wine_count before deleting the wine (if it has a zone and bottles in cellar)
-  if (wine.zone_id) {
-    const bottleResult = await db.prepare(
-      'SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id = $2'
-    ).get(req.cellarId, id);
-    const hasBottles = (bottleResult?.count ?? 0) > 0;
-    if (hasBottles) {
-      await updateZoneWineCount(wine.zone_id, req.cellarId, -1);
-    }
+  // Count bottles BEFORE delete — needed for both zone update and reconfig counter
+  const bottleResult = await db.prepare(
+    'SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id = $2'
+  ).get(req.cellarId, id);
+  const deletedBottleCount = parseInt(bottleResult?.count ?? 0, 10);
+
+  // Decrement zone wine_count if it has a zone and bottles in cellar
+  if (wine.zone_id && deletedBottleCount > 0) {
+    await updateZoneWineCount(wine.zone_id, req.cellarId, -1);
   }
 
   await db.prepare('DELETE FROM wines WHERE cellar_id = $1 AND id = $2').run(req.cellarId, id);
 
   // Invalidate analysis cache — wine removal changes zone composition
   await invalidateAnalysisCache(null, req.cellarId);
+  if (deletedBottleCount > 0) {
+    await incrementBottleChangeCount(req.cellarId, deletedBottleCount);
+  }
 
   res.json({ message: `Wine ${id} deleted` });
 }));

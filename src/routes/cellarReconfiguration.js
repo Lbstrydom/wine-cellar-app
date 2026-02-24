@@ -20,6 +20,7 @@ import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
 import { getAllWinesWithSlots } from './cellar.js';
 import { runAnalysis } from './cellarAnalysis.js';
+import { checkReconfigThreshold, resetBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 
 const router = express.Router();
 
@@ -149,8 +150,27 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
     const {
       includeRetirements = true,
       includeNewZones = true,
-      stabilityBias = 'moderate'
+      stabilityBias = 'moderate',
+      force = false
     } = req.body || {};
+
+    // Stability gate: skip expensive plan generation if cellar hasn't changed enough
+    if (!force) {
+      const result = await checkReconfigThreshold(req.cellarId);
+      if (!result.allowed) {
+        clearTimeout(timeout);
+        return res.json({
+          success: false,
+          belowThreshold: true,
+          changeCount: result.changeCount,
+          threshold: result.threshold,
+          thresholdPct: result.thresholdPct,
+          totalBottles: result.totalBottles,
+          lastReconfigAt: result.lastReconfigAt,
+          message: `Only ${result.changeCount} of ${result.threshold} bottle changes (${result.thresholdPct}% of ${result.totalBottles}) since last reconfiguration.`
+        });
+      }
+    }
 
     const wines = await getAllWinesWithSlots(req.cellarId);
     const report = await runAnalysis(wines, req.cellarId);
@@ -723,6 +743,9 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
 
   await deletePlan(planId);
   await invalidateAnalysisCache(null, req.cellarId);
+
+  // Reset change counter — reconfig was applied, start counting from 0
+  await resetBottleChangeCount(req.cellarId);
 
   // Post-apply colour order validation
   let colourOrderWarnings = [];

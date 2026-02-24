@@ -358,6 +358,9 @@ export async function loadSettings() {
     // Load cellar layout settings
     loadLayoutSettings(settings);
 
+    // Load reconfiguration threshold
+    loadReconfigThresholdSetting(settings);
+
     // Load credentials status
     await loadCredentialsStatus();
 
@@ -729,6 +732,9 @@ export function initSettings() {
   // Cellar layout settings
   initLayoutSettings();
 
+  // Reconfiguration threshold slider
+  initReconfigThresholdSetting();
+
   // Evaluate rules button
   document.getElementById('evaluate-rules-btn')?.addEventListener('click', handleEvaluateRules);
 
@@ -906,6 +912,48 @@ function loadLayoutSettings(settings) {
     const radio = document.querySelector(`input[name="fill-direction"][value="${settings.cellar_fill_direction}"]`);
     if (radio) radio.checked = true;
   }
+}
+
+// ============================================
+// Reconfiguration Threshold Setting
+// ============================================
+
+/**
+ * Initialize the reconfiguration threshold slider listener.
+ */
+function initReconfigThresholdSetting() {
+  const slider = document.getElementById('reconfig-change-pct');
+  const display = document.getElementById('reconfig-change-pct-display');
+  if (!slider) return;
+
+  slider.addEventListener('input', () => {
+    if (display) display.textContent = `${slider.value}%`;
+  });
+
+  slider.addEventListener('change', async () => {
+    try {
+      await updateSetting('reconfig_change_pct', slider.value);
+      const label = slider.value === '0' ? 'disabled' : `${slider.value}%`;
+      showToast(`Reconfiguration threshold set to ${label}`);
+    } catch (_err) {
+      showToast('Error saving setting');
+    }
+  });
+}
+
+/**
+ * Load reconfiguration threshold setting into UI.
+ * @param {object} settings - Settings object from API
+ */
+function loadReconfigThresholdSetting(settings) {
+  const slider = document.getElementById('reconfig-change-pct');
+  const display = document.getElementById('reconfig-change-pct-display');
+  if (!slider) return;
+
+  if (settings.reconfig_change_pct != null) {
+    slider.value = settings.reconfig_change_pct;
+  }
+  if (display) display.textContent = `${slider.value}%`;
 }
 
 // ============================================

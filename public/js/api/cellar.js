@@ -112,7 +112,7 @@ export async function mergeZones(sourceZoneId, targetZoneId) {
 /**
  * Generate a holistic reconfiguration plan.
  * Plan generation involves AI calls that can take 2-3 minutes.
- * @param {{includeRetirements?: boolean, includeNewZones?: boolean, stabilityBias?: 'low'|'moderate'|'high'}} options
+ * @param {{includeRetirements?: boolean, includeNewZones?: boolean, stabilityBias?: 'low'|'moderate'|'high', force?: boolean}} options
  * @returns {Promise<Object>}
  */
 export async function getReconfigurationPlan(options = {}) {

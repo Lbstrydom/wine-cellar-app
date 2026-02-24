@@ -16,6 +16,7 @@ import {
 } from '../schemas/slot.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
 import { parseSlot, detectRowGaps } from '../services/cellar/cellarMetrics.js';
 import { getCellarLayoutSettings } from '../services/shared/cellarLayoutSettings.js';
@@ -191,6 +192,7 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  await incrementBottleChangeCount(req.cellarId);
 
   // Compute compaction suggestions for the affected row
   const compactionSuggestions = await getRowCompactionSuggestions(location, req.cellarId);
@@ -225,6 +227,7 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  await incrementBottleChangeCount(req.cellarId);
 
   res.json({ message: 'Bottle added to slot' });
 }));
@@ -252,6 +255,7 @@ router.delete('/:location/remove', validateParams(locationParamSchema), asyncHan
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  await incrementBottleChangeCount(req.cellarId);
 
   // Compute compaction suggestions for the affected row
   const compactionSuggestions = await getRowCompactionSuggestions(location, req.cellarId);

@@ -1512,6 +1512,54 @@
   color: var(--text-muted);
 }
 
+/* Reconfiguration threshold gate (below-change-threshold) */
+.reconfig-threshold-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  text-align: center;
+  gap: 0.75rem;
+}
+
+.reconfig-threshold-icon {
+  font-size: 2.5rem;
+}
+
+.reconfig-threshold-gate p {
+  margin: 0;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+.reconfig-threshold-gate strong {
+  color: var(--text);
+}
+
+.reconfig-threshold-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.reconfig-force-btn {
+  margin-top: 0.5rem;
+  padding: 0.5rem 1.25rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.9rem;
+  transition: background 0.15s;
+}
+
+.reconfig-force-btn:hover {
+  background: var(--bg-card);
+  border-color: var(--accent);
+}
+
 .analysis-moves h4 {
   margin-bottom: 0.75rem;
   font-size: 1rem;
@@ -2389,6 +2437,7 @@
 .reconfig-action-title,
 .reconfig-action-reason,
 .reconfig-summary,
+.reconfig-threshold-gate,
 .zone-card,
 .zone-card-purpose,
 .zone-card-composition,
@@ -5432,6 +5481,14 @@ body.slot-picker-mode .slot.picker-placed::after {
   color: var(--text);
   text-align: center;
   font-size: 0.9rem;
+}
+
+.rule-input-group input[type="range"] {
+  width: 100%;
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: transparent;
 }
 
 .rule-input-group input:focus {

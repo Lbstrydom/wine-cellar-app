@@ -222,13 +222,73 @@ async function handleApply(onRenderAnalysis) {
 }
 
 /**
+ * Show a below-threshold gating message with a "Generate Anyway" button.
+ * @param {Object} result - API response with belowThreshold info
+ * @param {Object} opts - Options for regeneration
+ */
+function renderBelowThreshold(result, opts) {
+  const { body, subtitle } = getEls();
+  if (subtitle) subtitle.textContent = 'Not enough changes yet';
+  if (body) {
+    const pctLabel = result.thresholdPct != null ? ` (${result.thresholdPct}% of ${result.totalBottles} bottles)` : '';
+    body.innerHTML = `
+      <div class="reconfig-threshold-gate">
+        <div class="reconfig-threshold-icon">📊</div>
+        <p><strong>${result.changeCount}</strong> of <strong>${result.threshold}</strong>${pctLabel} bottle changes since last reconfiguration.</p>
+        <p class="reconfig-threshold-hint">Zone reconfiguration works best after meaningful changes to your collection (adding or removing bottles). You can adjust this threshold in Settings → Cellar Layout.</p>
+        <button class="btn btn-secondary reconfig-force-btn">Generate Anyway</button>
+      </div>
+    `;
+    body.querySelector('.reconfig-force-btn')?.addEventListener('click', () => {
+      renderLoading('Generating reconfiguration plan... This may take 2-3 minutes.');
+      loadPlan({ ...opts, force: true });
+    }, { once: true });
+  }
+  setApplyReadyState(false);
+}
+
+/**
+ * Load a reconfiguration plan from the API.
+ * @param {Object} opts - includeRetirements, includeNewZones, stabilityBias, force
+ */
+async function loadPlan(opts) {
+  try {
+    const planResult = await getReconfigurationPlan(opts);
+
+    if (planResult?.belowThreshold) {
+      renderBelowThreshold(planResult, opts);
+      return;
+    }
+
+    if (planResult?.success !== true) {
+      renderError(planResult?.error || planResult?.message || 'Failed to generate plan');
+      return;
+    }
+
+    current = { planId: planResult.planId, plan: planResult.plan };
+    renderPlan(planResult.plan);
+
+    const { applyBtn } = getEls();
+    applyBtn?.addEventListener('click', async () => {
+      try {
+        await handleApply(loadPlan._onRenderAnalysis);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    }, { once: true });
+  } catch (err) {
+    renderError(err.message || 'An unexpected error occurred');
+  }
+}
+
+/**
  * Open modal and load plan.
  */
 export async function openReconfigurationModal({ onRenderAnalysis } = {}) {
   openOverlay();
   renderLoading('Generating reconfiguration plan... This may take 2-3 minutes.');
 
-  const { closeBtn, cancelBtn, applyBtn, overlay } = getEls();
+  const { closeBtn, cancelBtn, overlay } = getEls();
 
   // Wire close buttons once per open.
   closeBtn?.addEventListener('click', closeOverlay, { once: true });
@@ -239,29 +299,12 @@ export async function openReconfigurationModal({ onRenderAnalysis } = {}) {
     if (e.target === overlay) closeOverlay();
   }, { once: true });
 
-  try {
-    const planResult = await getReconfigurationPlan({
-      includeRetirements: true,
-      includeNewZones: true,
-      stabilityBias: 'moderate'
-    });
+  // Store callback for use by loadPlan
+  loadPlan._onRenderAnalysis = onRenderAnalysis;
 
-    if (planResult?.success !== true) {
-      renderError(planResult?.error || 'Failed to generate plan');
-      return;
-    }
-
-    current = { planId: planResult.planId, plan: planResult.plan };
-    renderPlan(planResult.plan);
-
-    applyBtn?.addEventListener('click', async () => {
-      try {
-        await handleApply(onRenderAnalysis);
-      } catch (err) {
-        showToast(`Error: ${err.message}`);
-      }
-    }, { once: true });
-  } catch (err) {
-    renderError(err.message || 'An unexpected error occurred');
-  }
+  await loadPlan({
+    includeRetirements: true,
+    includeNewZones: true,
+    stabilityBias: 'moderate'
+  });
 }

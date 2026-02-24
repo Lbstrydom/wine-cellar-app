@@ -703,6 +703,16 @@
           </label>
         </div>
       </fieldset>
+
+      <!-- Reconfiguration threshold -->
+      <div class="settings-rule" id="reconfig-threshold-rule">
+        <label class="settings-label" for="reconfig-change-pct">Zone Reconfiguration Threshold</label>
+        <p class="settings-rule-desc">Minimum percentage of bottles that must change (added or removed) before zone reconfiguration is recommended. Set to 0 to disable gating.</p>
+        <div class="rule-input-group">
+          <input type="range" id="reconfig-change-pct" min="0" max="30" step="1" value="10" class="range-slider" />
+          <span id="reconfig-change-pct-display" class="range-value">10%</span>
+        </div>
+      </div>
     </div>
     </div><!-- /settings-group: Preferences -->
 
