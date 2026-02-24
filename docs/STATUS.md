@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 22 February 2026
+## 24 February 2026
 
 ---
 
@@ -9,7 +9,40 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 22 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 23 Feb 2026**:
+- **Unified Cellar Layout System (Phases 0-9) — COMPLETE** ✅:
+  - Replaced three contradictory move generators (zone consolidation, row compaction, same-wine grouping) with a **single unified pipeline** that computes one ideal target layout, presents a visual diff grid with drag-drop adjustment, and executes a minimum sort plan atomically.
+  - **Backend**: New `layoutProposer.js` (zone packing + stability optimisation), `layoutSorter.js` (permutation decomposition into direct/swap/cycle moves), new API endpoints (`GET /bottle-layout/propose`, `POST /validate-moves`), shared `slotUtils.js` + `moveUtils.js`, modified `validateMovePlan` Rule 1 for multi-bottle wineId support.
+  - **Frontend**: New `layoutDiffGrid.js` (colour-coded slot states), `layoutDiffControls.js` (view toggle: proposed/current/changes-only + summary stats bar), `layoutDiffDragDrop.js` (drag-drop editing with undo stack), `layoutDiffOrchestrator.js` (approval CTA with apply/reset/cancel, stale-proposal detection, button disable during execution). Transition updates to aiAdvice, consolidation, zones, and zoneReconfigurationBanner to prefer new layout diff container.
+  - 34 files changed, ~3,560 lines added. New CSS in `components.css` (379 lines).
+  - Cache version bumped, SW static assets updated.
+
+- **Zone Alignment Validation — COMPLETE** ✅:
+  - `toZoneId` and `actualTargetZoneId` included in move suggestions for zone tracking.
+  - New `validateMoveZoneAlignment` post-generation check in `cellarAnalysis.js` — surfaces zone alignment mismatches as warnings in analysis alerts.
+  - `movePlanner.js` contiguity-aware slot placement logic.
+  - `moveAuditor` zone mismatch detection.
+  - Comprehensive tests for zone alignment validation and move planner.
+
+- **Zone Row Contiguity + Same-Wine Bottle Adjacency — COMPLETE** ✅:
+  - `allocateRowTransactional` now prefers rows adjacent to zone's existing allocation (`sortByAdjacency` helper).
+  - `findSlotInRows` accepts same-wine context and tries adjacent slots first; `findAvailableSlot` queries DB for existing same-wine bottle locations.
+  - New `generateSameWineGroupingMoves()` detects non-contiguous same-wine bottles within rows and generates swap/move suggestions (`type: grouping`), integrated into cellarAnalysis pipeline with `wine_grouping` alert.
+  - Contiguity enforcement across pipeline: budget reservation for contiguity repairs, atomic swap pairs in `prioritizeAndLimit`, adjacency-scored donor row selection in `heuristicGapFill`, `repairContiguityGaps` post-pass with harm-check (verifies swap doesn't break other zone's contiguity), `CONTIGUITY RULE` in LLM prompt, soft `checkContiguity` warning at apply time.
+  - Solver Phase 5 fix: `consolidateScatteredWines` now scans all multi-row zones even when `scatteredWines` input is empty.
+  - 10+ new unit tests for same-wine grouping, 8 planner repair tests (sandwich, harm-check, colour boundary, chained state), solver regression tests.
+
+- **Reconfiguration Plan PostgreSQL Persistence — COMPLETE** ✅:
+  - Plans were stored in an in-memory `Map` — lost on server restart/deploy, causing "Plan not found or expired" errors when applying.
+  - Converted `reconfigurationPlanStore` from `Map` to `reconfiguration_plans` table with auto-create on first use (idempotent). Scoped by `cellar_id` for multi-tenant isolation. Same 15-minute TTL via SQL `INTERVAL` with fire-and-forget GC. All callers updated to `await` async store functions.
+
+- **Test Stability (--no-isolate mock hygiene) — COMPLETE** ✅:
+  - Eliminated remaining global stub leaks: replaced direct `global.document` assignment with `vi.stubGlobal()` + `vi.unstubAllGlobals()` in `afterEach` across 7 test files (`zones.test.js`, `moveGuide.test.js`, `fridgeSwap.test.js`, `aiAdviceGuard.test.js`, `consolidation.test.js`, etc.).
+  - Module-scope stubs replaced with `beforeEach`/`afterEach` lifecycle management.
+
+- **Validation status**: `npm run test:unit` passes at **2267 tests across 89 files**.
+
+**Previous Enhancements** (22 Feb 2026):
 - **Zone Reconfiguration Duplicate Row & Colour Violation Fixes — COMPLETE** ✅:
   - **Root cause**: After zone reconfiguration, rows could appear in multiple zones (duplicates) and white-family zones could be placed in red-region rows (colour violations). Six code paths lacked deduplication and three lacked colour-boundary enforcement.
   - **Defence-in-depth fixes across 2 files** (`cellarReconfiguration.js`, `zoneReconfigurationPlanner.js`):
