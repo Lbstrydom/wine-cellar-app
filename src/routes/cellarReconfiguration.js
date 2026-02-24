@@ -264,6 +264,8 @@ function getAffectedZoneIdsFromPlan(plan) {
     if (action.type === 'reallocate_row') {
       if (action.fromZoneId) zoneIds.add(action.fromZoneId);
       if (action.toZoneId) zoneIds.add(action.toZoneId);
+    } else if (action.type === 'assign_orphan_row') {
+      if (action.toZoneId) zoneIds.add(action.toZoneId);
     } else if (action.type === 'expand_zone' && action.zoneId) {
       zoneIds.add(action.zoneId);
     } else if (action.type === 'merge_zones') {
@@ -652,6 +654,55 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
           }
         }
         zonesChanged++;
+      } else if (action.type === 'assign_orphan_row') {
+        // Assign a previously orphaned row directly to a zone (no source to remove from)
+        const { toZoneId, rowNumber } = action;
+        if (!toZoneId || rowNumber == null) continue;
+        const rowId = typeof rowNumber === 'number' ? `R${rowNumber}` : String(rowNumber);
+
+        // Colour boundary guard
+        if (dynamicRanges) {
+          const toZone = getZoneById(toZoneId);
+          if (toZone) {
+            const toColor = getEffectiveZoneColor(toZone);
+            if (toColor !== 'any') {
+              const rowNum = parseRowNumber(rowId);
+              const whiteRowSet = new Set((dynamicRanges.whiteRows || []).map(Number));
+              const redRowSet = new Set((dynamicRanges.redRows || []).map(Number));
+              if ((toColor === 'white' && redRowSet.has(rowNum)) || (toColor === 'red' && whiteRowSet.has(rowNum))) {
+                logger.warn('Reconfig', `Blocked orphan assign: ${rowId} colour incompatible with ${toZoneId}`);
+                actionsAutoSkipped++;
+                continue;
+              }
+            }
+          }
+        }
+
+        // Add row to target zone (UPSERT — may not have an existing allocation)
+        const toAlloc = await client.query(
+          'SELECT assigned_rows FROM zone_allocations WHERE cellar_id = $1 AND zone_id = $2',
+          [req.cellarId, toZoneId]
+        );
+        const toRows = parseAssignedRows(toAlloc.rows[0]?.assigned_rows);
+        const updatedToRows = [...toRows.filter(r => r !== rowId), rowId].filter(Boolean);
+
+        if (toAlloc.rows.length > 0) {
+          await client.query(
+            'UPDATE zone_allocations SET assigned_rows = $1, updated_at = NOW() WHERE cellar_id = $2 AND zone_id = $3',
+            [JSON.stringify(updatedToRows), req.cellarId, toZoneId]
+          );
+        } else {
+          await client.query(
+            'INSERT INTO zone_allocations (cellar_id, zone_id, assigned_rows, first_wine_date, wine_count) VALUES ($1, $2, $3, NOW(), $4)',
+            [req.cellarId, toZoneId, JSON.stringify(updatedToRows), 0]
+          );
+        }
+
+        // Update local map
+        zoneAllocMap.set(toZoneId, updatedToRows);
+        usedRows.add(rowId);
+        zonesChanged++;
+        logger.info('Reconfig', `Orphan recovery: assigned ${rowId} to ${toZoneId}`);
       } else if (action.type === 'expand_zone') {
         const zoneId = action.zoneId;
         if (!zoneId) continue;

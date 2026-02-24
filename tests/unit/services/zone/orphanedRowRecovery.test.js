@@ -1,7 +1,8 @@
 /**
  * @fileoverview Tests for orphaned row recovery in zone reconfiguration.
  * Verifies that rows not assigned to any zone (e.g., freed to __unassigned
- * in a previous reconfiguration) are detected and re-injected.
+ * in a previous reconfiguration) are detected, re-injected, and persisted
+ * via assign_orphan_row actions.
  * @module tests/unit/services/zone/orphanedRowRecovery.test
  */
 
@@ -48,6 +49,36 @@ describe('buildMutatedZoneRowMap', () => {
     const result = buildMutatedZoneRowMap(initial, actions);
     expect(result.get('zone_a')).toEqual(['R2']);
     expect(result.get('zone_b')).toContain('R1');
+  });
+
+  it('handles assign_orphan_row action type', () => {
+    const initial = new Map([
+      ['zone_a', ['R2', 'R3']],
+      ['zone_b', ['R4']]
+    ]);
+    const actions = [{
+      type: 'assign_orphan_row',
+      toZoneId: 'zone_a',
+      rowNumber: 1
+    }];
+
+    const result = buildMutatedZoneRowMap(initial, actions);
+    expect(result.get('zone_a')).toContain('R1');
+    expect(result.get('zone_a')).toHaveLength(3);
+  });
+
+  it('does not duplicate row in assign_orphan_row if already present', () => {
+    const initial = new Map([
+      ['zone_a', ['R1', 'R2']]
+    ]);
+    const actions = [{
+      type: 'assign_orphan_row',
+      toZoneId: 'zone_a',
+      rowNumber: 1
+    }];
+
+    const result = buildMutatedZoneRowMap(initial, actions);
+    expect(result.get('zone_a')).toEqual(['R1', 'R2']);
   });
 });
 
