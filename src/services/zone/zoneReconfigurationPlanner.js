@@ -39,7 +39,7 @@ function clampStabilityBias(value) {
  * @param {string} zoneId - The zone to check involvement for
  * @returns {boolean}
  */
-function actionInvolvesZone(action, zoneId) {
+export function actionInvolvesZone(action, zoneId) {
   if (!action || !zoneId) return false;
   const type = action.type;
 
@@ -1243,9 +1243,13 @@ export async function generateReconfigurationPlan(report, options = {}) {
     }
   }
 
-  // If scoped to a single zone, filter actions to only those involving that zone
+  // If scoped to a single zone, filter actions to only those involving that zone.
+  // Always retain assign_orphan_row actions — dropping them causes missing-row
+  // data integrity violations (orphaned rows stay invisible to analysis).
   if (focusZoneId) {
-    finalPlan.actions = (finalPlan.actions || []).filter(a => actionInvolvesZone(a, focusZoneId));
+    finalPlan.actions = (finalPlan.actions || []).filter(
+      a => a.type === 'assign_orphan_row' || actionInvolvesZone(a, focusZoneId)
+    );
   }
 
   const finalSummary = computeSummary(report, finalPlan.actions);

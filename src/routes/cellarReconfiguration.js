@@ -6,7 +6,7 @@
 import express from 'express';
 import db from '../db/index.js';
 import { getZoneById } from '../config/cellarZones.js';
-import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges } from '../services/shared/cellarLayoutSettings.js';
+import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, TOTAL_ROWS } from '../services/shared/cellarLayoutSettings.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { validateMovePlan } from '../services/cellar/movePlanner.js';
 import { proposeIdealLayout } from '../services/cellar/layoutProposer.js';
@@ -61,7 +61,7 @@ function parseRowNumber(rowId) {
  * @param {{whiteRows?: number[], redRows?: number[]}|null} dynamicRanges
  * @returns {{valid: boolean, errors: string[]}}
  */
-function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
+export function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
   const errors = [];
   const rowOwners = new Map();
   const whiteRowSet = new Set((dynamicRanges?.whiteRows || []).map(Number));
@@ -101,6 +101,14 @@ function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
   for (const [rowId, owners] of rowOwners) {
     if (owners.length > 1) {
       errors.push(`Duplicate assignment: ${rowId} belongs to ${owners.join(', ')}`);
+    }
+  }
+
+  // Full row coverage: every row R1..R{TOTAL_ROWS} must appear exactly once
+  for (let i = 1; i <= TOTAL_ROWS; i++) {
+    const rowId = `R${i}`;
+    if (!rowOwners.has(rowId)) {
+      errors.push(`Missing row: ${rowId} is not assigned to any zone`);
     }
   }
 

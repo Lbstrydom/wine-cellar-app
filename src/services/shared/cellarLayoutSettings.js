@@ -18,7 +18,7 @@ import db from '../../db/index.js';
  */
 
 /** Total cellar rows available for allocation */
-const TOTAL_ROWS = 19;
+export const TOTAL_ROWS = 19;
 
 /** Minimum rows allocated to a colour family when at least one bottle of that colour exists */
 const MIN_ROWS_WHEN_PRESENT = 2;
