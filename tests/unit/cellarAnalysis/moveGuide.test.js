@@ -22,6 +22,9 @@ vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
 vi.mock('../../../public/js/cellarAnalysis/analysis.js', () => ({
   loadAnalysis: vi.fn()
 }));
+vi.mock('../../../public/js/cellarAnalysis/moves.js', () => ({
+  showValidationErrorModal: vi.fn()
+}));
 vi.mock('../../../public/js/eventManager.js', () => ({
   addTrackedListener: vi.fn(),
   cleanupNamespace: vi.fn()
@@ -89,6 +92,10 @@ vi.stubGlobal('window', {
 vi.stubGlobal('requestAnimationFrame', vi.fn(cb => cb()));
 
 import { detectSwapPairs, openMoveGuide, closeMoveGuide, isMoveGuideActive } from '../../../public/js/cellarAnalysis/moveGuide.js';
+import { executeCellarMoves } from '../../../public/js/api.js';
+import { showToast } from '../../../public/js/utils.js';
+import { showValidationErrorModal } from '../../../public/js/cellarAnalysis/moves.js';
+import { addTrackedListener } from '../../../public/js/eventManager.js';
 
 // Clean up module-scope vi.stubGlobal calls (document, window, requestAnimationFrame)
 // to prevent leaking into downstream test files in --no-isolate mode.
@@ -347,5 +354,91 @@ describe('detectSwapPairs index integrity', () => {
     // Should only find the first valid swap pair or none
     // R1C1→R2C1 and none has R2C1→R1C1, so no swaps
     expect(pairs.size).toBe(0);
+  });
+});
+
+// ============================================================
+// Execute path — validation modal integration
+// ============================================================
+
+describe('executeCurrentMove validation handling', () => {
+  const testMoves = [
+    { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test Wine' }
+  ];
+
+  /**
+   * Helper: open guide, find the execute-button callback captured by addTrackedListener.
+   * Returns the async callback so tests can await it.
+   */
+  function getExecuteCallback() {
+    addTrackedListener.mockClear();
+    openMoveGuide(testMoves);
+    // addTrackedListener is called with (namespace, element, event, callback)
+    // Find the 'click' listener whose element is the execute button mock
+    const executeCall = addTrackedListener.mock.calls.find(
+      ([, , evt]) => evt === 'click' &&
+        addTrackedListener.mock.calls.indexOf(arguments) !== -1
+    );
+    // The execute button is the second addTrackedListener call in createPanel
+    // Order: close(0), execute(1), skip(2), recalculate(3), keydown(4)
+    const clickCalls = addTrackedListener.mock.calls.filter(([, , evt]) => evt === 'click');
+    // clickCalls[0] = close, clickCalls[1] = execute, clickCalls[2] = skip, clickCalls[3] = recalculate
+    const executeCb = clickCalls[1]?.[3]; // 4th arg is the callback
+    return executeCb;
+  }
+
+  afterEach(() => {
+    closeMoveGuide();
+    vi.clearAllMocks();
+  });
+
+  it('should show validation modal when executeCellarMoves returns success:false with validation', async () => {
+    const validationPayload = {
+      valid: false,
+      errors: [{ type: 'slot_not_found', message: 'Source slot R1C1 not found', slot: 'R1C1' }]
+    };
+    executeCellarMoves.mockResolvedValueOnce({ success: false, validation: validationPayload });
+    const executeCb = getExecuteCallback();
+    expect(executeCb).toBeTypeOf('function');
+
+    await executeCb();
+
+    expect(showValidationErrorModal).toHaveBeenCalledWith(validationPayload);
+    expect(showToast).not.toHaveBeenCalled();
+  });
+
+  it('should show validation modal when executeCellarMoves rejects with err.validation', async () => {
+    const validationPayload = {
+      valid: false,
+      errors: [{ type: 'target_occupied', message: 'Target R2C1 occupied', slot: 'R2C1' }]
+    };
+    const err = new Error('Validation failed');
+    err.validation = validationPayload;
+    executeCellarMoves.mockRejectedValueOnce(err);
+    const executeCb = getExecuteCallback();
+
+    await executeCb();
+
+    expect(showValidationErrorModal).toHaveBeenCalledWith(validationPayload);
+  });
+
+  it('should show generic toast when executeCellarMoves rejects without validation', async () => {
+    executeCellarMoves.mockRejectedValueOnce(new Error('Network failure'));
+    const executeCb = getExecuteCallback();
+
+    await executeCb();
+
+    expect(showValidationErrorModal).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalledWith(expect.stringContaining('Network failure'));
+  });
+
+  it('should show generic toast when result.success is false without validation', async () => {
+    executeCellarMoves.mockResolvedValueOnce({ success: false });
+    const executeCb = getExecuteCallback();
+
+    await executeCb();
+
+    expect(showValidationErrorModal).not.toHaveBeenCalled();
+    expect(showToast).toHaveBeenCalled();
   });
 });

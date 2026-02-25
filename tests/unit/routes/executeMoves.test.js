@@ -330,8 +330,8 @@ describe('POST /execute-moves', () => {
   // ── Invariant Check ───────────────────────────────────────────────
 
   describe('invariant check', () => {
-    it('fails transaction when bottle count decreases (missing target slot)', async () => {
-      // Simulate: target slot doesn't exist → wine is "lost"
+    it('fails transaction when target slot missing (Phase 2 guard)', async () => {
+      // Simulate: target slot doesn't exist → Phase 2 throws before invariant check
       const slotState = new Map([
         ['R3C5', 10]
         // R7C2 does NOT exist in slots table
@@ -352,10 +352,10 @@ describe('POST /execute-moves', () => {
           moves: [{ wineId: 10, wineName: 'Wine A', from: 'R3C5', to: 'R7C2' }]
         });
 
-      // Should fail because after moves, bottle count changed
+      // Phase 2 now throws immediately on rowCount === 0 (TOCTOU guard)
       expect(res.status).toBe(500);
       expect(res.body.phase).toBe('transaction');
-      expect(res.body.error).toMatch(/Invariant violation/);
+      expect(res.body.error).toMatch(/Phase 2 failed/);
     });
 
     it('passes invariant for swap (counts remain equal)', async () => {

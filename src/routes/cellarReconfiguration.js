@@ -912,7 +912,9 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     validation = await validateMovePlan(moves, req.cellarId);
   } catch (valErr) {
     const pgCode = valErr.code ? ` [PG ${valErr.code}]` : '';
-    logger.error('execute-moves', `Validation threw${pgCode}: ${valErr.message} | stack: ${valErr.stack?.split('\n').slice(0, 3).join(' → ')}`);
+    const detail = valErr.detail ? ` detail=${valErr.detail}` : '';
+    const constraint = valErr.constraint ? ` constraint=${valErr.constraint}` : '';
+    logger.error('execute-moves', `Validation threw${pgCode}: ${valErr.message}${detail}${constraint} | stack: ${valErr.stack?.split('\n').slice(0, 3).join(' → ')}`);
     return res.status(500).json({
       error: `Move validation failed: ${valErr.message}`,
       phase: 'validation'
@@ -951,7 +953,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
           [null, req.cellarId, move.from]
         );
         if (clearResult.rowCount === 0) {
-          logger.error('execute-moves', `Phase 1: No slot found for cellar=${req.cellarId} location=${move.from}`);
+          throw new Error(`Phase 1 failed: source slot ${move.from} not found for cellar ${req.cellarId}`);
         }
       }
 
@@ -962,7 +964,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
           [move.wineId, req.cellarId, move.to]
         );
         if (placeResult.rowCount === 0) {
-          logger.error('execute-moves', `Phase 2: No slot found for cellar=${req.cellarId} location=${move.to} wineId=${move.wineId}`);
+          throw new Error(`Phase 2 failed: target slot ${move.to} not found for cellar ${req.cellarId} (wineId=${move.wineId})`);
         }
 
         // Update wine zone assignment
@@ -995,7 +997,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     const pgCode = txErr.code ? ` [PG ${txErr.code}]` : '';
     const detail = txErr.detail ? ` detail=${txErr.detail}` : '';
     const constraint = txErr.constraint ? ` constraint=${txErr.constraint}` : '';
-    logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
+    logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | stack: ${txErr.stack?.split('\n').slice(0, 3).join(' → ')} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
     return res.status(500).json({
       error: `Move execution failed: ${txErr.message}`,
       phase: 'transaction',

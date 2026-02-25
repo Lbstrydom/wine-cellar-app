@@ -406,12 +406,22 @@ async function executeMove(index) {
   if (move.type !== 'move') return;
 
   try {
-    await executeCellarMoves([{
+    const result = await executeCellarMoves([{
       wineId: move.wineId,
       from: move.from,
       to: move.to,
       ...(move.toZoneId ? { zoneId: move.toZoneId, confidence: move.confidence } : {})
     }]);
+
+    if (result && result.success === false) {
+      if (result.validation) {
+        showValidationErrorModal(result.validation);
+      } else {
+        showToast('Move execution failed');
+      }
+      return;
+    }
+
     showToast(`Moved ${move.wineName} to ${move.to}`);
 
     // Remove move from list and refresh
@@ -419,7 +429,11 @@ async function executeMove(index) {
     recheckSwapsAndRerender();
     refreshLayout();
   } catch (err) {
-    showToast(`Error: ${err.message}`);
+    if (err.validation) {
+      showValidationErrorModal(err.validation);
+    } else {
+      showToast(`Error: ${err.message}`);
+    }
   }
 }
 
@@ -668,6 +682,34 @@ export function showValidationErrorModal(validation) {
       </div>
     `;
   }
+
+  if (errorsByType.duplicate_move_instance) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>🔁 Duplicate Move Instances (${errorsByType.duplicate_move_instance.length})</h4>
+        <ul>
+          ${errorsByType.duplicate_move_instance.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">The same bottle (same slot) appears in multiple moves.</p>
+      </div>
+    `;
+  }
+
+  if (errorsByType.noop_move) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>⏸️ No-op Moves (${errorsByType.noop_move.length})</h4>
+        <ul>
+          ${errorsByType.noop_move.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Move source and target are the same slot — nothing would change.</p>
+      </div>
+    `;
+  }
   
   if (errorsByType.zone_colour_violation) {
     errorsHtml += `
@@ -679,6 +721,26 @@ export function showValidationErrorModal(validation) {
           `).join('')}
         </ul>
         <p class="error-explanation">Wine colour doesn't match the target zone's colour policy.</p>
+      </div>
+    `;
+  }
+
+  // Catch-all for any unrecognised error types
+  const knownTypes = new Set([
+    'slot_not_found', 'duplicate_target', 'target_occupied',
+    'source_mismatch', 'duplicate_wine', 'duplicate_move_instance',
+    'noop_move', 'zone_colour_violation'
+  ]);
+  const unknownErrors = validation.errors.filter(e => !knownTypes.has(e.type));
+  if (unknownErrors.length > 0) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>⚠️ Other Errors (${unknownErrors.length})</h4>
+        <ul>
+          ${unknownErrors.map(e => `
+            <li>${escapeHtml(e.message || e.type)}</li>
+          `).join('')}
+        </ul>
       </div>
     `;
   }
@@ -805,7 +867,11 @@ export function renderCompactionMoves(compactionMoves) {
         const { loadAnalysis } = await import('./analysis.js');
         await loadAnalysis(true);
       } catch (err) {
-        showToast(`Error: ${err.message}`);
+        if (err.validation) {
+          showValidationErrorModal(err.validation);
+        } else {
+          showToast(`Error: ${err.message}`);
+        }
         btn.disabled = false;
         btn.textContent = 'Move';
       }

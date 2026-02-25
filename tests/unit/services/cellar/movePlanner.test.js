@@ -40,6 +40,101 @@ describe('validateMovePlan', () => {
     vi.clearAllMocks();
   });
 
+  describe('Rule 0: All source and target slots must exist', () => {
+    it('should reject move when source slot does not exist', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R2C1', wine_id: null } // Only target exists
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      expect(result.summary.slotsNotFound).toBe(1);
+      const err = result.errors.find(e => e.type === 'slot_not_found');
+      expect(err).toBeDefined();
+      expect(err.slot).toBe('R1C1');
+    });
+
+    it('should reject move when target slot does not exist', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 } // Only source exists
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      expect(result.summary.slotsNotFound).toBe(1);
+      const err = result.errors.find(e => e.type === 'slot_not_found');
+      expect(err).toBeDefined();
+      expect(err.slot).toBe('R2C1');
+    });
+
+    it('should reject when both source and target do not exist', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([]) // No slots at all
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      expect(result.summary.slotsNotFound).toBe(2);
+      const slotErrors = result.errors.filter(e => e.type === 'slot_not_found');
+      expect(slotErrors).toHaveLength(2);
+    });
+
+    it('should pass when both source and target exist', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.summary.slotsNotFound).toBe(0);
+      const slotErrors = result.errors.filter(e => e.type === 'slot_not_found');
+      expect(slotErrors).toHaveLength(0);
+    });
+
+    it('should include slotsNotFound in summary', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.summary).toHaveProperty('slotsNotFound');
+    });
+  });
+
   describe('Rule 1: Each (wineId, from) instance can only be moved once', () => {
     it('should allow same wineId with distinct from slots (multi-bottle wine)', async () => {
       // Setup: Both slots occupied by same wine (multi-bottle) + empty targets
