@@ -149,8 +149,8 @@ export function generateZoneNarratives(zoneWineMap) {
   for (const [zoneId, data] of zoneWineMap) {
     const { zone, rows, wines } = data;
 
-    // Skip empty zones and buffer/fallback zones
-    if (wines.length === 0 || zone.isBufferZone || zone.isFallbackZone) continue;
+    // Skip empty zones and fallback zones; include buffer zones if they have wines
+    if (wines.length === 0 || zone.isFallbackZone) continue;
 
     // Get intent from database
     let intent = null;
