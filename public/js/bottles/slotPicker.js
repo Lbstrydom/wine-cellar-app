@@ -60,6 +60,9 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
     suggestionText = 'Click an empty slot to add the bottle';
   }
 
+  // Track primary zone for deferred highlight (applied after picker-target setup)
+  let pendingHighlightZoneId = null;
+
   // Try to get placement suggestion if smart place offered
   if (offerSmartPlace) {
     try {
@@ -78,9 +81,10 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
           suggestedSlotEl.classList.add('suggested-slot');
         }
 
-        // Show zone chooser if there are alternatives
+        // Render zone chooser buttons (highlight deferred until after picker-target setup)
         if (result.alternativeZones?.length > 0 && result.confidence !== 'high') {
-          await renderZoneChooser(result.zoneId, result.zoneName, result.alternativeZones);
+          await renderZoneChooser(result.zoneId, result.zoneName, result.alternativeZones, false);
+          pendingHighlightZoneId = result.zoneId;
         }
       }
     } catch (_err) {
@@ -95,10 +99,15 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
   // Show overlay
   document.getElementById('slot-picker-overlay').classList.add('active');
 
-  // Highlight empty slots
+  // Highlight empty slots — must happen before zone row highlight
   document.querySelectorAll('.slot.empty').forEach(slot => {
     slot.classList.add('picker-target');
   });
+
+  // Now apply deferred zone row highlight (picker-target classes are set)
+  if (pendingHighlightZoneId) {
+    highlightZoneRows(pendingHighlightZoneId);
+  }
 
   // Add cancel handler
   document.getElementById('cancel-slot-picker')?.addEventListener('click', closeSlotPickerModal);
@@ -109,8 +118,9 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
  * @param {string} primaryZoneId - Primary zone ID
  * @param {string} primaryName - Primary zone display name
  * @param {Array} alternatives - Alternative zone options
+ * @param {boolean} [highlightNow=true] - Apply row highlight immediately (false to defer)
  */
-async function renderZoneChooser(primaryZoneId, primaryName, alternatives) {
+async function renderZoneChooser(primaryZoneId, primaryName, alternatives, highlightNow = true) {
   const container = document.getElementById('zone-chooser');
   if (!container) return;
 
@@ -138,8 +148,10 @@ async function renderZoneChooser(primaryZoneId, primaryName, alternatives) {
 
   container.style.display = 'flex';
 
-  // Highlight the primary zone's rows
-  highlightZoneRows(primaryZoneId);
+  // Highlight the primary zone's rows (deferred when called before picker-target setup)
+  if (highlightNow) {
+    highlightZoneRows(primaryZoneId);
+  }
 }
 
 /**

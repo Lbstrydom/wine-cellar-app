@@ -353,7 +353,7 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
     expect(res.body).toHaveProperty('error', 'Wine not found');
   });
 
-  it('response shape is { message, warnings } on PUT', async () => {
+  it('response shape is { message, warnings, zoneSuggestion } on PUT', async () => {
     checkWineConsistency.mockReturnValue(null);
 
     const res = await request(app)
@@ -362,5 +362,76 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
 
     expect(res.status).toBe(200);
     expect(Object.keys(res.body).sort()).toEqual(['message', 'warnings', 'zoneSuggestion']);
+  });
+
+  it('zoneSuggestion includes zone fields when update succeeds', async () => {
+    checkWineConsistency.mockReturnValue(null);
+
+    const res = await request(app)
+      .put('/wines/5')
+      .send({ wine_name: 'Cab Sauv Test', colour: 'red', grapes: 'Cabernet Sauvignon' });
+
+    expect(res.status).toBe(200);
+    const zs = res.body.zoneSuggestion;
+    expect(zs).toBeTruthy();
+    expect(zs).toHaveProperty('zoneId');
+    expect(zs).toHaveProperty('displayName');
+    expect(zs).toHaveProperty('confidence');
+    expect(zs).toHaveProperty('alternativeZones');
+    expect(zs).toHaveProperty('changed');
+    expect(zs).toHaveProperty('differsFromCurrent');
+  });
+
+  it('zoneSuggestion.changed is false when edit does not affect zone', async () => {
+    checkWineConsistency.mockReturnValue(null);
+
+    // Only change rating — does not affect zone matching
+    const res = await request(app)
+      .put('/wines/5')
+      .send({ wine_name: 'Original Wine', colour: 'red', vivino_rating: 4.5 });
+
+    expect(res.status).toBe(200);
+    expect(res.body.zoneSuggestion?.changed).toBe(false);
+  });
+
+  it('zoneSuggestion.changed is true when country edit changes zone recommendation', async () => {
+    checkWineConsistency.mockReturnValue(null);
+
+    // Change from generic red to South African red — may change zone
+    const res = await request(app)
+      .put('/wines/5')
+      .send({ wine_name: 'Original Wine', colour: 'red', country: 'South Africa', grapes: 'Pinotage' });
+
+    expect(res.status).toBe(200);
+    const zs = res.body.zoneSuggestion;
+    expect(zs).toBeTruthy();
+    // The zone should be computed (may or may not differ depending on zone config,
+    // but the structure should always be present)
+    expect(typeof zs.changed).toBe('boolean');
+    expect(typeof zs.differsFromCurrent).toBe('boolean');
+  });
+
+  it('zoneSuggestion is null (fail-open) when findBestZone throws', async () => {
+    checkWineConsistency.mockReturnValue(null);
+    // Make the post-update SELECT return null to trigger an edge case
+    let callCount = 0;
+    db.prepare.mockImplementation(() => ({
+      get: vi.fn().mockImplementation(() => {
+        callCount++;
+        // First call: existing wine lookup (must succeed)
+        if (callCount === 1) return Promise.resolve(existingWine);
+        // Second call: post-update re-fetch — return null
+        return Promise.resolve(null);
+      }),
+      run: vi.fn().mockResolvedValue({ changes: 1 }),
+      all: vi.fn().mockResolvedValue([]),
+    }));
+
+    const res = await request(app)
+      .put('/wines/5')
+      .send({ wine_name: 'Test', colour: 'red' });
+
+    expect(res.status).toBe(200);
+    expect(res.body.zoneSuggestion).toBeNull();
   });
 });

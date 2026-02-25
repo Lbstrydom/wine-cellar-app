@@ -565,21 +565,25 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     if (finding) warnings = [finding];
   } catch { /* fail-open */ }
 
-  // Re-evaluate zone placement with updated metadata
+  // Re-evaluate zone placement: compare pre-edit vs post-edit findBestZone
+  // to detect whether THIS edit changed the recommendation (not just whether
+  // the recommendation differs from the stored zone_id, which may be stale).
   let zoneSuggestion = null;
   try {
+    const preEditZone = findBestZone(existing);
     const updatedWine = await db.prepare(
       'SELECT * FROM wines WHERE cellar_id = $1 AND id = $2'
     ).get(req.cellarId, req.params.id);
     if (updatedWine) {
-      const zoneMatch = findBestZone(updatedWine);
+      const postEditZone = findBestZone(updatedWine);
       const currentZoneId = updatedWine.zone_id || null;
       zoneSuggestion = {
-        zoneId: zoneMatch.zoneId,
-        displayName: zoneMatch.displayName,
-        confidence: zoneMatch.confidence,
-        alternativeZones: zoneMatch.alternativeZones || [],
-        changed: currentZoneId !== null && currentZoneId !== zoneMatch.zoneId
+        zoneId: postEditZone.zoneId,
+        displayName: postEditZone.displayName,
+        confidence: postEditZone.confidence,
+        alternativeZones: postEditZone.alternativeZones || [],
+        changed: preEditZone.zoneId !== postEditZone.zoneId,
+        differsFromCurrent: currentZoneId !== null && currentZoneId !== postEditZone.zoneId
       };
     }
   } catch { /* fail-open — zone suggestion is non-critical */ }
