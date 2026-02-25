@@ -253,7 +253,7 @@ describe('POST /execute-moves', () => {
 
       expect(res.status).toBe(500);
       expect(res.body.phase).toBe('validation');
-      expect(res.body.error).toMatch(/DB connection lost/);
+      expect(res.body.error).toBe('Move validation failed unexpectedly');
     });
   });
 

@@ -521,7 +521,7 @@ describe('validateMovePlan', () => {
             ];
           }
           // Wines query (for colour lookup)
-          return [{ id: 1, colour: 'red', color: null, wine_name: 'Cab Sauv', grapes: null, style: null }];
+          return [{ id: 1, colour: 'red', wine_name: 'Cab Sauv', grapes: null, style: null }];
         })
       }));
 
@@ -553,7 +553,7 @@ describe('validateMovePlan', () => {
             { location_code: 'R1C1', wine_id: 2 },
             { location_code: 'R10C3', wine_id: null }
           ];
-          return [{ id: 2, colour: 'white', color: null, wine_name: 'Sauv Blanc', grapes: null, style: null }];
+          return [{ id: 2, colour: 'white', wine_name: 'Sauv Blanc', grapes: null, style: null }];
         })
       }));
 
@@ -581,7 +581,7 @@ describe('validateMovePlan', () => {
             { location_code: 'R3C1', wine_id: 3 },
             { location_code: 'R1C5', wine_id: null }
           ];
-          return [{ id: 3, colour: 'white', color: null, wine_name: 'Chenin', grapes: null, style: null }];
+          return [{ id: 3, colour: 'white', wine_name: 'Chenin', grapes: null, style: null }];
         })
       }));
 
@@ -649,7 +649,7 @@ describe('validateMovePlan', () => {
             { location_code: 'R1C1', wine_id: 1 },
             { location_code: 'R15C1', wine_id: null }
           ];
-          return [{ id: 1, colour: 'white', color: null, wine_name: 'White Wine', grapes: null, style: null }];
+          return [{ id: 1, colour: 'white', wine_name: 'White Wine', grapes: null, style: null }];
         })
       }));
 
@@ -677,7 +677,7 @@ describe('validateMovePlan', () => {
             { location_code: 'R5C1', wine_id: 4 },
             { location_code: 'R1C1', wine_id: null }
           ];
-          return [{ id: 4, colour: null, color: null, wine_name: 'Mystery Wine', grapes: null, style: null }];
+          return [{ id: 4, colour: null, wine_name: 'Mystery Wine', grapes: null, style: null }];
         })
       }));
 
@@ -689,6 +689,39 @@ describe('validateMovePlan', () => {
 
       // No colour → no penalisation
       expect(result.summary.zoneColourViolations).toBe(0);
+    });
+
+    it('should NOT include "color" column in wine colour lookup SQL (regression)', async () => {
+      // Regression: PG 42703 crash when SQL referenced non-existent "color" column.
+      // The wines table only has "colour" (British spelling).
+      setupZoneMocks(
+        { R1: { zoneId: 'whites' } },
+        { whites: { id: 'whites', displayName: 'White Wines', color: 'white' } }
+      );
+
+      let callCount = 0;
+      db.prepare.mockImplementation(() => ({
+        all: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            return [{ location_code: 'R5C1', wine_id: 1 }, { location_code: 'R1C1', wine_id: null }];
+          }
+          return [{ id: 1, colour: 'red', wine_name: 'Test', grapes: null, style: null }];
+        })
+      }));
+
+      await validateMovePlan(
+        [{ wineId: 1, wineName: 'Test', from: 'R5C1', to: 'R1C1' }],
+        'test-cellar-id'
+      );
+
+      // Inspect SQL strings passed to db.prepare via mock call args
+      const allSqls = db.prepare.mock.calls.map(c => c[0]);
+      const wineSql = allSqls.find(s => s.includes('FROM wines'));
+      expect(wineSql).toBeTruthy();
+      // Must NOT select "color" (American spelling) — only "colour" exists in PG
+      expect(wineSql).not.toMatch(/\bcolor\b/i);
+      expect(wineSql).toMatch(/\bcolour\b/);
     });
   });
 

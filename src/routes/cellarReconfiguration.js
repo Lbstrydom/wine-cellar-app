@@ -916,7 +916,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     const constraint = valErr.constraint ? ` constraint=${valErr.constraint}` : '';
     logger.error('execute-moves', `Validation threw${pgCode}: ${valErr.message}${detail}${constraint} | stack: ${valErr.stack?.split('\n').slice(0, 3).join(' → ')}`);
     return res.status(500).json({
-      error: `Move validation failed: ${valErr.message}`,
+      error: 'Move validation failed unexpectedly',
       phase: 'validation'
     });
   }

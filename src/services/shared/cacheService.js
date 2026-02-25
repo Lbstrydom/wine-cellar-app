@@ -609,7 +609,7 @@ async function generateSlotHash(cellarId) {
     `).all(cellarId);
 
     const slotData = slots.map(s =>
-      `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}:${s.bottle_count ?? ''}`
+      `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}`
     ).join('|');
     const allocationData = allocations.map(a => {
       const rows = parseAssignedRowsForHash(a.assigned_rows).sort((aRow, bRow) => aRow.localeCompare(bRow));
