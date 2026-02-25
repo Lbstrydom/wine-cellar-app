@@ -209,6 +209,14 @@ function buildZoneRowMap(zones) {
 function computeDemand(zones, utilization, idealBottleCounts = null) {
   const demand = new Map();
   for (const zone of zones) {
+    // Buffer/fallback zones always get demand=0 — they absorb overflow,
+    // not demand dedicated rows through the solver.
+    const zoneDef = getZoneById(zone.id);
+    if (zoneDef?.isBufferZone || zoneDef?.isFallbackZone) {
+      demand.set(zone.id, 0);
+      continue;
+    }
+
     // Use ideal counts (from bottleScan) when available, fall back to physical utilization
     const bottles = idealBottleCounts?.get(zone.id) ?? utilization[zone.id]?.bottleCount ?? 0;
     // Only allocate rows to zones that meet the minimum bottle threshold.
@@ -682,6 +690,9 @@ function scoreDonorCandidates(
   for (const [donorZoneId, donorRows] of zoneRowMap) {
     // Can't donate to yourself
     if (donorZoneId === recipientId) continue;
+    // Buffer zones keep their rows — their position is special (colour boundary)
+    const donorZoneDef = getZoneById(donorZoneId);
+    if (donorZoneDef?.isBufferZone) continue;
     // Must have surplus rows (more than demanded)
     const donorDemand = demand.get(donorZoneId) ?? 0;
     if (donorRows.length <= donorDemand) continue;
@@ -787,6 +798,9 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
   const surplusZones = [];
   for (const [zoneId, required] of demand) {
     if (neverMerge.has(zoneId)) continue;
+    // Buffer zones keep their rows — positioned at the colour boundary
+    const zoneDef = getZoneById(zoneId);
+    if (zoneDef?.isBufferZone) continue;
     const currentRows = zoneRowMap.get(zoneId) || [];
     const surplus = currentRows.length - required;
     if (surplus > 0) {

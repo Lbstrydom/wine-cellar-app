@@ -5,7 +5,7 @@
 
 import express from 'express';
 import db from '../db/index.js';
-import { getZoneById } from '../config/cellarZones.js';
+import { getZoneById, BUFFER_ZONE_IDS } from '../config/cellarZones.js';
 import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, TOTAL_ROWS } from '../services/shared/cellarLayoutSettings.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { validateMovePlan } from '../services/cellar/movePlanner.js';
@@ -109,6 +109,14 @@ export function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
     const rowId = `R${i}`;
     if (!rowOwners.has(rowId)) {
       errors.push(`Missing row: ${rowId} is not assigned to any zone`);
+    }
+  }
+
+  // Buffer zone invariant: max 1 allocation per buffer zone
+  for (const bufferId of BUFFER_ZONE_IDS) {
+    const bufferEntries = [...zoneAllocMap.keys()].filter(z => z === bufferId);
+    if (bufferEntries.length > 1) {
+      errors.push(`Buffer zone invariant: ${bufferId} appears ${bufferEntries.length} times (max 1)`);
     }
   }
 

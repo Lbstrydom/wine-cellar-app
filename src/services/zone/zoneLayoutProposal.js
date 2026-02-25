@@ -5,8 +5,9 @@
  */
 
 import db from '../../db/index.js';
-import { CELLAR_ZONES } from '../../config/cellarZones.js';
+import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
 import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
+import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 import { findBestZone } from '../cellar/cellarPlacement.js';
 import { MIN_BOTTLES_FOR_ROW } from './rowAllocationSolver.js';
 
@@ -101,24 +102,33 @@ export async function proposeZoneLayout(cellarId) {
   const layoutSettings = await getCellarLayoutSettings(cellarId);
   const isRedsTop = layoutSettings.colourOrder === 'reds-top';
 
-  // Zone groups by colour family
-  const whiteZones = [
-    'sauvignon_blanc', 'chenin_blanc', 'aromatic_whites', 'chardonnay',
-    'loire_light', 'rose_sparkling', 'dessert_fortified',
-    'white_buffer'
-  ];
-  const redZones = [
-    'iberian_fresh', 'rioja_ribera', 'portugal',
-    'southern_france', 'pinot_noir',
-    'romagna_tuscany', 'piedmont', 'puglia_primitivo', 'appassimento',
-    'cabernet', 'sa_blends', 'shiraz', 'chile_argentina',
-    'red_buffer', 'curiosities', 'unclassified'
-  ];
+  // Zone groups by colour family — derived from zone definitions, not hardcoded.
+  // Buffer zones go at the END of their colour block (last row of each section).
+  // Fallback/curated zones (accept any colour) go at the very end.
+  const whiteRegular = [];
+  const whiteBuffers = [];
+  const redRegular = [];
+  const redBuffers = [];
+  const anyColourZones = [];
 
-  // Respect colourOrder setting: whites-top or reds-top
+  for (const z of CELLAR_ZONES.zones) {
+    if (z.isFallbackZone || z.isCuratedZone) {
+      anyColourZones.push(z.id);
+      continue;
+    }
+    const primaryColor = Array.isArray(z.color) ? z.color[0] : z.color;
+    const zoneIsWhite = isWhiteFamily(primaryColor);
+    if (z.isBufferZone) {
+      (zoneIsWhite ? whiteBuffers : redBuffers).push(z.id);
+    } else {
+      (zoneIsWhite ? whiteRegular : redRegular).push(z.id);
+    }
+  }
+
+  // Buffers at the bottom of each colour block, any-colour zones at the very end
   const zoneOrder = isRedsTop
-    ? [...redZones, ...whiteZones]
-    : [...whiteZones, ...redZones];
+    ? [...redRegular, ...redBuffers, ...whiteRegular, ...whiteBuffers, ...anyColourZones]
+    : [...whiteRegular, ...whiteBuffers, ...redRegular, ...redBuffers, ...anyColourZones];
 
   // Calculate required rows per zone
   const proposals = [];

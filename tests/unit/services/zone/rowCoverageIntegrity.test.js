@@ -86,6 +86,19 @@ describe('validateAllocationIntegrity — row coverage', () => {
     const missingErrors = result.errors.filter(e => e.startsWith('Missing'));
     expect(missingErrors.length).toBe(19);
   });
+
+  it('passes with buffer zones holding rows (max 1 each)', () => {
+    const zoneAllocMap = new Map([
+      ['sauvignon_blanc', ['R1', 'R2', 'R3', 'R4', 'R5', 'R6']],
+      ['white_buffer', ['R7']],
+      ['cabernet', ['R8', 'R9', 'R10', 'R11', 'R12', 'R13', 'R14', 'R15', 'R16', 'R17', 'R18']],
+      ['red_buffer', ['R19']]
+    ]);
+
+    const result = validateAllocationIntegrity(zoneAllocMap);
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
 });
 
 // ─── focusZoneId filter: orphan action preservation ──────────

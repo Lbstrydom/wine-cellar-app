@@ -398,6 +398,18 @@ export const ZONE_PRIORITY_ORDER = [
   'unclassified'
 ];
 
+/** Buffer zone IDs — exactly one of each allowed per cellar */
+export const BUFFER_ZONE_IDS = new Set(['white_buffer', 'red_buffer']);
+
+/**
+ * Check if a zone ID is a buffer zone.
+ * @param {string} zoneId
+ * @returns {boolean}
+ */
+export function isBufferZoneId(zoneId) {
+  return BUFFER_ZONE_IDS.has(zoneId);
+}
+
 /**
  * Get a zone by ID
  * @param {string} zoneId

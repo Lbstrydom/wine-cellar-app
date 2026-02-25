@@ -17,10 +17,10 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
     { id: 'merlot', displayName: 'Merlot', color: 'red', rules: { grapes: ['merlot'] } },
     { id: 'southern_france', displayName: 'Southern France', color: 'red', rules: {} },
     { id: 'iberian_fresh', displayName: 'Iberian Fresh', color: 'red', rules: {} },
-    { id: 'curiosities', displayName: 'Curiosities', color: 'red', rules: {} },
-    { id: 'unclassified', displayName: 'Unclassified', color: ['red', 'white'], rules: {} },
-    { id: 'white_buffer', displayName: 'White Buffer', color: 'white', rules: {} },
-    { id: 'red_buffer', displayName: 'Red Buffer', color: 'red', rules: {} }
+    { id: 'curiosities', displayName: 'Curiosities', color: 'red', isCuratedZone: true, rules: {} },
+    { id: 'unclassified', displayName: 'Unclassified', color: ['red', 'white'], isFallbackZone: true, rules: {} },
+    { id: 'white_buffer', displayName: 'White Buffer', color: 'white', isBufferZone: true, rules: {} },
+    { id: 'red_buffer', displayName: 'Red Buffer', color: 'red', isBufferZone: true, rules: {} }
   ];
   return {
     CELLAR_ZONES: { zones },
@@ -1357,6 +1357,104 @@ describe('rowAllocationSolver', () => {
         a.type === 'merge_zones' || a.type === 'retire_zone'
       );
       expect(mergeAction).toBeDefined();
+    });
+  });
+
+  describe('buffer zone protection', () => {
+    it('gives demand=0 to buffer zones even with idealBottleCounts', () => {
+      const zones = [
+        makeZone('white_buffer', ['R7'], 8),
+        makeZone('sauvignon_blanc', ['R1', 'R2'], 15)
+      ];
+      const utilization = {
+        white_buffer: makeUtil(8, 1),
+        sauvignon_blanc: makeUtil(15, 2)
+      };
+      const idealBottleCounts = new Map([
+        ['white_buffer', 8],
+        ['sauvignon_blanc', 15]
+      ]);
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        idealBottleCounts,
+        stabilityBias: 'low'
+      });
+
+      // Should NOT reallocate any row TO white_buffer (demand=0)
+      const toBuffer = result.actions.filter(a => a.toZoneId === 'white_buffer');
+      expect(toBuffer).toHaveLength(0);
+    });
+
+    it('does not use buffer zones as row donors', () => {
+      const zones = [
+        makeZone('white_buffer', ['R6', 'R7'], 2),
+        makeZone('cabernet', ['R10'], 20),
+        makeZone('curiosities', ['R14', 'R15', 'R16'], 3)
+      ];
+      const utilization = {
+        white_buffer: makeUtil(2, 2),
+        cabernet: makeUtil(20, 1),
+        curiosities: makeUtil(3, 3)
+      };
+      utilization.cabernet.isOverflowing = true;
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        overflowingZones: [{ zoneId: 'cabernet' }],
+        underutilizedZones: [],
+        mergeCandidates: [],
+        neverMerge: new Set(),
+        stabilityBias: 'low'
+      });
+
+      const fromBuffer = result.actions.filter(a => a.fromZoneId === 'white_buffer');
+      expect(fromBuffer).toHaveLength(0);
+    });
+
+    it('does not reclaim surplus rows from buffer zones', () => {
+      const zones = [
+        makeZone('red_buffer', ['R18', 'R19'], 1),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        red_buffer: makeUtil(1, 2),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      const fromBuffer = result.actions.filter(a =>
+        a.type === 'reallocate_row' && a.fromZoneId === 'red_buffer'
+      );
+      expect(fromBuffer).toHaveLength(0);
+    });
+
+    it('gives demand=0 to fallback zones', () => {
+      const zones = [
+        makeZone('unclassified', ['R19'], 3),
+        makeZone('cabernet', ['R10', 'R11'], 12)
+      ];
+      const utilization = {
+        unclassified: makeUtil(3, 1),
+        cabernet: makeUtil(12, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // Unclassified should never receive rows via demand
+      const toUnclassified = result.actions.filter(a => a.toZoneId === 'unclassified');
+      expect(toUnclassified).toHaveLength(0);
     });
   });
 });

@@ -321,6 +321,9 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
 
   const dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
   const whiteRowSet = new Set((dynamicRanges?.whiteRows || []).map(Number));
+  const redRowNums = (dynamicRanges?.redRows || []).map(Number);
+  const lastWhiteRow = whiteRowSet.size > 0 ? Math.max(...whiteRowSet) : 0;
+  const lastRedRow = redRowNums.length > 0 ? Math.max(...redRowNums) : TOTAL_ROWS;
 
   for (const orphan of orphanedRows) {
     const orphanNum = parseInt(orphan.replace('R', ''), 10);
@@ -332,7 +335,8 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
 
     for (const alloc of allocations) {
       const zone = getZoneById(alloc.zone_id);
-      if (!zone || zone.isBufferZone || zone.isFallbackZone) continue;
+      // Skip fallback zones only — buffer zones CAN own rows
+      if (!zone || zone.isFallbackZone) continue;
 
       const zoneColor = zone.color;
       const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
@@ -350,6 +354,15 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
         const rowNums = rows.map(r => parseInt(r.replace('R', ''), 10));
         const minDist = Math.min(...rowNums.map(n => Math.abs(n - orphanNum)));
         score += (TOTAL_ROWS - minDist) * 5;
+      }
+
+      // Buffer zone positioning: buffer zones should be at the last row
+      // of their colour block. Bonus if orphan IS the boundary row,
+      // penalty otherwise — keeps buffers at the bottom of each section.
+      if (zone.isBufferZone) {
+        const isBoundaryRow = (isWhiteRow && orphanNum === lastWhiteRow) ||
+                              (!isWhiteRow && orphanNum === lastRedRow);
+        score += isBoundaryRow ? 500 : -200;
       }
 
       if (score > bestScore) {
