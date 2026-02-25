@@ -162,6 +162,12 @@ export async function handleResponse(res, defaultError = 'Request failed') {
       if (data.validation) error.validation = data.validation;
       if (data.phase) error.phase = data.phase;
       if (data.moveCount != null) error.moveCount = data.moveCount;
+      if (data.stateConflict) error.stateConflict = true;
+      if (data.slotSnapshot) error.slotSnapshot = data.slotSnapshot;
+      if (data.revalErrors) error.revalErrors = data.revalErrors;
+      if (data.pgCode) error.pgCode = data.pgCode;
+      if (data.constraint) error.constraint = data.constraint;
+      error.status = res.status;
       throw error;
     } catch (e) {
       // If it's already our error, rethrow it

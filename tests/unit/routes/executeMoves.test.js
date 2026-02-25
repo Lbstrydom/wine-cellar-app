@@ -128,7 +128,41 @@ function createMockClient(slotState = new Map()) {
         return { rows: [{ count: String(count) }], rowCount: 1 };
       }
 
-      // UPDATE slots SET wine_id = $1
+      // SELECT … FOR UPDATE (Phase 0: lock + snapshot)
+      if (sql.includes('FOR UPDATE')) {
+        const locationCodes = params[1]; // ANY($2) array
+        const rows = [];
+        for (const loc of locationCodes) {
+          if (state.has(loc)) {
+            rows.push({ location_code: loc, wine_id: state.get(loc) });
+          }
+        }
+        return { rows, rowCount: rows.length };
+      }
+
+      // UPDATE slots SET wine_id = NULL … AND wine_id = $3 (Phase 1: conditional clear)
+      if (sql.includes('UPDATE slots SET wine_id = NULL') && sql.includes('AND wine_id = $3')) {
+        const locationCode = params[1];
+        const expectedWineId = params[2];
+        if (state.has(locationCode) && state.get(locationCode) === expectedWineId) {
+          state.set(locationCode, null);
+          return { rowCount: 1 };
+        }
+        return { rowCount: 0 };
+      }
+
+      // UPDATE slots SET wine_id = $1 … AND wine_id IS NULL (Phase 2: conditional place)
+      if (sql.includes('UPDATE slots SET wine_id = $1') && sql.includes('AND wine_id IS NULL')) {
+        const wineId = params[0];
+        const locationCode = params[2];
+        if (state.has(locationCode) && state.get(locationCode) === null) {
+          state.set(locationCode, wineId);
+          return { rowCount: 1 };
+        }
+        return { rowCount: 0 };
+      }
+
+      // Legacy UPDATE slots SET wine_id (fallback for non-conditional — shouldn't match new code)
       if (sql.includes('UPDATE slots SET wine_id')) {
         const wineId = params[0];
         const locationCode = params[2];
@@ -330,8 +364,8 @@ describe('POST /execute-moves', () => {
   // ── Invariant Check ───────────────────────────────────────────────
 
   describe('invariant check', () => {
-    it('fails transaction when target slot missing (Phase 2 guard)', async () => {
-      // Simulate: target slot doesn't exist → Phase 2 throws before invariant check
+    it('fails transaction when target slot missing (Phase 0 revalidation)', async () => {
+      // Simulate: target slot doesn't exist → Phase 0 revalidation catches it
       const slotState = new Map([
         ['R3C5', 10]
         // R7C2 does NOT exist in slots table
@@ -352,10 +386,10 @@ describe('POST /execute-moves', () => {
           moves: [{ wineId: 10, wineName: 'Wine A', from: 'R3C5', to: 'R7C2' }]
         });
 
-      // Phase 2 now throws immediately on rowCount === 0 (TOCTOU guard)
-      expect(res.status).toBe(500);
-      expect(res.body.phase).toBe('transaction');
-      expect(res.body.error).toMatch(/Phase 2 failed/);
+      // Now returns 409 (state conflict) with revalidation details
+      expect(res.status).toBe(409);
+      expect(res.body.stateConflict).toBe(true);
+      expect(res.body.error).toMatch(/revalidation failed/i);
     });
 
     it('passes invariant for swap (counts remain equal)', async () => {
@@ -445,29 +479,14 @@ describe('POST /execute-moves', () => {
       const queryOrder = [];
 
       // Track the order of operations
+      const origQuery = mockClient.query.getMockImplementation();
       mockClient.query.mockImplementation(async (sql, params) => {
-        if (sql.includes('UPDATE slots SET wine_id') && !sql.includes('COUNT')) {
-          const wineId = params[0];
-          const loc = params[2];
-          queryOrder.push({ wineId, loc, phase: wineId === null ? 'clear' : 'place' });
-
-          if (slotState.has(loc)) {
-            slotState.set(loc, wineId);
-            return { rowCount: 1 };
-          }
-          return { rowCount: 0 };
+        if (sql.includes('UPDATE slots SET wine_id = NULL') && sql.includes('AND wine_id = $3')) {
+          queryOrder.push({ loc: params[1], phase: 'clear' });
+        } else if (sql.includes('UPDATE slots SET wine_id = $1') && sql.includes('AND wine_id IS NULL')) {
+          queryOrder.push({ loc: params[2], phase: 'place' });
         }
-
-        // COUNT query
-        if (sql.includes('COUNT(*)')) {
-          let count = 0;
-          for (const v of slotState.values()) {
-            if (v !== null) count++;
-          }
-          return { rows: [{ count: String(count) }], rowCount: 1 };
-        }
-
-        return { rows: [], rowCount: 0 };
+        return origQuery(sql, params);
       });
 
       validateMovePlan.mockResolvedValue({
@@ -525,7 +544,7 @@ describe('POST /execute-moves', () => {
           moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
         });
 
-      // All queries should include the cellarId
+      // All queries should include the cellarId somewhere in params
       for (const q of mockClient.queries) {
         expect(q.params).toContain(CELLAR_ID);
       }
@@ -535,6 +554,273 @@ describe('POST /execute-moves', () => {
         expect.any(Array),
         CELLAR_ID
       );
+    });
+  });
+
+  // ── Phase 0: SELECT FOR UPDATE + Revalidation ────────────────────
+
+  describe('Phase 0: in-transaction locking and revalidation', () => {
+    it('issues SELECT … FOR UPDATE with all touched locations', async () => {
+      const slotState = new Map([
+        ['R3C5', 10],
+        ['R7C2', 20]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 2, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [
+            { wineId: 10, from: 'R3C5', to: 'R7C2' },
+            { wineId: 20, from: 'R7C2', to: 'R3C5' }
+          ]
+        });
+
+      const lockQuery = mockClient.queries.find(q => q.sql.includes('FOR UPDATE'));
+      expect(lockQuery).toBeDefined();
+      expect(lockQuery.params[0]).toBe(CELLAR_ID);
+      expect(lockQuery.params[1]).toEqual(expect.arrayContaining(['R3C5', 'R7C2']));
+    });
+
+    it('returns 409 when source wine changed since analysis', async () => {
+      // Wine 10 was at R3C5 when analysis ran, but now wine 99 is there
+      const slotState = new Map([
+        ['R3C5', 99],  // ← stale! expected 10
+        ['R7C2', null]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.stateConflict).toBe(true);
+      expect(res.body.revalErrors).toEqual(
+        expect.arrayContaining([expect.objectContaining({ type: 'source_mismatch', slot: 'R3C5' })])
+      );
+      expect(res.body.slotSnapshot).toBeDefined();
+    });
+
+    it('returns 409 when source slot is empty but expected wine', async () => {
+      const slotState = new Map([
+        ['R3C5', null], // ← empty, expected 10
+        ['R7C2', null]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.stateConflict).toBe(true);
+      expect(res.body.revalErrors[0].type).toBe('source_mismatch');
+    });
+  });
+
+  // ── Conditional Updates ───────────────────────────────────────────
+
+  describe('conditional update guards', () => {
+    it('Phase 1 uses AND wine_id = expected to prevent overwrite races', async () => {
+      const slotState = new Map([
+        ['R3C5', 10],
+        ['R7C2', null]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      // Verify Phase 1 query includes wine_id conditional
+      const clearQuery = mockClient.queries.find(q =>
+        q.sql.includes('UPDATE slots SET wine_id = NULL') && q.sql.includes('AND wine_id = $3')
+      );
+      expect(clearQuery).toBeDefined();
+      expect(clearQuery.params).toEqual([CELLAR_ID, 'R3C5', 10]);
+    });
+
+    it('Phase 2 uses AND wine_id IS NULL to prevent overwrite races', async () => {
+      const slotState = new Map([
+        ['R3C5', 10],
+        ['R7C2', null]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      // Verify Phase 2 query includes IS NULL conditional
+      const placeQuery = mockClient.queries.find(q =>
+        q.sql.includes('UPDATE slots SET wine_id = $1') && q.sql.includes('AND wine_id IS NULL')
+      );
+      expect(placeQuery).toBeDefined();
+      expect(placeQuery.params).toEqual([10, CELLAR_ID, 'R7C2']);
+    });
+  });
+
+  // ── 409 vs 500 Status Code Mapping ────────────────────────────────
+
+  describe('409 vs 500 status mapping', () => {
+    it('returns 409 for PG unique violation (23505)', async () => {
+      const pgErr = new Error('duplicate key value violates unique constraint');
+      pgErr.code = '23505';
+      pgErr.constraint = 'idx_slots_wine_unique';
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockRejectedValue(pgErr);
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      expect(res.status).toBe(409);
+      expect(res.body.stateConflict).toBe(true);
+      expect(res.body.pgCode).toBe('23505');
+      expect(res.body.constraint).toBe('idx_slots_wine_unique');
+    });
+
+    it('returns 500 for unknown DB errors', async () => {
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockRejectedValue(new Error('connection terminated'));
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      expect(res.status).toBe(500);
+      expect(res.body.phase).toBe('transaction');
+      expect(res.body.stateConflict).toBeUndefined();
+    });
+  });
+
+  // ── Multi-Bottle Same Wine (Regression) ───────────────────────────
+
+  describe('multi-bottle same wine', () => {
+    it('moves wine that occupies multiple slots without conflict', async () => {
+      // Wine 10 has two bottles: R3C5 and R3C6, moving R3C5→R7C2
+      const slotState = new Map([
+        ['R3C5', 10],
+        ['R3C6', 10],
+        ['R7C2', null]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 1, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [{ wineId: 10, from: 'R3C5', to: 'R7C2' }]
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      // Wine 10 now at R3C6 (untouched) and R7C2 (moved)
+      expect(mockClient.state.get('R3C5')).toBeNull();
+      expect(mockClient.state.get('R3C6')).toBe(10);
+      expect(mockClient.state.get('R7C2')).toBe(10);
+    });
+
+    it('swaps two bottles of same wine between slots', async () => {
+      // Wine 10 at R3C5, Wine 10 at R7C2 — swap with different wine 20 at R1C1
+      const slotState = new Map([
+        ['R3C5', 10],
+        ['R1C1', 20]
+      ]);
+      const mockClient = createMockClient(slotState);
+
+      validateMovePlan.mockResolvedValue({
+        valid: true,
+        errors: [],
+        summary: { totalMoves: 2, errorCount: 0, sourceMismatches: 0, duplicateTargets: 0, occupiedTargets: 0, duplicateInstances: 0, noopMoves: 0, zoneColourViolations: 0 }
+      });
+
+      db.transaction.mockImplementation(async (fn) => fn(mockClient));
+
+      const res = await request(app)
+        .post('/execute-moves')
+        .send({
+          moves: [
+            { wineId: 10, from: 'R3C5', to: 'R1C1' },
+            { wineId: 20, from: 'R1C1', to: 'R3C5' }
+          ]
+        });
+
+      expect(res.status).toBe(200);
+      expect(res.body.success).toBe(true);
+      expect(mockClient.state.get('R3C5')).toBe(20);
+      expect(mockClient.state.get('R1C1')).toBe(10);
     });
   });
 });

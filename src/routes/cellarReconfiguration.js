@@ -931,8 +931,9 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   }
 
   // Execute all moves in a transaction using two-phase approach:
-  // Phase 1: Clear ALL source slots first
-  // Phase 2: Set ALL target slots
+  // Phase 0: SELECT … FOR UPDATE on all touched slots (row-lock + revalidation)
+  // Phase 1: Clear ALL source slots (conditional on expected wine_id)
+  // Phase 2: Set ALL target slots (conditional on wine_id IS NULL)
   // This prevents swaps from overwriting each other (A→B, B→A would
   // lose wine_B if done sequentially as clear-A, set-B, clear-B, set-A).
   const results = [];
@@ -946,25 +947,69 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
       );
       const beforeCount = Number(beforeResult.rows[0].count);
 
-      // Phase 1: Clear all source slots
+      // Collect all unique location codes touched by this batch
+      const allLocations = [...new Set(moves.flatMap(m => [m.from, m.to]))];
+
+      // Phase 0: Lock and snapshot all touched slots (SELECT … FOR UPDATE)
+      const lockResult = await client.query(
+        `SELECT location_code, wine_id FROM slots
+         WHERE cellar_id = $1 AND location_code = ANY($2)
+         FOR UPDATE`,
+        [req.cellarId, allLocations]
+      );
+      const slotSnap = new Map(lockResult.rows.map(r => [r.location_code, r.wine_id]));
+
+      // In-transaction revalidation against locked snapshot
+      const revalErrors = [];
+      for (const move of moves) {
+        if (!slotSnap.has(move.from)) {
+          revalErrors.push({ type: 'slot_missing', slot: move.from, message: `Source slot ${move.from} does not exist` });
+        } else if (slotSnap.get(move.from) !== move.wineId) {
+          revalErrors.push({
+            type: 'source_mismatch',
+            slot: move.from,
+            expected: move.wineId,
+            actual: slotSnap.get(move.from),
+            message: `Source ${move.from} has wine ${slotSnap.get(move.from)}, expected ${move.wineId}`
+          });
+        }
+        if (!slotSnap.has(move.to)) {
+          revalErrors.push({ type: 'slot_missing', slot: move.to, message: `Target slot ${move.to} does not exist` });
+        }
+      }
+      if (revalErrors.length > 0) {
+        const err = new Error(`In-transaction revalidation failed: ${revalErrors.map(e => e.message).join('; ')}`);
+        err.stateConflict = true;
+        err.slotSnapshot = Object.fromEntries(slotSnap);
+        err.revalErrors = revalErrors;
+        throw err;
+      }
+
+      // Phase 1: Clear all source slots (conditional: only if wine_id matches expected)
       for (const move of moves) {
         const clearResult = await client.query(
-          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
-          [null, req.cellarId, move.from]
+          'UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2 AND wine_id = $3',
+          [req.cellarId, move.from, move.wineId]
         );
         if (clearResult.rowCount === 0) {
-          throw new Error(`Phase 1 failed: source slot ${move.from} not found for cellar ${req.cellarId}`);
+          const err = new Error(`Phase 1 failed: source slot ${move.from} did not contain wine ${move.wineId}`);
+          err.stateConflict = true;
+          err.slotSnapshot = Object.fromEntries(slotSnap);
+          throw err;
         }
       }
 
-      // Phase 2: Place all wines in target slots
+      // Phase 2: Place all wines in target slots (conditional: only if slot is now empty)
       for (const move of moves) {
         const placeResult = await client.query(
-          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3',
+          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3 AND wine_id IS NULL',
           [move.wineId, req.cellarId, move.to]
         );
         if (placeResult.rowCount === 0) {
-          throw new Error(`Phase 2 failed: target slot ${move.to} not found for cellar ${req.cellarId} (wineId=${move.wineId})`);
+          const err = new Error(`Phase 2 failed: target slot ${move.to} is not empty for cellar ${req.cellarId} (wineId=${move.wineId})`);
+          err.stateConflict = true;
+          err.slotSnapshot = Object.fromEntries(slotSnap);
+          throw err;
         }
 
         // Update wine zone assignment
@@ -998,6 +1043,29 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     const detail = txErr.detail ? ` detail=${txErr.detail}` : '';
     const constraint = txErr.constraint ? ` constraint=${txErr.constraint}` : '';
     logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | stack: ${txErr.stack?.split('\n').slice(0, 3).join(' → ')} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
+
+    // Map known state-conflict errors to 409 Conflict
+    const PG_UNIQUE_VIOLATION = '23505';
+    const PG_FK_VIOLATION = '23503';
+    const PG_CHECK_VIOLATION = '23514';
+    const isStateConflict = txErr.stateConflict
+      || txErr.code === PG_UNIQUE_VIOLATION
+      || txErr.code === PG_FK_VIOLATION
+      || txErr.code === PG_CHECK_VIOLATION;
+
+    if (isStateConflict) {
+      return res.status(409).json({
+        error: `Move execution failed: ${txErr.message}`,
+        phase: 'transaction',
+        moveCount: moves.length,
+        stateConflict: true,
+        ...(txErr.slotSnapshot ? { slotSnapshot: txErr.slotSnapshot } : {}),
+        ...(txErr.revalErrors ? { revalErrors: txErr.revalErrors } : {}),
+        ...(txErr.code ? { pgCode: txErr.code } : {}),
+        ...(txErr.constraint ? { constraint: txErr.constraint } : {})
+      });
+    }
+
     return res.status(500).json({
       error: `Move execution failed: ${txErr.message}`,
       phase: 'transaction',

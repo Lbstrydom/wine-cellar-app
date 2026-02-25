@@ -486,6 +486,10 @@ async function executeCurrentMove() {
     // Show validation modal for structured errors (400 validation failures)
     if (err.validation) {
       showValidationErrorModal(err.validation);
+    } else if (err.stateConflict) {
+      // 409 Conflict: slot state changed since analysis was generated
+      showToast('Slot state has changed — refreshing. Please re-run analysis.', 'warning');
+      await refreshLayout();
     } else {
       showToast(`Error: ${err.message}`);
     }
