@@ -23,6 +23,7 @@ import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { normalizeColour } from '../utils/wineNormalization.js';
+import { findBestZone } from '../services/cellar/cellarPlacement.js';
 import { updateZoneWineCount } from '../services/cellar/cellarAllocation.js';
 import { detectGrapesFromWine } from '../services/wine/grapeEnrichment.js';
 import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
@@ -563,7 +564,27 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
     const finding = checkWineConsistency({ id: req.params.id, wine_name, colour, grapes: resolvedGrapes, style });
     if (finding) warnings = [finding];
   } catch { /* fail-open */ }
-  res.json({ message: 'Wine updated', warnings });
+
+  // Re-evaluate zone placement with updated metadata
+  let zoneSuggestion = null;
+  try {
+    const updatedWine = await db.prepare(
+      'SELECT * FROM wines WHERE cellar_id = $1 AND id = $2'
+    ).get(req.cellarId, req.params.id);
+    if (updatedWine) {
+      const zoneMatch = findBestZone(updatedWine);
+      const currentZoneId = updatedWine.zone_id || null;
+      zoneSuggestion = {
+        zoneId: zoneMatch.zoneId,
+        displayName: zoneMatch.displayName,
+        confidence: zoneMatch.confidence,
+        alternativeZones: zoneMatch.alternativeZones || [],
+        changed: currentZoneId !== null && currentZoneId !== zoneMatch.zoneId
+      };
+    }
+  } catch { /* fail-open — zone suggestion is non-critical */ }
+
+  res.json({ message: 'Wine updated', warnings, zoneSuggestion });
 }));
 
 /**

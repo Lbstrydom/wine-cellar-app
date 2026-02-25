@@ -68,6 +68,8 @@ function collectWineFormData() {
     vivino_rating: document.getElementById('wine-rating').value || null,
     price_eur: document.getElementById('wine-price').value || null,
     country: getCountryValue(),
+    producer: document.getElementById('wine-producer')?.value?.trim() || null,
+    region: document.getElementById('wine-region')?.value?.trim() || null,
     drink_from: document.getElementById('wine-drink-from')?.value || null,
     drink_peak: document.getElementById('wine-drink-peak')?.value || null,
     drink_until: document.getElementById('wine-drink-until')?.value || null
@@ -98,8 +100,13 @@ async function handleBottleFormSubmit(e) {
 
       if (bottleState.mode === 'edit' && bottleState.editingWineId) {
         // Update existing wine - no confirmation needed
-        await updateWine(bottleState.editingWineId, wineData);
+        const updateResult = await updateWine(bottleState.editingWineId, wineData);
         showToast('Wine updated');
+        // Notify if zone placement should change based on updated metadata
+        if (updateResult?.zoneSuggestion?.changed) {
+          const zs = updateResult.zoneSuggestion;
+          showToast(`Zone suggestion changed to "${zs.displayName}" — run Analysis to see move suggestions`, 5000);
+        }
         wineId = bottleState.editingWineId;
       } else {
         const disambiguation = await getDisambiguationData(wineData);

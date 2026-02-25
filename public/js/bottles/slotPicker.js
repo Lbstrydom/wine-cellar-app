@@ -4,9 +4,13 @@
  */
 
 import { addBottles, getSuggestedPlacement } from '../api.js';
+import { getZoneMap } from '../api/cellar.js';
 import { showToast, maybeShowAnalysisHint } from '../utils.js';
 import { refreshData } from '../app.js';
 import { bottleState, resetSlotPickerState } from './state.js';
+
+/** Cached zone map for the current slot picker session */
+let cachedZoneMap = null;
 
 /**
  * Show modal to pick empty slot for adding a wine.
@@ -38,6 +42,14 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
     }
   }
 
+  // Reset zone chooser
+  const zoneChooserEl = document.getElementById('zone-chooser');
+  if (zoneChooserEl) {
+    zoneChooserEl.style.display = 'none';
+    zoneChooserEl.innerHTML = '';
+  }
+  cachedZoneMap = null;
+
   // Determine instruction text based on placement method
   let suggestionText;
   if (method === 'auto' && quantity > 1) {
@@ -51,19 +63,24 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
   // Try to get placement suggestion if smart place offered
   if (offerSmartPlace) {
     try {
-      const suggestion = await getSuggestedPlacement(wineId);
-      if (suggestion.zoneName && suggestion.suggestedSlot) {
+      const result = await getSuggestedPlacement(wineId);
+      if (result.zoneName && result.suggestedSlot) {
         if (method === 'auto' && quantity > 1) {
-          suggestionText = `Suggested: ${suggestion.zoneName} - Click a starting slot`;
+          suggestionText = `Suggested: ${result.zoneName} - Click a starting slot`;
         } else if (quantity > 1) {
-          suggestionText = `Suggested zone: ${suggestion.zoneName} - Click ${quantity} empty slots`;
+          suggestionText = `Suggested zone: ${result.zoneName} - Click ${quantity} empty slots`;
         } else {
-          suggestionText = `Suggested: ${suggestion.zoneName} (${suggestion.suggestedSlot})`;
+          suggestionText = `Suggested: ${result.zoneName} (${result.suggestedSlot})`;
         }
         // Highlight the suggested slot
-        const suggestedSlotEl = document.querySelector(`.slot[data-location="${suggestion.suggestedSlot}"]`);
+        const suggestedSlotEl = document.querySelector(`.slot[data-location="${result.suggestedSlot}"]`);
         if (suggestedSlotEl) {
           suggestedSlotEl.classList.add('suggested-slot');
+        }
+
+        // Show zone chooser if there are alternatives
+        if (result.alternativeZones?.length > 0 && result.confidence !== 'high') {
+          await renderZoneChooser(result.zoneId, result.zoneName, result.alternativeZones);
         }
       }
     } catch (_err) {
@@ -85,6 +102,101 @@ export async function showSlotPickerModal(wineId, wineName, offerSmartPlace = tr
 
   // Add cancel handler
   document.getElementById('cancel-slot-picker')?.addEventListener('click', closeSlotPickerModal);
+}
+
+/**
+ * Render zone chooser buttons.
+ * @param {string} primaryZoneId - Primary zone ID
+ * @param {string} primaryName - Primary zone display name
+ * @param {Array} alternatives - Alternative zone options
+ */
+async function renderZoneChooser(primaryZoneId, primaryName, alternatives) {
+  const container = document.getElementById('zone-chooser');
+  if (!container) return;
+
+  // Fetch zone map to know which rows belong to each zone
+  try {
+    cachedZoneMap = await getZoneMap();
+  } catch {
+    return; // Can't show zone chooser without zone map
+  }
+
+  const zones = [
+    { zoneId: primaryZoneId, displayName: primaryName, isPrimary: true },
+    ...alternatives.slice(0, 2).map(z => ({ zoneId: z.zoneId, displayName: z.displayName, isPrimary: false }))
+  ];
+
+  container.innerHTML = '';
+  for (const zone of zones) {
+    const btn = document.createElement('button');
+    btn.className = 'zone-choice' + (zone.isPrimary ? ' active' : '');
+    btn.textContent = zone.displayName;
+    btn.dataset.zoneId = zone.zoneId;
+    btn.addEventListener('click', () => handleZoneChoice(zone.zoneId, container));
+    container.appendChild(btn);
+  }
+
+  container.style.display = 'flex';
+
+  // Highlight the primary zone's rows
+  highlightZoneRows(primaryZoneId);
+}
+
+/**
+ * Handle zone choice button click.
+ * @param {string} zoneId - Selected zone ID
+ * @param {HTMLElement} container - Zone chooser container
+ */
+function handleZoneChoice(zoneId, container) {
+  // Update active state
+  container.querySelectorAll('.zone-choice').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.zoneId === zoneId);
+  });
+
+  // Clear previous zone highlights and suggested slot
+  clearZoneHighlights();
+
+  // Highlight the selected zone's rows
+  highlightZoneRows(zoneId);
+}
+
+/**
+ * Highlight empty slots in rows belonging to a zone.
+ * @param {string} zoneId - Zone to highlight
+ */
+function highlightZoneRows(zoneId) {
+  if (!cachedZoneMap) return;
+
+  // Find rows belonging to this zone
+  const zoneRows = new Set();
+  for (const [rowId, info] of Object.entries(cachedZoneMap)) {
+    if (info.zoneId === zoneId) {
+      zoneRows.add(rowId);
+    }
+  }
+
+  if (zoneRows.size === 0) return;
+
+  // Highlight empty slots in those rows
+  document.querySelectorAll('.slot.empty.picker-target').forEach(slot => {
+    const loc = slot.dataset.location;
+    const match = loc?.match(/^R(\d+)C/);
+    if (match && zoneRows.has(`R${match[1]}`)) {
+      slot.classList.add('zone-highlighted');
+    }
+  });
+}
+
+/**
+ * Clear zone-specific highlighting.
+ */
+function clearZoneHighlights() {
+  document.querySelectorAll('.slot.zone-highlighted').forEach(slot => {
+    slot.classList.remove('zone-highlighted');
+  });
+  document.querySelectorAll('.slot.suggested-slot').forEach(slot => {
+    slot.classList.remove('suggested-slot');
+  });
 }
 
 /**
@@ -241,5 +353,15 @@ export function closeSlotPickerModal() {
   document.querySelectorAll('.slot.picker-placed').forEach(slot => {
     slot.classList.remove('picker-placed');
   });
+  document.querySelectorAll('.slot.zone-highlighted').forEach(slot => {
+    slot.classList.remove('zone-highlighted');
+  });
+  // Clean up zone chooser
+  const zoneChooserEl = document.getElementById('zone-chooser');
+  if (zoneChooserEl) {
+    zoneChooserEl.style.display = 'none';
+    zoneChooserEl.innerHTML = '';
+  }
+  cachedZoneMap = null;
   resetSlotPickerState();
 }

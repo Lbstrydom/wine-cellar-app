@@ -5098,6 +5098,43 @@ body.slot-picker-mode .slot.picker-placed::after {
   color: var(--color-success);
 }
 
+/* Zone chooser in slot picker */
+.zone-chooser {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+  margin: 0.5rem 0;
+}
+
+.zone-choice {
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  border: 1px solid var(--text-muted);
+  border-radius: 1rem;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.zone-choice:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.zone-choice.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg-dark);
+  font-weight: 600;
+}
+
+body.slot-picker-mode .slot.zone-highlighted {
+  border: 2px dashed var(--accent);
+  background: rgba(var(--accent-rgb), 0.15);
+}
+
 /* ============================================================
    PERSONAL RATING
    ============================================================ */

@@ -111,6 +111,8 @@ export async function showEditBottleModal(location, wineId) {
       if (countryOther) countryOther.style.display = 'none';
     }
 
+    document.getElementById('wine-producer').value = wine.producer || '';
+    document.getElementById('wine-region').value = wine.region || '';
     document.getElementById('wine-drink-from').value = wine.drink_from || '';
     document.getElementById('wine-drink-peak').value = wine.drink_peak || '';
     document.getElementById('wine-drink-until').value = wine.drink_until || '';

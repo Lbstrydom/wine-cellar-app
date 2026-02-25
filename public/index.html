@@ -1106,6 +1106,7 @@
     <div class="slot-picker-header">
       <h3 id="slot-picker-title">Add Bottle</h3>
       <p id="slot-picker-instruction">Click an empty slot</p>
+      <div class="zone-chooser" id="zone-chooser" style="display: none;"></div>
       <div class="slot-picker-progress" id="slot-picker-progress" style="display: none;">
         <span id="slot-picker-placed">0</span> / <span id="slot-picker-total">1</span> placed
       </div>
@@ -1245,6 +1246,17 @@
                 <option value="Other">Other</option>
               </select>
               <input type="text" id="wine-country-other" class="mt-half" placeholder="Enter country name..." style="display: none;" />
+            </div>
+          </div>
+
+          <div class="form-row">
+            <div class="form-field">
+              <label for="wine-producer">Producer</label>
+              <input type="text" id="wine-producer" placeholder="e.g., Kanonkop" maxlength="200" />
+            </div>
+            <div class="form-field">
+              <label for="wine-region">Region</label>
+              <input type="text" id="wine-region" placeholder="e.g., Stellenbosch" maxlength="200" />
             </div>
           </div>
 

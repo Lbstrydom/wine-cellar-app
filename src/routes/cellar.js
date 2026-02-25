@@ -190,6 +190,11 @@ router.post('/suggest-placement', asyncHandler(async (req, res) => {
 
   res.json({
     success: true,
+    suggestedSlot: availableSlot?.slotId || null,
+    zoneName: zoneMatch.displayName,
+    zoneId: zoneMatch.zoneId,
+    confidence: zoneMatch.confidence,
+    alternativeZones: zoneMatch.alternativeZones || [],
     suggestion: {
       zone: zoneMatch,
       slot: availableSlot
@@ -220,6 +225,11 @@ router.get('/suggest-placement/:wineId', asyncHandler(async (req, res) => {
       name: wine.wine_name,
       vintage: wine.vintage
     },
+    suggestedSlot: availableSlot?.slotId || null,
+    zoneName: zoneMatch.displayName,
+    zoneId: zoneMatch.zoneId,
+    confidence: zoneMatch.confidence,
+    alternativeZones: zoneMatch.alternativeZones || [],
     suggestion: {
       zone: zoneMatch,
       slot: availableSlot

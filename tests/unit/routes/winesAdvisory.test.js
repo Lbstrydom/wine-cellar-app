@@ -361,6 +361,6 @@ describe('PUT /wines/:id advisory warnings (real route)', () => {
       .send({ wine_name: 'Shape Test', colour: 'red' });
 
     expect(res.status).toBe(200);
-    expect(Object.keys(res.body).sort()).toEqual(['message', 'warnings']);
+    expect(Object.keys(res.body).sort()).toEqual(['message', 'warnings', 'zoneSuggestion']);
   });
 });
