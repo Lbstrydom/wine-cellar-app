@@ -7,6 +7,7 @@
 import db from '../../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings, TOTAL_ROWS } from '../shared/cellarLayoutSettings.js';
+import { invalidateAnalysisCache } from '../shared/cacheService.js';
 import logger from '../../utils/logger.js';
 
 /**
@@ -288,6 +289,8 @@ export async function getActiveZoneMap(cellarId) {
     if (orphanedRows.length > 0) {
       try {
         await repairOrphanedRows(cellarId, orphanedRows, allocations);
+        // Invalidate analysis cache — the old cached analysis had missing rows
+        await invalidateAnalysisCache(null, cellarId);
         // Re-fetch to get the repaired state
         return getActiveZoneMap(cellarId);
       } catch (err) {

@@ -27,6 +27,10 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
   })
 }));
 
+vi.mock('../../../../src/services/shared/cacheService.js', () => ({
+  invalidateAnalysisCache: vi.fn().mockResolvedValue(undefined)
+}));
+
 vi.mock('../../../../src/utils/logger.js', () => ({
   default: {
     info: vi.fn(),
