@@ -1637,6 +1637,20 @@
   margin-bottom: 1rem;
 }
 
+.consolidation-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.consolidation-header .consolidation-guide-btn {
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 0.1rem;
+}
+
 .consolidation-section h3 {
   font-size: 1rem;
   margin-bottom: 0.25rem;

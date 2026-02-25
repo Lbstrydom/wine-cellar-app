@@ -7,6 +7,8 @@
  */
 
 import { escapeHtml } from '../utils.js';
+import { getCurrentAnalysis } from './state.js';
+import { openMoveGuide } from './moveGuide.js';
 
 /**
  * Render consolidation opportunity cards.
@@ -27,10 +29,19 @@ export function renderConsolidationCards(analysis) {
 
   const totalScattered = opportunities.reduce((sum, o) => sum + o.scattered.length, 0);
 
+  // Check if there are actionable moves to offer the Visual Guide
+  const suggestedMoves = analysis?.suggestedMoves || [];
+  const hasActionableMoves = suggestedMoves.some(m => m.type === 'move');
+
   let html = `
     <div class="consolidation-section">
-      <h3>Zone Consolidation</h3>
-      <p class="section-desc">${totalScattered} bottle(s) across ${opportunities.length} zone(s) are in the wrong rows and should be consolidated.</p>
+      <div class="consolidation-header">
+        <div>
+          <h3>Zone Consolidation</h3>
+          <p class="section-desc">${totalScattered} bottle(s) across ${opportunities.length} zone(s) are in the wrong rows and should be consolidated.</p>
+        </div>
+        ${hasActionableMoves ? '<button class="btn btn-secondary btn-small consolidation-guide-btn">Visual Guide</button>' : ''}
+      </div>
       <div class="consolidation-cards">
   `;
 
@@ -113,4 +124,16 @@ export function renderConsolidationCards(analysis) {
       }
     });
   });
+
+  // Wire "Visual Guide" button — launch move guide with all suggested moves
+  const guideBtn = el.querySelector('.consolidation-guide-btn');
+  if (guideBtn) {
+    guideBtn.addEventListener('click', () => {
+      const currentAnalysis = getCurrentAnalysis();
+      const moves = currentAnalysis?.suggestedMoves;
+      if (moves?.length) {
+        openMoveGuide(moves);
+      }
+    });
+  }
 }
