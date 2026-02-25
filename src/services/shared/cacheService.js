@@ -594,7 +594,7 @@ function parseAssignedRowsForHash(value) {
 async function generateSlotHash(cellarId) {
   try {
     const slots = await db.prepare(`
-      SELECT s.location_code, s.wine_id, w.colour, w.style, w.country, w.grapes, w.bottle_count
+      SELECT s.location_code, s.wine_id, w.colour, w.style, w.country, w.grapes
       FROM slots s
       LEFT JOIN wines w ON w.id = s.wine_id AND w.cellar_id = ?
       WHERE s.cellar_id = ? AND s.wine_id IS NOT NULL

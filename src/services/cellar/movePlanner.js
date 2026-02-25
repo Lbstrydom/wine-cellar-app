@@ -494,10 +494,10 @@ export async function validateMovePlan(moves, cellarId) {
     const wineColourMap = new Map();
     if (wineIds.length > 0) {
       const placeholders = wineIds.map((_, i) => '$' + (i + 2)).join(',');
-      const sql = 'SELECT id, colour, color, wine_name, grapes, style FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';
+      const sql = 'SELECT id, colour, wine_name, grapes, style FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';
       const wineRows = await db.prepare(sql).all(cellarId, ...wineIds);
       for (const w of wineRows) {
-        const wineColour = (w.colour || w.color || inferColor(w) || '').toLowerCase();
+        const wineColour = (w.colour || inferColor(w) || '').toLowerCase();
         wineColourMap.set(w.id, wineColour);
       }
     }
