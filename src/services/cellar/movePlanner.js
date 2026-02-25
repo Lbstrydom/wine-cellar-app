@@ -383,11 +383,34 @@ export async function validateMovePlan(moves, cellarId) {
   const targetSlots = new Set();
   const movedInstanceKeys = new Set();
 
-  // Fetch current occupancy from DB (canonical source of truth)
-  const slots = await db.prepare(
-    'SELECT location_code, wine_id FROM slots WHERE wine_id IS NOT NULL AND cellar_id = ?'
+  // Fetch ALL slots for this cellar (occupied state + existence checks in one query)
+  const allSlots = await db.prepare(
+    'SELECT location_code, wine_id FROM slots WHERE cellar_id = ?'
   ).all(cellarId);
-  const occupiedSlots = new Map(slots.map(s => [s.location_code, s.wine_id]));
+  const occupiedSlots = new Map(
+    allSlots.filter(s => s.wine_id != null).map(s => [s.location_code, s.wine_id])
+  );
+  const existingSlots = new Set(allSlots.map(s => s.location_code));
+
+  // ── Rule 0: All source and target slots must exist ─────────
+  for (const move of moves) {
+    if (!existingSlots.has(move.from)) {
+      errors.push({
+        type: 'slot_not_found',
+        message: `Source slot ${move.from} does not exist in cellar`,
+        move,
+        slot: move.from
+      });
+    }
+    if (!existingSlots.has(move.to)) {
+      errors.push({
+        type: 'slot_not_found',
+        message: `Target slot ${move.to} does not exist in cellar`,
+        move,
+        slot: move.to
+      });
+    }
+  }
 
   // Build set of slots that will be vacated by this plan
   const vacatedSlots = new Set(moves.map(m => m.from));
@@ -523,6 +546,7 @@ export async function validateMovePlan(moves, cellarId) {
     summary: {
       totalMoves: moves.length,
       errorCount: errors.length,
+      slotsNotFound: errors.filter(e => e.type === 'slot_not_found').length,
       duplicateTargets: errors.filter(e => e.type === 'duplicate_target').length,
       occupiedTargets: errors.filter(e => e.type === 'target_occupied').length,
       sourceMismatches: errors.filter(e => e.type === 'source_mismatch').length,

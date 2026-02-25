@@ -157,7 +157,12 @@ export async function handleResponse(res, defaultError = 'Request failed') {
           errorMessage += `: ${firstIssue.field} ${firstIssue.message}`;
         }
       }
-      throw new Error(errorMessage);
+      const error = new Error(errorMessage);
+      // Attach structured data for callers that need rich error details
+      if (data.validation) error.validation = data.validation;
+      if (data.phase) error.phase = data.phase;
+      if (data.moveCount != null) error.moveCount = data.moveCount;
+      throw error;
     } catch (e) {
       // If it's already our error, rethrow it
       if (e instanceof Error && e.message !== 'Unexpected end of JSON input') {

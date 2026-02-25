@@ -911,7 +911,8 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
   try {
     validation = await validateMovePlan(moves, req.cellarId);
   } catch (valErr) {
-    logger.error('execute-moves', `Validation threw: ${valErr.message}`);
+    const pgCode = valErr.code ? ` [PG ${valErr.code}]` : '';
+    logger.error('execute-moves', `Validation threw${pgCode}: ${valErr.message} | stack: ${valErr.stack?.split('\n').slice(0, 3).join(' → ')}`);
     return res.status(500).json({
       error: `Move validation failed: ${valErr.message}`,
       phase: 'validation'
@@ -991,7 +992,10 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
       }
     });
   } catch (txErr) {
-    logger.error('execute-moves', `Transaction failed: ${txErr.message} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
+    const pgCode = txErr.code ? ` [PG ${txErr.code}]` : '';
+    const detail = txErr.detail ? ` detail=${txErr.detail}` : '';
+    const constraint = txErr.constraint ? ` constraint=${txErr.constraint}` : '';
+    logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
     return res.status(500).json({
       error: `Move execution failed: ${txErr.message}`,
       phase: 'transaction',

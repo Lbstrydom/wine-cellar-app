@@ -385,7 +385,12 @@ async function executeSwap(index) {
     recheckSwapsAndRerender();
     refreshLayout();
   } catch (err) {
-    showToast(`Error: ${err.message}`);
+    // Show validation modal for structured errors (400 validation failures)
+    if (err.validation) {
+      showValidationErrorModal(err.validation);
+    } else {
+      showToast(`Error: ${err.message}`);
+    }
   }
 }
 
@@ -484,9 +489,13 @@ export async function handleExecuteAllMoves() {
   try {
     const result = await executeCellarMoves(movesToExecute);
     
-    // Check if validation failed
+    // Check if validation failed (reachable if server returns 200 with success: false)
     if (!result.success) {
-      showValidationErrorModal(result.validation);
+      if (result.validation) {
+        showValidationErrorModal(result.validation);
+      } else {
+        showToast('Move execution failed');
+      }
       return;
     }
     
@@ -497,7 +506,12 @@ export async function handleExecuteAllMoves() {
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
-    showToast(`Error: ${err.message}`);
+    // Show validation modal for structured errors (400 validation failures)
+    if (err.validation) {
+      showValidationErrorModal(err.validation);
+    } else {
+      showToast(`Error: ${err.message}`);
+    }
   }
 }
 
@@ -585,6 +599,20 @@ export function showValidationErrorModal(validation) {
   
   let errorsHtml = '';
   
+  if (errorsByType.slot_not_found) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>📍 Missing Slots (${errorsByType.slot_not_found.length})</h4>
+        <ul>
+          ${errorsByType.slot_not_found.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Slot locations referenced in moves no longer exist. The cellar layout may have changed since this analysis was generated.</p>
+      </div>
+    `;
+  }
+  
   if (errorsByType.duplicate_target) {
     errorsHtml += `
       <div class="validation-error-section">
@@ -637,6 +665,20 @@ export function showValidationErrorModal(validation) {
           `).join('')}
         </ul>
         <p class="error-explanation">Same wine appears in multiple moves.</p>
+      </div>
+    `;
+  }
+  
+  if (errorsByType.zone_colour_violation) {
+    errorsHtml += `
+      <div class="validation-error-section">
+        <h4>🎨 Zone Colour Violations (${errorsByType.zone_colour_violation.length})</h4>
+        <ul>
+          ${errorsByType.zone_colour_violation.map(e => `
+            <li>${escapeHtml(e.message)}</li>
+          `).join('')}
+        </ul>
+        <p class="error-explanation">Wine colour doesn't match the target zone's colour policy.</p>
       </div>
     `;
   }

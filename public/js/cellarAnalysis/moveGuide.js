@@ -11,6 +11,7 @@ import { showToast, escapeHtml } from '../utils.js';
 import { addTrackedListener, cleanupNamespace } from '../eventManager.js';
 import { getCurrentAnalysis } from './state.js';
 import { loadAnalysis } from './analysis.js';
+import { showValidationErrorModal } from './moves.js';
 
 const NAMESPACE = 'moveGuide';
 
@@ -453,7 +454,11 @@ async function executeCurrentMove() {
   try {
     const result = await executeCellarMoves(movesToExecute);
     if (result && result.success === false) {
-      showToast(`Move failed: ${result.validation?.errors?.[0]?.message || 'Validation error'}`);
+      if (result.validation) {
+        showValidationErrorModal(result.validation);
+      } else {
+        showToast(`Move failed: ${result.validation?.errors?.[0]?.message || 'Validation error'}`);
+      }
       return;
     }
 
@@ -478,7 +483,12 @@ async function executeCurrentMove() {
       scrollToActiveSlot();
     }
   } catch (err) {
-    showToast(`Error: ${err.message}`);
+    // Show validation modal for structured errors (400 validation failures)
+    if (err.validation) {
+      showValidationErrorModal(err.validation);
+    } else {
+      showToast(`Error: ${err.message}`);
+    }
   } finally {
     guideState.executing = false;
     setExecuteButtonBusy(false);

@@ -42,11 +42,13 @@ describe('validateMovePlan', () => {
 
   describe('Rule 1: Each (wineId, from) instance can only be moved once', () => {
     it('should allow same wineId with distinct from slots (multi-bottle wine)', async () => {
-      // Setup: Both slots occupied by same wine (multi-bottle)
+      // Setup: Both slots occupied by same wine (multi-bottle) + empty targets
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 1 }
+          { location_code: 'R1C2', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null },
+          { location_code: 'R2C2', wine_id: null }
         ])
       });
 
@@ -88,7 +90,9 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 2 }
+          { location_code: 'R1C2', wine_id: 2 },
+          { location_code: 'R2C1', wine_id: null },
+          { location_code: 'R2C2', wine_id: null }
         ])
       });
 
@@ -108,7 +112,8 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 2 }
+          { location_code: 'R1C2', wine_id: 2 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -130,7 +135,9 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 2 }
+          { location_code: 'R1C2', wine_id: 2 },
+          { location_code: 'R2C1', wine_id: null },
+          { location_code: 'R2C2', wine_id: null }
         ])
       });
 
@@ -171,8 +178,8 @@ describe('validateMovePlan', () => {
     it('should allow move to empty slot', async () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 1 }
-          // R2C1 is empty (not in list)
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null } // R2C1 exists but is empty
         ])
       });
 
@@ -190,7 +197,8 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 2 }
+          { location_code: 'R1C2', wine_id: 2 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -209,26 +217,9 @@ describe('validateMovePlan', () => {
   describe('Rule 4: Source must contain expected wine', () => {
     it('should reject move when source is empty', async () => {
       db.prepare.mockReturnValue({
-        all: vi.fn().mockResolvedValue([])
-      });
-
-      const moves = [
-        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
-      ];
-
-      const result = await validateMovePlan(moves, 'test-cellar-id');
-
-      expect(result.valid).toBe(false);
-      expect(result.summary.sourceMismatches).toBe(1);
-      expect(result.errors[0].type).toBe('source_mismatch');
-      expect(result.errors[0].expectedWineId).toBe(1);
-      expect(result.errors[0].actualWineId).toBe(null);
-    });
-
-    it('should reject move when wrong wine at source', async () => {
-      db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 99 } // Different wine than expected
+          { location_code: 'R1C1', wine_id: null },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -240,15 +231,40 @@ describe('validateMovePlan', () => {
 
       expect(result.valid).toBe(false);
       expect(result.summary.sourceMismatches).toBe(1);
-      expect(result.errors[0].type).toBe('source_mismatch');
+      const mismatchErr = result.errors.find(e => e.type === 'source_mismatch');
+      expect(mismatchErr).toBeDefined();
+      expect(mismatchErr.type).toBe('source_mismatch');
       expect(result.errors[0].expectedWineId).toBe(1);
-      expect(result.errors[0].actualWineId).toBe(99);
+      expect(result.errors[0].actualWineId).toBe(null);
+    });
+
+    it('should reject move when wrong wine at source', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 99 }, // Different wine than expected
+          { location_code: 'R2C1', wine_id: null }
+        ])
+      });
+
+      const moves = [
+        { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }
+      ];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      expect(result.summary.sourceMismatches).toBe(1);
+      const mismatchErr = result.errors.find(e => e.type === 'source_mismatch');
+      expect(mismatchErr.type).toBe('source_mismatch');
+      expect(mismatchErr.expectedWineId).toBe(1);
+      expect(mismatchErr.actualWineId).toBe(99);
     });
 
     it('should allow move when correct wine at source', async () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 1 }
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -288,7 +304,10 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValueOnce({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R2C1', wine_id: 3 }
+          { location_code: 'R1C2', wine_id: null },
+          { location_code: 'R2C1', wine_id: 3 },
+          { location_code: 'R2C2', wine_id: null },
+          { location_code: 'R3C1', wine_id: null }
         ])
       }).mockReturnValue({
         get: vi.fn().mockResolvedValue({ wine_name: 'Brunello' })
@@ -296,7 +315,7 @@ describe('validateMovePlan', () => {
 
       const moves = [
         { wineId: 1, wineName: 'Chianti', from: 'R1C1', to: 'R2C1' }, // Target occupied
-        { wineId: 1, wineName: 'Chianti', from: 'R1C2', to: 'R2C2' }, // Duplicate wine
+        { wineId: 1, wineName: 'Chianti', from: 'R1C2', to: 'R2C2' }, // Duplicate wine + source mismatch (R1C2 empty)
         { wineId: 2, wineName: 'Barolo', from: 'R3C1', to: 'R2C2' }   // Duplicate target & source mismatch
       ];
 
@@ -311,7 +330,8 @@ describe('validateMovePlan', () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
-          { location_code: 'R1C2', wine_id: 2 }
+          { location_code: 'R1C2', wine_id: 2 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -331,7 +351,8 @@ describe('validateMovePlan', () => {
         all: vi.fn().mockResolvedValue([
           { location_code: 'R1C1', wine_id: 1 },
           { location_code: 'R1C2', wine_id: 2 },
-          { location_code: 'R1C3', wine_id: 3 }
+          { location_code: 'R1C3', wine_id: 3 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -350,7 +371,8 @@ describe('validateMovePlan', () => {
     it('should provide comprehensive summary', async () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 1 }
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -397,8 +419,11 @@ describe('validateMovePlan', () => {
         all: vi.fn().mockImplementation(async () => {
           callCount++;
           if (callCount === 1) {
-            // Slots query
-            return [{ location_code: 'R5C1', wine_id: 1 }];
+            // Slots query — include source (occupied) + target (empty)
+            return [
+              { location_code: 'R5C1', wine_id: 1 },
+              { location_code: 'R1C3', wine_id: null }
+            ];
           }
           // Wines query (for colour lookup)
           return [{ id: 1, colour: 'red', color: null, wine_name: 'Cab Sauv', grapes: null, style: null }];
@@ -429,7 +454,10 @@ describe('validateMovePlan', () => {
       db.prepare.mockImplementation(() => ({
         all: vi.fn().mockImplementation(async () => {
           callCount++;
-          if (callCount === 1) return [{ location_code: 'R1C1', wine_id: 2 }];
+          if (callCount === 1) return [
+            { location_code: 'R1C1', wine_id: 2 },
+            { location_code: 'R10C3', wine_id: null }
+          ];
           return [{ id: 2, colour: 'white', color: null, wine_name: 'Sauv Blanc', grapes: null, style: null }];
         })
       }));
@@ -454,7 +482,10 @@ describe('validateMovePlan', () => {
       db.prepare.mockImplementation(() => ({
         all: vi.fn().mockImplementation(async () => {
           callCount++;
-          if (callCount === 1) return [{ location_code: 'R3C1', wine_id: 3 }];
+          if (callCount === 1) return [
+            { location_code: 'R3C1', wine_id: 3 },
+            { location_code: 'R1C5', wine_id: null }
+          ];
           return [{ id: 3, colour: 'white', color: null, wine_name: 'Chenin', grapes: null, style: null }];
         })
       }));
@@ -472,7 +503,10 @@ describe('validateMovePlan', () => {
       getActiveZoneMap.mockResolvedValue({});
 
       db.prepare.mockReturnValue({
-        all: vi.fn().mockResolvedValue([{ location_code: 'R1C1', wine_id: 1 }])
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
+        ])
       });
 
       const moves = [
@@ -491,7 +525,10 @@ describe('validateMovePlan', () => {
       );
 
       db.prepare.mockReturnValue({
-        all: vi.fn().mockResolvedValue([{ location_code: 'R1C1', wine_id: 1 }])
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'F3', wine_id: null }
+        ])
       });
 
       const moves = [
@@ -513,7 +550,10 @@ describe('validateMovePlan', () => {
       db.prepare.mockImplementation(() => ({
         all: vi.fn().mockImplementation(async () => {
           callCount++;
-          if (callCount === 1) return [{ location_code: 'R1C1', wine_id: 1 }];
+          if (callCount === 1) return [
+            { location_code: 'R1C1', wine_id: 1 },
+            { location_code: 'R15C1', wine_id: null }
+          ];
           return [{ id: 1, colour: 'white', color: null, wine_name: 'White Wine', grapes: null, style: null }];
         })
       }));
@@ -538,7 +578,10 @@ describe('validateMovePlan', () => {
       db.prepare.mockImplementation(() => ({
         all: vi.fn().mockImplementation(async () => {
           callCount++;
-          if (callCount === 1) return [{ location_code: 'R5C1', wine_id: 4 }];
+          if (callCount === 1) return [
+            { location_code: 'R5C1', wine_id: 4 },
+            { location_code: 'R1C1', wine_id: null }
+          ];
           return [{ id: 4, colour: null, color: null, wine_name: 'Mystery Wine', grapes: null, style: null }];
         })
       }));
@@ -566,7 +609,8 @@ describe('validateMovePlan', () => {
     it('should handle single move', async () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 1 }
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
@@ -583,7 +627,8 @@ describe('validateMovePlan', () => {
     it('should handle moves with missing wine names', async () => {
       db.prepare.mockReturnValue({
         all: vi.fn().mockResolvedValue([
-          { location_code: 'R1C1', wine_id: 1 }
+          { location_code: 'R1C1', wine_id: 1 },
+          { location_code: 'R2C1', wine_id: null }
         ])
       });
 
