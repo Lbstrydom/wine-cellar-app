@@ -6,7 +6,8 @@
 
 import db from '../../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
-import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
+import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings, TOTAL_ROWS } from '../shared/cellarLayoutSettings.js';
+import logger from '../../utils/logger.js';
 
 /**
  * Parse assigned_rows from DB row into a normalized string array.
@@ -178,14 +179,14 @@ export async function updateZoneWineCount(zoneId, cellarId, delta) {
      WHERE cellar_id = ? AND zone_id = ?`
   ).run(delta, cellarId, zoneId);
 
-  // Deallocate if empty
+  // Clamp wine_count at 0 — never delete the zone_allocations row.
+  // Deleting it would orphan the assigned_rows, causing rows (especially R1)
+  // to vanish from zone maps and cellar analysis until a full reconfiguration.
   if (delta < 0) {
-    const allocation = await db.prepare(
-      'SELECT wine_count FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?'
-    ).get(cellarId, zoneId);
-    if (allocation && allocation.wine_count <= 0) {
-      await db.prepare('DELETE FROM zone_allocations WHERE cellar_id = ? AND zone_id = ?').run(cellarId, zoneId);
-    }
+    await db.prepare(
+      `UPDATE zone_allocations SET wine_count = 0
+       WHERE cellar_id = ? AND zone_id = ? AND wine_count < 0`
+    ).run(cellarId, zoneId);
   }
 }
 
@@ -258,11 +259,14 @@ export async function getActiveZoneMap(cellarId) {
   ).all(cellarId);
 
   const zoneMap = {};
+  const assignedRowIds = new Set();
+
   for (const alloc of allocations) {
     const zone = getZoneById(alloc.zone_id);
     const rows = parseAssignedRows(alloc.assigned_rows);
 
     rows.forEach((rowId, index) => {
+      assignedRowIds.add(rowId);
       zoneMap[rowId] = {
         zoneId: alloc.zone_id,
         displayName: zone?.displayName || alloc.zone_id,
@@ -273,7 +277,97 @@ export async function getActiveZoneMap(cellarId) {
     });
   }
 
+  // Self-healing: detect orphaned rows and assign to the best colour-compatible zone.
+  // This repairs state left by the old updateZoneWineCount DELETE behaviour.
+  if (allocations.length > 0) {
+    const orphanedRows = [];
+    for (let i = 1; i <= TOTAL_ROWS; i++) {
+      if (!assignedRowIds.has(`R${i}`)) orphanedRows.push(`R${i}`);
+    }
+
+    if (orphanedRows.length > 0) {
+      try {
+        await repairOrphanedRows(cellarId, orphanedRows, allocations);
+        // Re-fetch to get the repaired state
+        return getActiveZoneMap(cellarId);
+      } catch (err) {
+        logger.error('ZoneMap', `Orphan repair failed: ${err.message}`);
+        // Fall through — return partial map rather than failing
+      }
+    }
+  }
+
   return zoneMap;
+}
+
+/**
+ * Repair orphaned rows by assigning them to the best colour-compatible zone.
+ * Runs at most once per getActiveZoneMap call; the recursive call above
+ * will not trigger again because the orphans will be repaired.
+ * @param {string} cellarId
+ * @param {string[]} orphanedRows - e.g., ['R1', 'R5']
+ * @param {Array} allocations - Current zone_allocations rows
+ */
+async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
+  let layoutSettings;
+  try {
+    layoutSettings = await getCellarLayoutSettings(cellarId);
+  } catch {
+    layoutSettings = { colourOrder: 'whites-top' };
+  }
+
+  const dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+  const whiteRowSet = new Set((dynamicRanges?.whiteRows || []).map(Number));
+
+  for (const orphan of orphanedRows) {
+    const orphanNum = parseInt(orphan.replace('R', ''), 10);
+    const isWhiteRow = whiteRowSet.has(orphanNum);
+
+    // Find the best colour-compatible zone (highest utilization = most in need)
+    let bestZoneId = null;
+    let bestScore = -Infinity;
+
+    for (const alloc of allocations) {
+      const zone = getZoneById(alloc.zone_id);
+      if (!zone || zone.isBufferZone || zone.isFallbackZone) continue;
+
+      const zoneColor = zone.color;
+      const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
+      const zoneIsWhite = isWhiteFamily(primaryColor);
+
+      // Skip colour-incompatible zones (unless zone accepts any colour)
+      if (primaryColor !== 'any' && isWhiteRow !== zoneIsWhite) continue;
+
+      const rows = parseAssignedRows(alloc.assigned_rows);
+      const wineCount = alloc.wine_count || 0;
+
+      // Score: prefer zones with wines (not empty), prefer adjacency
+      let score = wineCount * 100;
+      if (rows.length > 0) {
+        const rowNums = rows.map(r => parseInt(r.replace('R', ''), 10));
+        const minDist = Math.min(...rowNums.map(n => Math.abs(n - orphanNum)));
+        score += (TOTAL_ROWS - minDist) * 5;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestZoneId = alloc.zone_id;
+      }
+    }
+
+    if (bestZoneId) {
+      const existing = allocations.find(a => a.zone_id === bestZoneId);
+      const rows = parseAssignedRows(existing.assigned_rows);
+      if (!rows.includes(orphan)) {
+        rows.push(orphan);
+        await db.prepare(
+          `UPDATE zone_allocations SET assigned_rows = ?, updated_at = CURRENT_TIMESTAMP
+           WHERE cellar_id = ? AND zone_id = ?`
+        ).run(JSON.stringify(rows), cellarId, bestZoneId);
+        logger.info('ZoneMap', `Self-healed orphaned ${orphan} → ${bestZoneId}`);
+      }
+    }
+  }
 }
 
 /**
