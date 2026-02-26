@@ -316,9 +316,17 @@ describe('Profile computation logic', () => {
         boost: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
         dampen: ['braised', 'roasted', 'umami', 'earthy']
       },
+      autumn: {
+        boost: ['roasted', 'mushroom', 'earthy', 'braised'],
+        dampen: ['raw', 'shellfish']
+      },
       winter: {
         boost: ['braised', 'roasted', 'umami', 'earthy'],
-        dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid']
+        dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal']
+      },
+      spring: {
+        boost: ['herbal', 'raw', 'fish', 'acid', 'grilled'],
+        dampen: ['braised', 'umami']
       }
     };
 
@@ -342,14 +350,39 @@ describe('Profile computation logic', () => {
       expect(SEASON_BOOSTS.winter.dampen).toContain('fish');
     });
 
-    it('seasonal bias is +-10% adjustment', () => {
-      // Boost factor = 1.1 for primary, 1.05 for good
+    it('transitional seasons have shorter dampen lists than peaks', () => {
+      expect(SEASON_BOOSTS.autumn.dampen.length).toBeLessThan(SEASON_BOOSTS.summer.dampen.length);
+      expect(SEASON_BOOSTS.spring.dampen.length).toBeLessThan(SEASON_BOOSTS.winter.dampen.length);
+    });
+
+    it('autumn includes braised (start of stew season) unlike summer', () => {
+      expect(SEASON_BOOSTS.autumn.boost).toContain('braised');
+      expect(SEASON_BOOSTS.summer.boost).not.toContain('braised');
+    });
+
+    it('spring includes grilled (first BBQs) unlike winter', () => {
+      expect(SEASON_BOOSTS.spring.boost).toContain('grilled');
+      expect(SEASON_BOOSTS.winter.boost).not.toContain('grilled');
+    });
+
+    it('autumn leaves grilled neutral (still BBQ weather in mild climates)', () => {
+      expect(SEASON_BOOSTS.autumn.boost).not.toContain('grilled');
+      expect(SEASON_BOOSTS.autumn.dampen).not.toContain('grilled');
+    });
+
+    it('spring leaves roasted/earthy neutral (still cool enough)', () => {
+      expect(SEASON_BOOSTS.spring.boost).not.toContain('roasted');
+      expect(SEASON_BOOSTS.spring.dampen).not.toContain('roasted');
+      expect(SEASON_BOOSTS.spring.dampen).not.toContain('earthy');
+    });
+
+    it('seasonal bias is +-10% base adjustment (scaled by climate)', () => {
       const demand = { red_medium: 100 };
-      demand.red_medium *= 1.1;
+      demand.red_medium *= 1.1; // warm climate boost
       expect(demand.red_medium).toBeCloseTo(110, 5);
 
       const demand2 = { red_medium: 100 };
-      demand2.red_medium *= 0.9;
+      demand2.red_medium *= 0.9; // warm climate dampen
       expect(demand2.red_medium).toBeCloseTo(90, 5);
     });
   });

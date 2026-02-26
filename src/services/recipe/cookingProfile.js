@@ -21,23 +21,36 @@ const RATING_WEIGHTS = {
   0: 0.3 // unrated
 };
 
-/** Seasonal signal boosts (base ±10%, scaled by climate zone) */
+/**
+ * Seasonal signal boosts (base ±10%, scaled by climate zone).
+ *
+ * Peak seasons (summer/winter) have strong, opposing boost/dampen lists.
+ * Transitional seasons (spring/autumn) are genuinely blended:
+ *   - Boost signals unique to the transition (e.g., mushroom in autumn, grilled in spring)
+ *   - Shorter dampen lists — only the most seasonally inappropriate signals
+ *   - Leaves many signals neutral so the profile stays versatile
+ *
+ * This matters most in mild/cold climates where you still grill in autumn
+ * and still make stews in spring.
+ */
 const SEASON_BOOSTS = {
   summer: {
     boost: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
     dampen: ['braised', 'roasted', 'umami', 'earthy']
   },
+  autumn: {
+    boost: ['roasted', 'mushroom', 'earthy', 'braised'],
+    dampen: ['raw', 'shellfish']
+    // Neutral: grilled, herbal, acid, fish, umami — still relevant in mild autumn
+  },
   winter: {
     boost: ['braised', 'roasted', 'umami', 'earthy'],
-    dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid']
+    dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal']
   },
   spring: {
-    boost: ['herbal', 'raw', 'fish', 'acid'],
-    dampen: ['braised', 'earthy']
-  },
-  autumn: {
-    boost: ['roasted', 'earthy', 'mushroom', 'umami'],
-    dampen: ['raw', 'acid']
+    boost: ['herbal', 'raw', 'fish', 'acid', 'grilled'],
+    dampen: ['braised', 'umami']
+    // Neutral: roasted, earthy, mushroom, shellfish — still cool enough for these
   }
 };
 
