@@ -6,7 +6,24 @@
  */
 
 import { getCookingProfile, refreshCookingProfile } from '../api/recipes.js';
+import { updateSetting } from '../api/settings.js';
 import { escapeHtml } from '../utils.js';
+
+/** Season options */
+const SEASONS = [
+  { value: 'summer', label: 'Summer' },
+  { value: 'autumn', label: 'Autumn' },
+  { value: 'winter', label: 'Winter' },
+  { value: 'spring', label: 'Spring' }
+];
+
+/** Climate zone options with descriptions */
+const CLIMATE_ZONES = [
+  { value: 'hot',  label: 'Hot',  hint: 'Mediterranean, tropical' },
+  { value: 'warm', label: 'Warm', hint: 'Temperate, standard' },
+  { value: 'mild', label: 'Mild', hint: 'Maritime, cool oceanic' },
+  { value: 'cold', label: 'Cold', hint: 'Continental, harsh winters' }
+];
 
 /** Style display names */
 const STYLE_LABELS = {
@@ -107,16 +124,30 @@ export async function renderProfileSummary(container, options = {}) {
       `;
     }).join('');
 
-    const seasonLabel = profile.seasonalBias
-      ? profile.seasonalBias.charAt(0).toUpperCase() + profile.seasonalBias.slice(1)
-      : '';
+    const currentSeason = profile.seasonalBias || 'winter';
+    const currentClimate = profile.climateZone || 'warm';
+
+    const seasonOptionsHtml = SEASONS.map(s =>
+      `<option value="${s.value}" ${s.value === currentSeason ? 'selected' : ''}>${escapeHtml(s.label)}</option>`
+    ).join('');
+
+    const climateOptionsHtml = CLIMATE_ZONES.map(z =>
+      `<option value="${z.value}" title="${escapeHtml(z.hint)}" ${z.value === currentClimate ? 'selected' : ''}>${escapeHtml(z.label)} — ${escapeHtml(z.hint)}</option>`
+    ).join('');
 
     container.innerHTML = `
       <div class="profile-summary">
         <div class="profile-summary-header">
           <h3>Your Cooking Profile</h3>
           <div class="profile-summary-actions">
-            ${seasonLabel ? `<span class="profile-season-badge">${escapeHtml(seasonLabel)}</span>` : ''}
+            <label class="profile-select-group">
+              <span class="profile-select-label">Season</span>
+              <select class="profile-select profile-season-select">${seasonOptionsHtml}</select>
+            </label>
+            <label class="profile-select-group">
+              <span class="profile-select-label">Climate</span>
+              <select class="profile-select profile-climate-select">${climateOptionsHtml}</select>
+            </label>
             <button class="btn btn-small btn-secondary profile-refresh-btn" title="Refresh profile">Refresh</button>
           </div>
         </div>
@@ -129,7 +160,7 @@ export async function renderProfileSummary(container, options = {}) {
             <h4>Top Categories</h4>
             <div class="profile-categories">
               ${categoriesHtml}
-              ${options.onOverridesClick ? '<button class="btn-link profile-adjust-btn">Adjust frequencies</button>' : ''}
+              ${options.onOverridesClick ? '<button class="btn btn-small btn-secondary profile-adjust-btn">Adjust frequencies</button>' : ''}
             </div>
           </div>
           <div class="profile-col">
@@ -140,8 +171,8 @@ export async function renderProfileSummary(container, options = {}) {
       </div>
     `;
 
-    // Wire up refresh button
-    container.querySelector('.profile-refresh-btn')?.addEventListener('click', async (btn) => {
+    // Wire up season/climate dropdowns — save + refresh on change
+    const refreshProfile = async () => {
       const refreshBtn = container.querySelector('.profile-refresh-btn');
       if (refreshBtn) {
         refreshBtn.disabled = true;
@@ -150,20 +181,69 @@ export async function renderProfileSummary(container, options = {}) {
       try {
         await refreshCookingProfile();
         await renderProfileSummary(container, options);
-      } catch (err) {
+      } catch {
         if (refreshBtn) {
           refreshBtn.disabled = false;
           refreshBtn.textContent = 'Refresh';
         }
       }
+    };
+
+    container.querySelector('.profile-season-select')?.addEventListener('change', async (e) => {
+      await updateSetting('profile_season', e.target.value);
+      await refreshProfile();
     });
+
+    container.querySelector('.profile-climate-select')?.addEventListener('change', async (e) => {
+      await updateSetting('climate_zone', e.target.value);
+      await refreshProfile();
+    });
+
+    // Wire up refresh button
+    container.querySelector('.profile-refresh-btn')?.addEventListener('click', refreshProfile);
 
     // Wire up adjust frequencies button
     if (options.onOverridesClick) {
       container.querySelector('.profile-adjust-btn')?.addEventListener('click', options.onOverridesClick);
     }
 
+    // Auto-detect hemisphere on first load (save if not yet set)
+    autoDetectHemisphere(profile.hemisphere);
+
   } catch (err) {
     container.innerHTML = '';
+  }
+}
+
+/** Southern hemisphere timezone prefixes */
+const SOUTHERN_TZ = [
+  'Australia/', 'Antarctica/', 'Pacific/Auckland', 'Pacific/Fiji',
+  'Africa/Johannesburg', 'Africa/Harare', 'Africa/Maputo',
+  'America/Buenos_Aires', 'America/Sao_Paulo', 'America/Santiago',
+  'America/Lima', 'America/Bogota'
+];
+
+let hemisphereDetected = false;
+
+/**
+ * Auto-detect hemisphere from browser timezone and save if not yet set.
+ * Only runs once per session to avoid repeated API calls.
+ * @param {string} currentHemisphere - Current profile hemisphere
+ */
+async function autoDetectHemisphere(currentHemisphere) {
+  if (hemisphereDetected) return;
+  hemisphereDetected = true;
+
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    const isSouthern = SOUTHERN_TZ.some(prefix => tz.startsWith(prefix));
+    const detected = isSouthern ? 'southern' : 'northern';
+
+    // Only save if different from current (avoids unnecessary API call)
+    if (detected !== currentHemisphere) {
+      await updateSetting('hemisphere', detected);
+    }
+  } catch {
+    // Timezone detection not available — keep server default
   }
 }

@@ -362,7 +362,8 @@ describe('Profile computation logic', () => {
         wineStyleDemand: {},
         categoryBreakdown: {},
         seasonalBias: null,
-        hemisphere: 'southern',
+        hemisphere: 'northern',
+        climateZone: 'warm',
         recipeCount: 0,
         ratedRecipeCount: 0,
         demandTotal: 0
@@ -654,5 +655,94 @@ describe('Category override weighting', () => {
     // This is the correct behaviour: a "Never" override on one category doesn't suppress
     // another category that the user hasn't overridden.
     expect(categoryWeight).toBe(1.2);
+  });
+});
+
+// ==========================================
+// Climate zone seasonal scaling
+// ==========================================
+describe('Climate zone seasonal scaling', () => {
+  const CLIMATE_MULTIPLIERS = {
+    hot:  1.5,
+    warm: 1.0,
+    mild: 0.4,
+    cold: 1.3
+  };
+
+  /**
+   * Simulate applySeasonalBias for a single style with known boost signal.
+   * Returns the multiplied demand value.
+   */
+  function simulateSeasonalBoost(baseDemand, climateZone) {
+    const multiplier = CLIMATE_MULTIPLIERS[climateZone] ?? 1.0;
+    const boostFactor = 1 + (0.1 * multiplier); // primary boost
+    return baseDemand * boostFactor;
+  }
+
+  function simulateSeasonalDampen(baseDemand, climateZone) {
+    const multiplier = CLIMATE_MULTIPLIERS[climateZone] ?? 1.0;
+    const dampenFactor = 1 - (0.1 * multiplier);
+    return baseDemand * dampenFactor;
+  }
+
+  it('hot climate amplifies seasonal boost to ±15%', () => {
+    const boosted = simulateSeasonalBoost(100, 'hot');
+    expect(boosted).toBeCloseTo(115, 0);
+
+    const dampened = simulateSeasonalDampen(100, 'hot');
+    expect(dampened).toBeCloseTo(85, 0);
+  });
+
+  it('warm climate applies standard ±10%', () => {
+    const boosted = simulateSeasonalBoost(100, 'warm');
+    expect(boosted).toBeCloseTo(110, 0);
+
+    const dampened = simulateSeasonalDampen(100, 'warm');
+    expect(dampened).toBeCloseTo(90, 0);
+  });
+
+  it('mild climate applies subtle ±4%', () => {
+    const boosted = simulateSeasonalBoost(100, 'mild');
+    expect(boosted).toBeCloseTo(104, 0);
+
+    const dampened = simulateSeasonalDampen(100, 'mild');
+    expect(dampened).toBeCloseTo(96, 0);
+  });
+
+  it('cold climate applies strong ±13%', () => {
+    const boosted = simulateSeasonalBoost(100, 'cold');
+    expect(boosted).toBeCloseTo(113, 0);
+
+    const dampened = simulateSeasonalDampen(100, 'cold');
+    expect(dampened).toBeCloseTo(87, 0);
+  });
+
+  it('unknown climate zone falls back to 1.0x (same as warm)', () => {
+    const boosted = simulateSeasonalBoost(100, 'tropical');
+    expect(boosted).toBeCloseTo(110, 0);
+  });
+
+  it('mild climate in Netherlands means less pronounced summer shift', () => {
+    // In Netherlands (mild climate), summer should barely shift demand.
+    // A red_full demand of 100 dampened in summer:
+    // Warm: 100 * 0.9 = 90 (10% drop)
+    // Mild: 100 * 0.96 = 96 (4% drop) — reds still relevant in summer
+    const warmDampen = simulateSeasonalDampen(100, 'warm');
+    const mildDampen = simulateSeasonalDampen(100, 'mild');
+
+    expect(mildDampen).toBeGreaterThan(warmDampen);
+    expect(mildDampen - warmDampen).toBeCloseTo(6, 0);
+  });
+
+  it('hot climate in Alicante means strong summer shift', () => {
+    // In Alicante (hot climate), summer massively boosts whites/rosé.
+    // A white_crisp demand of 100 boosted in summer:
+    // Warm: 100 * 1.1 = 110
+    // Hot: 100 * 1.15 = 115
+    const warmBoost = simulateSeasonalBoost(100, 'warm');
+    const hotBoost = simulateSeasonalBoost(100, 'hot');
+
+    expect(hotBoost).toBeGreaterThan(warmBoost);
+    expect(hotBoost - warmBoost).toBeCloseTo(5, 0);
   });
 });

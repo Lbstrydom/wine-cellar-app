@@ -21,7 +21,7 @@ const RATING_WEIGHTS = {
   0: 0.3 // unrated
 };
 
-/** Seasonal signal boosts (+-10%) */
+/** Seasonal signal boosts (base ±10%, scaled by climate zone) */
 const SEASON_BOOSTS = {
   summer: {
     boost: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
@@ -40,6 +40,21 @@ const SEASON_BOOSTS = {
     dampen: ['raw', 'acid']
   }
 };
+
+/**
+ * Climate zone multipliers for seasonal bias.
+ * Scales how much the season affects wine style demand.
+ * Hot climates have pronounced summer→white shifts; cool climates are milder.
+ */
+const CLIMATE_MULTIPLIERS = {
+  hot:  1.5,  // Mediterranean, tropical — strong seasonal wine shift
+  warm: 1.0,  // Temperate — standard seasonal shift (default)
+  mild: 0.4,  // Maritime/cool oceanic — subtle shift, reds welcome year-round
+  cold: 1.3   // Continental — strong winter bias toward warming reds
+};
+
+const VALID_SEASONS = ['summer', 'winter', 'spring', 'autumn'];
+const VALID_CLIMATES = ['hot', 'warm', 'mild', 'cold'];
 
 /**
  * Get current season based on hemisphere.
@@ -95,7 +110,7 @@ export async function computeCookingProfile(cellarId, options = {}) {
     return buildEmptyProfile();
   }
 
-  // Fetch cellar settings for hemisphere + category overrides
+  // Fetch cellar settings for category overrides
   const cellar = await db.prepare(`
     SELECT settings FROM cellars WHERE id = $1
   `).get(cellarId);
@@ -104,8 +119,20 @@ export async function computeCookingProfile(cellarId, options = {}) {
     ? (typeof cellar.settings === 'string' ? JSON.parse(cellar.settings) : cellar.settings)
     : {};
 
-  const hemisphere = settings.hemisphere || 'southern';
   const categoryOverrides = settings.categoryOverrides || {};
+
+  // Fetch user preferences for season, hemisphere, climate zone
+  const prefRows = await db.prepare(`
+    SELECT key, value FROM user_settings
+    WHERE cellar_id = $1 AND key IN ('hemisphere', 'profile_season', 'climate_zone')
+  `).all(cellarId);
+
+  const prefs = {};
+  for (const row of prefRows) prefs[row.key] = row.value;
+
+  const hemisphere = prefs.hemisphere || 'northern';
+  const seasonOverride = prefs.profile_season;
+  const climateZone = VALID_CLIMATES.includes(prefs.climate_zone) ? prefs.climate_zone : 'warm';
 
   // Compute category frequencies
   const categoryBreakdown = computeCategoryBreakdown(recipes, categoryOverrides);
@@ -176,9 +203,10 @@ export async function computeCookingProfile(cellarId, options = {}) {
   // Convert weighted signals to wine style demand
   const styleDemand = computeStyleDemand(signalAccumulator);
 
-  // Apply seasonal bias
-  const season = getCurrentSeason(hemisphere);
-  applySeasonalBias(styleDemand, signalAccumulator, season);
+  // Apply seasonal bias (user override or auto-detect from hemisphere)
+  const season = (VALID_SEASONS.includes(seasonOverride) ? seasonOverride : null)
+    || getCurrentSeason(hemisphere);
+  applySeasonalBias(styleDemand, signalAccumulator, season, climateZone);
 
   // Normalise to percentages (sum to 1.0)
   const demandTotal = Object.values(styleDemand).reduce((sum, v) => sum + v, 0);
@@ -200,6 +228,7 @@ export async function computeCookingProfile(cellarId, options = {}) {
     categoryBreakdown,
     seasonalBias: season,
     hemisphere,
+    climateZone,
     recipeCount: recipes.length,
     ratedRecipeCount,
     demandTotal: Math.round(Object.values(styleDemand).reduce((s, v) => s + v, 0) * 1000) / 1000
@@ -288,25 +317,35 @@ function computeStyleDemand(signalAccumulator) {
 }
 
 /**
- * Apply seasonal bias to style demand (+-10%).
+ * Apply seasonal bias to style demand, scaled by climate zone.
+ * Base shift is ±10% for primary, ±5% for good affinities.
+ * Climate zone multiplier scales the shift (hot=1.5x, mild=0.4x, etc.).
  * Modifies demand in place.
  * @param {Object} demand - Style demand map
  * @param {Object} signalAccumulator - Signal weights
  * @param {string} season - Current season
+ * @param {string} [climateZone='warm'] - Climate zone for scaling
  */
-function applySeasonalBias(demand, signalAccumulator, season) {
+function applySeasonalBias(demand, signalAccumulator, season, climateZone = 'warm') {
   const bias = SEASON_BOOSTS[season];
   if (!bias) return;
 
-  // Identify styles affected by boosted/dampened signals
+  const multiplier = CLIMATE_MULTIPLIERS[climateZone] ?? 1.0;
+
+  // Scale boost/dampen: base 10% primary, 5% good → multiplied by climate
+  const boostPrimary = 1 + (0.1 * multiplier);
+  const boostGood = 1 + (0.05 * multiplier);
+  const dampenPrimary = 1 - (0.1 * multiplier);
+  const dampenGood = 1 - (0.05 * multiplier);
+
   for (const signal of bias.boost) {
     const signalDef = FOOD_SIGNALS[signal];
     if (!signalDef) continue;
     for (const style of (signalDef.wineAffinities.primary || [])) {
-      if (demand[style]) demand[style] *= 1.1;
+      if (demand[style]) demand[style] *= boostPrimary;
     }
     for (const style of (signalDef.wineAffinities.good || [])) {
-      if (demand[style]) demand[style] *= 1.05;
+      if (demand[style]) demand[style] *= boostGood;
     }
   }
 
@@ -314,10 +353,10 @@ function applySeasonalBias(demand, signalAccumulator, season) {
     const signalDef = FOOD_SIGNALS[signal];
     if (!signalDef) continue;
     for (const style of (signalDef.wineAffinities.primary || [])) {
-      if (demand[style]) demand[style] *= 0.9;
+      if (demand[style]) demand[style] *= dampenPrimary;
     }
     for (const style of (signalDef.wineAffinities.good || [])) {
-      if (demand[style]) demand[style] *= 0.95;
+      if (demand[style]) demand[style] *= dampenGood;
     }
   }
 }
@@ -332,7 +371,8 @@ function buildEmptyProfile() {
     wineStyleDemand: {},
     categoryBreakdown: {},
     seasonalBias: null,
-    hemisphere: 'southern',
+    hemisphere: 'northern',
+    climateZone: 'warm',
     recipeCount: 0,
     ratedRecipeCount: 0,
     demandTotal: 0

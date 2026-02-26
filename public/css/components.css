@@ -10981,14 +10981,36 @@ body.move-guide-active #view-grid {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
-.profile-season-badge {
-  font-size: 0.75rem;
-  padding: 0.15rem 0.5rem;
-  border-radius: 4px;
-  background: var(--bg-hover);
+.profile-select-group {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.profile-select-label {
+  font-size: 0.7rem;
   color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.profile-select {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.3rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.profile-select:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .profile-recipe-count {
@@ -11053,9 +11075,7 @@ body.move-guide-active #view-grid {
 }
 
 .profile-adjust-btn {
-  display: inline-block;
-  margin-top: 0.3rem;
-  font-size: 0.8rem;
+  margin-top: 0.4rem;
 }
 
 .profile-loading {
