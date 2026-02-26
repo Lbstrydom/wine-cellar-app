@@ -14,9 +14,10 @@
  * - fallback (1 pt): Acceptable but not ideal
  */
 export const FOOD_SIGNALS = {
-  // Proteins
+  // Proteins (tier: protein — distinctive, high profile weight)
   chicken: {
     description: 'Poultry - versatile, mild flavour',
+    tier: 'protein',
     wineAffinities: {
       primary: ['white_medium', 'rose_dry', 'red_light'],
       good: ['white_crisp', 'sparkling_dry', 'white_aromatic'],
@@ -25,6 +26,7 @@ export const FOOD_SIGNALS = {
   },
   pork: {
     description: 'Pork - fatty, savoury',
+    tier: 'protein',
     wineAffinities: {
       primary: ['white_medium', 'rose_dry', 'red_light'],
       good: ['white_aromatic', 'red_medium', 'sparkling_dry'],
@@ -33,6 +35,7 @@ export const FOOD_SIGNALS = {
   },
   beef: {
     description: 'Beef - rich, umami',
+    tier: 'protein',
     wineAffinities: {
       primary: ['red_full', 'red_medium'],
       good: ['red_light'],
@@ -41,6 +44,7 @@ export const FOOD_SIGNALS = {
   },
   lamb: {
     description: 'Lamb - gamey, rich',
+    tier: 'protein',
     wineAffinities: {
       primary: ['red_full', 'red_medium'],
       good: ['red_light', 'rose_dry'],
@@ -49,6 +53,7 @@ export const FOOD_SIGNALS = {
   },
   fish: {
     description: 'Fish - delicate, light',
+    tier: 'protein',
     wineAffinities: {
       primary: ['white_crisp', 'sparkling_dry'],
       good: ['white_medium', 'rose_dry'],
@@ -57,6 +62,7 @@ export const FOOD_SIGNALS = {
   },
   shellfish: {
     description: 'Shellfish - briny, rich',
+    tier: 'protein',
     wineAffinities: {
       primary: ['white_crisp', 'sparkling_dry', 'sparkling_rose'],
       good: ['white_medium', 'rose_dry'],
@@ -64,9 +70,10 @@ export const FOOD_SIGNALS = {
     }
   },
 
-  // Preparations
+  // Preparations (tier: method — how food is cooked, high profile weight)
   roasted: {
     description: 'Roasted - caramelised, rich',
+    tier: 'method',
     wineAffinities: {
       primary: ['red_medium', 'white_oaked'],
       good: ['red_full', 'white_medium'],
@@ -75,6 +82,7 @@ export const FOOD_SIGNALS = {
   },
   grilled: {
     description: 'Grilled - charred, smoky',
+    tier: 'method',
     wineAffinities: {
       primary: ['red_medium', 'red_full'],
       good: ['rose_dry', 'white_oaked'],
@@ -83,6 +91,7 @@ export const FOOD_SIGNALS = {
   },
   fried: {
     description: 'Fried - crispy, fatty',
+    tier: 'method',
     wineAffinities: {
       primary: ['sparkling_dry', 'white_crisp'],
       good: ['rose_dry', 'white_medium'],
@@ -91,6 +100,7 @@ export const FOOD_SIGNALS = {
   },
   braised: {
     description: 'Braised - slow-cooked, tender',
+    tier: 'method',
     wineAffinities: {
       primary: ['red_medium', 'red_full'],
       good: ['white_oaked'],
@@ -99,6 +109,7 @@ export const FOOD_SIGNALS = {
   },
   raw: {
     description: 'Raw - fresh, delicate (sushi, tartare)',
+    tier: 'method',
     wineAffinities: {
       primary: ['sparkling_dry', 'white_crisp'],
       good: ['rose_dry'],
@@ -106,9 +117,10 @@ export const FOOD_SIGNALS = {
     }
   },
 
-  // Flavour profiles
+  // Flavour profiles (tier: flavor — distinctive but secondary to protein/method)
   creamy: {
     description: 'Creamy - rich, fatty sauces',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['white_oaked', 'sparkling_dry'],
       good: ['white_medium', 'red_light'],
@@ -117,6 +129,7 @@ export const FOOD_SIGNALS = {
   },
   spicy: {
     description: 'Spicy - chili heat',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['white_aromatic', 'rose_dry'],
       good: ['sparkling_dry', 'white_crisp'],
@@ -125,6 +138,7 @@ export const FOOD_SIGNALS = {
   },
   sweet: {
     description: 'Sweet - caramelised, glazed',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['white_aromatic', 'sparkling_rose'],
       good: ['rose_dry', 'red_light'],
@@ -133,6 +147,7 @@ export const FOOD_SIGNALS = {
   },
   acid: {
     description: 'Acidic - citrus, vinegar',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['white_crisp', 'sparkling_dry'],
       good: ['rose_dry', 'white_medium'],
@@ -141,6 +156,7 @@ export const FOOD_SIGNALS = {
   },
   umami: {
     description: 'Umami - savoury depth',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['red_medium', 'red_full'],
       good: ['white_oaked', 'red_light'],
@@ -149,6 +165,7 @@ export const FOOD_SIGNALS = {
   },
   herbal: {
     description: 'Herbal - fresh herbs',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['white_crisp', 'white_aromatic'],
       good: ['rose_dry', 'red_light'],
@@ -157,6 +174,7 @@ export const FOOD_SIGNALS = {
   },
   earthy: {
     description: 'Earthy - mushrooms, truffles',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['red_medium', 'red_light'],
       good: ['white_oaked', 'red_full'],
@@ -165,6 +183,7 @@ export const FOOD_SIGNALS = {
   },
   smoky: {
     description: 'Smoky - BBQ, smoked ingredients',
+    tier: 'flavor',
     wineAffinities: {
       primary: ['red_medium', 'red_full'],
       good: ['rose_dry', 'white_oaked'],
@@ -172,9 +191,10 @@ export const FOOD_SIGNALS = {
     }
   },
 
-  // Specific ingredients
+  // Specific ingredients (tier: ingredient — distinctive ingredients that affect pairing)
   tomato: {
     description: 'Tomato-based - needs high acid',
+    tier: 'ingredient',
     wineAffinities: {
       primary: ['red_medium', 'white_crisp'],
       good: ['rose_dry', 'red_light'],
@@ -183,6 +203,7 @@ export const FOOD_SIGNALS = {
   },
   cheese: {
     description: 'Cheese - fatty, salty',
+    tier: 'ingredient',
     wineAffinities: {
       primary: ['red_medium', 'sparkling_dry', 'white_oaked'],
       good: ['red_light', 'white_crisp', 'dessert'],
@@ -191,30 +212,36 @@ export const FOOD_SIGNALS = {
   },
   mushroom: {
     description: 'Mushrooms - earthy, meaty',
+    tier: 'ingredient',
     wineAffinities: {
       primary: ['red_light', 'red_medium'],
       good: ['white_oaked'],
       fallback: ['rose_dry']
     }
   },
-  garlic_onion: {
-    description: 'Alliums - pungent, savoury',
-    wineAffinities: {
-      primary: ['white_crisp', 'white_medium'],
-      good: ['red_light', 'rose_dry'],
-      fallback: ['red_medium']
-    }
-  },
   cured_meat: {
     description: 'Charcuterie - salty, fatty',
+    tier: 'ingredient',
     wineAffinities: {
       primary: ['red_light', 'sparkling_dry', 'rose_dry'],
       good: ['white_crisp', 'red_medium'],
       fallback: []
     }
   },
+
+  // Seasonings (tier: seasoning — ubiquitous background ingredients, low profile weight)
+  garlic_onion: {
+    description: 'Alliums - pungent, savoury',
+    tier: 'seasoning',
+    wineAffinities: {
+      primary: ['white_crisp', 'white_medium'],
+      good: ['red_light', 'rose_dry'],
+      fallback: ['red_medium']
+    }
+  },
   pepper: {
     description: 'Black pepper - warm spice',
+    tier: 'seasoning',
     wineAffinities: {
       primary: ['red_medium', 'red_full'],
       good: ['red_light'],
@@ -223,6 +250,7 @@ export const FOOD_SIGNALS = {
   },
   salty: {
     description: 'Salty foods',
+    tier: 'seasoning',
     wineAffinities: {
       primary: ['sparkling_dry', 'white_crisp'],
       good: ['rose_dry', 'red_light'],
@@ -336,6 +364,27 @@ export const DEFAULT_HOUSE_STYLE = {
   reduceNowBonus: 1.5,        // Bonus multiplier for reduce-now wines
   fridgeBonus: 1.2,           // Bonus for wines already in fridge
   diversityPenalty: 0.5       // Penalty for multiple wines of same style (per duplicate)
+};
+
+/**
+ * Profile weight multipliers per signal tier.
+ * Controls how much each signal contributes to the cooking profile
+ * (aggregate view). Higher = more influence on wine buying strategy.
+ *
+ * Proteins and methods are distinctive (what you cook, how you cook it).
+ * Flavour profiles and ingredients are informative but secondary.
+ * Seasonings are ubiquitous background ingredients that shouldn't
+ * dominate the profile even when present in most recipes.
+ *
+ * Note: these weights apply ONLY to cooking profile aggregation.
+ * Single-dish pairing treats all signals equally (correct behaviour).
+ */
+export const SIGNAL_TIER_WEIGHTS = {
+  protein:    1.0,
+  method:     1.0,
+  flavor:     0.8,
+  ingredient: 0.7,
+  seasoning:  0.4
 };
 
 /**

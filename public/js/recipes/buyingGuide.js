@@ -63,7 +63,7 @@ export async function renderBuyingGuide(container) {
           <h3>Buying Guide</h3>
           ${seasonHtml}
         </div>
-        <p class="buying-guide-subtitle">Based on ${guide.recipeCount} recipes and ${guide.totalBottles} bottles in your cellar</p>
+        <p class="buying-guide-subtitle">Based on ${guide.recipeCount} recipes${guide.cellarCapacity ? ` \u2022 ${guide.totalBottles} of ${guide.cellarCapacity} slots filled` : ` \u2022 ${guide.totalBottles} bottles`}</p>
         ${coverageHtml}
         ${gapsHtml}
         ${surplusesHtml}

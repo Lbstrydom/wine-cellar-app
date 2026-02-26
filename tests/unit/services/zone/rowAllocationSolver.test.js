@@ -1457,4 +1457,204 @@ describe('rowAllocationSolver', () => {
       expect(toUnclassified).toHaveLength(0);
     });
   });
+
+  describe('Phase 5b: buffer zone boundary positioning', () => {
+    it('swaps white_buffer from R1 to last white row', () => {
+      // White Reserve at R1, Sauvignon Blanc at R5-R7 — buffer should be at R7
+      const zones = [
+        makeZone('white_buffer', ['R1'], 3),
+        makeZone('sauvignon_blanc', ['R2', 'R3', 'R4'], 20),
+        makeZone('chardonnay', ['R5', 'R6'], 12),
+        makeZone('chenin_blanc', ['R7'], 8),
+        makeZone('cabernet', ['R8', 'R9', 'R10'], 20),
+        makeZone('shiraz', ['R11', 'R12'], 14)
+      ];
+      const utilization = {
+        white_buffer: makeUtil(3, 1),
+        sauvignon_blanc: makeUtil(20, 3),
+        chardonnay: makeUtil(12, 2),
+        chenin_blanc: makeUtil(8, 1),
+        cabernet: makeUtil(20, 3),
+        shiraz: makeUtil(14, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // Should have a swap: white_buffer gives R1 to chenin_blanc, receives R7
+      const bufferActions = result.actions.filter(a =>
+        a.fromZoneId === 'white_buffer' || a.toZoneId === 'white_buffer'
+      );
+      expect(bufferActions.length).toBeGreaterThanOrEqual(2);
+
+      // Buffer should receive the boundary row (R7)
+      const bufferReceives = bufferActions.find(a =>
+        a.toZoneId === 'white_buffer' && a.rowNumber === 7
+      );
+      expect(bufferReceives).toBeDefined();
+
+      // Buffer should give away R1
+      const bufferGives = bufferActions.find(a =>
+        a.fromZoneId === 'white_buffer' && a.rowNumber === 1
+      );
+      expect(bufferGives).toBeDefined();
+    });
+
+    it('swaps red_buffer from R8 to last red row', () => {
+      // Red Buffer at R8, other reds at R9-R12
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R2'], 12),
+        makeZone('white_buffer', ['R7'], 2),
+        makeZone('red_buffer', ['R8'], 3),
+        makeZone('cabernet', ['R9', 'R10'], 15),
+        makeZone('shiraz', ['R11', 'R12'], 14)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(12, 2),
+        white_buffer: makeUtil(2, 1),
+        red_buffer: makeUtil(3, 1),
+        cabernet: makeUtil(15, 2),
+        shiraz: makeUtil(14, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // Red buffer should be repositioned to R12 (last red row)
+      const bufferReceives = result.actions.find(a =>
+        a.toZoneId === 'red_buffer' && a.rowNumber === 12
+      );
+      expect(bufferReceives).toBeDefined();
+    });
+
+    it('does nothing when buffer is already at the boundary', () => {
+      // White buffer already at R7 (last white row)
+      const zones = [
+        makeZone('sauvignon_blanc', ['R1', 'R2', 'R3'], 20),
+        makeZone('chardonnay', ['R4', 'R5', 'R6'], 18),
+        makeZone('white_buffer', ['R7'], 4),
+        makeZone('cabernet', ['R8', 'R9', 'R10'], 20),
+        makeZone('shiraz', ['R11', 'R12'], 14)
+      ];
+      const utilization = {
+        sauvignon_blanc: makeUtil(20, 3),
+        chardonnay: makeUtil(18, 3),
+        white_buffer: makeUtil(4, 1),
+        cabernet: makeUtil(20, 3),
+        shiraz: makeUtil(14, 2)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      // No buffer repositioning actions needed
+      const bufferSwaps = result.actions.filter(a =>
+        (a.fromZoneId === 'white_buffer' || a.toZoneId === 'white_buffer') &&
+        a.reason?.includes('Reposition')
+      );
+      expect(bufferSwaps).toHaveLength(0);
+    });
+
+    it('respects neverMerge for boundary owner', () => {
+      const zones = [
+        makeZone('white_buffer', ['R1'], 2),
+        makeZone('sauvignon_blanc', ['R2', 'R3'], 15),
+        makeZone('chenin_blanc', ['R7'], 8),
+        makeZone('cabernet', ['R8', 'R9'], 14)
+      ];
+      const utilization = {
+        white_buffer: makeUtil(2, 1),
+        sauvignon_blanc: makeUtil(15, 2),
+        chenin_blanc: makeUtil(8, 1),
+        cabernet: makeUtil(14, 2)
+      };
+
+      // Protect chenin_blanc (the boundary owner at R7)
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        neverMerge: new Set(['chenin_blanc']),
+        stabilityBias: 'low'
+      });
+
+      // Should NOT swap with chenin_blanc since it's protected
+      const bufferReceives7 = result.actions.find(a =>
+        a.toZoneId === 'white_buffer' && a.rowNumber === 7 &&
+        a.reason?.includes('Reposition')
+      );
+      expect(bufferReceives7).toBeUndefined();
+    });
+
+    it('mentions colour boundary in reasoning', () => {
+      const zones = [
+        makeZone('white_buffer', ['R1'], 2),
+        makeZone('sauvignon_blanc', ['R2', 'R3', 'R4', 'R5', 'R6', 'R7'], 40),
+        makeZone('cabernet', ['R8', 'R9', 'R10'], 20)
+      ];
+      const utilization = {
+        white_buffer: makeUtil(2, 1),
+        sauvignon_blanc: makeUtil(40, 6),
+        cabernet: makeUtil(20, 3)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        stabilityBias: 'low'
+      });
+
+      expect(result.reasoning).toContain('colour boundary');
+    });
+
+    it('repositions buffers correctly in reds-top layout', () => {
+      // reds-top: reds R1-R5, whites R6-R10
+      // red_buffer at R1 (top) should move to R5 (last red = bottommost red)
+      // white_buffer at R6 (first white) should move to R10 (last white = bottommost)
+      const zones = [
+        makeZone('red_buffer', ['R1'], 2),
+        makeZone('cabernet', ['R2', 'R3'], 14),
+        makeZone('shiraz', ['R4', 'R5'], 12),
+        makeZone('sauvignon_blanc', ['R6', 'R7'], 15),
+        makeZone('chardonnay', ['R8', 'R9'], 14),
+        makeZone('white_buffer', ['R10'], 3)
+      ];
+      const utilization = {
+        red_buffer: makeUtil(2, 1),
+        cabernet: makeUtil(14, 2),
+        shiraz: makeUtil(12, 2),
+        sauvignon_blanc: makeUtil(15, 2),
+        chardonnay: makeUtil(14, 2),
+        white_buffer: makeUtil(3, 1)
+      };
+
+      const result = solveRowAllocation({
+        zones,
+        utilization,
+        colourOrder: 'reds-top',
+        stabilityBias: 'low'
+      });
+
+      // Red buffer should swap from R1 to R5 (last red row = bottommost red)
+      const redBufferReceives = result.actions.find(a =>
+        a.toZoneId === 'red_buffer' && a.rowNumber === 5
+      );
+      expect(redBufferReceives).toBeDefined();
+
+      // White buffer already at R10 (last white row) — no repositioning needed
+      const whiteBufferReposition = result.actions.filter(a =>
+        (a.fromZoneId === 'white_buffer' || a.toZoneId === 'white_buffer') &&
+        a.reason?.includes('Reposition')
+      );
+      expect(whiteBufferReposition).toHaveLength(0);
+    });
+  });
 });

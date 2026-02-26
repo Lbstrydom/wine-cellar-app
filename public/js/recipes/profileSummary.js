@@ -97,9 +97,12 @@ export async function renderProfileSummary(container, options = {}) {
 
     const maxPct = sortedStyles.length > 0 ? sortedStyles[0][1] : 1;
 
-    const signalsHtml = topSignals.map(s =>
-      `<span class="profile-signal-tag" title="Weight: ${s.weight}">${escapeHtml(s.signal)}</span>`
-    ).join('');
+    const docFrequency = profile.signalDocFrequency || {};
+    const signalsHtml = topSignals.map(s => {
+      const df = docFrequency[s.signal];
+      const freqHint = df ? ` · in ${Math.round(df / profile.recipeCount * 100)}% of recipes` : '';
+      return `<span class="profile-signal-tag" title="Weight: ${s.weight}${freqHint}">${escapeHtml(s.signal)}</span>`;
+    }).join('');
 
     const categoriesHtml = topCategories.map(([cat, data]) => {
       const count = data.count;

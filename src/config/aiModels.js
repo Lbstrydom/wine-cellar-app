@@ -80,6 +80,9 @@ export const TASK_MODELS = {
   // Complex extraction tasks use Opus 4.6 with adaptive thinking
   awardExtraction: 'claude-opus-4-6',
 
+  // Signal auditor validates cooking profile signal quality
+  signalAudit: 'claude-haiku-4-5-20251001',
+
   // Simple classification tasks use Haiku 4.5
   wineClassification: 'claude-haiku-4-5-20251001',
   simpleValidation: 'claude-haiku-4-5-20251001'

@@ -8,7 +8,9 @@ import db from '../../db/index.js';
 import { ensureRecipeTables } from './recipeService.js';
 import { extractSignals } from '../pairing/pairingEngine.js';
 import { getCategorySignalBoosts } from './categorySignalMap.js';
-import { FOOD_SIGNALS } from '../../config/pairingRules.js';
+import { FOOD_SIGNALS, SIGNAL_TIER_WEIGHTS } from '../../config/pairingRules.js';
+import { auditSignals, isSignalAuditEnabled } from './signalAuditor.js';
+import { toAuditMetadata } from '../shared/auditUtils.js';
 import logger from '../../utils/logger.js';
 
 /** Rating weights: rated recipes dominate over unrated */
@@ -22,35 +24,46 @@ const RATING_WEIGHTS = {
 };
 
 /**
- * Seasonal signal boosts (base ±10%, scaled by climate zone).
+ * Seasonal signal boosts (base ±10%, scaled by climate zone + season intensity).
  *
  * Peak seasons (summer/winter) have strong, opposing boost/dampen lists.
- * Transitional seasons (spring/autumn) are genuinely blended:
- *   - Boost signals unique to the transition (e.g., mushroom in autumn, grilled in spring)
- *   - Shorter dampen lists — only the most seasonally inappropriate signals
- *   - Leaves many signals neutral so the profile stays versatile
+ * Transitional seasons (spring/autumn) blend BOTH adjacent seasons at reduced
+ * intensity, creating a genuine mid-point that shifts wine demand noticeably.
  *
- * This matters most in mild/cold climates where you still grill in autumn
- * and still make stews in spring.
+ * Each season has a `strength` multiplier that scales the base ±10%:
+ *   - Peak (summer/winter): 1.0 — full seasonal swing
+ *   - Transitional (spring/autumn): 0.5 — half-strength swing
+ *
+ * Transitional seasons blend unique-to-transition signals with partial
+ * carry-over from adjacent peak seasons, creating demand profiles that
+ * sit between summer and winter rather than collapsing into one of them.
  */
 const SEASON_BOOSTS = {
   summer: {
     boost: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
-    dampen: ['braised', 'roasted', 'umami', 'earthy']
+    dampen: ['braised', 'roasted', 'umami', 'earthy'],
+    strength: 1.0
   },
   autumn: {
-    boost: ['roasted', 'mushroom', 'earthy', 'braised'],
-    dampen: ['raw', 'shellfish']
-    // Neutral: grilled, herbal, acid, fish, umami — still relevant in mild autumn
+    // Unique autumn signals boosted: mushroom, earthy, roasted (harvest flavours)
+    // Partial winter carry-over: braised gets a mild boost
+    // Partial summer dampen: raw + shellfish dampened but grilled stays neutral
+    boost: ['mushroom', 'earthy', 'roasted', 'braised', 'umami'],
+    dampen: ['raw', 'shellfish', 'acid'],
+    strength: 0.5
   },
   winter: {
     boost: ['braised', 'roasted', 'umami', 'earthy'],
-    dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal']
+    dampen: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
+    strength: 1.0
   },
   spring: {
-    boost: ['herbal', 'raw', 'fish', 'acid', 'grilled'],
-    dampen: ['braised', 'umami']
-    // Neutral: roasted, earthy, mushroom, shellfish — still cool enough for these
+    // Unique spring signals boosted: herbal, acid, fish (light fresh flavours)
+    // Partial summer carry-over: grilled gets a mild boost
+    // Partial winter dampen: braised + umami dampened but roasted stays neutral
+    boost: ['herbal', 'acid', 'fish', 'raw', 'grilled'],
+    dampen: ['braised', 'umami', 'earthy'],
+    strength: 0.5
   }
 };
 
@@ -157,7 +170,10 @@ export async function computeCookingProfile(cellarId, options = {}) {
     : 1;
 
   // Accumulate weighted signals across all recipes
+  // Also track document frequency (how many recipes each signal appears in)
+  // for IDF-based frequency damping.
   const signalAccumulator = {};
+  const signalDocFrequency = {};
   let ratedRecipeCount = 0;
 
   for (const recipe of recipes) {
@@ -168,6 +184,11 @@ export async function computeCookingProfile(cellarId, options = {}) {
     // 1. Primary: text-based signals from name + ingredients
     const dishText = [recipe.name, recipe.ingredients || ''].join(' ');
     const textSignals = extractSignals(dishText);
+
+    // Track document frequency (each signal counted once per recipe)
+    for (const signal of textSignals) {
+      signalDocFrequency[signal] = (signalDocFrequency[signal] || 0) + 1;
+    }
 
     for (const signal of textSignals) {
       signalAccumulator[signal] = (signalAccumulator[signal] || 0) + ratingWeight;
@@ -213,6 +234,13 @@ export async function computeCookingProfile(cellarId, options = {}) {
     }
   }
 
+  // Apply IDF (Inverse Document Frequency) damping + tier weighting.
+  // Signals appearing in most recipes are "background noise" (e.g. garlic, pepper)
+  // and should not dominate the profile. IDF downweights ubiquitous signals and
+  // boosts distinctive ones. Tier weighting further separates proteins/methods
+  // (high influence) from seasonings (low influence).
+  applyProfileWeighting(signalAccumulator, signalDocFrequency, recipes.length);
+
   // Convert weighted signals to wine style demand
   const styleDemand = computeStyleDemand(signalAccumulator);
 
@@ -235,16 +263,24 @@ export async function computeCookingProfile(cellarId, options = {}) {
     .sort((a, b) => b.weight - a.weight)
     .slice(0, 20);
 
+  // Run signal auditor if enabled (non-blocking — profile is still saved even if audit fails)
+  let signalAuditResult = null;
+  if (isSignalAuditEnabled()) {
+    signalAuditResult = await auditSignals(dominantSignals, recipes.length, signalDocFrequency);
+  }
+
   const profile = {
     dominantSignals,
     wineStyleDemand: styleDemand,
     categoryBreakdown,
+    signalDocFrequency,
     seasonalBias: season,
     hemisphere,
     climateZone,
     recipeCount: recipes.length,
     ratedRecipeCount,
-    demandTotal: Math.round(Object.values(styleDemand).reduce((s, v) => s + v, 0) * 1000) / 1000
+    demandTotal: Math.round(Object.values(styleDemand).reduce((s, v) => s + v, 0) * 1000) / 1000,
+    ...(signalAuditResult ? { signalAudit: toAuditMetadata(signalAuditResult) } : {})
   };
 
   // Cache the profile
@@ -301,6 +337,37 @@ function computeCategoryBreakdown(recipes, overrides = {}) {
 }
 
 /**
+ * Apply IDF damping and signal tier weighting to the accumulated signal map.
+ *
+ * IDF formula: log(N / df) where N = total recipes, df = document frequency.
+ * Signals in 90% of recipes get IDF ≈ 0.11 (heavily damped).
+ * Signals in 20% of recipes get IDF ≈ 1.61 (amplified).
+ *
+ * Tier weight: protein/method = 1.0, flavor = 0.8, ingredient = 0.7, seasoning = 0.4.
+ *
+ * Combined: effectiveWeight = rawWeight × IDF × tierWeight
+ *
+ * Exported for testing.
+ * @param {Object} signalAccumulator - Signal -> accumulated weight (mutated in place)
+ * @param {Object} signalDocFrequency - Signal -> number of recipes containing it
+ * @param {number} recipeCount - Total number of recipes
+ */
+export function applyProfileWeighting(signalAccumulator, signalDocFrequency, recipeCount) {
+  if (recipeCount <= 1) return; // No damping needed for 0-1 recipes
+
+  for (const signal of Object.keys(signalAccumulator)) {
+    const df = signalDocFrequency[signal] || 1;
+    const idf = Math.log(recipeCount / df);
+
+    const signalDef = FOOD_SIGNALS[signal];
+    const tier = signalDef?.tier || 'flavor'; // Default to flavor tier
+    const tierWeight = SIGNAL_TIER_WEIGHTS[tier] ?? 0.8;
+
+    signalAccumulator[signal] *= idf * tierWeight;
+  }
+}
+
+/**
  * Convert weighted signal map to wine style demand.
  * Uses FOOD_SIGNALS[signal].wineAffinities: primary=3pts, good=2pts, fallback=1pt.
  * @param {Object} signalAccumulator - Signal -> accumulated weight
@@ -330,12 +397,19 @@ function computeStyleDemand(signalAccumulator) {
 }
 
 /**
- * Apply seasonal bias to style demand, scaled by climate zone.
- * Base shift is ±10% for primary, ±5% for good affinities.
- * Climate zone multiplier scales the shift (hot=1.5x, mild=0.4x, etc.).
+ * Apply seasonal bias to style demand, scaled by climate zone and season intensity.
+ *
+ * Base shift is ±10% for primary, ±5% for good affinities (at strength=1.0).
+ * Transitional seasons (spring/autumn) use strength=0.5, giving ±5%/±2.5%.
+ * Climate zone multiplier further scales the shift (hot=1.5x, mild=0.4x, etc.).
+ *
+ * Combined formula: effective_shift = base_shift × strength × climate_multiplier
+ * This means a summer signal in a hot climate gets ±15%, while the same signal
+ * in spring (strength=0.5) in mild climate (0.4x) gets only ±2%.
+ *
  * Modifies demand in place.
  * @param {Object} demand - Style demand map
- * @param {Object} signalAccumulator - Signal weights
+ * @param {Object} signalAccumulator - Signal weights (unused, reserved for future)
  * @param {string} season - Current season
  * @param {string} [climateZone='warm'] - Climate zone for scaling
  */
@@ -343,13 +417,14 @@ function applySeasonalBias(demand, signalAccumulator, season, climateZone = 'war
   const bias = SEASON_BOOSTS[season];
   if (!bias) return;
 
-  const multiplier = CLIMATE_MULTIPLIERS[climateZone] ?? 1.0;
+  const climateFactor = CLIMATE_MULTIPLIERS[climateZone] ?? 1.0;
+  const strength = bias.strength ?? 1.0;
 
-  // Scale boost/dampen: base 10% primary, 5% good → multiplied by climate
-  const boostPrimary = 1 + (0.1 * multiplier);
-  const boostGood = 1 + (0.05 * multiplier);
-  const dampenPrimary = 1 - (0.1 * multiplier);
-  const dampenGood = 1 - (0.05 * multiplier);
+  // Scale boost/dampen: base × strength × climate
+  const boostPrimary = 1 + (0.1 * strength * climateFactor);
+  const boostGood = 1 + (0.05 * strength * climateFactor);
+  const dampenPrimary = 1 - (0.1 * strength * climateFactor);
+  const dampenGood = 1 - (0.05 * strength * climateFactor);
 
   for (const signal of bias.boost) {
     const signalDef = FOOD_SIGNALS[signal];

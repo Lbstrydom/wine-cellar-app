@@ -66,8 +66,16 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     return buildNoWinesGuide(profile);
   }
 
-  // 3. Calculate demand-proportional targets
-  const targets = computeTargets(profile.wineStyleDemand, totalBottles);
+  // 2b. Get total cellar capacity (all slots, filled + empty)
+  // Targets are computed against capacity so the guide recommends what to
+  // buy to fill the cellar, not just redistribute existing stock.
+  // Fall back to totalBottles if capacity query returns 0 (legacy cellars
+  // without slot rows, or storage-area cellars without R-prefixed codes).
+  const rawCapacity = await getCellarCapacity(cellarId);
+  const cellarCapacity = rawCapacity > 0 ? rawCapacity : totalBottles;
+
+  // 3. Calculate demand-proportional targets against cellar capacity
+  const targets = computeTargets(profile.wineStyleDemand, cellarCapacity);
 
   // 3b. Guard: if demand extraction produced no meaningful targets,
   // report 0% coverage instead of a misleading 100%
@@ -119,6 +127,7 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     coveragePct,
     bottleCoveragePct,
     totalBottles,
+    cellarCapacity,
     gaps,
     surpluses,
     diversityRecs,
@@ -132,6 +141,20 @@ export async function generateBuyingGuide(cellarId, options = {}) {
   logger.info('BuyingGuide', `Guide for cellar ${cellarId}: ${coveragePct}% coverage, ${gaps.length} gaps, ${surpluses.length} surpluses`);
 
   return guide;
+}
+
+/**
+ * Get total cellar capacity (all slots, filled + empty).
+ * This is the denominator for demand-proportional targets so the guide
+ * recommends buying toward a full cellar, not redistributing existing stock.
+ * @param {string} cellarId - Cellar ID
+ * @returns {Promise<number>} Total slot count
+ */
+async function getCellarCapacity(cellarId) {
+  const row = await db.prepare(
+    "SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND location_code LIKE 'R%'"
+  ).get(cellarId);
+  return Number(row?.count ?? 0);
 }
 
 /**

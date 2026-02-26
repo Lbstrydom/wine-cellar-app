@@ -647,6 +647,65 @@ describe('generateBuyingGuide', () => {
   });
 
   // ========================================
+  // Capacity-based targets
+  // ========================================
+
+  describe('capacity-based targets', () => {
+    it('computes targets against cellar capacity when available', async () => {
+      mockComputeCookingProfile.mockResolvedValue(buildProfile({
+        wineStyleDemand: {
+          red_medium: 0.50,
+          white_crisp: 0.50,
+          red_full: 0, red_light: 0, white_aromatic: 0,
+          rose_dry: 0, sparkling_dry: 0, white_medium: 0,
+          white_oaked: 0, sparkling_rose: 0, dessert: 0
+        }
+      }));
+
+      // 10 bottles all red_medium
+      const wines = buildWines([{ name: 'Red', bottles: 10 }]);
+      mockMatchWineToStyle.mockReturnValue({ styleId: 'red_medium' });
+
+      // Mock DB to return wines on all() and capacity=100 on get()
+      // Since computeCookingProfile is mocked, the only get() call is getCellarCapacity
+      db.prepare.mockReturnValue({
+        get: vi.fn(async () => ({ count: 100 })),
+        all: vi.fn(async () => wines),
+        run: vi.fn(async () => ({ changes: 0 }))
+      });
+
+      const guide = await generateBuyingGuide('cellar-1');
+
+      // Targets should be based on capacity (100), not totalBottles (10)
+      // red_medium: 0.50 * 100 = 50
+      expect(guide.targets.red_medium).toBe(50);
+      expect(guide.targets.white_crisp).toBe(50);
+      expect(guide.totalBottles).toBe(10);
+      expect(guide.cellarCapacity).toBe(100);
+    });
+
+    it('falls back to totalBottles when capacity is 0', async () => {
+      mockComputeCookingProfile.mockResolvedValue(buildProfile({
+        wineStyleDemand: {
+          red_medium: 1.0,
+          white_crisp: 0, red_full: 0, red_light: 0,
+          white_aromatic: 0, rose_dry: 0, sparkling_dry: 0,
+          white_medium: 0, white_oaked: 0, sparkling_rose: 0, dessert: 0
+        }
+      }));
+
+      const wines = buildWines([{ name: 'Red', bottles: 10 }]);
+      mockDbWines(wines); // get() returns null → capacity=0 → fallback to totalBottles
+      mockMatchWineToStyle.mockReturnValue({ styleId: 'red_medium' });
+
+      const guide = await generateBuyingGuide('cellar-1');
+
+      // With fallback, targets use totalBottles (10)
+      expect(guide.targets.red_medium).toBe(10);
+    });
+  });
+
+  // ========================================
   // Target computation edge cases
   // ========================================
 

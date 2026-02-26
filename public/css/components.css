@@ -10622,15 +10622,42 @@ body.move-guide-active #view-grid {
 .recipe-search {
   flex: 1;
   min-width: 150px;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.recipe-search:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.recipe-search::placeholder {
+  color: var(--text-muted);
 }
 
 .recipe-filter-select {
   min-width: 120px;
+  padding: 0.6rem 0.8rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+}
+
+.recipe-filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .recipe-count {
   font-size: 0.85rem;
-  color: var(--text-muted, #888);
+  color: var(--text-muted);
   white-space: nowrap;
 }
 
