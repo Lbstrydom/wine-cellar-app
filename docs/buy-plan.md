@@ -775,7 +775,40 @@ In Settings -> Integrations (alongside Vivino/Decanter):
 7. **Route-level tests (Medium):** Added `recipeProfile.test.js` (10 tests) covering route ordering, invalidation, signal injection. Added 4 override weighting tests to `cookingProfile.test.js`
 - [x] All tests pass (102 files, 2,515 tests)
 
-### Phase 3: Buying Guide (Gap Analysis) — NOT STARTED
+### Phase 3: Buying Guide (Gap Analysis) — DONE
+- [x] `buyingGuide.js` backend service: Full gap analysis engine
+  - `generateBuyingGuide(cellarId, options)` orchestrator with 2 empty states (no recipes, no wines)
+  - `getCellarWines()`: Joins wines, slots, reduce_now, drinking_windows for style classification + reduce-now cross-reference
+  - `classifyWines()`: Uses `matchWineToStyle()` from pairingEngine to bucket cellar wines into 11 style categories
+  - `computeTargets()`: Demand-proportional targets — `round(demandPct * totalBottles)`, no per-style floor
+  - `computeGaps()`: Identifies `have < target` styles, priority sorted by `demandPct * deficit`
+  - `computeSurpluses()`: Identifies `have > target + 2` styles, includes reduce-now wines (top 3, sorted by priority)
+  - `computeDiversityRecs()`: Advisory recommendations for <3% demand + 0 bottles styles
+  - `findDrivingSignals()`: Walks FOOD_SIGNALS wineAffinities (primary=3x, good=2x, fallback=1x) to identify top 3 signals driving each gap
+  - Coverage metrics: style-level % (covered/targeted styles) + bottle-level % (min(have,target)/target per style)
+  - No-wines empty state: Hypothetical 50-bottle targets with gap list for starter cellar planning
+  - Shopping suggestions per style: Curated variety recommendations (Sauvignon Blanc, Pinot Noir, etc.)
+- [x] Route: `GET /recipes/buying-guide` above `/:id` to avoid route shadowing (same pattern as Phase 2 /profile fix)
+- [x] Frontend API: `getBuyingGuide()` in `api/recipes.js`, barrel re-exported in `api/index.js`
+- [x] `buyingGuide.js` frontend UI component:
+  - Coverage bar with good/ok/low colour classes (>=80%/>=50%/<50%)
+  - Gap cards: style badge (colour-coded), deficit count, driving signals as tags, shopping suggestions
+  - Surplus cards: style badge, excess count, reduce-now wines with drink-soon flag
+  - Diversity recommendations: advisory section with reason text and 2 suggestions per style
+  - No-wines empty state: hypothetical 50-bottle breakdown with top 5 gaps
+  - Error handling with escaped HTML output
+- [x] `recipes.js` wiring: `#recipe-buying-guide-section` container + `renderBuyingGuide()` call after profile summary
+- [x] `sw.js`: `buyingGuide.js` added to STATIC_ASSETS, cache version bumped to v165
+- [x] CSS: coverage bar, gap/surplus cards, diversity recs, responsive grid, no-wines empty state
+- [x] Tests: 27 new tests in `buyingGuide.test.js` — empty states, gap detection, surplus detection, diversity recs, coverage metrics, classification, target computation, empty-demand edge cases
+- [x] All tests pass (103 files, 2,540 tests)
+
+**Review findings addressed (post-implementation review):**
+1. **Join multiplication inflating bottle counts (High):** Changed `COUNT(s.id)` to `COUNT(DISTINCT s.id)` and `HAVING COUNT(s.id) > 0` to `HAVING COUNT(DISTINCT s.id) > 0` in `getCellarWines()` SQL — the LEFT JOINs to `reduce_now` (no UNIQUE on wine_id) and `drinking_windows` (UNIQUE on wine_id+source) created cross-product multiplication, inflating totalBottles, targets, and all downstream gap/surplus calculations
+2. **Buying guide UI not refreshed after mutations (Medium):** `refreshLibrary()` in `recipes.js` now also re-renders `renderProfileSummary()` and `renderBuyingGuide()` alongside the recipe grid. Also added `renderBuyingGuide()` call in the overrides-saved callback so guide updates after category override changes
+3. **False 100% coverage on empty demand (Medium):** Added early-return guard in `generateBuyingGuide()` when `totalTargetedStyles === 0` — returns `{ coveragePct: 0, noTargets: true }` instead of defaulting to 100%. Also changed `bottleCoveragePct` fallback from 100 to 0 when `bottlesNeeded === 0`. Frontend skips rendering when `guide.noTargets` is set. Prevents contradictory "100% coverage" alongside surplus cards when demand extraction fails
+4. **Route-level test coverage (Low):** Added 4 tests in `recipeProfile.test.js` covering `GET /recipes/buying-guide` — route ordering (not caught by /:id), response contract, error propagation, and cellarId pass-through
+- [x] All tests pass (103 files, 2,546 tests)
 
 ---
 

@@ -12,6 +12,7 @@ import { showRecipeForm } from './recipes/recipeForm.js';
 import { renderProfileSummary } from './recipes/profileSummary.js';
 import { renderCategoryOverrides } from './recipes/categoryOverrides.js';
 import { renderMenuBuilder } from './recipes/menuBuilder.js';
+import { renderBuyingGuide } from './recipes/buyingGuide.js';
 import { menuState, loadMenuState } from './recipes/menuState.js';
 import { listRecipes, getCookingProfile } from './api/recipes.js';
 
@@ -96,6 +97,7 @@ function renderLibraryView(container) {
         </div>
       </div>
       <div id="recipe-profile-section"></div>
+      <div id="recipe-buying-guide-section"></div>
       <div id="recipe-overrides-section" style="display: none;"></div>
       <div id="recipe-menu-builder" style="display: none;"></div>
       <div id="recipe-import-section" style="display: none;"></div>
@@ -124,10 +126,11 @@ function renderLibraryView(container) {
 
     renderCategoryOverrides(overridesSection, currentOverrides, () => {
       overridesSection.style.display = 'none';
-      // Refresh profile after overrides saved
+      // Refresh profile and buying guide after overrides saved
       renderProfileSummary(container.querySelector('#recipe-profile-section'), {
         onOverridesClick: overridesClickHandler
       });
+      renderBuyingGuide(container.querySelector('#recipe-buying-guide-section'));
     });
   };
 
@@ -135,6 +138,9 @@ function renderLibraryView(container) {
     container.querySelector('#recipe-profile-section'),
     { onOverridesClick: overridesClickHandler }
   );
+
+  // Render buying guide (non-blocking)
+  renderBuyingGuide(container.querySelector('#recipe-buying-guide-section'));
 
   // Wire up toolbar buttons
   container.querySelector('#toggle-import-btn')?.addEventListener('click', () => {
@@ -172,7 +178,7 @@ function renderLibraryView(container) {
 }
 
 /**
- * Refresh the recipe library grid after mutations.
+ * Refresh the recipe library grid, profile summary, and buying guide after mutations.
  * @param {HTMLElement} container - View container
  */
 function refreshLibrary(container) {
@@ -180,6 +186,19 @@ function refreshLibrary(container) {
     container.querySelector('#recipe-library-section'),
     (id) => showRecipeDetail(container, id)
   );
+
+  // Re-render profile and buying guide (non-blocking, profile may have changed)
+  const profileEl = container.querySelector('#recipe-profile-section');
+  if (profileEl) {
+    renderProfileSummary(profileEl, {
+      onOverridesClick: () => renderLibraryView(container)
+    });
+  }
+
+  const guideEl = container.querySelector('#recipe-buying-guide-section');
+  if (guideEl) {
+    renderBuyingGuide(guideEl);
+  }
 }
 
 /**

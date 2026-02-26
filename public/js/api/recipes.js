@@ -216,6 +216,21 @@ export async function refreshCookingProfile() {
  * @param {Object} [options] - Optional filters (colour)
  * @returns {Promise<Object>}
  */
+/**
+ * Get buying guide (gap analysis) for the cellar.
+ * @returns {Promise<{data: Object}>}
+ */
+export async function getBuyingGuide() {
+  const res = await fetch(`${API_BASE}/api/recipes/buying-guide`);
+  return handleResponse(res, 'Failed to load buying guide');
+}
+
+/**
+ * Multi-recipe pairing: combine signals from multiple recipes.
+ * @param {number[]} recipeIds - Recipe IDs to pair
+ * @param {Object} [options] - Optional filters (colour)
+ * @returns {Promise<Object>}
+ */
 export async function getMenuPairing(recipeIds, options = {}) {
   const res = await fetch(`${API_BASE}/api/recipes/menu-pair`, {
     method: 'POST',

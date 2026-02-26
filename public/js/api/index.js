@@ -221,7 +221,8 @@ export {
   getRecipePairing,
   getCookingProfile,
   refreshCookingProfile,
-  getMenuPairing
+  getMenuPairing,
+  getBuyingGuide
 } from './recipes.js';
 
 // Error logging

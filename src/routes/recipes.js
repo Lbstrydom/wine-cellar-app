@@ -219,6 +219,16 @@ router.post('/profile/refresh', asyncHandler(async (req, res) => {
 }));
 
 /**
+ * GET /recipes/buying-guide
+ * Full buying guide report: gaps, surpluses, diversity recs.
+ */
+router.get('/buying-guide', asyncHandler(async (req, res) => {
+  const { generateBuyingGuide } = await import('../services/recipe/buyingGuide.js');
+  const guide = await generateBuyingGuide(req.cellarId);
+  res.json({ data: guide });
+}));
+
+/**
  * GET /recipes/:id
  * Get single recipe.
  */

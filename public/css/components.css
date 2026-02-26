@@ -11374,3 +11374,241 @@ body.move-guide-active #view-grid {
     align-items: flex-start;
   }
 }
+
+/* ============================================
+   Buying Guide (Phase 3)
+   ============================================ */
+
+.buying-guide-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.buying-guide-panel.buying-guide-empty {
+  border-style: dashed;
+}
+
+.buying-guide-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.buying-guide-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.buying-guide-season {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.buying-guide-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.buying-guide-loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
+}
+
+/* Coverage bar */
+.buying-guide-coverage {
+  margin-bottom: 1rem;
+}
+
+.coverage-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.coverage-detail {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.coverage-bar-track {
+  height: 8px;
+  background: var(--bg-slot);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.coverage-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.coverage-bar.coverage-good { background: var(--success, #4caf50); }
+.coverage-bar.coverage-ok { background: var(--warning, #ff9800); }
+.coverage-bar.coverage-low { background: var(--danger, #f44336); }
+
+/* Sections */
+.buying-guide-section {
+  margin-top: 0.75rem;
+}
+
+.buying-guide-section-title {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.buying-guide-allclear {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* Gap cards */
+.gap-cards,
+.surplus-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.5rem;
+}
+
+.gap-card,
+.surplus-card {
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.6rem 0.75rem;
+}
+
+.gap-card-header,
+.surplus-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+}
+
+.gap-style-badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 3px;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.gap-style-badge.style-bar-default {
+  background: var(--text-muted);
+}
+
+.gap-deficit {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--danger, #f44336);
+}
+
+.surplus-excess {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--warning, #ff9800);
+}
+
+.gap-card-meta {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.gap-signals {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+}
+
+.gap-suggestions {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.surplus-reduce {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.25rem;
+}
+
+.surplus-wine {
+  font-weight: 500;
+  color: var(--text);
+}
+
+/* Diversity recommendations */
+.buying-guide-diversity {
+  border-top: 1px solid var(--border);
+  padding-top: 0.75rem;
+}
+
+.buying-guide-diversity-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.5rem;
+}
+
+.diversity-rec {
+  font-size: 0.8rem;
+  padding: 0.25rem 0;
+}
+
+.diversity-label {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.diversity-reason {
+  color: var(--text-muted);
+}
+
+/* No-wines empty state */
+.buying-guide-starter-list {
+  margin: 0.5rem 0;
+  padding-left: 1.5rem;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.buying-guide-starter-list li {
+  margin-bottom: 0.25rem;
+}
+
+.buying-guide-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0.5rem 0 0;
+}
+
+@media (max-width: 600px) {
+  .gap-cards,
+  .surplus-cards {
+    grid-template-columns: 1fr;
+  }
+
+  .coverage-label {
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+}

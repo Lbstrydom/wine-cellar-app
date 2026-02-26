@@ -1,6 +1,6 @@
 /**
- * @fileoverview Route-level tests for recipe profile and menu-pair endpoints.
- * Validates route ordering (profile not shadowed by /:id), cache invalidation,
+ * @fileoverview Route-level tests for recipe profile, menu-pair, and buying-guide endpoints.
+ * Validates route ordering (profile/buying-guide not shadowed by /:id), cache invalidation,
  * and category signal injection into pairing.
  * Uses vitest globals (do NOT import from 'vitest').
  */
@@ -44,6 +44,12 @@ vi.mock('../../../src/services/recipe/categorySignalMap.js', () => ({
 // Mock db helpers
 vi.mock('../../../src/db/helpers.js', () => ({
   stringAgg: vi.fn(() => "STRING_AGG(s.location_code, ',' ORDER BY s.location_code)")
+}));
+
+// Mock buying guide service (dynamically imported in route)
+const mockGenerateBuyingGuide = vi.fn();
+vi.mock('../../../src/services/recipe/buyingGuide.js', () => ({
+  generateBuyingGuide: (...args) => mockGenerateBuyingGuide(...args)
 }));
 
 // Mock logger
@@ -248,6 +254,54 @@ describe('Recipe Profile Routes', () => {
       expect(res.body.signals).toEqual(
         expect.arrayContaining(['pork', 'creamy'])
       );
+    });
+  });
+
+  // ===== Buying guide route =====
+
+  describe('GET /recipes/buying-guide — route ordering and response contract', () => {
+    it('returns buying guide data without being caught by /:id', async () => {
+      const mockGuide = {
+        coveragePct: 72,
+        bottleCoveragePct: 65,
+        totalBottles: 30,
+        gaps: [{ style: 'white_crisp', label: 'Crisp White', deficit: 3 }],
+        surpluses: [],
+        diversityRecs: [],
+        recipeCount: 25
+      };
+      mockGenerateBuyingGuide.mockResolvedValue(mockGuide);
+
+      const res = await request(app).get('/recipes/buying-guide');
+
+      expect(res.status).toBe(200);
+      expect(res.body.data).toEqual(mockGuide);
+      expect(mockGenerateBuyingGuide).toHaveBeenCalledWith('cellar-1');
+    });
+
+    it('does not return 400 (which would mean /:id caught it)', async () => {
+      mockGenerateBuyingGuide.mockResolvedValue({ coveragePct: 0, empty: true });
+
+      const res = await request(app).get('/recipes/buying-guide');
+
+      expect(res.status).toBe(200);
+    });
+
+    it('returns 500 when service throws', async () => {
+      mockGenerateBuyingGuide.mockRejectedValue(new Error('DB connection failed'));
+
+      const res = await request(app).get('/recipes/buying-guide');
+
+      expect(res.status).toBe(500);
+    });
+
+    it('passes cellarId from middleware to service', async () => {
+      const customApp = createApp('cellar-custom');
+      mockGenerateBuyingGuide.mockResolvedValue({ coveragePct: 50 });
+
+      await request(customApp).get('/recipes/buying-guide');
+
+      expect(mockGenerateBuyingGuide).toHaveBeenCalledWith('cellar-custom');
     });
   });
 });
