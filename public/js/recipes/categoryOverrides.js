@@ -59,6 +59,7 @@ export async function renderCategoryOverrides(container, currentOverrides = {}, 
         <div class="overrides-rows">${rowsHtml}</div>
         <div class="overrides-actions">
           <button class="btn btn-primary overrides-save-btn">Save Overrides</button>
+          <button class="btn btn-secondary overrides-reset-all-btn">Reset All to Defaults</button>
           <button class="btn btn-secondary overrides-cancel-btn">Cancel</button>
         </div>
       </div>
@@ -89,6 +90,21 @@ export async function renderCategoryOverrides(container, currentOverrides = {}, 
           if (label) label.textContent = FREQ_LABELS[autoValue] || '';
           btn.remove();
         }
+      });
+    });
+
+    // Wire up reset all
+    container.querySelector('.overrides-reset-all-btn')?.addEventListener('click', () => {
+      container.querySelectorAll('.override-slider').forEach(slider => {
+        const cat = slider.dataset.category;
+        const catData = categories.find(c => c.category === cat);
+        const autoValue = catData ? frequencyFromCount(catData.count, categories) : 3;
+        slider.value = autoValue;
+        const row = slider.closest('.override-row');
+        const label = row?.querySelector('.override-label');
+        if (label) label.textContent = FREQ_LABELS[autoValue] || '';
+        // Remove individual reset buttons since all are now at default
+        row?.querySelector('.override-reset')?.remove();
       });
     });
 

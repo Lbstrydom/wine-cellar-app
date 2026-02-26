@@ -132,6 +132,9 @@ function renderLibraryView(container) {
       });
       renderBuyingGuide(container.querySelector('#recipe-buying-guide-section'));
     });
+
+    // Scroll to the overrides section so the user sees it
+    overridesSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
   renderProfileSummary(
