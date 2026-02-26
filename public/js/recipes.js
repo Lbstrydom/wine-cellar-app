@@ -1,6 +1,6 @@
 /**
  * @fileoverview Recipes view entry point. Lazy-loaded on tab switch.
- * Renders Recipe Library with import section and recipe detail.
+ * Renders Recipe Library with profile summary, import section, and recipe detail.
  * @module recipes
  */
 
@@ -9,7 +9,11 @@ import { renderImportSection } from './recipes/recipeImport.js';
 import { renderRecipeLibrary } from './recipes/recipeLibrary.js';
 import { renderRecipeDetail } from './recipes/recipeDetail.js';
 import { showRecipeForm } from './recipes/recipeForm.js';
-import { listRecipes } from './api/recipes.js';
+import { renderProfileSummary } from './recipes/profileSummary.js';
+import { renderCategoryOverrides } from './recipes/categoryOverrides.js';
+import { renderMenuBuilder } from './recipes/menuBuilder.js';
+import { menuState, loadMenuState } from './recipes/menuState.js';
+import { listRecipes, getCookingProfile } from './api/recipes.js';
 
 let initialized = false;
 
@@ -21,6 +25,7 @@ export async function initRecipes() {
   if (initialized) return;
   initialized = true;
   loadPersistedState();
+  loadMenuState();
 }
 
 /**
@@ -76,7 +81,7 @@ function renderFirstRunView(container) {
 }
 
 /**
- * Render the full library view (filters + grid + import toggle).
+ * Render the full library view (profile + filters + grid + import toggle + menu builder).
  * @param {HTMLElement} container - View container
  */
 function renderLibraryView(container) {
@@ -85,14 +90,51 @@ function renderLibraryView(container) {
       <div class="recipes-toolbar">
         <h2>Recipe Library</h2>
         <div class="recipes-toolbar-actions">
+          <button class="btn btn-small btn-secondary" id="toggle-menu-btn">Menu Builder${menuState.selectedIds.length > 0 ? ' (' + menuState.selectedIds.length + ')' : ''}</button>
           <button class="btn btn-small btn-secondary" id="toggle-import-btn">Import</button>
           <button class="btn btn-small btn-primary" id="add-recipe-btn">+ Add Recipe</button>
         </div>
       </div>
+      <div id="recipe-profile-section"></div>
+      <div id="recipe-overrides-section" style="display: none;"></div>
+      <div id="recipe-menu-builder" style="display: none;"></div>
       <div id="recipe-import-section" style="display: none;"></div>
       <div id="recipe-library-section"></div>
     </div>
   `;
+
+  // Render profile summary (non-blocking)
+  const overridesClickHandler = async () => {
+    const overridesSection = container.querySelector('#recipe-overrides-section');
+    if (!overridesSection) return;
+
+    overridesSection.style.display = 'block';
+
+    // Fetch current overrides from cached profile
+    let currentOverrides = {};
+    try {
+      const profileResult = await getCookingProfile();
+      const breakdown = profileResult.data?.categoryBreakdown || {};
+      for (const [cat, data] of Object.entries(breakdown)) {
+        if (data.userOverride !== null && data.userOverride !== undefined) {
+          currentOverrides[cat] = data.userOverride;
+        }
+      }
+    } catch { /* proceed with empty overrides */ }
+
+    renderCategoryOverrides(overridesSection, currentOverrides, () => {
+      overridesSection.style.display = 'none';
+      // Refresh profile after overrides saved
+      renderProfileSummary(container.querySelector('#recipe-profile-section'), {
+        onOverridesClick: overridesClickHandler
+      });
+    });
+  };
+
+  renderProfileSummary(
+    container.querySelector('#recipe-profile-section'),
+    { onOverridesClick: overridesClickHandler }
+  );
 
   // Wire up toolbar buttons
   container.querySelector('#toggle-import-btn')?.addEventListener('click', () => {
@@ -102,24 +144,38 @@ function renderLibraryView(container) {
     if (isHidden && !importSection.hasChildNodes()) {
       renderImportSection(importSection, () => {
         importSection.style.display = 'none';
-        renderRecipeLibrary(
-          container.querySelector('#recipe-library-section'),
-          (id) => showRecipeDetail(container, id)
-        );
+        refreshLibrary(container);
+      });
+    }
+  });
+
+  container.querySelector('#toggle-menu-btn')?.addEventListener('click', () => {
+    const menuSection = container.querySelector('#recipe-menu-builder');
+    const isHidden = menuSection.style.display === 'none';
+    menuSection.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) {
+      renderMenuBuilder(menuSection, () => {
+        menuSection.style.display = 'none';
       });
     }
   });
 
   container.querySelector('#add-recipe-btn')?.addEventListener('click', () => {
-    showRecipeForm(null, () => {
-      renderRecipeLibrary(
-        container.querySelector('#recipe-library-section'),
-        (id) => showRecipeDetail(container, id)
-      );
-    });
+    showRecipeForm(null, () => refreshLibrary(container));
   });
 
   // Render library
+  renderRecipeLibrary(
+    container.querySelector('#recipe-library-section'),
+    (id) => showRecipeDetail(container, id)
+  );
+}
+
+/**
+ * Refresh the recipe library grid after mutations.
+ * @param {HTMLElement} container - View container
+ */
+function refreshLibrary(container) {
   renderRecipeLibrary(
     container.querySelector('#recipe-library-section'),
     (id) => showRecipeDetail(container, id)

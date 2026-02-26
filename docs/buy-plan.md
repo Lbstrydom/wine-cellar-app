@@ -740,7 +740,41 @@ In Settings -> Integrations (alongside Vivino/Decanter):
 6. Unicode text encoding fixed across all recipe frontend files
 7. Sync staleness UX wired with banners and retry buttons
 
-### Phase 2: Cooking Profile Engine + Multi-Recipe Pairing — NOT STARTED
+### Phase 2: Cooking Profile Engine + Multi-Recipe Pairing — DONE
+- [x] Database: `cooking_profiles` table via `ensureRecipeTables()` (cellar_id UNIQUE, profile_data JSONB, generated_at)
+- [x] `cookingProfile.js`: Full profile computation engine
+  - Rating weights: 5-star=2.0x, 4-star=1.0x, unrated=0.3x (rated recipes dominate)
+  - Two-tier signal extraction: text-based `extractSignals()` + category `getCategorySignalBoosts()` at 0.5x
+  - Category frequency weighting: `min(count / medianCategoryCount, 3.0)`
+  - Signal-to-style demand: FOOD_SIGNALS wineAffinities (primary=3pts, good=2pts, fallback=1pt)
+  - Seasonal bias: +-10% from `getCurrentSeason(hemisphere)` (summer/winter/spring/autumn)
+  - Normalised demand percentages summing to 1.0
+  - 1-hour cache with force-refresh option
+- [x] Profile invalidation on recipe import, create, delete, and category override save
+- [x] Three new endpoints: `GET /profile`, `POST /profile/refresh`, `POST /menu-pair`
+- [x] `menuPairSchema` Zod validation (recipe_ids array, optional colour filter)
+- [x] Frontend API: `getCookingProfile()`, `refreshCookingProfile()`, `getMenuPairing()`
+- [x] `profileSummary.js`: Inline profile card with signal tags, top categories, style demand bars
+- [x] `categoryOverrides.js`: Expandable override panel with slider controls (0-5: Never to Always)
+- [x] `menuBuilder.js` + `menuState.js`: Multi-recipe selection with sessionStorage persistence
+- [x] Recipe library cards: menu toggle buttons (+M) with selected state highlighting
+- [x] `recipes.js` entry point: profile summary, overrides, menu builder wired into library view
+- [x] `sw.js`: 4 new modules in STATIC_ASSETS, cache version bumped to v164
+- [x] `api/index.js`: barrel re-exports for 3 new API functions
+- [x] CSS: profile summary, style demand bars, category overrides panel, menu builder, responsive
+- [x] Tests: 41 new tests in `cookingProfile.test.js` — season logic, signal extraction, demand math, rating weights, realistic simulations
+- [x] All tests pass (101 files, 2,502 tests)
+
+**Review findings addressed (post-implementation review):**
+1. **Route shadowing (High):** Moved `GET /profile` and `POST /profile/refresh` above `GET /:id` in `recipes.js` — Express matches top-to-bottom so `/profile` was caught by `/:id` and failed numeric validation
+2. **Override weighting floor (High):** Replaced `Math.max(categoryWeight, freqWeight)` (floored at 1.0) with null-initialised approach in `cookingProfile.js` — override of 0 ("Never") now correctly zeros out category signal contribution
+3. **Menu chip removal persistence (High):** Added `persistMenuState()` call in `menuBuilder.js` remove handler — `loadMenuState()` on re-render was reloading stale sessionStorage, undoing removal
+4. **Existing overrides not loaded (Medium):** `recipes.js` now fetches profile via `getCookingProfile()` and extracts `userOverride` values from `categoryBreakdown` before passing to `renderCategoryOverrides`
+5. **Incomplete cache invalidation (Medium):** Added `invalidateProfile()` to `PUT /:id` (update) and `POST /sync/:provider` (sync) routes
+6. **Category signals lost in scoring (Medium):** Both `menu-pair` and `/:id/pair` endpoints now inject category-derived signal keywords into dish text for `generateShortlist`. Also fixed `.map(b => b.signal)` on object → `Object.keys(categoryBoosts)`
+7. **Route-level tests (Medium):** Added `recipeProfile.test.js` (10 tests) covering route ordering, invalidation, signal injection. Added 4 override weighting tests to `cookingProfile.test.js`
+- [x] All tests pass (102 files, 2,515 tests)
+
 ### Phase 3: Buying Guide (Gap Analysis) — NOT STARTED
 
 ---

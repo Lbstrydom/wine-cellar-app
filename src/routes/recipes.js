@@ -9,7 +9,8 @@ import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateParams, validateQuery } from '../middleware/validate.js';
 import {
   recipeBodySchema, recipeUpdateSchema, recipeListQuerySchema,
-  recipeIdSchema, urlImportSchema, syncProviderSchema, categoryOverridesSchema
+  recipeIdSchema, urlImportSchema, syncProviderSchema, categoryOverridesSchema,
+  menuPairSchema
 } from '../schemas/recipe.js';
 import db from '../db/index.js';
 import * as recipeService from '../services/recipe/recipeService.js';
@@ -18,6 +19,7 @@ import { getCategorySignalBoosts } from '../services/recipe/categorySignalMap.js
 import { parseRecipes as parsePaprika } from '../services/recipe/adapters/paprikaAdapter.js';
 import logger from '../utils/logger.js';
 import { extractSignals, generateShortlist } from '../services/pairing/pairingEngine.js';
+import { invalidateProfile } from '../services/recipe/cookingProfile.js';
 import { stringAgg } from '../db/helpers.js';
 
 const router = Router();
@@ -65,6 +67,10 @@ router.post('/import/paprika', upload.single('file'), asyncHandler(async (req, r
 
   logger.info('Recipes', `Paprika import: ${result.added} added, ${result.updated} updated, ${result.skipped} skipped`);
 
+  if (result.added > 0 || result.updated > 0) {
+    await invalidateProfile(req.cellarId);
+  }
+
   res.json({
     message: `Imported ${result.added + result.updated} recipes`,
     ...result,
@@ -93,6 +99,10 @@ router.post('/import/recipesage', upload.single('file'), asyncHandler(async (req
   const { recipes, errors } = normaliseRecipeBatch(rawRecipes);
   const result = await recipeService.importRecipes(recipes, req.cellarId);
 
+  if (result.added > 0 || result.updated > 0) {
+    await invalidateProfile(req.cellarId);
+  }
+
   res.json({
     message: `Imported ${result.added + result.updated} recipes`,
     ...result,
@@ -120,6 +130,10 @@ router.post('/import/csv', upload.single('file'), asyncHandler(async (req, res) 
   const { recipes, errors } = normaliseRecipeBatch(rawRecipes);
   const result = await recipeService.importRecipes(recipes, req.cellarId);
 
+  if (result.added > 0 || result.updated > 0) {
+    await invalidateProfile(req.cellarId);
+  }
+
   res.json({
     message: `Imported ${result.added + result.updated} recipes`,
     ...result,
@@ -146,6 +160,10 @@ router.post('/import/url', validateBody(urlImportSchema), asyncHandler(async (re
   }
 
   const result = await recipeService.importRecipes(recipes, req.cellarId);
+
+  if (result.added > 0 || result.updated > 0) {
+    await invalidateProfile(req.cellarId);
+  }
 
   res.json({
     message: result.added > 0 ? 'Recipe imported' : 'Recipe updated',
@@ -176,6 +194,30 @@ router.get('/categories', asyncHandler(async (req, res) => {
   res.json({ data: categories });
 }));
 
+// ============================================
+// Cooking Profile (MUST be above /:id to avoid route shadowing)
+// ============================================
+
+/**
+ * GET /recipes/profile
+ * Compute & return cooking profile.
+ */
+router.get('/profile', asyncHandler(async (req, res) => {
+  const { computeCookingProfile } = await import('../services/recipe/cookingProfile.js');
+  const profile = await computeCookingProfile(req.cellarId);
+  res.json({ data: profile });
+}));
+
+/**
+ * POST /recipes/profile/refresh
+ * Force recompute (cache-bust).
+ */
+router.post('/profile/refresh', asyncHandler(async (req, res) => {
+  const { computeCookingProfile } = await import('../services/recipe/cookingProfile.js');
+  const profile = await computeCookingProfile(req.cellarId, { forceRefresh: true });
+  res.json({ data: profile });
+}));
+
 /**
  * GET /recipes/:id
  * Get single recipe.
@@ -194,6 +236,7 @@ router.get('/:id', validateParams(recipeIdSchema), asyncHandler(async (req, res)
  */
 router.post('/', validateBody(recipeBodySchema), asyncHandler(async (req, res) => {
   const result = await recipeService.createRecipe(req.cellarId, req.body);
+  await invalidateProfile(req.cellarId);
   res.status(201).json({ message: 'Recipe created', data: result });
 }));
 
@@ -206,6 +249,7 @@ router.put('/:id', validateParams(recipeIdSchema), validateBody(recipeUpdateSche
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Recipe not found' });
   }
+  await invalidateProfile(req.cellarId);
   res.json({ message: 'Recipe updated' });
 }));
 
@@ -218,6 +262,7 @@ router.delete('/:id', validateParams(recipeIdSchema), asyncHandler(async (req, r
   if (result.changes === 0) {
     return res.status(404).json({ error: 'Recipe not found' });
   }
+  await invalidateProfile(req.cellarId);
   res.json({ message: 'Recipe deleted' });
 }));
 
@@ -239,7 +284,73 @@ router.put('/categories/overrides', validateBody(categoryOverridesSchema), async
     ) WHERE id = $2
   `).run(JSON.stringify(req.body.overrides), req.cellarId);
 
+  await invalidateProfile(req.cellarId);
   res.json({ message: 'Category overrides saved' });
+}));
+
+// ============================================
+// Menu Pairing
+// ============================================
+
+/**
+ * POST /recipes/menu-pair
+ * Multi-recipe pairing: select multiple recipes and get combined wine suggestions.
+ */
+router.post('/menu-pair', validateBody(menuPairSchema), asyncHandler(async (req, res) => {
+  const { recipe_ids, colour } = req.body;
+
+  // Fetch all requested recipes (cellar-scoped)
+  const recipes = [];
+  for (const id of recipe_ids) {
+    const recipe = await recipeService.getRecipe(req.cellarId, id);
+    if (recipe) recipes.push(recipe);
+  }
+
+  if (recipes.length === 0) {
+    return res.status(404).json({ error: 'No valid recipes found' });
+  }
+
+  // Combine signals from all recipes
+  const allSignals = new Set();
+  const recipeDetails = [];
+
+  for (const recipe of recipes) {
+    const dishText = [recipe.name, recipe.ingredients || ''].join(' ');
+    const textSignals = extractSignals(dishText);
+    const categories = safeParseCategories(recipe.categories);
+    const categoryBoosts = getCategorySignalBoosts(categories);
+    const boostSignals = Object.keys(categoryBoosts);
+
+    const merged = [...new Set([...textSignals, ...boostSignals])];
+    merged.forEach(s => allSignals.add(s));
+
+    recipeDetails.push({
+      id: recipe.id,
+      name: recipe.name,
+      signals: merged
+    });
+  }
+
+  // Build combined dish text for scoring.
+  // Append category boost signal keywords so generateShortlist's internal
+  // extractSignals() picks them up alongside text-derived signals.
+  const combinedDishText = [
+    ...recipes.map(r => [r.name, r.ingredients || ''].join(' ')),
+    ...[...allSignals] // inject category-derived signals as keywords
+  ].join(' ');
+
+  // Get wines and generate shortlist
+  const wines = await getAllWinesForPairing(req.cellarId);
+  const result = generateShortlist(wines, combinedDishText, {
+    colour: colour || undefined,
+    limit: 10
+  });
+
+  res.json({
+    recipes: recipeDetails,
+    combinedSignals: [...allSignals],
+    ...result
+  });
 }));
 
 // ============================================
@@ -263,13 +374,17 @@ router.post('/:id/pair', validateParams(recipeIdSchema), asyncHandler(async (req
   // Also extract category-based signals from the recipe normaliser
   const categories = safeParseCategories(recipe.categories);
   const categoryBoosts = getCategorySignalBoosts(categories);
-  const mergedSignals = [...new Set([...signals, ...categoryBoosts.map(b => b.signal)])];
+  const boostSignals = Object.keys(categoryBoosts);
+  const mergedSignals = [...new Set([...signals, ...boostSignals])];
+
+  // Inject category-derived signals into dish text so generateShortlist scores them
+  const enrichedDishText = [dishText, ...boostSignals].join(' ');
 
   // Get wines from cellar
   const wines = await getAllWinesForPairing(req.cellarId);
 
   const { colour } = req.body || {};
-  const result = generateShortlist(wines, dishText, {
+  const result = generateShortlist(wines, enrichedDishText, {
     colour: colour || undefined,
     limit: 5
   });
@@ -345,6 +460,11 @@ router.post('/sync/:provider', validateParams(syncProviderSchema), asyncHandler(
   // Lazy-load sync service
   const { triggerSync } = await import('../services/recipe/recipeSyncService.js');
   const result = await triggerSync(req.cellarId, req.params.provider);
+
+  if (result.added > 0 || result.updated > 0) {
+    await invalidateProfile(req.cellarId);
+  }
+
   res.json(result);
 }));
 

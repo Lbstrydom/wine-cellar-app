@@ -10947,3 +10947,430 @@ body.move-guide-active #view-grid {
     flex-direction: column;
   }
 }
+
+/* ============================================
+   Cooking Profile Summary (Phase 2)
+   ============================================ */
+
+.profile-summary {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.profile-summary-minimal {
+  padding: 0.75rem 1rem;
+}
+
+.profile-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+}
+
+.profile-summary-header h3 {
+  margin: 0;
+  font-size: 1rem;
+  color: var(--text);
+}
+
+.profile-summary-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.profile-season-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+
+.profile-recipe-count {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.profile-hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.profile-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.profile-col h4 {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.profile-signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-bottom: 0.75rem;
+}
+
+.profile-signal-tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 0.8rem;
+}
+
+.profile-categories {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.profile-category-tag {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--text);
+  font-size: 0.8rem;
+}
+
+.profile-category-tag small {
+  color: var(--text-muted);
+}
+
+.profile-adjust-btn {
+  display: inline-block;
+  margin-top: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.profile-loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 0.5rem 0;
+}
+
+/* Style Demand Bars */
+.style-demand-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.style-demand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.style-demand-label {
+  width: 110px;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--text);
+  text-align: right;
+}
+
+.style-demand-bar-track {
+  flex: 1;
+  height: 14px;
+  background: var(--bg-hover);
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.style-demand-bar {
+  height: 100%;
+  border-radius: 7px;
+  transition: width 0.3s ease;
+}
+
+.style-demand-pct {
+  width: 32px;
+  flex-shrink: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* Bar colour variants */
+.style-bar-white { background: #e6c651; }
+.style-bar-rose { background: #f0a0b0; }
+.style-bar-red-light { background: #c06060; }
+.style-bar-red { background: #8b2252; }
+.style-bar-red-full { background: #5a1030; }
+.style-bar-sparkling { background: #a0c8e0; }
+.style-bar-dessert { background: #d4a042; }
+.style-bar-default { background: var(--accent); }
+
+/* ============================================
+   Category Overrides Panel
+   ============================================ */
+
+.category-overrides-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.overrides-header h4 {
+  margin: 0 0 0.25rem;
+  font-size: 1rem;
+}
+
+.overrides-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.overrides-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+
+.override-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.override-category {
+  width: 160px;
+  flex-shrink: 0;
+  font-size: 0.85rem;
+}
+
+.override-category small {
+  color: var(--text-muted);
+}
+
+.override-slider {
+  flex: 1;
+  max-width: 200px;
+  accent-color: var(--accent);
+}
+
+.override-label {
+  width: 80px;
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.override-reset {
+  font-size: 0.75rem;
+}
+
+.overrides-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* ============================================
+   Menu Builder Panel
+   ============================================ */
+
+.menu-builder-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.menu-builder-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.25rem;
+}
+
+.menu-builder-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.menu-builder-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.menu-hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 0.75rem;
+}
+
+.menu-selected-recipes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-recipe-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  background: var(--accent-dim);
+  color: var(--accent);
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+}
+
+.menu-chip-remove {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 1rem;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1;
+}
+
+.menu-chip-remove:hover {
+  color: var(--danger);
+}
+
+.menu-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.menu-pair-section {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-colour-filter {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.menu-colour-select {
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-card);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.menu-signals {
+  margin-bottom: 0.75rem;
+}
+
+.menu-recipe-signal-breakdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.75rem;
+}
+
+.menu-recipe-signals {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.menu-recipe-name {
+  font-weight: 500;
+  margin-right: 0.25rem;
+}
+
+.recipe-tag-small {
+  font-size: 0.7rem;
+  padding: 0.1rem 0.35rem;
+}
+
+/* Recipe card menu selection state */
+.recipe-card-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.recipe-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.recipe-menu-toggle {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.recipe-menu-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.recipe-menu-toggle.active {
+  background: var(--accent);
+  color: var(--bg-card);
+  border-color: var(--accent);
+}
+
+/* Responsive overrides for Phase 2 */
+@media (max-width: 600px) {
+  .profile-columns {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .style-demand-label {
+    width: 80px;
+    font-size: 0.7rem;
+  }
+
+  .override-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .override-category {
+    width: auto;
+    flex: 1;
+  }
+
+  .override-slider {
+    max-width: none;
+    flex: 1;
+  }
+
+  .menu-pair-section {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}

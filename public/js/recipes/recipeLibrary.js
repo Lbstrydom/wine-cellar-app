@@ -6,6 +6,7 @@
 import { listRecipes, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, triggerRecipeSync } from '../api/recipes.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { recipeState, persistState } from './state.js';
+import { toggleMenuRecipe, isInMenu } from './menuState.js';
 
 /**
  * Render the recipe library inside a container.
@@ -128,6 +129,40 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
         });
       });
 
+      // Wire up menu toggle buttons
+      grid.querySelectorAll('.recipe-menu-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const id = Number(btn.dataset.id);
+          const name = btn.dataset.name;
+          const recipe = recipeState.recipes.find(r => r.id === id);
+          if (!recipe) return;
+          const added = toggleMenuRecipe({
+            id: recipe.id,
+            name: recipe.name,
+            categories: safeParseCategories(recipe.categories)
+          });
+          // Update card visual state
+          const card = btn.closest('.recipe-card');
+          if (card) {
+            card.classList.toggle('recipe-card-selected', added);
+          }
+          btn.classList.toggle('active', added);
+          btn.title = added ? 'Remove from menu' : 'Add to menu';
+          // Update menu builder button count
+          const menuBtn = document.getElementById('toggle-menu-btn');
+          if (menuBtn) {
+            const { menuState } = { menuState: { selectedIds: [] } };
+            try {
+              const stored = sessionStorage.getItem('wineapp.recipes.menu');
+              const parsed = stored ? JSON.parse(stored) : { selectedIds: [] };
+              const count = parsed.selectedIds?.length || 0;
+              menuBtn.textContent = 'Menu Builder' + (count > 0 ? ' (' + count + ')' : '');
+            } catch { /* ignore */ }
+          }
+        });
+      });
+
       // Wire up delete buttons
       grid.querySelectorAll('.recipe-delete-btn').forEach(btn => {
         btn.addEventListener('click', async (e) => {
@@ -170,12 +205,16 @@ function renderRecipeCard(recipe) {
     : '';
 
   const sourceIcon = getSourceIcon(recipe.source_provider);
+  const inMenu = isInMenu(recipe.id);
 
   return `
-    <div class="recipe-card" data-id="${recipe.id}">
+    <div class="recipe-card ${inMenu ? 'recipe-card-selected' : ''}" data-id="${recipe.id}">
       <div class="recipe-card-header">
         <h4 class="recipe-card-title">${escapeHtml(recipe.name)}</h4>
-        <button class="recipe-delete-btn" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="Delete">&times;</button>
+        <div class="recipe-card-actions">
+          <button class="recipe-menu-toggle ${inMenu ? 'active' : ''}" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="${inMenu ? 'Remove from menu' : 'Add to menu'}">+M</button>
+          <button class="recipe-delete-btn" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="Delete">&times;</button>
+        </div>
       </div>
       <div class="recipe-card-meta">
         ${ratingHtml}

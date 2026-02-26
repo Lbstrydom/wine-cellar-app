@@ -218,7 +218,10 @@ export {
   triggerRecipeSync,
   getRecipeSyncStatus,
   saveCategoryOverrides,
-  getRecipePairing
+  getRecipePairing,
+  getCookingProfile,
+  refreshCookingProfile,
+  getMenuPairing
 } from './recipes.js';
 
 // Error logging

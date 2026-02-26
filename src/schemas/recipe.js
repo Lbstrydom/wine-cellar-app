@@ -68,3 +68,11 @@ export const syncProviderSchema = z.object({
 export const categoryOverridesSchema = z.object({
   overrides: z.record(z.string().max(100), z.number().int().min(0).max(10))
 });
+
+/**
+ * Menu-pair request body.
+ */
+export const menuPairSchema = z.object({
+  recipe_ids: z.array(z.number().int().positive()).min(1).max(20),
+  colour: z.string().max(20).optional()
+});

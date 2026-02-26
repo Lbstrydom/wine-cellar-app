@@ -189,3 +189,38 @@ export async function saveCategoryOverrides(overrides) {
   });
   return handleResponse(res, 'Failed to save overrides');
 }
+
+/**
+ * Get cooking profile for the current cellar.
+ * @returns {Promise<{data: Object}>}
+ */
+export async function getCookingProfile() {
+  const res = await fetch(`${API_BASE}/api/recipes/profile`);
+  return handleResponse(res, 'Failed to load cooking profile');
+}
+
+/**
+ * Force refresh the cooking profile (cache-bust).
+ * @returns {Promise<{data: Object}>}
+ */
+export async function refreshCookingProfile() {
+  const res = await fetch(`${API_BASE}/api/recipes/profile/refresh`, {
+    method: 'POST'
+  });
+  return handleResponse(res, 'Failed to refresh cooking profile');
+}
+
+/**
+ * Multi-recipe pairing: combine signals from multiple recipes.
+ * @param {number[]} recipeIds - Recipe IDs to pair
+ * @param {Object} [options] - Optional filters (colour)
+ * @returns {Promise<Object>}
+ */
+export async function getMenuPairing(recipeIds, options = {}) {
+  const res = await fetch(`${API_BASE}/api/recipes/menu-pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ recipe_ids: recipeIds, ...options })
+  });
+  return handleResponse(res, 'Failed to get menu pairing');
+}

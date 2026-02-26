@@ -77,6 +77,15 @@ export async function ensureRecipeTables() {
         )
       `).run();
 
+      await db.prepare(`
+        CREATE TABLE IF NOT EXISTS cooking_profiles (
+          id SERIAL PRIMARY KEY,
+          cellar_id UUID NOT NULL UNIQUE,
+          profile_data JSONB NOT NULL,
+          generated_at TIMESTAMPTZ DEFAULT NOW()
+        )
+      `).run();
+
       // Index for listing and filtering
       await db.prepare(`
         CREATE INDEX IF NOT EXISTS idx_recipes_cellar_active
@@ -85,6 +94,16 @@ export async function ensureRecipeTables() {
 
       logger.info('Recipes', 'Recipe tables created');
     }
+
+    // Ensure cooking_profiles table exists even if recipes table was already present
+    await db.prepare(`
+      CREATE TABLE IF NOT EXISTS cooking_profiles (
+        id SERIAL PRIMARY KEY,
+        cellar_id UUID NOT NULL UNIQUE,
+        profile_data JSONB NOT NULL,
+        generated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `).run().catch(() => { /* already exists */ });
 
     tablesInitialized = true;
   } catch (err) {
