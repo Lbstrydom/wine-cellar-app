@@ -1010,6 +1010,12 @@ function switchView(viewName) {
     // Load analysis when tab is opened
     loadAnalysis();
   }
+  if (viewName === 'recipes') {
+    // Lazy-load recipes module
+    import('./recipes.js').then(m => m.loadRecipes()).catch(err => {
+      console.error('[App] Failed to load recipes module:', err);
+    });
+  }
 }
 
 /**

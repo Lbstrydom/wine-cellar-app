@@ -14,6 +14,18 @@ import { settingsKeySchema, updateSettingSchema, sourceParamSchema, saveCredenti
 const router = Router();
 
 /**
+ * Registry of credential testers by source ID.
+ * Add new providers here to enable "Test Connection" for them.
+ * @type {Object.<string, function(string, string): Promise<{success: boolean, message: string}>>}
+ */
+const CREDENTIAL_TESTERS = {
+  vivino: testVivinoCredentials,
+  decanter: testDecanterCredentials,
+  paprika: testPaprikaCredentials,
+  mealie: testMealieCredentials,
+};
+
+/**
  * Get all settings for this cellar.
  * @route GET /api/settings
  */
@@ -156,14 +168,13 @@ router.post('/credentials/:source/test', validateParams(sourceParamSchema), asyn
       return res.status(500).json({ error: 'Failed to decrypt credentials' });
     }
 
-    let testResult = { success: false, message: 'Unknown source' };
-
-    if (source === 'vivino') {
-      testResult = await testVivinoCredentials(username, password);
-    } else if (source === 'decanter') {
-      testResult = await testDecanterCredentials(username, password);
+    const tester = CREDENTIAL_TESTERS[source];
+    let testResult;
+    if (tester) {
+      testResult = await tester(username, password);
+    } else {
+      testResult = { success: false, message: `No test available for source '${source}'` };
     }
-    // Note: CellarTracker removed - their API only searches user's personal cellar
 
     // Update auth status
     await db.prepare(`
@@ -274,6 +285,64 @@ async function testDecanterCredentials(username, password) {
     }
 
     return { success: false, message: 'Invalid credentials' };
+
+  } catch (error) {
+    return { success: false, message: `Connection error: ${error.message}` };
+  }
+}
+
+/**
+ * Test Paprika credentials via the sync API.
+ * @param {string} email - Paprika account email
+ * @param {string} password - Paprika account password
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+async function testPaprikaCredentials(email, password) {
+  try {
+    const response = await fetch('https://www.paprikaapp.com/api/v1/sync/recipes/', {
+      headers: {
+        'Authorization': 'Basic ' + Buffer.from(`${email}:${password}`).toString('base64')
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (response.ok) {
+      return { success: true, message: 'Paprika authentication successful' };
+    }
+    if (response.status === 401) {
+      return { success: false, message: 'Invalid email or password' };
+    }
+    return { success: false, message: `Paprika API returned ${response.status}` };
+
+  } catch (error) {
+    return { success: false, message: `Connection error: ${error.message}` };
+  }
+}
+
+/**
+ * Test Mealie credentials via the API.
+ * @param {string} instanceUrl - Mealie instance URL (stored as "username")
+ * @param {string} token - Mealie API token (stored as "password")
+ * @returns {Promise<{success: boolean, message: string}>}
+ */
+async function testMealieCredentials(instanceUrl, token) {
+  try {
+    const base = instanceUrl.replace(/\/$/, '');
+    const response = await fetch(`${base}/api/users/self`, {
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Accept': 'application/json'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (response.ok) {
+      return { success: true, message: 'Mealie connection successful' };
+    }
+    if (response.status === 401) {
+      return { success: false, message: 'Invalid API token' };
+    }
+    return { success: false, message: `Mealie API returned ${response.status}` };
 
   } catch (error) {
     return { success: false, message: `Connection error: ${error.message}` };

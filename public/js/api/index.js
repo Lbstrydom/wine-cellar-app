@@ -203,6 +203,24 @@ export {
   restaurantChat
 } from './restaurantPairing.js';
 
+// Recipes
+export {
+  listRecipes,
+  getRecipe,
+  createRecipe,
+  updateRecipe,
+  deleteRecipe,
+  getRecipeCategories,
+  importPaprikaFile,
+  importRecipeSageFile,
+  importCsvFile,
+  importRecipeFromUrl,
+  triggerRecipeSync,
+  getRecipeSyncStatus,
+  saveCategoryOverrides,
+  getRecipePairing
+} from './recipes.js';
+
 // Error logging
 export {
   logClientError

@@ -74,6 +74,7 @@
       <button class="tab active" data-view="grid" role="tab" aria-selected="true" aria-controls="view-grid" id="tab-grid">Cellar Grid</button>
       <button class="tab" data-view="analysis" role="tab" aria-selected="false" aria-controls="view-analysis" id="tab-analysis">Cellar Analysis</button>
       <button class="tab" data-view="pairing" role="tab" aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Find Pairing</button>
+      <button class="tab" data-view="recipes" role="tab" aria-selected="false" aria-controls="view-recipes" id="tab-recipes">Recipes</button>
       <button class="tab" data-view="wines" role="tab" aria-selected="false" aria-controls="view-wines" id="tab-wines">Wine List</button>
       <button class="tab" data-view="history" role="tab" aria-selected="false" aria-controls="view-history" id="tab-history">History</button>
       <button class="tab" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" id="tab-settings">Settings</button>
@@ -306,6 +307,9 @@
     </div>
 
   </div>
+
+  <!-- Recipes View (lazy-loaded) -->
+  <div class="view" id="view-recipes" role="tabpanel" aria-labelledby="tab-recipes" hidden></div>
 
   <!-- Wine List View (merged Drink Soon + All Wines) -->
   <div class="view" id="view-wines" role="tabpanel" aria-labelledby="tab-wines" hidden>
@@ -730,7 +734,7 @@
       </div>
 
       <!-- Vivino -->
-      <div class="credential-form">
+      <div class="credential-form" data-source="vivino">
         <div class="credential-header">
           <span class="credential-source">Vivino</span>
           <span class="credential-status" id="vivino-status">Not configured</span>
@@ -743,14 +747,14 @@
           <input type="password" id="vivino-password" placeholder="Password" autocomplete="off" />
         </div>
         <div class="credential-actions">
-          <button class="btn btn-small btn-secondary" id="vivino-save-btn">Save</button>
-          <button class="btn btn-small btn-secondary" id="vivino-test-btn" style="display: none;">Test</button>
-          <button class="btn btn-small btn-danger" id="vivino-delete-btn" style="display: none;">Remove</button>
+          <button class="btn btn-small btn-secondary cred-save-btn" id="vivino-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary cred-test-btn" id="vivino-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger cred-delete-btn" id="vivino-delete-btn" style="display: none;">Remove</button>
         </div>
       </div>
 
       <!-- Decanter -->
-      <div class="credential-form">
+      <div class="credential-form" data-source="decanter">
         <div class="credential-header">
           <span class="credential-source">Decanter</span>
           <span class="credential-status" id="decanter-status">Not configured</span>
@@ -763,9 +767,49 @@
           <input type="password" id="decanter-password" placeholder="Password" autocomplete="off" />
         </div>
         <div class="credential-actions">
-          <button class="btn btn-small btn-secondary" id="decanter-save-btn">Save</button>
-          <button class="btn btn-small btn-secondary" id="decanter-test-btn" style="display: none;">Test</button>
-          <button class="btn btn-small btn-danger" id="decanter-delete-btn" style="display: none;">Remove</button>
+          <button class="btn btn-small btn-secondary cred-save-btn" id="decanter-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary cred-test-btn" id="decanter-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger cred-delete-btn" id="decanter-delete-btn" style="display: none;">Remove</button>
+        </div>
+      </div>
+
+      <!-- Paprika (Recipe Sync) -->
+      <div class="credential-form" data-source="paprika">
+        <div class="credential-header">
+          <span class="credential-source">Paprika</span>
+          <span class="credential-status" id="paprika-status">Not configured</span>
+        </div>
+        <div class="credential-note">
+          Paprika cloud sync imports your recipes automatically. Requires Paprika 3 account.
+        </div>
+        <div class="credential-inputs">
+          <input type="email" id="paprika-username" placeholder="Email" autocomplete="off" />
+          <input type="password" id="paprika-password" placeholder="Password" autocomplete="off" />
+        </div>
+        <div class="credential-actions">
+          <button class="btn btn-small btn-secondary cred-save-btn" id="paprika-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary cred-test-btn" id="paprika-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger cred-delete-btn" id="paprika-delete-btn" style="display: none;">Remove</button>
+        </div>
+      </div>
+
+      <!-- Mealie (Recipe Sync) -->
+      <div class="credential-form" data-source="mealie">
+        <div class="credential-header">
+          <span class="credential-source">Mealie</span>
+          <span class="credential-status" id="mealie-status">Not configured</span>
+        </div>
+        <div class="credential-note">
+          Connect to your self-hosted Mealie instance for automatic recipe sync.
+        </div>
+        <div class="credential-inputs">
+          <input type="url" id="mealie-username" placeholder="Instance URL (e.g. https://mealie.local)" autocomplete="off" />
+          <input type="password" id="mealie-password" placeholder="API Token" autocomplete="off" />
+        </div>
+        <div class="credential-actions">
+          <button class="btn btn-small btn-secondary cred-save-btn" id="mealie-save-btn">Save</button>
+          <button class="btn btn-small btn-secondary cred-test-btn" id="mealie-test-btn" style="display: none;">Test</button>
+          <button class="btn btn-small btn-danger cred-delete-btn" id="mealie-delete-btn" style="display: none;">Remove</button>
         </div>
       </div>
 

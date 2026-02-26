@@ -423,10 +423,10 @@ async function loadCredentialsStatus() {
       warning.style.display = data.encryption_configured ? 'none' : 'block';
     }
 
-    // Update each credential source status
-    // Note: CellarTracker removed - their API only searches user's personal cellar
-    const sources = ['vivino', 'decanter'];
-    for (const source of sources) {
+    // Update each credential source that has a form in the DOM
+    const credForms = document.querySelectorAll('.credential-form[data-source]');
+    for (const form of credForms) {
+      const source = form.dataset.source;
       const cred = data.credentials.find(c => c.source_id === source);
       updateCredentialUI(source, cred);
     }
@@ -746,14 +746,13 @@ export function initSettings() {
     document.getElementById('reduce-candidates-container').style.display = 'none';
   });
 
-  // Credential forms
-  // Note: CellarTracker removed - their API only searches user's personal cellar
-  const sources = ['vivino', 'decanter'];
-  for (const source of sources) {
-    document.getElementById(`${source}-save-btn`)?.addEventListener('click', () => handleSaveCredentials(source));
-    document.getElementById(`${source}-test-btn`)?.addEventListener('click', () => handleTestCredentials(source));
-    document.getElementById(`${source}-delete-btn`)?.addEventListener('click', () => handleDeleteCredentials(source));
-  }
+  // Credential forms — wire up all sources found in the DOM
+  document.querySelectorAll('.credential-form[data-source]').forEach(form => {
+    const source = form.dataset.source;
+    form.querySelector('.cred-save-btn')?.addEventListener('click', () => handleSaveCredentials(source));
+    form.querySelector('.cred-test-btn')?.addEventListener('click', () => handleTestCredentials(source));
+    form.querySelector('.cred-delete-btn')?.addEventListener('click', () => handleDeleteCredentials(source));
+  });
 
   // Awards Database
   initAwardsSection();

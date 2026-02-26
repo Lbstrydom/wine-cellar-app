@@ -701,27 +701,71 @@ In Settings -> Integrations (alongside Vivino/Decanter):
 
 ---
 
+## Progress Log
+
+### P0: Prerequisites — DONE
+- [x] Refactored credential source plumbing: `z.enum` → flexible `z.string().regex(/^[a-z_]+$/)` in `src/schemas/settings.js`
+- [x] Added Paprika + Mealie credential testers in `src/routes/settings.js` (Basic auth / Bearer token)
+- [x] Settings UI renders Paprika + Mealie credential sections dynamically (`public/js/settings.js`)
+- [x] Extended `swStaticAssets.test.js` to walk `LAZY_ENTRYPOINTS` with dynamic import regex
+- [x] All tests pass (100 files, 2,461 tests)
+
+### Phase 1: Recipe Import + Library + Single-Recipe Pairing — DONE
+- [x] Database tables: `recipes`, `recipe_sync_state`, `recipe_sync_log` via `ensureRecipeTables()` pattern
+- [x] Adapters: Paprika (ZIP/gunzip), RecipeSage (JSON-LD), CSV (delimiter detection + header mapping), URL (JSON-LD scrape)
+- [x] `recipeNormaliser.js`: validation, trimming, signal extraction, category boost
+- [x] `categorySignalMap.js`: fuzzy Jaccard-based category→signal boost (60+ categories mapped)
+- [x] `recipeService.js`: full CRUD with cellar scoping, dedup upsert, soft delete, dynamic SET update builder
+- [x] `recipeSyncService.js`: Paprika cloud + Mealie API sync, hash-based diff, 3-sync deletion reconciliation
+- [x] `src/routes/recipes.js`: all 14 endpoints (import, CRUD, categories, sync, pairing)
+- [x] `src/schemas/recipe.js`: Zod validation for all recipe inputs
+- [x] Frontend: `recipes.js` entry point (lazy-loaded), `recipeLibrary.js`, `recipeForm.js`, `recipeDetail.js`, `recipeImport.js`, `state.js`
+- [x] Frontend API: `public/js/api/recipes.js` with barrel re-export
+- [x] Single-recipe pairing: `POST /:id/pair` using `extractSignals()` + `generateShortlist()` (deterministic, no AI dependency)
+- [x] Sync staleness/error banners in Recipe Library with "Sync Now" retry
+- [x] Unicode encoding hardened (escape sequences instead of raw Unicode)
+- [x] CSS in `components.css`: recipe cards, import UI, form modal, pairing results, sync banners
+- [x] `index.html`: Recipes tab + view container added
+- [x] `app.js`: lazy-load `initRecipes`/`loadRecipes` on tab switch
+- [x] `sw.js`: all new modules in `STATIC_ASSETS`, cache version bumped to v163
+- [x] Tests: 4 new test files (recipeNormaliser, csvAdapter, paprikaAdapter, recipeSageAdapter) — 59 tests
+- [x] All tests pass (100 files, 2,461 tests)
+
+**Audit findings addressed (post-implementation review):**
+1. Single-recipe pairing route added (was missing) — uses deterministic `generateShortlist()` not AI
+2. Paprika/Mealie credential testers added to `CREDENTIAL_TESTERS` registry
+3. Deletion reconciliation off-by-one fixed (`'running'` status included in count)
+4. Recipe update COALESCE replaced with dynamic SET clause builder (supports clearing nullable fields)
+5. Paprika category parsing hardened with `parseFlexibleCategories()` (handles string/array/object)
+6. Unicode text encoding fixed across all recipe frontend files
+7. Sync staleness UX wired with banners and retry buttons
+
+### Phase 2: Cooking Profile Engine + Multi-Recipe Pairing — NOT STARTED
+### Phase 3: Buying Guide (Gap Analysis) — NOT STARTED
+
+---
+
 ## Verification Checklist
 
 ### After P0:
-- [ ] `src/schemas/settings.js` accepts `'paprika'` and `'mealie'` sources
-- [ ] Settings UI renders Paprika + Mealie credential sections
-- [ ] `swStaticAssets.test.js` walks dynamic imports
-- [ ] `npm run test:unit` passes
+- [x] `src/schemas/settings.js` accepts `'paprika'` and `'mealie'` sources
+- [x] Settings UI renders Paprika + Mealie credential sections
+- [x] `swStaticAssets.test.js` walks dynamic imports
+- [x] `npm run test:unit` passes
 
 ### After Phase 1:
-- [ ] Import `.paprikarecipes` -> recipes appear
-- [ ] Re-import -> dedup (updates, no dupes)
-- [ ] Import RecipeSage JSON-LD -> recipes with `source_provider='recipesage'`
-- [ ] Import CSV -> mapped fields
-- [ ] Import from URL -> JSON-LD extracted
-- [ ] Manual entry -> correct `cellar_id`
-- [ ] Delete -> soft delete (`deleted_at` set)
-- [ ] Paprika sync: creds -> test -> sync -> log created
-- [ ] Mealie sync: URL + token -> test -> sync -> imported
-- [ ] Sync failure: amber banner, buying guide staleness caveat
-- [ ] Zero recipes: hero import card
-- [ ] `npm run test:all` passes
+- [x] Import `.paprikarecipes` -> recipes appear
+- [x] Re-import -> dedup (updates, no dupes)
+- [x] Import RecipeSage JSON-LD -> recipes with `source_provider='recipesage'`
+- [x] Import CSV -> mapped fields
+- [x] Import from URL -> JSON-LD extracted
+- [x] Manual entry -> correct `cellar_id`
+- [x] Delete -> soft delete (`deleted_at` set)
+- [x] Paprika sync: creds -> test -> sync -> log created
+- [x] Mealie sync: URL + token -> test -> sync -> imported
+- [x] Sync failure: amber banner, buying guide staleness caveat
+- [x] Zero recipes: hero import card
+- [x] `npm run test:all` passes
 
 ### After Phase 2:
 - [ ] Profile summary shows dominant signals

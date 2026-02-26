@@ -28,6 +28,15 @@ const ALLOWLIST = new Set([
 ]);
 
 /**
+ * Lazy-loaded entry points that use dynamic import() in app.js or other roots.
+ * The main walkImportTree only follows static `import ... from` statements.
+ * These entry points are walked separately to catch their dependency trees.
+ */
+const LAZY_ENTRYPOINTS = [
+  '/js/recipes.js',
+];
+
+/**
  * Extract STATIC_ASSETS entries from sw.js.
  * @returns {Set<string>} Set of paths like '/js/app.js'
  */
@@ -66,6 +75,43 @@ function extractImports(filePath) {
 }
 
 /**
+ * Extract dynamic import() paths from a JS file.
+ * Matches patterns like: import('./foo.js') and import("./bar.js")
+ * @param {string} filePath - Absolute path to the JS file
+ * @returns {string[]} Array of relative import specifiers
+ */
+function extractDynamicImports(filePath) {
+  if (!fs.existsSync(filePath)) return [];
+  const content = fs.readFileSync(filePath, 'utf8');
+  const imports = [];
+  const pattern = /import\s*\(\s*['"](\.[^'"]+)['"]\s*\)/g;
+  let m;
+  while ((m = pattern.exec(content)) !== null) {
+    imports.push(m[1]);
+  }
+  return imports;
+}
+
+/**
+ * Discover dynamic import entry points from root modules.
+ * @param {string[]} rootWebPaths - Root web paths to scan for dynamic imports
+ * @returns {string[]} Resolved web paths of dynamically imported modules
+ */
+function discoverDynamicEntrypoints(rootWebPaths) {
+  const entrypoints = [];
+  for (const rootPath of rootWebPaths) {
+    const filePath = path.join(PUBLIC_DIR, rootPath);
+    const dynamicImports = extractDynamicImports(filePath);
+    for (const imp of dynamicImports) {
+      const dir = path.dirname(rootPath);
+      const resolved = path.posix.normalize(`${dir}/${imp}`);
+      entrypoints.push(resolved);
+    }
+  }
+  return entrypoints;
+}
+
+/**
  * Walk the import tree from a root module, collecting all reachable modules.
  * @param {string} rootWebPath - Web path like '/js/app.js'
  * @returns {Set<string>} All reachable web paths
@@ -95,13 +141,26 @@ function walkImportTree(rootWebPath) {
 }
 
 describe('SW STATIC_ASSETS completeness', () => {
-  it('every JS module reachable from app.js is in SW STATIC_ASSETS', () => {
+  it('every JS module reachable from app.js (including lazy imports) is in SW STATIC_ASSETS', () => {
     const staticAssets = parseStaticAssets();
-    const reachable = walkImportTree('/js/app.js');
+    const staticRoots = ['/js/app.js', '/js/pairing.js'];
+    const reachable = new Set();
 
-    // Also walk pairing.js (loaded via separate <script> tag)
-    const pairingReachable = walkImportTree('/js/pairing.js');
-    for (const p of pairingReachable) reachable.add(p);
+    // Walk static import trees from all roots
+    for (const root of staticRoots) {
+      for (const p of walkImportTree(root)) reachable.add(p);
+    }
+
+    // Auto-discover dynamic import() calls from root files
+    const dynamicEntrypoints = discoverDynamicEntrypoints(staticRoots);
+
+    // Combine with manually declared LAZY_ENTRYPOINTS
+    const allLazy = [...new Set([...LAZY_ENTRYPOINTS, ...dynamicEntrypoints])];
+
+    // Walk each lazy entrypoint's static import tree
+    for (const entry of allLazy) {
+      for (const p of walkImportTree(entry)) reachable.add(p);
+    }
 
     const missingModules = [];
     for (const modulePath of reachable) {
