@@ -14,7 +14,7 @@ const CATEGORY_SIGNAL_MAP = {
   'chicken': ['chicken'],
   'poultry': ['chicken'],
   'turkey': ['chicken'],
-  'duck': ['duck'],
+  'duck': ['chicken'],  // duck pairs similarly to chicken (poultry family)
   'beef': ['beef'],
   'steak': ['beef', 'grilled'],
   'lamb': ['lamb'],
@@ -24,10 +24,10 @@ const CATEGORY_SIGNAL_MAP = {
   'shellfish': ['shellfish'],
   'shrimp': ['shellfish'],
   'prawn': ['shellfish'],
-  'salmon': ['fish', 'rich'],
+  'salmon': ['fish', 'creamy'],
   'tuna': ['fish'],
-  'vegan': ['vegetable', 'raw'],
-  'vegetarian': ['vegetable'],
+  'vegan': ['raw', 'herbal'],
+  'vegetarian': ['herbal'],
 
   // Cooking method categories
   'bbq': ['grilled', 'smoky'],
@@ -41,41 +41,41 @@ const CATEGORY_SIGNAL_MAP = {
   'stew': ['braised', 'earthy'],
   'braise': ['braised'],
   'soup': ['braised'],
-  'fried': ['fried', 'rich'],
+  'fried': ['fried'],
   'stir fry': ['fried', 'spicy'],
   'raw': ['raw'],
-  'salad': ['raw', 'citrus'],
+  'salad': ['raw', 'acid'],
   'sushi': ['raw', 'fish'],
 
   // Cuisine categories
   'asian': ['spicy', 'umami'],
   'chinese': ['umami', 'spicy'],
   'japanese': ['umami', 'fish'],
-  'thai': ['spicy', 'citrus'],
+  'thai': ['spicy', 'acid'],
   'indian': ['spicy', 'earthy'],
   'curry': ['spicy', 'earthy'],
   'mexican': ['spicy', 'grilled'],
-  'italian': ['tomato', 'herb'],
-  'french': ['herb', 'rich', 'creamy'],
-  'mediterranean': ['herb', 'citrus'],
-  'middle eastern': ['spicy', 'herb'],
-  'korean': ['spicy', 'umami', 'fermented'],
+  'italian': ['tomato', 'herbal'],
+  'french': ['herbal', 'creamy'],
+  'mediterranean': ['herbal', 'acid'],
+  'middle eastern': ['spicy', 'herbal'],
+  'korean': ['spicy', 'umami'],
 
   // Flavor/profile categories
   'spicy': ['spicy'],
-  'creamy': ['creamy', 'rich'],
+  'creamy': ['creamy'],
   'cheese': ['cheese'],
   'pasta': ['tomato', 'cheese'],
   'pizza': ['tomato', 'cheese'],
   'dessert': ['sweet'],
   'sweet': ['sweet'],
-  'chocolate': ['sweet', 'rich'],
+  'chocolate': ['sweet', 'earthy'],
   'bread': ['earthy'],
   'mushroom': ['earthy', 'umami'],
   'smoky': ['smoky'],
   'smoked': ['smoky'],
-  'fermented': ['fermented'],
-  'pickled': ['fermented', 'citrus']
+  'fermented': ['umami'],
+  'pickled': ['acid', 'umami']
 };
 
 /**

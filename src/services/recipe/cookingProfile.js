@@ -38,7 +38,8 @@ const RATING_WEIGHTS = {
  * carry-over from adjacent peak seasons, creating demand profiles that
  * sit between summer and winter rather than collapsing into one of them.
  */
-const SEASON_BOOSTS = {
+/** @internal — exported for unit tests only */
+export const SEASON_BOOSTS = {
   summer: {
     boost: ['grilled', 'raw', 'fish', 'shellfish', 'acid', 'herbal'],
     dampen: ['braised', 'roasted', 'umami', 'earthy'],
@@ -72,7 +73,8 @@ const SEASON_BOOSTS = {
  * Scales how much the season affects wine style demand.
  * Hot climates have pronounced summer→white shifts; cool climates are milder.
  */
-const CLIMATE_MULTIPLIERS = {
+/** @internal — exported for unit tests only */
+export const CLIMATE_MULTIPLIERS = {
   hot:  1.5,  // Mediterranean, tropical — strong seasonal wine shift
   warm: 1.0,  // Temperate — standard seasonal shift (default)
   mild: 0.4,  // Maritime/cool oceanic — subtle shift, reds welcome year-round
@@ -198,8 +200,22 @@ export async function computeCookingProfile(cellarId, options = {}) {
     const categories = safeParseCategories(recipe.categories);
     const categoryBoosts = getCategorySignalBoosts(categories);
 
-    // Apply category frequency weighting
+    // Track category-derived signals in doc frequency (deduped per recipe).
+    // Only count signals that exist in FOOD_SIGNALS to avoid phantom entries.
+    const categorySignalsThisRecipe = new Set();
+    for (const signal of Object.keys(categoryBoosts)) {
+      if (FOOD_SIGNALS[signal] && !categorySignalsThisRecipe.has(signal)) {
+        categorySignalsThisRecipe.add(signal);
+        // Only increment if this signal wasn't already counted from text extraction
+        if (!textSignals.includes(signal)) {
+          signalDocFrequency[signal] = (signalDocFrequency[signal] || 0) + 1;
+        }
+      }
+    }
+
+    // Apply category frequency weighting (skip signals not in FOOD_SIGNALS)
     for (const [signal, boostWeight] of Object.entries(categoryBoosts)) {
+      if (!FOOD_SIGNALS[signal]) continue; // Filter out phantom signals
       // Find the best matching category for this recipe to get its frequency weight.
       // When a user override exists, respect it (including 0 = "Never").
       // For auto-computed values, pick the highest across categories.
@@ -337,15 +353,16 @@ function computeCategoryBreakdown(recipes, overrides = {}) {
 }
 
 /**
- * Apply IDF damping and signal tier weighting to the accumulated signal map.
+ * Apply smoothed IDF damping and signal tier weighting to the accumulated signal map.
  *
- * IDF formula: log(N / df) where N = total recipes, df = document frequency.
- * Signals in 90% of recipes get IDF ≈ 0.11 (heavily damped).
- * Signals in 20% of recipes get IDF ≈ 1.61 (amplified).
+ * Smoothed IDF formula: log(1 + N/df) — avoids zeroing signals that appear
+ * in every recipe (df=N gives log(2) ≈ 0.69 instead of log(1) = 0).
+ * This preserves homogeneous profiles (e.g. all-chicken) while still
+ * damping ubiquitous background signals relative to distinctive ones.
  *
  * Tier weight: protein/method = 1.0, flavor = 0.8, ingredient = 0.7, seasoning = 0.4.
  *
- * Combined: effectiveWeight = rawWeight × IDF × tierWeight
+ * Combined: effectiveWeight = rawWeight × smoothedIDF × tierWeight
  *
  * Exported for testing.
  * @param {Object} signalAccumulator - Signal -> accumulated weight (mutated in place)
@@ -357,7 +374,7 @@ export function applyProfileWeighting(signalAccumulator, signalDocFrequency, rec
 
   for (const signal of Object.keys(signalAccumulator)) {
     const df = signalDocFrequency[signal] || 1;
-    const idf = Math.log(recipeCount / df);
+    const idf = Math.log(1 + recipeCount / df);
 
     const signalDef = FOOD_SIGNALS[signal];
     const tier = signalDef?.tier || 'flavor'; // Default to flavor tier

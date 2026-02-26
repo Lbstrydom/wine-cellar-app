@@ -702,6 +702,8 @@ describe('generateBuyingGuide', () => {
 
       // With fallback, targets use totalBottles (10)
       expect(guide.targets.red_medium).toBe(10);
+      // cellarCapacity should be null (not totalBottles) to avoid misleading the UI
+      expect(guide.cellarCapacity).toBeNull();
     });
   });
 

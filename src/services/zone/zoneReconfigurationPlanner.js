@@ -21,7 +21,11 @@ import {
   hashPlan,
   calculateStabilityScore
 } from '../ai/openaiReviewer.js';
+import { createTimeoutAbort } from '../shared/fetchUtils.js';
 import { solveRowAllocation } from './rowAllocationSolver.js';
+
+/** LLM refinement timeout — must leave budget for analysis + response within route's 90s limit */
+const LLM_REFINEMENT_TIMEOUT_MS = 45_000;
 
 // Physical cellar constraints
 const TOTAL_CELLAR_ROWS = 19;
@@ -419,14 +423,20 @@ Stability bias: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMer
 
   const modelId = getModelForTask('zoneReconfigurationPlan');
   const llmStart = Date.now();
+  const { controller, cleanup } = createTimeoutAbort(LLM_REFINEMENT_TIMEOUT_MS);
 
-  const response = await anthropic.messages.create({
-    model: modelId,
-    max_tokens: 8000,
-    system,
-    messages: [{ role: 'user', content: user }],
-    ...(getThinkingConfig('zoneReconfigurationPlan') || {})
-  });
+  let response;
+  try {
+    response = await anthropic.messages.create({
+      model: modelId,
+      max_tokens: 8000,
+      system,
+      messages: [{ role: 'user', content: user }],
+      ...(getThinkingConfig('zoneReconfigurationPlan') || {})
+    }, { signal: controller.signal });
+  } finally {
+    cleanup();
+  }
 
   const llmMs = Date.now() - llmStart;
   logger.info('Reconfig', `LLM refinement completed in ${llmMs}ms`);

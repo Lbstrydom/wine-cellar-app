@@ -72,10 +72,11 @@ export async function generateBuyingGuide(cellarId, options = {}) {
   // Fall back to totalBottles if capacity query returns 0 (legacy cellars
   // without slot rows, or storage-area cellars without R-prefixed codes).
   const rawCapacity = await getCellarCapacity(cellarId);
-  const cellarCapacity = rawCapacity > 0 ? rawCapacity : totalBottles;
+  const hasRealCapacity = rawCapacity > 0;
+  const effectiveCapacity = hasRealCapacity ? rawCapacity : totalBottles;
 
   // 3. Calculate demand-proportional targets against cellar capacity
-  const targets = computeTargets(profile.wineStyleDemand, cellarCapacity);
+  const targets = computeTargets(profile.wineStyleDemand, effectiveCapacity);
 
   // 3b. Guard: if demand extraction produced no meaningful targets,
   // report 0% coverage instead of a misleading 100%
@@ -127,7 +128,7 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     coveragePct,
     bottleCoveragePct,
     totalBottles,
-    cellarCapacity,
+    cellarCapacity: hasRealCapacity ? rawCapacity : null,
     gaps,
     surpluses,
     diversityRecs,

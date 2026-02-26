@@ -161,13 +161,18 @@ export function toAuditMetadata(auditResult) {
   if (!auditResult) return { skipped: true, reason: 'Audit returned null' };
 
   if (auditResult.audited) {
-    return {
+    const meta = {
       verdict: auditResult.verdict,
       issues: auditResult.issues,
       reasoning: auditResult.reasoning,
       confidence: auditResult.confidence,
       latencyMs: auditResult.latencyMs
     };
+    // Include suggestedDemotion if present (signal auditor)
+    if (Array.isArray(auditResult.suggestedDemotion) && auditResult.suggestedDemotion.length > 0) {
+      meta.suggestedDemotion = auditResult.suggestedDemotion;
+    }
+    return meta;
   }
 
   return {

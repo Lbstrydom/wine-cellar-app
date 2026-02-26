@@ -279,5 +279,43 @@ describe('auditUtils', () => {
       const result = toAuditMetadata({ skipped: true, reason: 'timeout', latencyMs: 45000 });
       expect(result.latencyMs).toBe(45000);
     });
+
+    it('includes suggestedDemotion when present and non-empty', () => {
+      const result = toAuditMetadata({
+        audited: true,
+        verdict: 'flag',
+        issues: [],
+        reasoning: 'garlic_onion too dominant',
+        confidence: 'high',
+        latencyMs: 800,
+        suggestedDemotion: ['garlic_onion', 'pepper']
+      });
+      expect(result.suggestedDemotion).toEqual(['garlic_onion', 'pepper']);
+    });
+
+    it('omits suggestedDemotion when empty array', () => {
+      const result = toAuditMetadata({
+        audited: true,
+        verdict: 'approve',
+        issues: [],
+        reasoning: 'All good',
+        confidence: 'high',
+        latencyMs: 500,
+        suggestedDemotion: []
+      });
+      expect(result).not.toHaveProperty('suggestedDemotion');
+    });
+
+    it('omits suggestedDemotion when not present', () => {
+      const result = toAuditMetadata({
+        audited: true,
+        verdict: 'approve',
+        issues: [],
+        reasoning: 'All good',
+        confidence: 'high',
+        latencyMs: 500
+      });
+      expect(result).not.toHaveProperty('suggestedDemotion');
+    });
   });
 });

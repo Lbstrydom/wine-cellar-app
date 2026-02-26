@@ -188,8 +188,14 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
       }
     }
 
+    const t0 = Date.now();
     const wines = await getAllWinesWithSlots(req.cellarId);
+    const t1 = Date.now();
+    logger.info('Reconfig', `Phase: fetchWines ${t1 - t0}ms (${wines.length} wines)`);
+
     const report = await runAnalysis(wines, req.cellarId);
+    const t2 = Date.now();
+    logger.info('Reconfig', `Phase: runAnalysis ${t2 - t1}ms`);
 
     const plan = await generateReconfigurationPlan(report, {
       includeRetirements,
@@ -197,12 +203,16 @@ router.post('/reconfiguration-plan', asyncHandler(async (req, res) => {
       stabilityBias,
       cellarId: req.cellarId
     });
+    const t3 = Date.now();
+    logger.info('Reconfig', `Phase: generatePlan ${t3 - t2}ms`);
 
     const planId = await putPlan(req.cellarId, {
       generatedAt: new Date().toISOString(),
       options: { includeRetirements, includeNewZones, stabilityBias },
       plan
     });
+    const t4 = Date.now();
+    logger.info('Reconfig', `Phase: putPlan ${t4 - t3}ms — total ${t4 - t0}ms`);
 
     if (!res.headersSent) {
       res.json({
@@ -237,8 +247,14 @@ router.post('/reconfiguration-plan/zone/:zoneId', asyncHandler(async (req, res) 
       return res.status(400).json({ success: false, error: `Unknown zone: ${zoneId}` });
     }
 
+    const t0 = Date.now();
     const wines = await getAllWinesWithSlots(req.cellarId);
+    const t1 = Date.now();
+    logger.info('Reconfig', `Zone ${zoneId} phase: fetchWines ${t1 - t0}ms`);
+
     const report = await runAnalysis(wines, req.cellarId);
+    const t2 = Date.now();
+    logger.info('Reconfig', `Zone ${zoneId} phase: runAnalysis ${t2 - t1}ms`);
 
     const plan = await generateReconfigurationPlan(report, {
       stabilityBias: 'high',
@@ -246,6 +262,8 @@ router.post('/reconfiguration-plan/zone/:zoneId', asyncHandler(async (req, res) 
       cellarId: req.cellarId,
       focusZoneId: zoneId
     });
+    const t3 = Date.now();
+    logger.info('Reconfig', `Zone ${zoneId} phase: generatePlan ${t3 - t2}ms — total ${t3 - t0}ms`);
 
     const planId = await putPlan(req.cellarId, {
       generatedAt: new Date().toISOString(),
