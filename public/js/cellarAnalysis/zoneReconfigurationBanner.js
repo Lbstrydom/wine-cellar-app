@@ -272,9 +272,14 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
         }
       });
     }
-    // Filter out capacity alerts from remaining since we're handling them
+    // Filter out zone-structure alerts — capacity, adjacency, and colour order
+    // are expected to appear post-reconfig because bottles haven't moved yet.
+    // The Placement workspace shows the moves needed to resolve them.
     const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
-    const remainingAlerts = alerts.filter(a => a.type !== 'zone_capacity_issue');
+    const suppressedTypes = new Set([
+      'zone_capacity_issue', 'color_adjacency_violation', 'colour_order_violation'
+    ]);
+    const remainingAlerts = alerts.filter(a => !suppressedTypes.has(a.type));
     return { remainingAlerts, rendered: true };
   }
 

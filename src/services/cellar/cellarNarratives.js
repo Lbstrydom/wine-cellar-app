@@ -191,6 +191,13 @@ export function generateZoneNarratives(zoneWineMap) {
     });
   }
 
+  // Sort by lowest row number so Zone Overview mirrors the physical grid (R1→R19)
+  narratives.sort((a, b) => {
+    const aMin = Math.min(...(a.rows || []).map(r => parseInt(String(r).replace('R', ''), 10) || 99));
+    const bMin = Math.min(...(b.rows || []).map(r => parseInt(String(r).replace('R', ''), 10) || 99));
+    return aMin - bMin;
+  });
+
   return narratives;
 }
 

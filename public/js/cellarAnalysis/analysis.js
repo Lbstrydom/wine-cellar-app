@@ -263,7 +263,13 @@ function renderAnalysis(analysis, onRenderAnalysis) {
 
   renderFridgeStatus(analysis.fridgeStatus);
   renderZoneNarratives(analysis.zoneNarratives);
-  renderZoneIssueActions(analysis, onRenderAnalysis);
+  // Suppress capacity/colour alerts right after reconfiguration — the zone layout
+  // just changed and bottles haven't moved yet. Showing "zone full" or "colour
+  // violation" immediately after a reconfig is confusing; the Placement workspace
+  // already shows the moves the user needs to execute.
+  if (!analysis?.__justReconfigured) {
+    renderZoneIssueActions(analysis, onRenderAnalysis);
+  }
   renderConsolidationCards(analysis);
   renderLayoutProposalCTA(analysis);
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);

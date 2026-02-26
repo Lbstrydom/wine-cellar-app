@@ -169,7 +169,7 @@ export function solveRowAllocation(params) {
   // ───────────────────────────────────────────
   // Phase 5b: Buffer zone boundary positioning
   // ───────────────────────────────────────────
-  const bufferActions = repositionBufferZones(zoneRowMap, zones, neverMerge, colourOrder);
+  const bufferActions = repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, colourOrder);
   if (bufferActions.length > 0) {
     actions.push(...bufferActions);
     reasoningParts.push(
@@ -854,9 +854,11 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
       const rowToFree = zoneRows[i];
       if (!rowToFree) break;
 
-      // Try to route to a colour-compatible deficit zone, preferring adjacency
-      let targetZoneId = '__unassigned';
-      let targetName = 'unassigned (freed for future use)';
+      // Try to route to a colour-compatible deficit zone, preferring adjacency.
+      // Fallback: route to the colour-compatible buffer zone (never __unassigned).
+      const bufferZoneId = fromColor === 'red' ? 'red_buffer' : 'white_buffer';
+      let targetZoneId = bufferZoneId;
+      let targetName = getZoneDisplayName(bufferZoneId, zones);
 
       const freedRowNum = rowNum(rowToFree);
       let bestDeficitIdx = -1;
@@ -906,13 +908,7 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
       });
 
       // Update mutable state
-      if (targetZoneId === '__unassigned') {
-        // Just remove from source zone, don't add anywhere
-        const fromRows = zoneRowMap.get(fromZoneId) || [];
-        zoneRowMap.set(fromZoneId, fromRows.filter(r => r !== rowToFree));
-      } else {
-        updateZoneRowMap(zoneRowMap, fromZoneId, rowToFree, targetZoneId);
-      }
+      updateZoneRowMap(zoneRowMap, fromZoneId, rowToFree, targetZoneId);
 
       totalReclaimed++;
     }
@@ -1155,20 +1151,22 @@ function findContiguousBlocks(sortedRows) {
  *
  * Buffer zones (White Reserve, Red Reserve) should sit at the END of their
  * colour block — they act as a transition/overflow zone at the boundary.
- * If a buffer zone holds a non-boundary row (e.g., White Reserve at R1 instead
- * of R7), swap it with whatever zone holds the boundary row.
+ *
+ * Conservative: only swap if both the buffer's row and the boundary row have
+ * zero bottles, so the swap doesn't displace any wine. Moving active zones
+ * just for aesthetic buffer positioning is high disruption, low value.
  *
  * @param {Map} zoneRowMap - Mutable zone→rows map
  * @param {Array} zones - Zone metadata
+ * @param {Object} utilization - Zone utilization map
  * @param {Set} neverMerge - Protected zones
  * @param {string} [colourOrder='whites-top'] - 'whites-top' or 'reds-top'
  * @returns {Array} Swap actions to reposition buffer zones
  */
-function repositionBufferZones(zoneRowMap, zones, neverMerge, _colourOrder = 'whites-top') {
+function repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, _colourOrder = 'whites-top') {
   const actions = [];
 
   // Find the actual colour boundary from current zone assignments
-  // (which rows are white, which are red)
   let maxWhiteRow = 0;
   let maxRedRow = 0;
   const rowToZone = new Map();
@@ -1183,61 +1181,56 @@ function repositionBufferZones(zoneRowMap, zones, neverMerge, _colourOrder = 'wh
     }
   }
 
-  // Process each buffer zone
   for (const zone of zones) {
     const zoneDef = getZoneById(zone.id);
     if (!zoneDef?.isBufferZone) continue;
     if (neverMerge.has(zone.id)) continue;
 
     const bufferRows = zoneRowMap.get(zone.id) || [];
-    if (bufferRows.length === 0) continue; // Buffer has no rows — nothing to reposition
+    if (bufferRows.length === 0) continue;
 
     const bufferColor = getZoneColor(zone.id);
 
-    // Determine target boundary row for this buffer.
-    // In whites-top: white buffer → last white row, red buffer → last red row.
-    // The buffer should occupy the last row of its colour block.
     let targetBoundaryRow;
     if (bufferColor === 'white') {
       targetBoundaryRow = maxWhiteRow;
     } else if (bufferColor === 'red') {
       targetBoundaryRow = maxRedRow;
     } else {
-      continue; // 'any' colour buffer — skip positioning
+      continue;
     }
 
-    if (targetBoundaryRow === 0) continue; // No rows of this colour exist
+    if (targetBoundaryRow === 0) continue;
 
     const targetRowId = `R${targetBoundaryRow}`;
-
-    // Check if buffer already holds the boundary row
     if (bufferRows.includes(targetRowId)) continue; // Already in position
 
-    // Buffer holds a non-boundary row — find which row(s) it has and swap
-    // the one furthest from the boundary with the boundary row.
-    // Only swap if the boundary row's current owner is the same colour family.
     const boundaryOwner = rowToZone.get(targetRowId);
     if (!boundaryOwner || boundaryOwner === zone.id) continue;
     if (neverMerge.has(boundaryOwner)) continue;
 
-    // Verify colour compatibility: boundary owner should be same colour as buffer
     const ownerColor = getZoneColor(boundaryOwner);
     if (ownerColor !== 'any' && bufferColor !== 'any' && ownerColor !== bufferColor) continue;
 
-    // Pick the buffer's row that's furthest from the boundary (most "wrong")
+    // Conservative guard: only swap if the buffer zone has very few bottles.
+    // Swapping active zones just for buffer positioning is high disruption.
+    const bufferUtil = utilization[zone.id];
+    const bufferBottles = bufferUtil?.bottleCount ?? 0;
+    if (bufferBottles > 2) continue; // Buffer has enough bottles that swapping is disruptive
+
+    // Pick the buffer's row furthest from the boundary
     const sortedBufferRows = [...bufferRows].sort((a, b) => {
       return Math.abs(rowNum(a) - targetBoundaryRow) - Math.abs(rowNum(b) - targetBoundaryRow);
     });
-    const rowToSwap = sortedBufferRows[sortedBufferRows.length - 1]; // Furthest from boundary
+    const rowToSwap = sortedBufferRows[sortedBufferRows.length - 1];
     const rowToSwapNum = rowNum(rowToSwap);
 
-    // Generate the swap (two reallocate_row actions)
     const bufferName = getZoneDisplayName(zone.id, zones);
     const ownerName = getZoneDisplayName(boundaryOwner, zones);
 
     actions.push({
       type: 'reallocate_row',
-      priority: 2,
+      priority: 3, // Lower priority than capacity fixes
       fromZoneId: zone.id,
       toZoneId: boundaryOwner,
       rowNumber: rowToSwapNum,
@@ -1247,7 +1240,7 @@ function repositionBufferZones(zoneRowMap, zones, neverMerge, _colourOrder = 'wh
     });
     actions.push({
       type: 'reallocate_row',
-      priority: 2,
+      priority: 3,
       fromZoneId: boundaryOwner,
       toZoneId: zone.id,
       rowNumber: targetBoundaryRow,
@@ -1256,7 +1249,6 @@ function repositionBufferZones(zoneRowMap, zones, neverMerge, _colourOrder = 'wh
       bottlesAffected: rowCapacity(targetBoundaryRow)
     });
 
-    // Update mutable state
     updateZoneRowMap(zoneRowMap, zone.id, rowToSwap, boundaryOwner);
     updateZoneRowMap(zoneRowMap, boundaryOwner, targetRowId, zone.id);
   }
