@@ -17,6 +17,7 @@ import * as cart from '../services/recipe/buyingGuideCart.js';
 import { inferStyleForItem } from '../services/recipe/styleInference.js';
 import { suggestPlacement, saveAcquiredWine, enrichWineData } from '../services/acquisitionWorkflow.js';
 import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
+import { STYLE_LABELS } from '../config/styleIds.js';
 import db, { wrapClient } from '../db/index.js';
 import logger from '../utils/logger.js';
 
@@ -52,6 +53,34 @@ router.get('/gaps', asyncHandler(async (req, res) => {
   const { generateBuyingGuide } = await import('../services/recipe/buyingGuide.js');
   const guide = await generateBuyingGuide(req.cellarId);
 
+  // Build a lookup map for projectedDeficit from the gap objects
+  const gapMap = new Map((guide.gaps || []).map(g => [g.style, g]));
+
+  // All targeted styles (target >= 1), sorted: gaps first (by deficit desc),
+  // then covered styles (alphabetical by label).
+  const styles = Object.entries(guide.targets || {})
+    .filter(([, target]) => target >= 1)
+    .map(([style, target]) => {
+      const have = guide.styleCounts?.[style] || 0;
+      const deficit = Math.max(0, target - have);
+      const gapEntry = gapMap.get(style);
+      return {
+        style,
+        label: STYLE_LABELS[style] || style,
+        have,
+        target,
+        deficit,
+        projectedDeficit: gapEntry?.projectedDeficit ?? deficit,
+        isCovered: have >= target
+      };
+    })
+    .sort((a, b) => {
+      if (!a.isCovered && !b.isCovered) return b.deficit - a.deficit;
+      if (!a.isCovered) return -1;
+      if (!b.isCovered) return 1;
+      return a.label.localeCompare(b.label);
+    });
+
   res.json({
     data: {
       gaps: (guide.gaps || []).map(g => ({
@@ -63,6 +92,7 @@ router.get('/gaps', asyncHandler(async (req, res) => {
         have: g.have,
         suggestions: g.suggestions
       })),
+      styles,
       coveragePct: guide.coveragePct ?? 0,
       bottleCoveragePct: guide.bottleCoveragePct ?? 0,
       projectedCoveragePct: guide.projectedCoveragePct ?? guide.coveragePct ?? 0,

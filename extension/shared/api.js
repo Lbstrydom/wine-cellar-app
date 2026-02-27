@@ -49,10 +49,15 @@ export async function getCellars(auth) {
 }
 
 /**
- * Get the buying gap summary (projected coverage, top gaps).
+ * Get the buying gap summary (projected coverage, all targeted styles).
  * Result is server-side cached (1 h TTL) so this is fast enough for popup open.
  * @param {{ token: string, cellarId: string }} auth
- * @returns {Promise<{ data: { gaps: any[], coveragePct: number, projectedCoveragePct: number } }>}
+ * @returns {Promise<{ data: {
+ *   gaps: Array<{ style: string, label: string, deficit: number, projectedDeficit: number, target: number, have: number }>,
+ *   styles: Array<{ style: string, label: string, have: number, target: number, deficit: number, projectedDeficit: number, isCovered: boolean }>,
+ *   coveragePct: number, projectedCoveragePct: number,
+ *   activeCartItems: number, activeCartBottles: number
+ * } }>}
  */
 export async function getGaps(auth) {
   return apiFetch('/buying-guide-items/gaps', {}, auth);

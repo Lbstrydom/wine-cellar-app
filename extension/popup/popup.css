@@ -190,53 +190,90 @@ body {
 .gap-mini-deficit { color: var(--text-muted); }
 .no-gaps-mini     { color: var(--text-muted); font-size: 12px; }
 
-/* ── Gaps view ───────────────────────────────────────────────────────────── */
+/* ── Coverage summary header ─────────────────────────────────────────────── */
 
-.gaps-list { display: flex; flex-direction: column; gap: 7px; }
+.coverage-summary {
+  margin-bottom: 10px;
+}
 
-.gap-card {
-  padding: 8px 10px;
+.coverage-summary-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.coverage-fraction {
+  font-size: 19px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.5px;
+}
+
+.coverage-word {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: 4px;
+}
+
+.coverage-all-good {
+  font-size: 12px;
+  color: var(--success);
+  margin-left: 4px;
+}
+
+/* ── Styles list ─────────────────────────────────────────────────────────── */
+
+.styles-list { display: flex; flex-direction: column; gap: 4px; }
+
+.style-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 5px;
+  font-size: 12px;
 }
 
-.gap-card-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 6px;
+.style-row.is-gap {
+  border-color: rgba(231, 76, 60, 0.4);
+  background: rgba(231, 76, 60, 0.06);
 }
 
-.gap-label   { font-weight: 500; font-size: 13px; }
-.gap-deficit { font-size: 11px; color: var(--text-muted); }
-
-.gap-bar-track {
-  height: 4px;
-  background: var(--bar-bg);
-  border-radius: 2px;
-  overflow: hidden;
-}
-.gap-bar-fill {
-  height: 100%;
-  background: var(--bar-fill);
-  border-radius: 2px;
-  transition: width 0.4s ease;
-}
-
-/* ── No gaps ─────────────────────────────────────────────────────────────── */
-
-.no-gaps {
+.style-status {
+  width: 14px;
+  flex-shrink: 0;
   text-align: center;
-  padding: 20px 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+.style-status.covered { color: var(--success); }
+.style-status.gap     { color: var(--error); }
+
+.style-label { flex: 1; font-weight: 500; }
+
+.style-bottles {
+  font-size: 11px;
   color: var(--text-muted);
+  white-space: nowrap;
 }
-.check-icon {
-  display: block;
-  font-size: 26px;
-  margin-bottom: 6px;
-  color: var(--success);
+.style-bottles.need {
+  color: var(--error);
+  font-weight: 600;
 }
+
+.no-styles-msg {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
+  padding: 16px 0;
+  line-height: 1.6;
+}
+
+/* ── Gap cards (mini, inside product view) ───────────────────────────────── */
 
 /* ── Open-app link ───────────────────────────────────────────────────────── */
 

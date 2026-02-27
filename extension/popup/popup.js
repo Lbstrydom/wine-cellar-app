@@ -106,16 +106,52 @@ function renderProductView(wine, gapsData) {
 
 /** @param {object|null} gapsData */
 function renderGapsView(gapsData) {
-  const gaps = gapsData?.gaps || [];
-  if (gaps.length === 0) {
-    document.getElementById('gaps-list').classList.add('hidden');
-    document.getElementById('no-gaps').classList.remove('hidden');
+  const styles = gapsData?.styles || [];
+  const gapCount = styles.filter(s => !s.isCovered).length;
+  const coveredCount = styles.filter(s => s.isCovered).length;
+  const total = styles.length;
+
+  // Coverage summary header
+  const summaryEl = document.getElementById('coverage-summary');
+  if (total > 0) {
+    const allGood = gapCount === 0;
+    summaryEl.innerHTML = `
+      <div class="coverage-summary-title">Style coverage</div>
+      <span class="coverage-fraction">${coveredCount}/${total}</span>
+      <span class="${allGood ? 'coverage-all-good' : 'coverage-word'}">
+        ${allGood ? '— all styles covered ✓' : `style${coveredCount !== 1 ? 's' : ''} covered`}
+      </span>`;
   } else {
-    document.getElementById('gaps-list').innerHTML = gaps.map(renderGapCard).join('');
-    document.getElementById('gaps-list').classList.remove('hidden');
-    document.getElementById('no-gaps').classList.add('hidden');
+    summaryEl.innerHTML = `<div class="coverage-summary-title">Style coverage</div>`;
   }
+
+  // Styles list
+  const listEl = document.getElementById('styles-list');
+  if (styles.length === 0) {
+    listEl.innerHTML = `<p class="no-styles-msg">No buying guide targets set.<br>
+      Open the app to configure your style preferences.</p>`;
+  } else {
+    listEl.innerHTML = styles.map(renderStyleRow).join('');
+  }
+
   showState('gaps');
+}
+
+/**
+ * One row per wine style in the full breakdown.
+ * @param {{ label: string, have: number, target: number, deficit: number, isCovered: boolean }} style
+ * @returns {string}
+ */
+function renderStyleRow(style) {
+  const covered = style.isCovered;
+  const bottlesText = covered
+    ? `${style.have}/${style.target}`
+    : `need ${style.deficit}`;
+  return `<div class="style-row${covered ? '' : ' is-gap'}">
+    <span class="style-status ${covered ? 'covered' : 'gap'}">${covered ? '✓' : '✕'}</span>
+    <span class="style-label">${esc(style.label)}</span>
+    <span class="style-bottles${covered ? '' : ' need'}">${bottlesText}</span>
+  </div>`;
 }
 
 /** @param {object} gap @returns {string} */
@@ -123,22 +159,7 @@ function renderGapMini(gap) {
   const deficit = gap.projectedDeficit ?? gap.deficit ?? 0;
   return `<div class="gap-mini">
     <span class="gap-mini-label">${esc(gap.label)}</span>
-    <span class="gap-mini-deficit">${deficit} needed</span>
-  </div>`;
-}
-
-/** @param {object} gap @returns {string} */
-function renderGapCard(gap) {
-  const deficit = gap.projectedDeficit ?? gap.deficit ?? 0;
-  const pct = Math.min(Math.round((gap.coveragePct || 0) * 100), 100);
-  return `<div class="gap-card">
-    <div class="gap-card-header">
-      <span class="gap-label">${esc(gap.label)}</span>
-      <span class="gap-deficit">${deficit} bottle${deficit !== 1 ? 's' : ''} needed</span>
-    </div>
-    <div class="gap-bar-track">
-      <div class="gap-bar-fill" style="width:${pct}%"></div>
-    </div>
+    <span class="gap-mini-deficit">need ${deficit}</span>
   </div>`;
 }
 
