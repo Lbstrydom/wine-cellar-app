@@ -9,11 +9,27 @@ import { escapeHtml } from '../utils.js';
 import { startZoneSetup } from './zones.js';
 import { switchWorkspace } from './state.js';
 import {
-  TAB_CELLAR_REVIEW,
   TAB_CELLAR_PLACEMENT,
   TAB_FRIDGE,
   CAPACITY_ALERT_HOLISTIC_THRESHOLD
 } from './labels.js';
+
+/** @type {Function|null} Cached render-analysis callback for CTA wiring */
+let _digestOnRenderAnalysis = null;
+
+/** @type {Function|null} Callback to open the reconfiguration modal */
+let _openReconfigFn = null;
+
+/**
+ * Set the render-analysis callback and reconfig opener for digest CTA wiring.
+ * Called from analysis.js when rendering.
+ * @param {Function} renderCb - onRenderAnalysis callback
+ * @param {Function} reconfigFn - function to open reconfiguration modal
+ */
+export function setDigestCallback(renderCb, reconfigFn) {
+  _digestOnRenderAnalysis = renderCb;
+  _openReconfigFn = reconfigFn;
+}
 
 /**
  * @typedef {Object} DigestItem
@@ -46,8 +62,8 @@ function classifyAlert(alert, summary) {
       workspace: 'structure',
       severity: 'warning',
       message: `${zoneName}: ${wineCount} bottle(s) over capacity`,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones',
+      cta: 'Reorganise Zones',
+      ctaAction: 'reorganise-zones',
       sourceAlert: alert
     };
   }
@@ -111,8 +127,8 @@ function classifyAlert(alert, summary) {
       workspace: 'structure',
       severity: 'warning',
       message: alert.message,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones',
+      cta: 'Reorganise Zones',
+      ctaAction: 'reorganise-zones',
       sourceAlert: alert
     };
   }
@@ -150,8 +166,8 @@ export function buildDigestGroups(analysis) {
       workspace: 'structure',
       severity: 'warning',
       message: `${colorAlerts.length} color boundary violation(s)`,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones'
+      cta: 'Reorganise Zones',
+      ctaAction: 'reorganise-zones'
     });
   }
 
@@ -163,8 +179,8 @@ export function buildDigestGroups(analysis) {
       workspace: 'structure',
       severity: 'warning',
       message: `${issueCount} colour order violation(s)`,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones'
+      cta: 'Reorganise Zones',
+      ctaAction: 'reorganise-zones'
     });
   }
 
@@ -196,8 +212,8 @@ export function buildDigestGroups(analysis) {
       workspace: 'structure',
       severity: 'warning',
       message: `${capacityItems.length} zones over capacity (${totalAffected} bottles affected)`,
-      cta: TAB_CELLAR_REVIEW,
-      ctaWorkspace: 'zones'
+      cta: 'Reorganise Zones',
+      ctaAction: 'reorganise-zones'
     });
   }
 
@@ -278,6 +294,11 @@ export function renderIssueDigest(analysis) {
 
     if (action === 'setup-zones') {
       startZoneSetup();
+      return;
+    }
+
+    if (action === 'reorganise-zones') {
+      if (_openReconfigFn) _openReconfigFn({ onRenderAnalysis: _digestOnRenderAnalysis });
       return;
     }
 

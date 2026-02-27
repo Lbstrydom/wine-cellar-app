@@ -10,13 +10,13 @@ import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
 import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js';
-import { renderIssueDigest } from './issueDigest.js';
+import { renderIssueDigest, setDigestCallback } from './issueDigest.js';
 import { deriveState, AnalysisState } from './analysisState.js';
 import { startZoneSetup } from './zones.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
 import { openMoveGuide } from './moveGuide.js';
 import { CTA_RECONFIGURE_ZONES, CTA_SETUP_ZONES, CTA_GUIDE_MOVES } from './labels.js';
-import { escapeHtml } from '../utils.js';
+import { escapeHtml, showToast } from '../utils.js';
 import { renderGrapeHealthBanner } from './grapeHealth.js';
 import { renderConsolidationCards } from './consolidation.js';
 import { renderLayoutProposalCTA } from './layoutDiffOrchestrator.js';
@@ -182,60 +182,71 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
 
   if (capacityAlerts.length === 0 && adjacencyAlerts.length === 0 && colourOrderAlerts.length === 0) return;
 
-  // Capacity alerts — reuse the full interactive component
+  // ── Build ONE consolidated issue list ───────────────────
+  const issueLines = [];
+
   if (capacityAlerts.length > 0) {
-    renderZoneCapacityAlert(analysis, { onRenderAnalysis, targetEl: el });
+    const totalBottles = capacityAlerts.reduce((sum, a) => {
+      const wines = a.data?.winesNeedingPlacement;
+      return sum + (Array.isArray(wines) ? wines.length : 0);
+    }, 0);
+    const zoneNames = capacityAlerts
+      .map(a => a.data?.overflowingZoneName || a.data?.overflowingZoneId || 'zone')
+      .filter(Boolean);
+    issueLines.push(`<strong>${capacityAlerts.length} zone${capacityAlerts.length > 1 ? 's' : ''}</strong> over capacity (${totalBottles} bottle${totalBottles !== 1 ? 's' : ''} affected: ${zoneNames.map(n => escapeHtml(n)).join(', ')})`);
   }
 
-  // Color adjacency violations — shown here because this is the actionable
-  // Cellar Review workspace. The issue digest only shows a summary count.
   if (adjacencyAlerts.length > 0) {
-    const count = adjacencyAlerts.length;
-    const bannerHtml = `
-      <div class="zone-adjacency-banner">
-        <div class="zone-adjacency-banner-header">🎨 Color Region ${count === 1 ? 'Issue' : 'Issues'}</div>
-        <div class="zone-adjacency-banner-body">
-          <p>${count} color boundary ${count === 1 ? 'violation' : 'violations'} — reds and whites should be in separate row regions.</p>
-          <ul class="zone-adjacency-list">
-            ${adjacencyAlerts.map(a => `<li>${escapeHtml(a.message || 'Color boundary issue')}</li>`).join('')}
-          </ul>
-          <p class="zone-adjacency-hint">Zone reconfiguration can fix boundary issues by reassigning rows to the correct color region.</p>
-          <button class="btn btn-primary zone-adjacency-reconfig-btn">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
-        </div>
-      </div>
-    `;
-    el.insertAdjacentHTML('beforeend', bannerHtml);
-
-    // Wire Reorganise Zones button
-    el.querySelector('.zone-adjacency-reconfig-btn')?.addEventListener('click', () => {
-      openReconfigurationModal({ onRenderAnalysis });
-    });
+    issueLines.push(`<strong>${adjacencyAlerts.length}</strong> color boundary violation${adjacencyAlerts.length > 1 ? 's' : ''} — reds and whites should be in separate row regions`);
   }
 
-  // Colour order violations — zones in the wrong vertical region.
-  // Shown here in Cellar Review workspace with actionable reconfig button.
   if (colourOrderAlerts.length > 0) {
     const issues = colourOrderAlerts.flatMap(a => a.data?.issues || []);
     const count = issues.length || colourOrderAlerts.length;
-    const bannerHtml = `
-      <div class="zone-adjacency-banner">
-        <div class="zone-adjacency-banner-header">🔃 Colour Order ${count === 1 ? 'Issue' : 'Issues'}</div>
-        <div class="zone-adjacency-banner-body">
-          <p>${count} zone(s) in the wrong vertical region — colour order preference not met.</p>
-          <ul class="zone-adjacency-list">
-            ${issues.map(v => `<li>${escapeHtml(v.message || v.zoneName || 'Zone in wrong region')}</li>`).join('')}
-          </ul>
-          <p class="zone-adjacency-hint">Zone reconfiguration can fix colour order by reassigning rows to the correct region.</p>
-          <button class="btn btn-primary zone-colour-order-reconfig-btn">${escapeHtml(CTA_RECONFIGURE_ZONES)}</button>
+    issueLines.push(`<strong>${count}</strong> colour order violation${count > 1 ? 's' : ''} — zones in the wrong vertical region`);
+  }
+
+  // ── Render single consolidated banner ───────────────────
+  const totalIssueCount = capacityAlerts.length + adjacencyAlerts.length + colourOrderAlerts.length;
+  el.innerHTML = `
+    <div class="zone-issues-consolidated">
+      <div class="zone-issues-consolidated-header">
+        ⚠️ Zone ${totalIssueCount === 1 ? 'Issue' : 'Issues'} Detected
+      </div>
+      <div class="zone-issues-consolidated-body">
+        <ul class="zone-issues-consolidated-list">
+          ${issueLines.map(line => `<li>${line}</li>`).join('')}
+        </ul>
+        <p class="zone-issues-consolidated-hint">
+          Zone reconfiguration will reassign rows to fix these issues, then provide a
+          move guide for your bottles.
+        </p>
+        <div class="zone-issues-consolidated-actions">
+          <button class="btn btn-primary" data-action="fix-all-zones">Reorganise Zones</button>
+          <button class="btn btn-secondary" data-action="ignore-zone-issues">Ignore &amp; Continue</button>
         </div>
       </div>
-    `;
-    el.insertAdjacentHTML('beforeend', bannerHtml);
+    </div>
+  `;
 
-    el.querySelector('.zone-colour-order-reconfig-btn')?.addEventListener('click', () => {
-      openReconfigurationModal({ onRenderAnalysis });
-    });
-  }
+  // Wire actions
+  el.querySelector('[data-action="fix-all-zones"]')?.addEventListener('click', () => {
+    openReconfigurationModal({ onRenderAnalysis });
+  });
+
+  el.querySelector('[data-action="ignore-zone-issues"]')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const response = await analyseCellar(true, { allowFallback: true });
+      onRenderAnalysis(response.report);
+      showToast('Using fallback placement — zone issues ignored for this run');
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    } finally {
+      btn.disabled = false;
+    }
+  });
 }
 
 /**
@@ -256,6 +267,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
       renderAlerts(remainingAlerts, { append: rendered });
     }
   } else {
+    setDigestCallback(onRenderAnalysis, openReconfigurationModal);
     renderIssueDigest(analysis);
   }
 

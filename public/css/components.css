@@ -1211,6 +1211,45 @@
   display: none;
 }
 
+/* Consolidated zone issues banner */
+.zone-issues-consolidated {
+  padding: 1rem;
+  border-radius: 6px;
+  background: rgba(var(--color-warning-rgb), 0.12);
+  border-left: 3px solid var(--color-warning);
+}
+
+.zone-issues-consolidated-header {
+  font-weight: 600;
+  font-size: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.zone-issues-consolidated-list {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.zone-issues-consolidated-list li + li {
+  margin-top: 0.25rem;
+}
+
+.zone-issues-consolidated-hint {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  margin: 0.75rem 0 0;
+  line-height: 1.4;
+}
+
+.zone-issues-consolidated-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  flex-wrap: wrap;
+}
+
 /* Color adjacency violation banner */
 .zone-adjacency-banner {
   padding: 1rem;

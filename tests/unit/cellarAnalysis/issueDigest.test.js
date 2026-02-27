@@ -42,7 +42,7 @@ describe('issueDigest buildDigestGroups', () => {
       expect(groups.placement).toHaveLength(0);
       expect(groups.structure).toHaveLength(1);
       expect(groups.structure[0].workspace).toBe('structure');
-      expect(groups.structure[0].ctaWorkspace).toBe('zones');
+      expect(groups.structure[0].ctaAction).toBe('reorganise-zones');
     });
 
     it('uses issue count from data.issues, not alert count', () => {
