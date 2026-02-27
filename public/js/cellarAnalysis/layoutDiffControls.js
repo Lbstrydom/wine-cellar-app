@@ -7,7 +7,6 @@
  */
 
 import { escapeHtml } from '../utils.js';
-import { DiffType } from './layoutDiffGrid.js';
 
 /**
  * View mode enum.

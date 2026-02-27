@@ -368,11 +368,15 @@ async function handleReset() {
   };
 
   setLayoutProposal(freshProposal);
+  completedMoveSteps = new Set();
+
+  // Flatten currentLayout (API can return objects or numbers)
+  const currentLayout = buildCurrentLayoutMap(freshProposal);
 
   // Re-render
   const result = renderDiffGrid(
     DIFF_CONTAINER_ID,
-    freshProposal.currentLayout,
+    currentLayout,
     freshProposal.targetLayout,
     freshProposal.sortPlan,
     activeZoneMap
@@ -385,6 +389,9 @@ async function handleReset() {
       freshProposal.sortPlan.length
     );
   }
+
+  // Re-render step-by-step move list with fresh data
+  renderMoveList(document.getElementById('layout-diff-move-list'), freshProposal.sortPlan, currentLayout);
 
   toggleResetButton(document.getElementById('layout-diff-actions'), false);
 

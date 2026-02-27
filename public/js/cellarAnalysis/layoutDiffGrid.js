@@ -455,14 +455,21 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
     gridEl.appendChild(rowEl);
   }
 
+  // Attach to DOM before measuring heights (offsetHeight requires DOM presence)
+  container.appendChild(shell);
+
   if (hasZoneConfig) {
     const colHeaders = gridEl.querySelector('.diff-col-headers');
+    const firstRow = gridEl.querySelector('.diff-row:not(.diff-col-headers)');
+
+    // Force synchronous reflow so offsetHeight returns the rendered value
+    if (firstRow) void firstRow.offsetWidth;
+
     const headerOffset = colHeaders?.offsetHeight || 0;
     if (headerOffset > 0) {
       zoneLabelsEl.style.paddingTop = `${headerOffset + 4}px`;
     }
 
-    const firstRow = gridEl.querySelector('.diff-row:not(.diff-col-headers)');
     const rowHeight = firstRow?.offsetHeight || 55;
     const GRID_GAP = 3;
 
@@ -483,9 +490,10 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
 
       zoneLabelsEl.appendChild(zoneLabel);
     });
+  } else {
+    // No zone config — still need to attach to DOM
+    container.appendChild(shell);
   }
-
-  container.appendChild(shell);
 
   const stats = computeDiffStats(classifiedSlots);
   return { stats, classifiedSlots };
