@@ -190,15 +190,38 @@ export function computeDiffStats(classifiedSlots) {
 }
 
 /**
+ * Build a lookup from sortPlan: slotId → { from, to, moveType, wineName }.
+ * This lets us annotate each grid slot with its source/destination.
+ * @param {Array} sortPlan - Array of { wineId, wineName, from, to, moveType }
+ * @returns {Map<string, {from: string, to: string, moveType: string, wineName: string}>}
+ */
+export function buildSlotMoveMap(sortPlan) {
+  const map = new Map();
+  if (!Array.isArray(sortPlan)) return map;
+
+  for (const move of sortPlan) {
+    // Move destination (slot receiving a bottle)
+    map.set(move.to, {
+      from: move.from,
+      to: move.to,
+      moveType: move.moveType || 'direct',
+      wineName: move.wineName || ''
+    });
+  }
+  return map;
+}
+
+/**
  * Create a single diff slot DOM element.
  * @param {string} slotId
  * @param {string} diffType
  * @param {number|null} currentWineId
  * @param {Object|null} targetWine - { wineId, wineName, zoneId, colour }
  * @param {Object} wineNames - Lookup of wineId → { wineName, colour }
+ * @param {Map} [slotMoveMap] - Optional move lookup from buildSlotMoveMap
  * @returns {HTMLElement}
  */
-function createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wineNames) {
+function createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wineNames, slotMoveMap) {
   const el = document.createElement('div');
   el.className = `diff-slot ${DIFF_CSS[diffType] || 'diff-empty'}`;
   el.dataset.location = slotId;
@@ -213,6 +236,9 @@ function createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wine
   // Determine wine info for display
   const displayWine = getDisplayWine(diffType, currentWineId, targetWine, wineNames);
 
+  // Build move annotation ("from R3C1" / "↔ R5C2")
+  const moveAnnotation = buildMoveAnnotation(slotId, diffType, slotMoveMap);
+
   if (displayWine) {
     // Add colour class for visual consistency with main grid
     const colour = displayWine.colour || '';
@@ -224,6 +250,7 @@ function createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wine
     el.innerHTML = `
       <div class="diff-slot-icon" aria-label="${diffType}">${icon}</div>
       <div class="diff-slot-name">${escapeHtml(shortName)}</div>
+      ${moveAnnotation ? `<div class="diff-slot-annotation">${escapeHtml(moveAnnotation)}</div>` : ''}
       <div class="diff-slot-loc">${escapeHtml(slotId)}</div>
     `;
 
@@ -236,6 +263,27 @@ function createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wine
   }
 
   return el;
+}
+
+/**
+ * Build a short annotation string for a diff slot showing where the bottle moves from/to.
+ * @param {string} slotId - Current slot ID
+ * @param {string} diffType - Diff classification
+ * @param {Map} [slotMoveMap] - Move lookup
+ * @returns {string|null}
+ */
+function buildMoveAnnotation(slotId, diffType, slotMoveMap) {
+  if (!slotMoveMap || slotMoveMap.size === 0) return null;
+
+  const moveInfo = slotMoveMap.get(slotId);
+
+  if (diffType === DiffType.MOVE_IN && moveInfo) {
+    return `\u2190 ${moveInfo.from}`;  // ← R3C1 (arrives from)
+  }
+  if (diffType === DiffType.SWAP && moveInfo) {
+    return `\u21C4 ${moveInfo.from}`;  // ⇄ R5C2 (swaps with)
+  }
+  return null;
 }
 
 /**
@@ -322,6 +370,7 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
   }
 
   const swapSlots = buildSwapSlotSet(sortPlan);
+  const slotMoveMap = buildSlotMoveMap(sortPlan);
   const wineNames = buildCurrentWineNames();
   const classifiedSlots = [];
 
@@ -365,7 +414,7 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
       );
 
       classifiedSlots.push({ slotId, diffType, currentWineId, targetWine });
-      const slotEl = createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wineNames);
+      const slotEl = createDiffSlotElement(slotId, diffType, currentWineId, targetWine, wineNames, slotMoveMap);
       rowEl.appendChild(slotEl);
     }
 

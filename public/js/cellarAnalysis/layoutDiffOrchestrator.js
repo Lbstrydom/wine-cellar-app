@@ -7,7 +7,7 @@
  * @module cellarAnalysis/layoutDiffOrchestrator
  */
 
-import { showToast } from '../utils.js';
+import { showToast, shortenWineName, escapeHtml } from '../utils.js';
 import { refreshLayout } from '../app.js';
 import { executeCellarMoves, validateMoves, getProposedBottleLayout } from '../api.js';
 import {
@@ -118,6 +118,7 @@ async function openDiffView(proposal) {
       <span class="hint-icon">\u270B</span> Drag bottles to adjust the proposal
     </div>
     <div id="${DIFF_CONTAINER_ID}" class="layout-diff-grid-wrap"></div>
+    <div id="layout-diff-move-list"></div>
     <div id="layout-diff-actions"></div>
   `;
 
@@ -137,6 +138,9 @@ async function openDiffView(proposal) {
   );
 
   renderDiffSummary(document.getElementById('layout-diff-summary'), result.stats);
+
+  // Render step-by-step move list
+  renderMoveList(document.getElementById('layout-diff-move-list'), sortPlan);
 
   renderApprovalCTA(document.getElementById('layout-diff-actions'), {
     totalMoves: sortPlan.length,
@@ -160,13 +164,23 @@ async function openDiffView(proposal) {
 
 /**
  * Build current layout map (slotId → wineId) from proposal data.
- * The API returns currentLayout as an object; convert to same shape.
+ * The API returns currentLayout as { slotId: { wineId, wineName, ... } };
+ * we flatten to { slotId: wineId } so classifySlot() gets plain numbers.
  * @param {Object} proposal
- * @returns {Object}
+ * @returns {Object<string, number>}
  */
 function buildCurrentLayoutMap(proposal) {
-  // The API already returns currentLayout as { slotId: wineId }
-  return proposal.currentLayout || {};
+  const raw = proposal.currentLayout || {};
+  const flat = {};
+  for (const [slotId, value] of Object.entries(raw)) {
+    if (value && typeof value === 'object' && value.wineId != null) {
+      flat[slotId] = value.wineId;
+    } else if (typeof value === 'number') {
+      flat[slotId] = value;
+    }
+    // skip null / undefined entries
+  }
+  return flat;
 }
 
 /**
@@ -381,4 +395,120 @@ export function closeDiffView() {
   if (oldMoves) oldMoves.style.display = '';
   const oldCompaction = document.getElementById('analysis-compaction');
   if (oldCompaction) oldCompaction.style.display = '';
+}
+
+// ───────────────────────────────────────────────────────────
+// Step-by-step move list
+// ───────────────────────────────────────────────────────────
+
+/**
+ * Render a collapsible step-by-step move list below the grid.
+ * Groups moves by type (swaps first, then direct moves) and shows
+ * numbered instructions the user can physically follow.
+ * @param {HTMLElement} containerEl - Container element
+ * @param {Array} sortPlan - Array of { wineId, wineName, from, to, moveType, zoneId }
+ */
+function renderMoveList(containerEl, sortPlan) {
+  if (!containerEl || !Array.isArray(sortPlan) || sortPlan.length === 0) {
+    if (containerEl) containerEl.innerHTML = '';
+    return;
+  }
+
+  // Deduplicate swap pairs: for swaps (A→B + B→A), show as one instruction
+  const swapPairs = [];
+  const directMoves = [];
+  const seenSwapSlots = new Set();
+
+  for (const move of sortPlan) {
+    if (move.moveType === 'swap') {
+      const key = [move.from, move.to].sort((a, b) => a.localeCompare(b)).join('|');
+      if (seenSwapSlots.has(key)) continue;
+      seenSwapSlots.add(key);
+
+      // Find the partner move
+      const partner = sortPlan.find(m =>
+        m.moveType === 'swap' && m.from === move.to && m.to === move.from
+      );
+      swapPairs.push({ move, partner });
+    } else {
+      directMoves.push(move);
+    }
+  }
+
+  const totalSteps = swapPairs.length + directMoves.length;
+  let stepNum = 0;
+
+  const swapHtml = swapPairs.map(({ move, partner }) => {
+    stepNum++;
+    const nameA = move.wineName || `Wine #${move.wineId}`;
+    const nameB = partner?.wineName || '(other bottle)';
+    return `
+      <li class="move-list-item move-list-swap" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}">
+        <span class="move-list-step">${stepNum}</span>
+        <span class="move-list-icon">\u21C4</span>
+        <div class="move-list-detail">
+          <span class="move-list-label">Swap</span>
+          <span class="move-list-wine">${escapeHtml(shortenWineName(nameA))}</span>
+          <span class="move-list-route">${escapeHtml(move.from)} \u2194 ${escapeHtml(move.to)}</span>
+          <span class="move-list-wine-secondary">${escapeHtml(shortenWineName(nameB))}</span>
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  const moveHtml = directMoves.map(move => {
+    stepNum++;
+    const name = move.wineName || `Wine #${move.wineId}`;
+    return `
+      <li class="move-list-item move-list-direct" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}">
+        <span class="move-list-step">${stepNum}</span>
+        <span class="move-list-icon">\u2192</span>
+        <div class="move-list-detail">
+          <span class="move-list-label">Move</span>
+          <span class="move-list-wine">${escapeHtml(shortenWineName(name))}</span>
+          <span class="move-list-route">${escapeHtml(move.from)} \u2192 ${escapeHtml(move.to)}</span>
+        </div>
+      </li>
+    `;
+  }).join('');
+
+  containerEl.innerHTML = `
+    <details class="move-list-panel" open>
+      <summary class="move-list-header">
+        <span class="move-list-title">\uD83D\uDCCB Step-by-Step Move Guide</span>
+        <span class="move-list-count">${totalSteps} step${totalSteps === 1 ? '' : 's'}</span>
+      </summary>
+      <p class="move-list-desc">Follow these steps in order to reorganise your cellar. Swaps are listed first.</p>
+      <ol class="move-list">
+        ${swapHtml}${moveHtml}
+      </ol>
+    </details>
+  `;
+
+  // Wire hover highlight: hovering a move-list item highlights source + target slots in the grid
+  containerEl.querySelectorAll('.move-list-item').forEach(item => {
+    item.addEventListener('mouseenter', () => {
+      const from = item.dataset.from;
+      const to = item.dataset.to;
+      highlightSlotPair(from, to, true);
+    });
+    item.addEventListener('mouseleave', () => {
+      const from = item.dataset.from;
+      const to = item.dataset.to;
+      highlightSlotPair(from, to, false);
+    });
+  });
+}
+
+/**
+ * Highlight or unhighlight a source/target slot pair in the diff grid.
+ * @param {string} fromSlotId
+ * @param {string} toSlotId
+ * @param {boolean} highlight - true to add, false to remove
+ */
+function highlightSlotPair(fromSlotId, toSlotId, highlight) {
+  const fromEl = document.querySelector(`.diff-slot[data-location="${fromSlotId}"]`);
+  const toEl = document.querySelector(`.diff-slot[data-location="${toSlotId}"]`);
+  if (fromEl) fromEl.classList.toggle('diff-highlight-source', highlight);
+  if (toEl) toEl.classList.toggle('diff-highlight-target', highlight);
 }
