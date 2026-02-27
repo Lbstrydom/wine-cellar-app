@@ -9,7 +9,21 @@ import request from 'supertest';
 
 // Mock db before imports
 vi.mock('../../../src/db/index.js', () => ({
-  default: { prepare: vi.fn() }
+  default: {
+    prepare: vi.fn(),
+    transaction: vi.fn(async (fn) => {
+      // Simulate transaction by calling fn with a mock client
+      const mockClient = { query: vi.fn(() => ({ rows: [], rowCount: 0 })) };
+      return fn(mockClient);
+    })
+  },
+  wrapClient: vi.fn((client) => ({
+    prepare: vi.fn(() => ({
+      get: vi.fn(() => Promise.resolve(null)),
+      all: vi.fn(() => Promise.resolve([])),
+      run: vi.fn(() => Promise.resolve({ changes: 1 }))
+    }))
+  }))
 }));
 
 vi.mock('../../../src/utils/logger.js', () => ({
@@ -20,6 +34,20 @@ vi.mock('../../../src/services/recipe/styleInference.js', () => ({
   inferStyleForItem: vi.fn(() => ({
     styleId: 'red_full', confidence: 'high', label: 'Full Red', matchedOn: ['colour']
   }))
+}));
+
+vi.mock('../../../src/services/acquisitionWorkflow.js', () => ({
+  suggestPlacement: vi.fn(() => Promise.resolve({
+    zone: { zoneId: 'zone-1', displayName: 'Red Zone', confidence: 0.9, alternatives: [] },
+    suggestedSlot: 'R3C1'
+  })),
+  saveAcquiredWine: vi.fn(() => Promise.resolve({
+    wineId: 42,
+    slots: ['R3C1'],
+    warnings: [],
+    message: 'Wine saved'
+  })),
+  enrichWineData: vi.fn(() => Promise.resolve())
 }));
 
 vi.mock('../../../src/services/recipe/buyingGuide.js', () => ({
@@ -35,7 +63,9 @@ vi.mock('../../../src/services/recipe/buyingGuide.js', () => ({
   invalidateBuyingGuideCache: vi.fn(() => Promise.resolve())
 }));
 
-import db from '../../../src/db/index.js';
+import db, { wrapClient } from '../../../src/db/index.js';
+import { suggestPlacement, saveAcquiredWine, enrichWineData } from '../../../src/services/acquisitionWorkflow.js';
+import { invalidateBuyingGuideCache } from '../../../src/services/recipe/buyingGuide.js';
 import router from '../../../src/routes/buyingGuideItems.js';
 
 const CELLAR_ID = 'cellar-uuid-route-test';
@@ -84,12 +114,16 @@ describe('buyingGuideItems routes', () => {
   }
 
   describe('GET /buying-guide-items', () => {
-    it('returns 200 with items', async () => {
+    it('returns 200 with nested { items, total } shape', async () => {
       mockDbDefault();
       const res = await request(app).get('/buying-guide-items');
       expect(res.status).toBe(200);
       expect(res.body.data).toBeDefined();
-      expect(res.body.total).toBeDefined();
+      expect(res.body.data.items).toBeDefined();
+      expect(res.body.data.total).toBeDefined();
+      // Verify the shape matches what cartState.js expects
+      expect(Array.isArray(res.body.data.items)).toBe(true);
+      expect(typeof res.body.data.total).toBe('number');
     });
 
     it('accepts valid query params', async () => {
@@ -339,6 +373,248 @@ describe('buyingGuideItems routes', () => {
       expect(res.body.data.gaps[0].style).toBe('white_crisp');
       expect(res.body.data.coveragePct).toBe(72);
       expect(res.body.data.bottleCoveragePct).toBe(65);
+    });
+  });
+
+  describe('POST /buying-guide-items/:id/arrive', () => {
+    it('transitions item to arrived and returns placement', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn((...args) => {
+          if (sql.includes('SELECT')) {
+            return Promise.resolve({
+              id: 1, wine_name: 'Shiraz 2020', status: 'ordered',
+              cellar_id: CELLAR_ID, converted_wine_id: null,
+              colour: 'red', style_id: 'red_full'
+            });
+          }
+          // RETURNING from UPDATE
+          return Promise.resolve({ id: 1, status: 'arrived' });
+        })
+      }));
+
+      const res = await request(app).post('/buying-guide-items/1/arrive');
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('arrived');
+      expect(res.body.data.item).toBeDefined();
+      expect(res.body.data.placement).toBeDefined();
+      expect(res.body.data.placement.zoneName).toBe('Red Zone');
+    });
+
+    it('returns 404 if item not found', async () => {
+      db.prepare.mockImplementation(() => ({
+        get: vi.fn(() => Promise.resolve(null))
+      }));
+
+      const res = await request(app).post('/buying-guide-items/999/arrive');
+      expect(res.status).toBe(404);
+    });
+
+    it('returns 400 if status transition invalid', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => {
+          if (sql.includes('SELECT')) {
+            return Promise.resolve({
+              id: 1, status: 'arrived', cellar_id: CELLAR_ID, converted_wine_id: null
+            });
+          }
+          return Promise.resolve(null);
+        })
+      }));
+
+      const res = await request(app).post('/buying-guide-items/1/arrive');
+      expect(res.status).toBe(400);
+    });
+  });
+
+  describe('POST /buying-guide-items/:id/to-cellar', () => {
+    const arrivedItem = {
+      id: 1, wine_name: 'Merlot 2021', producer: 'Estate', status: 'arrived',
+      cellar_id: CELLAR_ID, converted_wine_id: null, quantity: 3,
+      style_id: 'red_medium', colour: 'red', vintage: 2021,
+      grapes: 'Merlot', region: 'Stellenbosch', country: 'South Africa',
+      notes: null, source: 'manual', source_gap_style: null,
+      inferred_style_confidence: null, price: 200, currency: 'ZAR',
+      vendor_url: null
+    };
+
+    it('converts full quantity and returns wineId + slots', async () => {
+      // Mock getItem
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => {
+          if (sql.includes('COUNT')) return Promise.resolve({ count: 5 });
+          return Promise.resolve(arrivedItem);
+        }),
+        all: vi.fn(() => Promise.resolve([])),
+        run: vi.fn(() => Promise.resolve({ changes: 1 }))
+      }));
+
+      // Mock transaction — simulate success
+      db.transaction.mockImplementation(async (fn) => {
+        const mockClient = { query: vi.fn(() => ({ rows: [], rowCount: 0 })) };
+        return fn(mockClient);
+      });
+
+      // Mock saveAcquiredWine returning 3 slots
+      saveAcquiredWine.mockResolvedValueOnce({
+        wineId: 42,
+        slots: ['R3C1', 'R3C2', 'R3C3'],
+        warnings: [],
+        message: 'Wine saved'
+      });
+
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.wineId).toBe(42);
+      expect(res.body.data.converted).toBe(3);
+      expect(res.body.data.remaining).toBe(0);
+      expect(res.body.data.partial).toBe(false);
+    });
+
+    it('returns requiresConfirmation when slots < quantity', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => {
+          if (sql.includes('COUNT')) return Promise.resolve({ count: 1 });
+          return Promise.resolve(arrivedItem);
+        }),
+        all: vi.fn(() => Promise.resolve([])),
+        run: vi.fn(() => Promise.resolve({ changes: 1 }))
+      }));
+
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({});
+      expect(res.status).toBe(200);
+      expect(res.body.data.requiresConfirmation).toBe(true);
+      expect(res.body.data.available).toBe(1);
+      expect(res.body.data.total).toBe(3);
+    });
+
+    it('performs partial conversion when confirmed', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => {
+          if (sql.includes('COUNT')) return Promise.resolve({ count: 1 });
+          return Promise.resolve(arrivedItem);
+        }),
+        all: vi.fn(() => Promise.resolve([])),
+        run: vi.fn(() => Promise.resolve({ changes: 1 }))
+      }));
+
+      db.transaction.mockImplementation(async (fn) => {
+        const mockClient = { query: vi.fn(() => ({ rows: [], rowCount: 0 })) };
+        return fn(mockClient);
+      });
+
+      saveAcquiredWine.mockResolvedValueOnce({
+        wineId: 43,
+        slots: ['R3C1'],
+        warnings: [],
+        message: 'Wine saved'
+      });
+
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({ confirmed: true, convertQuantity: 1 });
+      expect(res.status).toBe(200);
+      expect(res.body.data.wineId).toBe(43);
+      expect(res.body.data.converted).toBe(1);
+      expect(res.body.data.remaining).toBe(2);
+      expect(res.body.data.partial).toBe(true);
+    });
+
+    it('returns 400 if not arrived', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => Promise.resolve({
+          ...arrivedItem, status: 'planned'
+        }))
+      }));
+
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({});
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('arrived');
+    });
+
+    it('returns 409 if already converted', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn(() => Promise.resolve({
+          ...arrivedItem, converted_wine_id: 99
+        }))
+      }));
+
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({});
+      expect(res.status).toBe(409);
+      expect(res.body.error).toContain('already converted');
+    });
+
+    it('rejects invalid convertQuantity', async () => {
+      const res = await request(app)
+        .post('/buying-guide-items/1/to-cellar')
+        .send({ convertQuantity: -5 });
+      expect(res.status).toBe(400);
+    });
+
+    it('returns 404 if item not found', async () => {
+      db.prepare.mockImplementation(() => ({
+        get: vi.fn(() => Promise.resolve(null))
+      }));
+
+      const res = await request(app)
+        .post('/buying-guide-items/999/to-cellar')
+        .send({});
+      expect(res.status).toBe(404);
+    });
+  });
+
+  describe('POST /buying-guide-items/batch-arrive', () => {
+    it('marks multiple items as arrived', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn((...args) => {
+          if (sql.includes('SELECT')) {
+            return Promise.resolve({
+              id: args[0], status: 'ordered', cellar_id: CELLAR_ID
+            });
+          }
+          return Promise.resolve({ id: args[1], status: 'arrived' });
+        })
+      }));
+
+      const res = await request(app)
+        .post('/buying-guide-items/batch-arrive')
+        .send({ ids: [1, 2] });
+      expect(res.status).toBe(200);
+      expect(res.body.data.updated).toBe(2);
+    });
+
+    it('accepts body with just ids (no status field)', async () => {
+      db.prepare.mockImplementation((sql) => ({
+        get: vi.fn((...args) => {
+          if (sql.includes('SELECT')) {
+            return Promise.resolve({
+              id: args[0], status: 'planned', cellar_id: CELLAR_ID
+            });
+          }
+          return Promise.resolve({ id: args[1], status: 'arrived' });
+        })
+      }));
+
+      // No status field in body — should be accepted
+      const res = await request(app)
+        .post('/buying-guide-items/batch-arrive')
+        .send({ ids: [1] });
+      expect(res.status).toBe(200);
+      expect(res.body.message).toContain('arrived');
+    });
+
+    it('rejects empty ids array', async () => {
+      const res = await request(app)
+        .post('/buying-guide-items/batch-arrive')
+        .send({ ids: [] });
+      expect(res.status).toBe(400);
     });
   });
 });

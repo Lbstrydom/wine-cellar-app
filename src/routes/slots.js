@@ -15,6 +15,7 @@ import {
   locationParamSchema
 } from '../schemas/slot.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
@@ -192,6 +193,8 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  // Invalidate buying guide cache — bottle count changed
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId);
 
   // Compute compaction suggestions for the affected row
@@ -227,6 +230,8 @@ router.post('/:location/add', validateParams(locationParamSchema), validateBody(
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  // Invalidate buying guide cache — bottle count changed
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId);
 
   res.json({ message: 'Bottle added to slot' });
@@ -255,6 +260,8 @@ router.delete('/:location/remove', validateParams(locationParamSchema), asyncHan
 
   // Invalidate analysis cache since slot assignments changed
   await invalidateAnalysisCache(null, req.cellarId);
+  // Invalidate buying guide cache — bottle count changed
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId);
 
   // Compute compaction suggestions for the affected row

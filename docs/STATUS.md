@@ -1,15 +1,28 @@
 # Wine Cellar App - Status Report
-## 24 February 2026
+## 27 February 2026
 
 ---
 
 ## Executive Summary
 
-The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on **Railway** with **Supabase PostgreSQL** database. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, and comprehensive test coverage.
+The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on **Railway** with **Supabase PostgreSQL** database. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, a shopping cart / buying workflow with arrival-to-cellar pipeline, and comprehensive test coverage.
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 23 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 27 Feb 2026**:
+- **Shopping Cart / Buying Workflow (Phases 1-6) — COMPLETE** ✅:
+  - Turns the buying guide from a read-only gap analysis into a **live shopping workflow** with persistent cart, real-time recalculation, and arrival-to-cellar pipeline.
+  - **Phase 1**: Data model (`buying_guide_items` + `buying_guide_cache` tables, RLS, indexes), centralized style taxonomy (`src/config/styleIds.js` — 11 style buckets), Zod validation schemas, backend CRUD service (`buyingGuideCart.js` — 340 lines, 9 exports), route with 13 endpoints (`/api/buying-guide-items`), backup integration.
+  - **Phase 2**: Style inference service (`styleInference.js` — grape detection + pairing engine classification → `{ styleId, confidence, matchedOn }`). Extension API contract endpoints: `POST /infer-style`, `GET /gaps`.
+  - **Phase 3**: Virtual inventory integration in `generateBuyingGuide()` — planned + ordered + unconverted arrived items count toward projected coverage. Server-side caching (1-hour TTL, `buying_guide_cache` table). New response fields: `projectedCoveragePct`, `projectedBottleCoveragePct`, `activeCartItems`, `activeCartBottles`, per-gap `projectedDeficit`.
+  - **Phase 4**: Frontend cart UI — `buyingGuideItems.js` (API module), `cartState.js` (state management), `cartPanel.js` (panel component with status grouping, batch actions, running totals). "Add to Plan" buttons on gap cards, dual coverage bars (physical + projected), projected deficit display.
+  - **Phase 5**: Arrival-to-cellar pipeline — `POST /:id/arrive` (mark arrived + placement suggestion via `suggestPlacement()`), `POST /:id/to-cellar` (transactional conversion with `db.transaction()` + `wrapClient()`, partial conversion with row-splitting, invariant check, idempotency guard), `POST /batch-arrive`. Refactored `saveAcquiredWine()` with `{ quantity, skipEnrichment, transaction }` options. Cache invalidation hooks in `bottles.js`, `slots.js`, `wines.js`.
+  - **Phase 6**: `cellarHealth.js` `generateShoppingList()` delegates to buying guide with `originalHealthShoppingList()` fallback for no-recipe users.
+  - New files: 9 (3 backend services, 1 route, 1 schema, 1 config, 3 frontend modules). Modified files: 12.
+  - Plan document: `docs/shop-plan.md`
+  - **Validation status**: `npm run test:unit` passes at **2267+ tests**.
+
+**Previous Enhancements** (23 Feb 2026):
 - **Unified Cellar Layout System (Phases 0-9) — COMPLETE** ✅:
   - Replaced three contradictory move generators (zone consolidation, row compaction, same-wine grouping) with a **single unified pipeline** that computes one ideal target layout, presents a visual diff grid with drag-drop adjustment, and executes a minimum sort plan atomically.
   - **Backend**: New `layoutProposer.js` (zone packing + stability optimisation), `layoutSorter.js` (permutation decomposition into direct/swap/cycle moves), new API endpoints (`GET /bottle-layout/propose`, `POST /validate-moves`), shared `slotUtils.js` + `moveUtils.js`, modified `validateMovePlan` Rule 1 for multi-bottle wineId support.

@@ -25,15 +25,19 @@ src/
 │   ├── wines.js           # /api/wines/* endpoints
 │   ├── slots.js           # /api/slots/* endpoints
 │   ├── bottles.js         # /api/bottles/* endpoints
+│   ├── buyingGuideItems.js # /api/buying-guide-items/* endpoints (shopping cart)
 │   ├── pairing.js         # /api/pairing/* endpoints
 │   ├── reduceNow.js       # /api/reduce-now/* endpoints
 │   └── stats.js           # /api/stats endpoint
+├── config/
+│   └── styleIds.js        # Centralized style bucket IDs & labels (11 styles)
 ├── services/
 │   ├── ai/                # Claude/OpenAI/Gemini integration
 │   ├── awards/            # Wine award extraction & matching
 │   ├── cellar/            # Cellar analysis, placement, suggestions
 │   ├── pairing/           # Food pairing engine & restaurant pairing
 │   ├── ratings/           # Rating extraction & normalization
+│   ├── recipe/            # Buying guide, shopping cart, style inference
 │   ├── scraping/          # Web scraping & document fetching
 │   ├── search/            # Google/SERP search pipeline
 │   ├── shared/            # Cross-domain utilities (cache, circuit breaker, etc.)
@@ -78,6 +82,10 @@ public/
     │   ├── zoneCapacityAlert.js    # Zone capacity issue alerts
     │   ├── zoneReconfigurationBanner.js  # Grouped zone reconfig banner
     │   └── zoneReconfigurationModal.js   # Zone reconfiguration dialog
+    ├── recipes/           # Buying guide & shopping cart UI
+    │   ├── buyingGuide.js # Buying guide with Add-to-Plan, dual coverage bars
+    │   ├── cartState.js   # Cart state management
+    │   └── cartPanel.js   # Cart panel (status grouping, batch actions, totals)
     └── restaurantPairing/ # Restaurant pairing assistant UI
         ├── state.js       # Session state management
         ├── imageCapture.js # Multi-image capture widget
@@ -782,6 +790,7 @@ tests/
     │   ├── cellar/          # Cellar service tests
     │   ├── pairing/         # Pairing service tests
     │   ├── ratings/         # Rating service tests
+    │   ├── recipe/          # Buying guide, cart, style inference tests
     │   ├── search/          # Search service tests
     │   ├── shared/          # Shared service tests
     │   └── wine/            # Wine service tests

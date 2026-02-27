@@ -9,6 +9,7 @@ import db from '../db/index.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
 import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 
 const router = Router();
@@ -113,6 +114,8 @@ router.post('/add', asyncHandler(async (req, res) => {
   // Update zone wine_count if this wine's first bottle just entered the cellar
   await adjustZoneCountAfterBottleCrud(wine_id, req.cellarId, 'added');
   await invalidateAnalysisCache(null, req.cellarId);
+  // Invalidate buying guide cache — bottle count changed
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId, slotsToFill.length);
 
   res.json({

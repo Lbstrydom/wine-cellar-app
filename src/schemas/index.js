@@ -124,7 +124,9 @@ export {
   batchStatusSchema,
   listItemsQuerySchema,
   itemIdSchema,
-  inferStyleSchema
+  inferStyleSchema,
+  toCellarSchema,
+  batchArriveSchema
 } from './buyingGuideItem.js';
 
 // Restaurant pairing schemas

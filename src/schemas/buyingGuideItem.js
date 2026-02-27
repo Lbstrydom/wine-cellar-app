@@ -81,3 +81,18 @@ export const inferStyleSchema = z.object({
   region: z.string().max(200).optional().nullable(),
   country: z.string().max(100).optional().nullable()
 });
+
+/**
+ * Convert arrived item to cellar.
+ */
+export const toCellarSchema = z.object({
+  confirmed: z.boolean().optional(),
+  convertQuantity: z.number().int().positive().max(999).optional()
+});
+
+/**
+ * Batch arrive (ids only, status hardcoded to 'arrived').
+ */
+export const batchArriveSchema = z.object({
+  ids: z.array(z.number().int().positive()).min(1).max(100)
+});

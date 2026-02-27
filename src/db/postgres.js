@@ -151,6 +151,37 @@ class PostgresDB {
   pragma() {}
 }
 
+/**
+ * Wrap a raw pg.Client (from transaction) with the same .prepare() API
+ * as PostgresDB, so services like saveAcquiredWine can use either.
+ * @param {pg.Client} client - Raw PostgreSQL client from pool.connect()
+ * @returns {{ prepare: Function }} Object with .prepare() matching PostgresDB API
+ */
+export function wrapClient(client) {
+  return {
+    prepare(sql) {
+      const pgSql = convertPlaceholders(sql);
+      return {
+        async get(...params) {
+          const r = await client.query(pgSql, params);
+          return r.rows[0] || null;
+        },
+        async all(...params) {
+          const r = await client.query(pgSql, params);
+          return r.rows;
+        },
+        async run(...params) {
+          const r = await client.query(pgSql, params);
+          return {
+            changes: r.rowCount,
+            lastInsertRowid: r.rows[0]?.id || null
+          };
+        }
+      };
+    }
+  };
+}
+
 const db = new PostgresDB(pool);
 const awardsDb = db; // Same pool for awards (same database)
 

@@ -11,13 +11,13 @@ import { validateBody, validateParams, validateQuery } from '../middleware/valid
 import {
   createItemSchema, updateItemSchema, updateStatusSchema,
   batchStatusSchema, listItemsQuerySchema, itemIdSchema,
-  inferStyleSchema
+  inferStyleSchema, toCellarSchema, batchArriveSchema
 } from '../schemas/buyingGuideItem.js';
 import * as cart from '../services/recipe/buyingGuideCart.js';
 import { inferStyleForItem } from '../services/recipe/styleInference.js';
 import { suggestPlacement, saveAcquiredWine, enrichWineData } from '../services/acquisitionWorkflow.js';
 import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
-import db from '../db/index.js';
+import db, { wrapClient } from '../db/index.js';
 import logger from '../utils/logger.js';
 
 const router = Router();
@@ -30,7 +30,7 @@ const router = Router();
  */
 router.get('/', validateQuery(listItemsQuerySchema), asyncHandler(async (req, res) => {
   const result = await cart.listItems(req.cellarId, req.query);
-  res.json({ data: result.items, total: result.total });
+  res.json({ data: { items: result.items, total: result.total } });
 }));
 
 /**
@@ -96,7 +96,7 @@ router.post('/infer-style', validateBody(inferStyleSchema), asyncHandler(async (
  * Batch mark items as arrived.
  * @route POST /api/buying-guide-items/batch-arrive
  */
-router.post('/batch-arrive', validateBody(batchStatusSchema), asyncHandler(async (req, res) => {
+router.post('/batch-arrive', validateBody(batchArriveSchema), asyncHandler(async (req, res) => {
   const { updated, skipped } = await cart.batchUpdateStatus(req.cellarId, req.body.ids, 'arrived');
   res.json({
     message: `${updated} item(s) marked as arrived`,
@@ -212,10 +212,11 @@ router.post('/:id/arrive', validateParams(itemIdSchema), asyncHandler(async (req
 
 /**
  * Convert arrived item to a physical wine record + assign slot.
- * Supports partial conversion when fewer slots are available.
+ * Supports partial conversion with row-splitting when fewer slots available.
+ * Wrapped in a database transaction for atomicity.
  * @route POST /api/buying-guide-items/:id/to-cellar
  */
-router.post('/:id/to-cellar', validateParams(itemIdSchema), asyncHandler(async (req, res) => {
+router.post('/:id/to-cellar', validateParams(itemIdSchema), validateBody(toCellarSchema), asyncHandler(async (req, res) => {
   const item = await cart.getItem(req.cellarId, req.params.id);
   if (!item) return res.status(404).json({ error: 'Item not found' });
 
@@ -235,7 +236,7 @@ router.post('/:id/to-cellar', validateParams(itemIdSchema), asyncHandler(async (
   const slotCount = await db.prepare(
     'SELECT COUNT(*) as count FROM slots WHERE cellar_id = ? AND wine_id IS NULL'
   ).get(req.cellarId);
-  const available = slotCount?.count || 0;
+  const available = Number(slotCount?.count) || 0;
 
   // Partial conversion check — ask user to confirm
   if (available < convertQuantity && !req.body?.confirmed) {
@@ -267,35 +268,67 @@ router.post('/:id/to-cellar', validateParams(itemIdSchema), asyncHandler(async (
     country: item.country || null
   };
 
-  // Save wine + assign slots (skipEnrichment = true, post-conversion enrichment below)
-  const saveResult = await saveAcquiredWine(wineData, {
-    cellarId: req.cellarId,
-    quantity: qty,
-    skipEnrichment: true
-  });
+  // Wrap conversion in a transaction for atomicity
+  const result = await db.transaction(async (client) => {
+    const txDb = wrapClient(client);
 
-  // Update cart item: set converted_wine_id + adjust quantity
-  await db.prepare(
-    'UPDATE buying_guide_items SET converted_wine_id = $1, updated_at = NOW() WHERE id = $2 AND cellar_id = $3'
-  ).run(saveResult.wineId, item.id, req.cellarId);
+    // 1. Create wine record + assign slots
+    const saveResult = await saveAcquiredWine(wineData, {
+      cellarId: req.cellarId,
+      quantity: qty,
+      skipEnrichment: true,
+      transaction: txDb
+    });
 
-  // Invalidate buying guide cache
-  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
+    // 2. Invariant: verify slot assignment matches requested quantity
+    if (!saveResult.slots || saveResult.slots.length < qty) {
+      throw new Error(
+        `Slot assignment mismatch: requested ${qty}, assigned ${saveResult.slots?.length ?? 0}`
+      );
+    }
 
-  // Queue background enrichment (fire-and-forget)
-  enrichWineData({ ...wineData, id: saveResult.wineId }).catch(err => {
-    logger.warn('[buyingGuideItems] post-conversion enrichment failed:', err.message);
-  });
+    // 3. Update original cart item: reduce quantity + set converted_wine_id
+    await txDb.prepare(
+      'UPDATE buying_guide_items SET quantity = ?, converted_wine_id = ?, updated_at = NOW() WHERE id = ? AND cellar_id = ?'
+    ).run(qty, saveResult.wineId, item.id, req.cellarId);
 
-  res.json({
-    message: `Converted ${qty} bottle(s) to cellar`,
-    data: {
+    // 4. If partial: insert remainder row to preserve virtual inventory
+    if (qty < item.quantity) {
+      const remainder = item.quantity - qty;
+      await txDb.prepare(`
+        INSERT INTO buying_guide_items (
+          cellar_id, wine_name, producer, quantity, style_id, status,
+          inferred_style_confidence, price, currency, vendor_url, vintage,
+          colour, grapes, region, country, notes, source, source_gap_style
+        ) VALUES (?, ?, ?, ?, ?, 'arrived', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        req.cellarId, item.wine_name, item.producer || null, remainder,
+        item.style_id || null, item.inferred_style_confidence || null,
+        item.price ?? null, item.currency || 'ZAR', item.vendor_url || null,
+        item.vintage ?? null, item.colour || null, item.grapes || null,
+        item.region || null, item.country || null, item.notes || null,
+        item.source || 'manual', item.source_gap_style || null
+      );
+    }
+
+    return {
       wineId: saveResult.wineId,
       slots: saveResult.slots,
       partial: qty < item.quantity,
       converted: qty,
       remaining: item.quantity - qty
-    }
+    };
+  });
+
+  // Post-transaction: invalidate cache + queue enrichment (fire-and-forget)
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
+  enrichWineData({ ...wineData, id: result.wineId }).catch(err => {
+    logger.warn('[buyingGuideItems] post-conversion enrichment failed:', err.message);
+  });
+
+  res.json({
+    message: `Converted ${result.converted} bottle(s) to cellar`,
+    data: result
   });
 }));
 

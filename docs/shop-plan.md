@@ -36,7 +36,7 @@ A separate `generateShoppingList()` in `cellarHealth.js:601` duplicates gap logi
 
 ---
 
-## Phase 1: Data Model + Backend Cart API
+## Phase 1: Data Model + Backend Cart API ✅ COMPLETE
 
 ### 1a. Centralize Style IDs
 **New**: `src/config/styleIds.js`
@@ -179,7 +179,7 @@ Also add corresponding import handling in the import endpoint.
 
 ---
 
-## Phase 2: Style Inference + Extension API Contract
+## Phase 2: Style Inference + Extension API Contract ✅ COMPLETE
 
 ### Inference Service
 **New**: `src/services/recipe/styleInference.js`
@@ -217,7 +217,7 @@ These are the only two endpoints the browser extension (separate spec) needs bey
 
 ---
 
-## Phase 3: Buying Guide Recalculation with Virtual Inventory + Caching
+## Phase 3: Buying Guide Recalculation with Virtual Inventory + Caching ✅ COMPLETE
 
 ### Modify `generateBuyingGuide()` in `src/services/recipe/buyingGuide.js`
 
@@ -270,7 +270,7 @@ The `GET /gaps` endpoint calls the cached `generateBuyingGuide()` and returns on
 
 ---
 
-## Phase 4: Frontend Shopping Cart UI
+## Phase 4: Frontend Shopping Cart UI ✅ COMPLETE
 
 ### API Module
 **New**: `public/js/api/buyingGuideItems.js`
@@ -341,7 +341,7 @@ Bump `CACHE_VERSION`.
 
 ---
 
-## Phase 5: Arrival → Cellar Flow
+## Phase 5: Arrival → Cellar Flow ✅ COMPLETE
 
 ### Refactor `saveAcquiredWine()` — `src/services/acquisitionWorkflow.js:361`
 
@@ -419,7 +419,7 @@ Changes:
 
 ---
 
-## Phase 6: Cellar Health Shopping List Delegation
+## Phase 6: Cellar Health Shopping List Delegation ✅ COMPLETE
 
 ### Modify `src/services/cellar/cellarHealth.js:601-615`
 
@@ -541,3 +541,42 @@ Phase 4: Open Recipe Library → Buying Guide shows "Add to Plan" on gap cards, 
 Phase 5: Add item → mark ordered → mark arrived → "Move to Cellar" → if partial, confirm dialog → wine appears in grid with correct zone → background enrichment queues
 
 Phase 6: Users with no recipes → `/health/shopping-list` still returns gaps from health-based logic (not empty)
+
+---
+
+## Implementation Status — 27 Feb 2026
+
+**All 6 phases: COMPLETE** — Feature is fully implemented and deployed.
+
+### Committed (via `9639643 feat: shopping cart / buying workflow`)
+
+All files listed in the Files Summary above have been created/modified and committed.
+
+### Uncommitted Enhancements (Phase 5 Hardening)
+
+The following improvements refine Phase 5's to-cellar conversion flow:
+
+1. **Transactional atomicity**: `POST /:id/to-cellar` now wrapped in `db.transaction()` using new `wrapClient(client)` helper (`src/db/postgres.js`). Ensures wine creation, slot assignment, cart item update, and remainder row insertion are atomic.
+
+2. **`wrapClient()` function**: New export from `src/db/postgres.js` and `src/db/index.js` — wraps a raw `pg` client in the same `prepare().get/all/run()` API as the main `db` object, enabling transaction-scoped queries with consistent placeholder conversion.
+
+3. **Schema validation**: New `toCellarSchema` (confirmed + convertQuantity) and `batchArriveSchema` (ids-only) in `src/schemas/buyingGuideItem.js`, re-exported from `src/schemas/index.js`.
+
+4. **Invariant check**: After `saveAcquiredWine()`, verifies `slots.length >= qty` — throws and rolls back transaction on mismatch.
+
+5. **Row-splitting for partial conversion**: When `qty < item.quantity`, inserts a remainder row preserving the original item's metadata (style, price, vendor, etc.) with `arrived` status, maintaining virtual inventory continuity.
+
+6. **Response shape fix**: `GET /` now returns `{ data: { items, total } }` (nested) instead of `{ data, total }` for consistency with other list endpoints.
+
+7. **Available slot count coercion**: `Number(slotCount?.count) || 0` prevents string/null edge cases from PostgreSQL COUNT.
+
+8. **Cache invalidation hooks**: `invalidateBuyingGuideCache(req.cellarId)` added to:
+   - `src/routes/bottles.js` — after bottle add
+   - `src/routes/slots.js` — after drink, add, and remove operations (3 locations)
+   - `src/routes/wines.js` — after wine create and delete
+
+9. **Comprehensive test coverage**: `tests/unit/routes/buyingGuideItems.test.js` extended with:
+   - `POST /:id/arrive` (3 tests: success with placement, 404, 400 invalid transition)
+   - `POST /:id/to-cellar` (6 tests: full conversion, requiresConfirmation, partial, not-arrived, already-converted, 404)
+   - `POST /batch-arrive` (3 tests: multiple items, ids-only body, rejects empty)
+   - db mock enhanced with `transaction()` and `wrapClient()` support

@@ -22,6 +22,7 @@ import { evaluateWineAdd } from '../services/wine/wineAddOrchestrator.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
 import { normalizeColour } from '../utils/wineNormalization.js';
 import { findBestZone } from '../services/cellar/cellarPlacement.js';
 import { updateZoneWineCount } from '../services/cellar/cellarAllocation.js';
@@ -453,6 +454,9 @@ router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) =
     } catch { /* fail-open: grape detection is advisory */ }
   }
 
+  // Invalidate buying guide cache — new wine changes inventory vs. gap calculations
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
+
   let warnings = [];
   try {
     const finding = checkWineConsistency({ id: wineId, wine_name, colour, grapes: resolvedGrapes, style });
@@ -618,6 +622,8 @@ router.delete('/:id', validateParams(wineIdSchema), asyncHandler(async (req, res
 
   // Invalidate analysis cache — wine removal changes zone composition
   await invalidateAnalysisCache(null, req.cellarId);
+  // Invalidate buying guide cache — wine removal changes inventory vs. gap calculations
+  invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   if (deletedBottleCount > 0) {
     await incrementBottleChangeCount(req.cellarId, deletedBottleCount);
   }

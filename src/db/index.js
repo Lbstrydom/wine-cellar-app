@@ -19,6 +19,7 @@ const postgres = await import('./postgres.js');
 const db = postgres.default;
 const awardsDb = postgres.awardsDb;
 const pool = postgres.pool;
+const wrapClient = postgres.wrapClient;
 
 export default db;
-export { awardsDb, pool };
+export { awardsDb, pool, wrapClient };
