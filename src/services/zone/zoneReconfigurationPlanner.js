@@ -386,6 +386,7 @@ A solver has already produced a draft plan. Your job is to:
 5. Write a concise reasoning narrative explaining the strategic vision
 
 COLOR BOUNDARY RULE: ${colourOrder === 'reds-top' ? 'Red wines in lower rows, white wines in higher rows' : 'White wines in lower rows, red wines in higher rows'}. Never adjacent.
+BUFFER ZONE RULE: white_buffer (White Reserve) and red_buffer (Red Reserve) MUST remain at the boundary between white and red sections. NEVER move rows away from buffer zones or reallocate buffer rows to other zones.
 CONSOLIDATION RULE: Same wine type should be physically near each other.
 CONTIGUITY RULE: A zone's rows MUST be contiguous (adjacent) where feasible. A zone at R3 and R8 is BAD; R3+R4 is GOOD. Prefer swapping to achieve contiguous blocks.
 
@@ -663,8 +664,11 @@ function heuristicGapFill(
       if (donor.rowCount <= 1) continue;
       if (neverMerge.has(donor.zoneId)) continue;
 
-      // Colour compatibility: skip cross-colour donations
+      // Buffer zones must stay at the colour boundary — never donate their rows
       const donorZoneDef = getZoneById(donor.zoneId);
+      if (donorZoneDef?.isBufferZone) continue;
+
+      // Colour compatibility: skip cross-colour donations
       if (donorZoneDef) {
         const donorColor = getEffectiveZoneColor(donorZoneDef);
         if (toColor !== 'any' && donorColor !== 'any' && toColor !== donorColor) {
@@ -779,6 +783,8 @@ export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
   const MAX_REPAIR_PAIRS = 3; // Limit to 3 swap pairs (6 actions) to avoid plan bloat
 
   for (const [zoneId, rows] of postMap) {
+    const zoneDef = getZoneById(zoneId);
+    if (zoneDef?.isBufferZone) continue;
     if (rows.length < 2) continue;
     if (repairActions.length >= MAX_REPAIR_PAIRS * 2) break;
 
@@ -825,6 +831,8 @@ export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
         const targetRowKey = `R${targetRow}`;
         const otherZone = rowToZone.get(targetRowKey) || rowToZone.get(String(targetRow));
         if (!otherZone || otherZone === zoneId) continue;
+        const otherZoneDef = getZoneById(otherZone);
+        if (otherZoneDef?.isBufferZone) continue;
 
         // Colour compatibility check
         const zone = getZoneById(zoneId);
