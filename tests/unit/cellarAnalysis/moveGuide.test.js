@@ -14,7 +14,7 @@ vi.mock('../../../public/js/utils.js', () => ({
   escapeHtml: vi.fn(s => s)
 }));
 vi.mock('../../../public/js/app.js', () => ({
-  refreshLayout: vi.fn()
+  refreshLayout: vi.fn().mockResolvedValue()
 }));
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn()
@@ -231,30 +231,30 @@ describe('Move Guide lifecycle', () => {
     }
   });
 
-  it('should not activate for empty moves', () => {
-    openMoveGuide([]);
+  it('should not activate for empty moves', async () => {
+    await openMoveGuide([]);
     expect(isMoveGuideActive()).toBe(false);
   });
 
-  it('should not activate for null moves', () => {
-    openMoveGuide(null);
+  it('should not activate for null moves', async () => {
+    await openMoveGuide(null);
     expect(isMoveGuideActive()).toBe(false);
   });
 
-  it('should not activate for moves with only manual type', () => {
-    openMoveGuide([{ type: 'manual', from: 'R1C1', to: 'R2C1' }]);
+  it('should not activate for moves with only manual type', async () => {
+    await openMoveGuide([{ type: 'manual', from: 'R1C1', to: 'R2C1' }]);
     expect(isMoveGuideActive()).toBe(false);
   });
 
-  it('should activate for moves with actionable type', () => {
-    openMoveGuide([
+  it('should activate for moves with actionable type', async () => {
+    await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
     expect(isMoveGuideActive()).toBe(true);
   });
 
-  it('should deactivate on closeMoveGuide', () => {
-    openMoveGuide([
+  it('should deactivate on closeMoveGuide', async () => {
+    await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
     expect(isMoveGuideActive()).toBe(true);
@@ -262,23 +262,23 @@ describe('Move Guide lifecycle', () => {
     expect(isMoveGuideActive()).toBe(false);
   });
 
-  it('should register window.__moveGuideAnnotate on open', () => {
-    openMoveGuide([
+  it('should register window.__moveGuideAnnotate on open', async () => {
+    await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
     expect(typeof window.__moveGuideAnnotate).toBe('function');
   });
 
-  it('should remove window.__moveGuideAnnotate on close', () => {
-    openMoveGuide([
+  it('should remove window.__moveGuideAnnotate on close', async () => {
+    await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
     closeMoveGuide();
     expect(window.__moveGuideAnnotate).toBeUndefined();
   });
 
-  it('should filter manual moves and only track actionable ones', () => {
-    openMoveGuide([
+  it('should filter manual moves and only track actionable ones', async () => {
+    await openMoveGuide([
       { type: 'manual', from: 'R1C1', to: 'Z1', wineName: 'Manual' },
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Move1' },
       { type: 'move', from: 'R3C1', to: 'R4C1', wineId: 2, wineName: 'Move2' }
@@ -287,12 +287,12 @@ describe('Move Guide lifecycle', () => {
     closeMoveGuide();
   });
 
-  it('should switch to grid tab on open', () => {
+  it('should switch to grid tab on open', async () => {
     const mockTab = createMockElement('button');
     mockTab.dataset.view = 'grid';
     document.querySelector.mockReturnValueOnce(mockTab);
 
-    openMoveGuide([
+    await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
     expect(mockTab.click).toHaveBeenCalled();
@@ -303,10 +303,10 @@ describe('Move Guide lifecycle', () => {
     expect(() => closeMoveGuide()).not.toThrow();
   });
 
-  it('should be safe to call openMoveGuide twice (idempotent)', () => {
+  it('should be safe to call openMoveGuide twice (idempotent)', async () => {
     const moves = [{ type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }];
-    openMoveGuide(moves);
-    expect(() => openMoveGuide(moves)).not.toThrow();
+    await openMoveGuide(moves);
+    await expect(openMoveGuide(moves)).resolves.not.toThrow();
     expect(isMoveGuideActive()).toBe(true);
     closeMoveGuide();
   });
@@ -370,9 +370,9 @@ describe('executeCurrentMove validation handling', () => {
    * Helper: open guide, find the execute-button callback captured by addTrackedListener.
    * Returns the async callback so tests can await it.
    */
-  function getExecuteCallback() {
+  async function getExecuteCallback() {
     addTrackedListener.mockClear();
-    openMoveGuide(testMoves);
+    await openMoveGuide(testMoves);
     // addTrackedListener is called with (namespace, element, event, callback)
     // Find the 'click' listener whose element is the execute button mock
     const executeCall = addTrackedListener.mock.calls.find(
@@ -398,7 +398,7 @@ describe('executeCurrentMove validation handling', () => {
       errors: [{ type: 'slot_not_found', message: 'Source slot R1C1 not found', slot: 'R1C1' }]
     };
     executeCellarMoves.mockResolvedValueOnce({ success: false, validation: validationPayload });
-    const executeCb = getExecuteCallback();
+    const executeCb = await getExecuteCallback();
     expect(executeCb).toBeTypeOf('function');
 
     await executeCb();
@@ -415,7 +415,7 @@ describe('executeCurrentMove validation handling', () => {
     const err = new Error('Validation failed');
     err.validation = validationPayload;
     executeCellarMoves.mockRejectedValueOnce(err);
-    const executeCb = getExecuteCallback();
+    const executeCb = await getExecuteCallback();
 
     await executeCb();
 
@@ -424,7 +424,7 @@ describe('executeCurrentMove validation handling', () => {
 
   it('should show generic toast when executeCellarMoves rejects without validation', async () => {
     executeCellarMoves.mockRejectedValueOnce(new Error('Network failure'));
-    const executeCb = getExecuteCallback();
+    const executeCb = await getExecuteCallback();
 
     await executeCb();
 
@@ -434,7 +434,7 @@ describe('executeCurrentMove validation handling', () => {
 
   it('should show generic toast when result.success is false without validation', async () => {
     executeCellarMoves.mockResolvedValueOnce({ success: false });
-    const executeCb = getExecuteCallback();
+    const executeCb = await getExecuteCallback();
 
     await executeCb();
 

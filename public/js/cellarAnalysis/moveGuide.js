@@ -60,9 +60,11 @@ export function detectSwapPairs(moves, { typeFilter = null } = {}) {
 
 /**
  * Open the move guide panel and annotate the grid.
+ * Refreshes the cellar grid first so zone labels reflect the latest
+ * database state (important after zone reconfiguration).
  * @param {Array} allMoves - All suggested moves (including manual type)
  */
-export function openMoveGuide(allMoves) {
+export async function openMoveGuide(allMoves) {
   const actionableMoves = (allMoves || []).filter(m => m.type === 'move');
 
   if (actionableMoves.length === 0) {
@@ -81,6 +83,11 @@ export function openMoveGuide(allMoves) {
 
   // Switch to cellar grid tab
   switchToCellarTab();
+
+  // Refresh the grid so zone labels are up-to-date (e.g. after reconfig)
+  await refreshLayout().catch(err =>
+    console.warn('[MoveGuide] grid refresh failed:', err)
+  );
 
   // Create panel and annotate
   createPanel();
@@ -562,7 +569,7 @@ async function handleRecalculate() {
     closeMoveGuide();
 
     if (freshMoves.some(m => m.type === 'move')) {
-      openMoveGuide(freshMoves);
+      await openMoveGuide(freshMoves);
     } else {
       showToast('No more moves needed!');
     }
