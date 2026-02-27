@@ -47,9 +47,6 @@ export function renderZoneNarratives(narratives) {
     const topGrapes = zone.currentComposition?.topGrapes?.slice(0, 2) || [];
     const topCountries = zone.currentComposition?.topCountries?.slice(0, 2) || [];
 
-    // Only show zones with bottles
-    if (bottles === 0) return '';
-
     const compositionParts = [];
     if (topGrapes.length > 0) compositionParts.push(topGrapes.join(', '));
     if (topCountries.length > 0 && topCountries[0] !== 'Unknown') {
@@ -72,7 +69,11 @@ export function renderZoneNarratives(narratives) {
           <div class="zone-card-composition">
             Currently: ${compositionParts.join(' ')}
           </div>
-        ` : ''}
+        ` : `
+          <div class="zone-card-composition">
+            Currently: empty
+          </div>
+        `}
         ${pairingHints.length > 0 ? `
           <div class="zone-card-pairing">
             <strong>Pairs with:</strong> ${pairingHints.join(', ')}

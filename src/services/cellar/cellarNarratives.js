@@ -149,8 +149,9 @@ export function generateZoneNarratives(zoneWineMap) {
   for (const [zoneId, data] of zoneWineMap) {
     const { zone, rows, wines } = data;
 
-    // Skip empty zones and fallback zones; include buffer zones if they have wines
-    if (wines.length === 0 || zone.isFallbackZone) continue;
+    // Skip fallback zones only; keep empty non-fallback zones so the UI can
+    // show complete row ownership after reconfiguration.
+    if (zone.isFallbackZone) continue;
 
     // Get intent from database
     let intent = null;

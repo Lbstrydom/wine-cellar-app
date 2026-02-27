@@ -110,5 +110,29 @@ describe('cellarAnalysis/zones CTA wiring', () => {
     expect(confirmZoneLayout).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalledWith('No dedicated rows to confirm yet');
   });
+
+  it('renders empty zone cards so row ownership remains visible', async () => {
+    const { renderZoneNarratives } = await import('../../../public/js/cellarAnalysis/zones.js');
+
+    elements['analysis-zones'] = makeElement();
+    elements['zone-cards-grid'] = makeElement();
+
+    renderZoneNarratives([
+      {
+        zoneId: 'white_reserve',
+        displayName: 'White Reserve',
+        rows: ['R1'],
+        currentComposition: { bottleCount: 0, topGrapes: [], topCountries: [] },
+        health: { status: 'healthy', utilizationPercent: 0 },
+        intent: null
+      }
+    ]);
+
+    expect(elements['analysis-zones'].style.display).toBe('block');
+    expect(elements['zone-cards-grid'].innerHTML).toContain('White Reserve');
+    expect(elements['zone-cards-grid'].innerHTML).toContain('Rows: R1');
+    expect(elements['zone-cards-grid'].innerHTML).toContain('0 bottles');
+    expect(elements['zone-cards-grid'].innerHTML).toContain('Currently: empty');
+  });
 });
 

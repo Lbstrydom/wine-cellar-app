@@ -5,8 +5,7 @@
 
 import { escapeHtml, showToast } from '../utils.js';
 import { openReconfigurationModal } from './zoneReconfigurationModal.js';
-import { openMoveGuide } from './moveGuide.js';
-import { getCurrentAnalysis } from './state.js';
+import { switchWorkspace } from './state.js';
 import {
   CTA_RECONFIGURE_ZONES,
   CAPACITY_ALERT_HOLISTIC_THRESHOLD,
@@ -80,66 +79,6 @@ function renderBannerMarkup(summary) {
 }
 
 /**
- * Build a compact zone-to-row layout summary from zone narratives.
- * Ordered by first row number (top-to-bottom matching the physical grid).
- * @param {Array} narratives - analysis.zoneNarratives
- * @returns {string} HTML string for the layout summary, or '' if no data
- */
-function buildZoneLayoutSummary(narratives) {
-  if (!Array.isArray(narratives) || narratives.length === 0) return '';
-
-  // Sort by first row number (R1 before R3 before R12, etc.)
-  const sorted = [...narratives].sort((a, b) => {
-    const aRow = parseRowNumber(a.rows?.[0]);
-    const bRow = parseRowNumber(b.rows?.[0]);
-    return aRow - bRow;
-  });
-
-  const rows = sorted.map(zone => {
-    const name = escapeHtml(zone.displayName || zone.zoneId);
-    const rowList = (zone.rows || []).join(', ');
-    const bottles = zone.health?.bottleCount ?? zone.currentComposition?.bottleCount ?? 0;
-    const util = zone.health?.utilizationPercent ?? 0;
-    const status = zone.health?.status || 'healthy';
-
-    // Compact utilisation bar (visual indicator)
-    const barWidth = Math.min(util, 100);
-    const barClass = status === 'overcrowded' ? 'bar-warning'
-      : status === 'critical' ? 'bar-danger'
-        : util >= 80 ? 'bar-high' : 'bar-normal';
-
-    return `
-      <div class="zone-layout-row">
-        <div class="zone-layout-name">${name}</div>
-        <div class="zone-layout-rows">${escapeHtml(rowList)}</div>
-        <div class="zone-layout-bar">
-          <div class="zone-layout-bar-fill ${barClass}" style="width: ${barWidth}%"></div>
-        </div>
-        <div class="zone-layout-stats">${bottles} btl · ${util}%</div>
-      </div>
-    `;
-  }).join('');
-
-  return `
-    <div class="zone-layout-summary">
-      <div class="zone-layout-title">Updated Zone Layout</div>
-      ${rows}
-    </div>
-  `;
-}
-
-/**
- * Parse a row label like 'R3' into its numeric part for sorting.
- * @param {string} row - Row label (e.g. 'R3', 'R12')
- * @returns {number}
- */
-function parseRowNumber(row) {
-  if (!row) return 999;
-  const match = row.match(/\d+/);
-  return match ? Number.parseInt(match[0], 10) : 999;
-}
-
-/**
  * Render a success banner after reconfiguration was just applied.
  * Shows bottles that need to physically move to their new zones.
  */
@@ -147,78 +86,21 @@ function renderPostReconfigBanner(analysis) {
   const result = analysis.__reconfigResult || {};
   const zonesChanged = result.zonesChanged ?? 0;
   const skipped = result.actionsAutoSkipped ?? 0;
-
-  // Get misplaced wines - these need to physically move to their new zones
-  const misplacedWines = Array.isArray(analysis?.misplacedWines) ? analysis.misplacedWines : [];
-
-  // Build zone layout summary from fresh zone narratives
-  const layoutSummary = buildZoneLayoutSummary(analysis?.zoneNarratives);
-
-  let contentHtml = '';
-
-  if (misplacedWines.length === 0) {
-    contentHtml = `
-      <div class="zone-reconfig-banner-message">
-        Zone boundaries updated successfully. All bottles are correctly placed.
-      </div>
-    `;
-  } else {
-    // Group by suggested zone for cleaner display
-    const byTargetZone = new Map();
-    for (const wine of misplacedWines) {
-      const targetZone = wine.suggestedZone || 'Unknown';
-      if (!byTargetZone.has(targetZone)) {
-        byTargetZone.set(targetZone, []);
-      }
-      byTargetZone.get(targetZone).push(wine);
-    }
-
-    // Build the move list (show first 8, summarize rest)
-    const moveItems = [];
-    let shown = 0;
-    const maxToShow = 8;
-
-    for (const [targetZone, wines] of byTargetZone) {
-      for (const wine of wines) {
-        if (shown < maxToShow) {
-          moveItems.push(`
-            <li>
-              <span class="wine-name">${escapeHtml(wine.name)}</span>
-              <span class="move-arrow">→</span>
-              <span class="target-zone">${escapeHtml(targetZone)}</span>
-              <span class="current-slot">(currently ${escapeHtml(wine.currentSlot)})</span>
-            </li>
-          `);
-          shown++;
-        }
-      }
-    }
-
-    const remaining = misplacedWines.length - shown;
-
-    contentHtml = `
-      <div class="zone-reconfig-banner-message">
-        Zone boundaries updated. <strong>${misplacedWines.length} bottle(s)</strong> should be physically moved to their new zones:
-      </div>
-      <ul class="zone-reconfig-move-list">
-        ${moveItems.join('')}
-        ${remaining > 0 ? `<li class="more-items">... and ${remaining} more bottle(s)</li>` : ''}
-      </ul>
-      <div class="zone-reconfig-banner-hint">
-        Use the "Suggested Moves" section below to see all moves and apply them.
-      </div>
-    `;
-  }
+  const misplacedCount = analysis?.summary?.misplacedBottles ?? 0;
+  const message = misplacedCount > 0
+    ? `Zone boundaries updated. <strong>${misplacedCount} bottle(s)</strong> should move to their new zone positions.`
+    : 'Zone boundaries updated successfully. All bottles are correctly placed.';
 
   return `
     <div class="zone-reconfig-banner zone-reconfig-banner--success">
       <div class="zone-reconfig-banner-header">Zone Reconfiguration Complete</div>
       <div class="zone-reconfig-banner-body">
-        ${contentHtml}
-        ${layoutSummary}
+        <div class="zone-reconfig-banner-message">
+          ${message}
+        </div>
         <div class="zone-reconfig-banner-actions">
-          <button class="btn btn-primary" data-action="scroll-to-moves">Review Moves Below</button>
-          <button class="btn btn-secondary" data-action="open-move-guide">Visual Guide</button>
+          <button class="btn btn-secondary" data-action="view-updated-zones">View Updated Zones</button>
+          <button class="btn btn-primary" data-action="review-placement-moves">Review Placement Moves</button>
         </div>
         <div class="zone-reconfig-banner-details">
           <div>• Zones changed: ${zonesChanged}</div>
@@ -245,42 +127,38 @@ export function renderZoneReconfigurationBanner(analysis, { onRenderAnalysis } =
   // Just applied a reconfiguration - show success banner instead of issues
   if (analysis?.__justReconfigured) {
     el.innerHTML = renderPostReconfigBanner(analysis);
-    // Wire "Review Moves Below" button — prefer layout diff container (Phase 4-7)
-    const scrollBtn = el.querySelector('[data-action="scroll-to-moves"]');
-    if (scrollBtn) {
-      scrollBtn.addEventListener('click', () => {
+    const zonesBtn = el.querySelector('[data-action="view-updated-zones"]');
+    if (zonesBtn) {
+      zonesBtn.addEventListener('click', () => {
+        switchWorkspace('zones');
+        document.getElementById('workspace-zones')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    }
+
+    const placementBtn = el.querySelector('[data-action="review-placement-moves"]');
+    if (placementBtn) {
+      placementBtn.addEventListener('click', () => {
+        switchWorkspace('placement');
+
         const diffEl = document.getElementById('layout-diff-container');
         if (diffEl && diffEl.style.display !== 'none') {
-          diffEl.scrollIntoView({ behavior: 'smooth' });
+          diffEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
+
         const ctaEl = document.getElementById('layout-proposal-cta');
         if (ctaEl && ctaEl.style.display !== 'none') {
-          ctaEl.scrollIntoView({ behavior: 'smooth' });
+          ctaEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
           return;
         }
-        document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth' });
+
+        document.getElementById('analysis-moves')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     }
-    // Wire "Visual Guide" button
-    const guideBtn = el.querySelector('[data-action="open-move-guide"]');
-    if (guideBtn) {
-      guideBtn.addEventListener('click', () => {
-        const currentAnalysis = getCurrentAnalysis();
-        if (currentAnalysis?.suggestedMoves) {
-          openMoveGuide(currentAnalysis.suggestedMoves);
-        }
-      });
-    }
-    // Filter out zone-structure alerts — capacity, adjacency, and colour order
-    // are expected to appear post-reconfig because bottles haven't moved yet.
-    // The Placement workspace shows the moves needed to resolve them.
-    const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
-    const suppressedTypes = new Set([
-      'zone_capacity_issue', 'color_adjacency_violation', 'colour_order_violation'
-    ]);
-    const remainingAlerts = alerts.filter(a => !suppressedTypes.has(a.type));
-    return { remainingAlerts, rendered: true };
+
+    // Right after reconfiguration, don't append generic alerts under the success
+    // banner. The placement workspace already shows exact move actions.
+    return { remainingAlerts: [], rendered: true };
   }
 
   if (!shouldShowHolisticBanner(analysis)) {

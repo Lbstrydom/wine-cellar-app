@@ -17,7 +17,11 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
     { id: 'southern_france', displayName: 'Southern France', color: 'red', rules: {} },
     { id: 'pinot_noir', displayName: 'Pinot Noir', color: 'red', rules: { grapes: ['pinot noir'] } },
     { id: 'merlot', displayName: 'Merlot', color: 'red', rules: { grapes: ['merlot'] } },
-    { id: 'curiosities', displayName: 'Curiosities', color: 'red', rules: {} }
+    { id: 'curiosities', displayName: 'Curiosities', color: 'red', rules: {} },
+    { id: 'appassimento', displayName: 'Appassimento', color: 'red', rules: {} },
+    { id: 'puglia_primitivo', displayName: 'Puglia Primitivo', color: 'red', rules: {} },
+    { id: 'red_buffer', displayName: 'Red Reserve', color: 'red', isBufferZone: true, rules: {} },
+    { id: 'white_buffer', displayName: 'White Reserve', color: 'white', isBufferZone: true, rules: {} }
   ];
   return {
     CELLAR_ZONES: { zones },
@@ -311,6 +315,27 @@ describe('repairContiguityGaps', () => {
         }
         allRowAssignments.set(r, zoneId);
       }
+    }
+  });
+
+  it('does not use buffer zones in contiguity repair swaps', () => {
+    const zoneRowMap = new Map([
+      ['red_buffer', ['R12', 'R19']],
+      ['appassimento', ['R18']],
+      ['puglia_primitivo', ['R17']],
+      ['cabernet', ['R13', 'R14']],
+      ['shiraz', ['R15', 'R16']]
+    ]);
+
+    const result = repairContiguityGaps([], zoneRowMap, 20);
+    const repairActions = result.filter(a => a.reason?.includes('contiguity repair'));
+
+    expect(repairActions.length).toBe(0);
+    for (const action of result) {
+      expect(action.fromZoneId).not.toBe('red_buffer');
+      expect(action.toZoneId).not.toBe('red_buffer');
+      expect(action.fromZoneId).not.toBe('white_buffer');
+      expect(action.toZoneId).not.toBe('white_buffer');
     }
   });
 });
