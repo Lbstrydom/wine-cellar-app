@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wine Cellar Assistant</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header class="popup-header">
+    <img src="../icons/icon32.png" alt="" class="popup-logo" width="20" height="20">
+    <span class="popup-title">Wine Cellar</span>
+    <button id="settings-btn" class="settings-link" title="Settings" aria-label="Open settings">⚙</button>
+  </header>
+
+  <!-- ── Loading state ──────────────────────────────────────────────────── -->
+  <div id="state-loading" class="state hidden">
+    <div class="spinner" aria-label="Loading"></div>
+    <p class="state-msg">Loading…</p>
+  </div>
+
+  <!-- ── Unauthenticated state ──────────────────────────────────────────── -->
+  <div id="state-unauthenticated" class="state hidden">
+    <div class="unauth-icon" aria-hidden="true">🍷</div>
+    <h2>Connect Wine Cellar</h2>
+    <p class="unauth-desc">
+      Open the Wine Cellar app to connect your account. Once you're signed in,
+      the extension will sync automatically.
+    </p>
+    <button id="open-app-btn" class="btn btn-primary btn-full">
+      Open Wine Cellar App
+    </button>
+  </div>
+
+  <!-- ── Product detected state ─────────────────────────────────────────── -->
+  <div id="state-product" class="state hidden">
+    <div class="detected-badge">Wine detected</div>
+    <div id="product-name" class="product-name"></div>
+    <div id="product-meta" class="product-meta"></div>
+
+    <button id="add-to-plan-btn" class="btn btn-primary btn-full">
+      + Add to Plan
+    </button>
+    <div id="add-feedback" class="feedback hidden"></div>
+
+    <div class="divider"></div>
+
+    <div class="section-label">Your top gaps</div>
+    <div id="gaps-mini" class="gaps-mini"></div>
+  </div>
+
+  <!-- ── Gaps view (default when no product detected) ───────────────────── -->
+  <div id="state-gaps" class="state hidden">
+    <div class="section-label">Buying gaps</div>
+    <div id="gaps-list" class="gaps-list"></div>
+    <div id="no-gaps" class="no-gaps hidden">
+      <span class="check-icon" aria-hidden="true">✓</span>
+      <p>Your cellar is well covered!</p>
+    </div>
+    <a id="open-app-link"
+       href="https://cellar.creathyst.com"
+       target="_blank"
+       rel="noopener noreferrer"
+       class="open-app-link">Open full buying guide →</a>
+  </div>
+
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

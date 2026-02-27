@@ -544,6 +544,163 @@ Phase 6: Users with no recipes → `/health/shopping-list` still returns gaps fr
 
 ---
 
+---
+
+## Phase 7: Chrome Extension
+
+A companion browser extension that lets the user add wines to their buying plan directly from any wine retailer page, and see their cellar gaps without leaving the shop.
+
+**Confirmed design decisions** (27 Feb 2026):
+- Icons: Use existing app icons for now; update later
+- Content script scope: `<all_urls>` (global audience, can't maintain retailer allowlist)
+- Distribution: Chrome Web Store (one-time $5 developer fee at https://chrome.google.com/webstore/devconsole)
+- Multi-cellar: Settings page shows cellar picker; single-cellar users see it hidden
+
+**API dependencies**: Phase 2 endpoints only — `POST /infer-style` and `GET /gaps` — plus Phase 1 CRUD. No new backend endpoints needed.
+
+---
+
+### Phase 7a: Extension Shell + Auth
+
+**New**: `extension/manifest.json` — Manifest V3
+- `background.service_worker` + `type: "module"` (ES module service worker)
+- `content_scripts`: `["shared/extractors.js", "content/content.js"]` with `<all_urls>`
+- `options_page`: `settings/settings.html`
+- Permissions: `storage`, `tabs`, `activeTab`
+- Icons: 16, 32, 128 (copied from `public/images/`)
+
+**New**: `extension/background/service_worker.js`
+- Stores `{ token, expiresAt, cellarId }` in `chrome.storage.sync`
+- Message handlers: `GET_AUTH`, `AUTH_FROM_APP`, `SET_CELLAR`, `SIGN_OUT`, `ITEM_ADDED`
+- Badge management: `+1` green badge for 4 s after add
+
+**Auth flow** (zero-friction for personal app):
+1. Content script on `cellar.creathyst.com` reads Supabase `localStorage` key (`sb-*-auth-token`)
+2. Sends `AUTH_FROM_APP` to service worker → stored in `chrome.storage.sync`
+3. On popup open → `GET_AUTH` → if expired, show unauthenticated state
+4. User never needs to enter credentials in the extension — just be logged into the app
+
+**New**: `extension/shared/api.js` (ES module, used by popup + settings)
+- `apiFetch(path, options, auth)` — adds `Authorization` + `X-Cellar-ID` headers
+- Exports: `getCellars`, `getGaps`, `inferStyle`, `addToPlan`
+
+---
+
+### Phase 7b: Wine Detection
+
+**New**: `extension/shared/extractors.js` (regular script — runs as content script, loaded before `content.js`)
+
+Extraction pipeline (priority order):
+1. **JSON-LD** — `<script type="application/ld+json">` with `@type: Product` → `confidence: 'high'`
+2. **Domain-specific extractors** (Vivino, WineMag, Woolworths SA, Faithful2Nature, Yuppiechef, Takealot) → `confidence: 'medium'`
+3. **OpenGraph** — `og:title` + `og:description` filtered by wine signals → `confidence: 'low'`
+4. **Generic heuristic** — `h1` + page title + price element scan → `confidence: 'low'`
+
+Wine signal detection (`isLikelyWine`): Matches grape varieties, wine-domain keywords, wine categories.
+Price parsing: Supports ZAR (R/ZAR prefix), EUR (€), GBP (£), USD ($).
+Exposes `window.WineExtractors = { extractWineFromPage, parseVintage, parsePrice, isLikelyWine }`.
+
+**New**: `extension/content/content.js` (regular script)
+- On `cellar.creathyst.com`: reads Supabase session → sends `AUTH_FROM_APP`
+- Message listener: `EXTRACT_WINE` → calls `window.WineExtractors.extractWineFromPage()` → responds with wine data
+
+---
+
+### Phase 7c: Popup UI
+
+**New**: `extension/popup/popup.html`, `popup.js`, `popup.css`
+
+Three view states:
+| State | Trigger | Shows |
+|-------|---------|-------|
+| `unauthenticated` | No valid token in storage | "Open Wine Cellar App" button |
+| `product` | Wine detected on current page | Detected wine card + "Add to Plan" + top-3 gaps mini list |
+| `gaps` | Authenticated, no wine detected | Full gap cards with coverage bars |
+
+Popup width: 300px. Dark theme matching app (`--bg: #1a1a2e`). Settings gear icon → `chrome.runtime.openOptionsPage()`.
+
+---
+
+### Phase 7d: Add to Plan Flow
+
+From the product view:
+1. Click "+ Add to Plan"
+2. Call `POST /infer-style` (best-effort, non-blocking if fails)
+3. Call `POST /api/buying-guide-items` with `source: 'extension'`
+4. Send `ITEM_ADDED` to service worker → green badge for 4 s
+5. Button text → "✓ Added to Plan", green success message inline
+
+---
+
+### Phase 7e: Settings Page
+
+**New**: `extension/settings/settings.html`, `settings.js`
+
+Sections:
+- **Connection**: Shows connected/disconnected state; "Open App to Connect" or "Sign Out"
+- **Active Cellar**: `<select>` populated from `GET /api/cellars`; auto-hidden for single-cellar users
+- **About**: Version string
+
+On cellar select change → sends `SET_CELLAR` to service worker → updates `auth.cellarId` in storage.
+
+---
+
+### Phase 7f: Build + Packaging
+
+**New**: `scripts/packageExtension.js`
+- Copies `favicon-16.png` → `extension/icons/icon16.png`, `favicon-32.png` → `icon32.png`, `icon-128.png` → `icon128.png`
+- Zips `extension/` → `dist/wine-cellar-extension.zip` (PowerShell on Windows, zip on Unix)
+
+**Modify**: `package.json` — add scripts:
+```json
+"ext:package": "node scripts/packageExtension.js",
+"ext:dev":     "echo 'Load extension/ as unpacked in chrome://extensions'"
+```
+
+**Chrome Web Store submission**:
+1. Register at https://chrome.google.com/webstore/devconsole (one-time $5)
+2. Run `npm run ext:package` → upload `dist/wine-cellar-extension.zip`
+3. Fill store listing (description, screenshots)
+4. Submit for review (typically 1-3 business days)
+
+---
+
+### Phase 7g: Tests
+
+**New**: `tests/unit/extension/extractors.test.js`
+- `// @vitest-environment jsdom` (loads extractors IIFE in jsdom context)
+- `parseVintage`: vintage from wine name strings
+- `parsePrice`: ZAR/EUR/GBP/USD parsing
+- `isLikelyWine`: signal detection true/false
+- `extractWineFromPage` (mocked DOM): JSON-LD path, OG path, heuristic path, non-wine page → null
+
+---
+
+### Phase 7 Files Summary
+
+#### New Files
+| Phase | File |
+|-------|------|
+| 7a | `extension/manifest.json` |
+| 7a | `extension/background/service_worker.js` |
+| 7a | `extension/shared/api.js` |
+| 7b | `extension/shared/extractors.js` |
+| 7b | `extension/content/content.js` |
+| 7c–7d | `extension/popup/popup.html` |
+| 7c–7d | `extension/popup/popup.js` |
+| 7c–7d | `extension/popup/popup.css` |
+| 7e | `extension/settings/settings.html` |
+| 7e | `extension/settings/settings.js` |
+| 7f | `scripts/packageExtension.js` |
+| 7g | `tests/unit/extension/extractors.test.js` |
+
+#### Modified Files
+| File | Change |
+|------|--------|
+| `package.json` | Add `ext:package`, `ext:dev` scripts |
+
+---
+
 ## Implementation Status — 27 Feb 2026
 
 **All 6 phases: COMPLETE** — Feature is fully implemented and deployed.

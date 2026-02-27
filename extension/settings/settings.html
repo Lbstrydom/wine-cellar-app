@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wine Cellar Extension — Settings</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      padding: 28px 24px;
+      max-width: 480px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card {
+      margin-bottom: 16px;
+      padding: 16px;
+      background: #16213e;
+      border: 1px solid #2a2a4e;
+      border-radius: 8px;
+    }
+
+    .card-title {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #9090a0;
+      margin-bottom: 12px;
+    }
+
+    .connection-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .badge-connected    { color: #27ae60; font-size: 13px; }
+    .badge-disconnected { color: #9090a0; font-size: 13px; }
+
+    .sub-info {
+      font-size: 12px;
+      color: #9090a0;
+      margin-top: 3px;
+    }
+
+    label {
+      display: block;
+      font-size: 13px;
+      color: #c0c0d0;
+      margin-bottom: 6px;
+    }
+
+    select {
+      width: 100%;
+      padding: 8px 10px;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4e;
+      border-radius: 6px;
+      color: #e0e0e0;
+      font-size: 13px;
+      cursor: pointer;
+      appearance: none;
+    }
+    select:focus {
+      outline: 2px solid #8b1a1a;
+      outline-offset: 1px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      padding: 7px 14px;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+      white-space: nowrap;
+    }
+    .btn-primary { background: #8b1a1a; color: #fff; }
+    .btn-primary:hover { background: #c0392b; }
+    .btn-danger  { background: #374151; color: #f87171; }
+    .btn-danger:hover { background: #4b5563; }
+
+    .status-msg {
+      font-size: 12px;
+      color: #9090a0;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+    .status-msg.success { color: #27ae60; }
+    .status-msg.error   { color: #e74c3c; }
+
+    .hidden { display: none !important; }
+
+    .about-line {
+      font-size: 13px;
+      color: #9090a0;
+      margin-bottom: 4px;
+    }
+
+    a { color: #c0392b; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>🍷 Wine Cellar Extension</h1>
+
+  <!-- ── Connection card ──────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">Connection</div>
+    <div class="connection-row">
+      <div>
+        <div id="connection-status" class="badge-disconnected">● Not connected</div>
+        <div id="connection-sub" class="sub-info hidden"></div>
+      </div>
+      <div id="auth-actions">
+        <button id="connect-btn"    class="btn btn-primary hidden">Open App to Connect</button>
+        <button id="disconnect-btn" class="btn btn-danger  hidden">Sign Out</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Cellar picker ─────────────────────────────────────────────────────── -->
+  <div class="card" id="cellar-card">
+    <div class="card-title">Active Cellar</div>
+    <label for="cellar-select">Select which cellar to use with this extension</label>
+    <select id="cellar-select">
+      <option value="">— loading —</option>
+    </select>
+    <div id="cellar-status" class="status-msg"></div>
+  </div>
+
+  <!-- ── About card ────────────────────────────────────────────────────────── -->
+  <div class="card">
+    <div class="card-title">About</div>
+    <p class="about-line">Wine Cellar Extension v1.0.0</p>
+    <p class="about-line">Adds wines to your buying plan from any retailer page.</p>
+    <p class="about-line" style="margin-top:8px">
+      <a href="https://cellar.creathyst.com" target="_blank" rel="noopener">
+        Open Wine Cellar App ↗
+      </a>
+    </p>
+  </div>
+
+  <script type="module" src="settings.js"></script>
+</body>
+</html>

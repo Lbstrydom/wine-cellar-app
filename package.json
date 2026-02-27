@@ -20,6 +20,8 @@
     "test:all": "npm run test:unit && npm run test:benchmark && npm run test:integration",
     "test:coverage": "vitest run --coverage",
     "test:pg": "node scripts/test-pg-compat.js",
+    "ext:package": "node scripts/packageExtension.js",
+    "ext:dev": "echo 'Load extension/ as unpacked in chrome://extensions (enable Developer Mode first)'",
     "lint": "eslint src/ public/js/",
     "lint:fix": "eslint src/ public/js/ --fix"
   },
