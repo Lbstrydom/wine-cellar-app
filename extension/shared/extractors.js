@@ -76,10 +76,10 @@
   // ── Wine signal detector ──────────────────────────────────────────────────────
 
   const WINE_SIGNALS = [
-    /\b(cabernet|sauvignon|merlot|pinotage|shiraz|syrah|chardonnay|chenin|blanc|noir|viognier|riesling|pinot|grenache|tempranillo|sangiovese|malbec|zinfandel|nebbiolo|mourv[eè]dre|cinsault|verdelho)\b/i,
-    /\bwine\b|\bwinery\b|\bvintage\b|\bestate\b|\bcellar\b|\bvineyards?\b|\bwinemaker\b/i,
-    /\b(red wine|white wine|ros[eé]|sparkling wine|dessert wine|port|blanc de blancs|cap classique)\b/i,
-    /\b(appellation|ch[aâ]teau|domaine|clos|mas|bodega|quinta|tenuta|weingut)\b/i
+    /\b(cabernet|sauvignon|merlot|pinotage|shiraz|syrah|chardonnay|chenin|blanc|noir|viognier|riesling|pinot|grenache|tempranillo|sangiovese|malbec|zinfandel|nebbiolo|mourv[eè]dre|cinsault|verdelho|vermentino|albarino|albar[iì]no|gruner|torront[eé]s|carmenere|barbera|dolcetto|primitivo|aglianico|fiano|verdicchio|pecorino|nero|corvina|amarone|valpolicella)\b/i,
+    /\bwine\b|\bwinery\b|\bvintage\b|\bestate\b|\bcellar\b|\bvineyards?\b|\bwinemaker\b|\bvino\b/i,
+    /\b(red wine|white wine|ros[eé]|rosato|rosso|bianco|sparkling wine|dessert wine|port|blanc de blancs|cap classique|brut|sec|demi.sec|doux|cr[eé]mant|prosecco|cava|sekt|pét.nat|pétillant)\b/i,
+    /\b(appellation|ch[aâ]teau|domaine|clos|mas|bodega|quinta|tenuta|weingut|cantina|cave|cru|premier|grand|r[eé]serve|reserva|riserva|cuv[eé]e|tinto|blanco)\b/i
   ];
 
   /**
@@ -131,16 +131,38 @@
   // ── Extractor 2: Domain-specific ─────────────────────────────────────────────
 
   function extractVivino() {
-    const nameEl = document.querySelector('.vintage-name, .wine-name, h1[class*="wine"]');
-    if (!nameEl) return null;
-    const name = nameEl.textContent.trim();
-    if (!isLikelyWine(name, '')) return null;
-    const vinYear = document.querySelector('.vintage-year, [class*="vintage"]')?.textContent;
-    const vintage = parseVintage(vinYear || name);
+    // Vivino — entire site is wine, so no isLikelyWine gating needed.
+    // Their React app uses hashed class names, so we rely on semantic
+    // selectors + URL params rather than fragile class-name matching.
+
+    // 1. Wine name — Vivino puts the wine label name in the h1.
+    //    On some page versions the h1 contains producer + name; on others
+    //    the producer is a sibling element.
+    const h1 = document.querySelector('h1');
+    if (!h1) return null;
+    const rawName = h1.textContent.trim();
+    if (!rawName) return null;
+
+    // Remove year tokens from the name (they belong in vintage field).
+    const wineName = rawName.replace(/\b(19[0-9]{2}|20[0-2][0-9])\b/g, '').replace(/\s{2,}/g, ' ').trim();
+
+    // 2. Vintage — prefer ?year= URL param (most reliable on Vivino).
+    const urlYear = new URLSearchParams(window.location.search).get('year');
+    const vintage = parseVintage(urlYear) || parseVintage(rawName);
+
+    // 3. Producer — Vivino links the winery, e.g. href contains "/wineries/".
+    const producerEl =
+      document.querySelector('a[href*="/wineries/"]') ||
+      document.querySelector('a[href*="/winery/"]') ||
+      document.querySelector('[class*="winery"] a, [class*="producer"] a');
+    const producer = producerEl?.textContent.trim() || null;
+
+    // 4. Price
     const priceData = parsePrice(findPriceText());
+
     return {
-      wine_name: name,
-      producer: document.querySelector('.producer-name, [class*="winery"]')?.textContent.trim() || null,
+      wine_name: wineName || rawName,
+      producer,
       vintage,
       ...(priceData || {}),
       vendor_url: window.location.href,
