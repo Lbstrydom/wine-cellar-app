@@ -28,11 +28,11 @@ const STATUS_CONFIG = {
 
 /** Action button labels and icons */
 const ACTION_LABELS = {
-  ordered:      { icon: '\u{1F69A}', label: 'Mark Ordered' },
-  arrived:      { icon: '\u2705',    label: 'Mark Arrived' },
-  cancelled:    { icon: '\u274C',    label: 'Cancel' },
-  planned:      { icon: '\u{1F504}', label: 'Re-plan' },
-  'to-cellar':  { icon: '\u{1F3E0}', label: 'Move to Cellar' }
+  ordered:     { icon: '\u{1F69A}', label: 'Mark Ordered',   tooltip: 'Mark as ordered — wine has been purchased and is on its way' },
+  arrived:     { icon: '\u2705',    label: 'Mark Arrived',   tooltip: 'Mark as arrived — wine is in your possession, ready to cellar' },
+  cancelled:   { icon: '\u274C',    label: 'Cancel',         tooltip: 'Cancel this item — remove from your active buying plan' },
+  planned:     { icon: '\u{1F504}', label: 'Re-plan',        tooltip: 'Move back to planned — add back to your shopping list' },
+  'to-cellar': { icon: '\u{1F3E0}', label: 'Move to Cellar', tooltip: 'Move to cellar — assign a physical slot and record in your cellar' }
 };
 
 /** Style select options (matches STYLE_LABELS from config/styleIds.js) */
@@ -261,7 +261,7 @@ function renderCartItem(item) {
 
   const actionBtns = cfg.actions.map(action => {
     const a = ACTION_LABELS[action];
-    return `<button class="cart-action-btn" data-id="${item.id}" data-action="${action}" type="button" title="${a.label}">${a.icon}</button>`;
+    return `<button class="cart-action-btn" data-id="${item.id}" data-action="${action}" type="button" title="${a.tooltip}">${a.icon}</button>`;
   }).join('');
 
   const priceStr = item.price != null
@@ -296,7 +296,7 @@ function renderCartItem(item) {
       </div>
       <div class="cart-item-actions">
         ${actionBtns}
-        ${!isConverted ? `<button class="cart-delete-btn" data-id="${item.id}" type="button" title="Delete">&#x1F5D1;</button>` : ''}
+        ${!isConverted ? `<button class="cart-delete-btn" data-id="${item.id}" type="button" title="Delete this item from your buying plan">&#x1F5D1;</button>` : ''}
       </div>
     </div>
   `;
@@ -310,10 +310,10 @@ function renderBatchBar() {
   return `
     <div class="cart-batch-bar">
       <span>${selectedIds.size} selected</span>
-      <button class="cart-batch-btn" data-action="ordered" type="button">Mark Ordered</button>
-      <button class="cart-batch-btn" data-action="arrived" type="button">Mark Arrived</button>
-      <button class="cart-batch-btn" data-action="cancelled" type="button">Cancel</button>
-      <button class="cart-batch-clear-btn" type="button">Clear</button>
+      <button class="cart-batch-btn" data-action="ordered" type="button" title="Mark selected items as ordered">Mark Ordered</button>
+      <button class="cart-batch-btn" data-action="arrived" type="button" title="Mark selected items as arrived">Mark Arrived</button>
+      <button class="cart-batch-btn" data-action="cancelled" type="button" title="Cancel selected items">Cancel</button>
+      <button class="cart-batch-clear-btn" type="button" title="Clear current selection">Clear</button>
     </div>
   `;
 }

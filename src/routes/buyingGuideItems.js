@@ -264,7 +264,7 @@ router.post('/:id/to-cellar', validateParams(itemIdSchema), validateBody(toCella
 
   // Pre-flight: count available slots
   const slotCount = await db.prepare(
-    'SELECT COUNT(*) as count FROM slots WHERE cellar_id = ? AND wine_id IS NULL'
+    'SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND wine_id IS NULL'
   ).get(req.cellarId);
   const available = Number(slotCount?.count) || 0;
 
@@ -319,7 +319,7 @@ router.post('/:id/to-cellar', validateParams(itemIdSchema), validateBody(toCella
 
     // 3. Update original cart item: reduce quantity + set converted_wine_id
     await txDb.prepare(
-      'UPDATE buying_guide_items SET quantity = ?, converted_wine_id = ?, updated_at = NOW() WHERE id = ? AND cellar_id = ?'
+      'UPDATE buying_guide_items SET quantity = $1, converted_wine_id = $2, updated_at = NOW() WHERE id = $3 AND cellar_id = $4'
     ).run(qty, saveResult.wineId, item.id, req.cellarId);
 
     // 4. If partial: insert remainder row to preserve virtual inventory
@@ -330,7 +330,7 @@ router.post('/:id/to-cellar', validateParams(itemIdSchema), validateBody(toCella
           cellar_id, wine_name, producer, quantity, style_id, status,
           inferred_style_confidence, price, currency, vendor_url, vintage,
           colour, grapes, region, country, notes, source, source_gap_style
-        ) VALUES (?, ?, ?, ?, ?, 'arrived', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES ($1, $2, $3, $4, $5, 'arrived', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
       `).run(
         req.cellarId, item.wine_name, item.producer || null, remainder,
         item.style_id || null, item.inferred_style_confidence || null,
