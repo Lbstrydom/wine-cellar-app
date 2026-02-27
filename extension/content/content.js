@@ -63,7 +63,35 @@
       } catch (err) {
         sendResponse({ wine: null, error: err.message });
       }
-      return false; // Synchronous response — no need to hold channel open
+      return false;
+    }
+
+    // SYNC_AUTH: popup pulls auth on demand from an open app tab.
+    // More reliable than the push approach because MV3 service workers
+    // are often terminated before the push message arrives.
+    if (msg.type === 'SYNC_AUTH') {
+      if (window.location.hostname !== APP_HOSTNAME) {
+        sendResponse(null);
+        return false;
+      }
+      try {
+        const keys = Object.keys(localStorage).filter(k => k.endsWith('-auth-token'));
+        for (const key of keys) {
+          const raw = localStorage.getItem(key);
+          if (!raw) continue;
+          let session;
+          try { session = JSON.parse(raw); } catch (_) { continue; }
+          if (!session?.access_token) continue;
+          sendResponse({
+            token: session.access_token,
+            expiresAt: session.expires_at || 0,
+            userId: session.user?.id || null
+          });
+          return false;
+        }
+      } catch (_) {}
+      sendResponse(null);
+      return false;
     }
   });
 

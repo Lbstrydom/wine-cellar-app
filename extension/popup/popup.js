@@ -28,8 +28,19 @@ const STATES = {
 async function init() {
   showState('loading');
 
-  // 1. Get auth from service worker
-  const { auth } = await chrome.runtime.sendMessage({ type: 'GET_AUTH' });
+  // 1. Get auth from service worker storage
+  let { auth } = await chrome.runtime.sendMessage({ type: 'GET_AUTH' });
+
+  // 2. If nothing stored (MV3 SW was terminated before content script push),
+  //    actively pull auth from any open Wine Cellar app tab.
+  if (!auth?.token) {
+    auth = await pullAuthFromAppTab();
+    if (auth?.token) {
+      // Store it so the next popup open is instant
+      await chrome.runtime.sendMessage({ type: 'AUTH_FROM_APP', payload: auth });
+    }
+  }
+
   if (!auth?.token) {
     showState('unauthenticated');
     return;
@@ -218,6 +229,27 @@ function esc(str) {
     /[&<>"']/g,
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
   );
+}
+
+/**
+ * Actively query any open cellar.creathyst.com tab for the Supabase session.
+ * Fallback for when the MV3 service worker was terminated before the
+ * content script's push message could be stored.
+ * @returns {Promise<{token: string, expiresAt: number, userId: string|null}|null>}
+ */
+async function pullAuthFromAppTab() {
+  try {
+    const appTabs = await chrome.tabs.query({ url: '*://cellar.creathyst.com/*' });
+    for (const tab of appTabs) {
+      try {
+        const resp = await chrome.tabs.sendMessage(tab.id, { type: 'SYNC_AUTH' });
+        if (resp?.token) return resp;
+      } catch (_) {
+        // Tab may not have content script (e.g. opened before extension loaded)
+      }
+    }
+  } catch (_) {}
+  return null;
 }
 
 // ── Event wiring ──────────────────────────────────────────────────────────────
