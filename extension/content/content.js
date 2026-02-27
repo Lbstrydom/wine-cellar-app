@@ -3,12 +3,21 @@
  * and extracts wine data from the current page on request.
  *
  * Loaded after shared/extractors.js (which defines window.WineExtractors).
+ *
+ * Auth storage: the app uses a custom Supabase storageKey ('wine-cellar-auth')
+ * rather than the default 'sb-{ref}-auth-token'. The value is still a standard
+ * Supabase session JSON: { access_token, expires_at, user: { id } }.
+ * The active cellar is stored separately under 'active_cellar_id'.
  */
 
 (function () {
   'use strict';
 
   const APP_HOSTNAME = 'cellar.creathyst.com';
+
+  /** The custom Supabase storageKey used by this app (set in app.js). */
+  const AUTH_STORAGE_KEY = 'wine-cellar-auth';
+  const CELLAR_STORAGE_KEY = 'active_cellar_id';
 
   // ── Auth sync (app domain only) ──────────────────────────────────────────────
 
@@ -18,36 +27,47 @@
 
   /**
    * Read the Supabase session from localStorage and send it to the service worker.
-   * Supabase v2 stores the session under the key `sb-{project-ref}-auth-token`.
+   * The app stores the session under the custom key 'wine-cellar-auth'.
    */
   function syncAuthFromApp() {
-    try {
-      const keys = Object.keys(localStorage).filter(k => k.endsWith('-auth-token'));
-      for (const key of keys) {
-        const raw = localStorage.getItem(key);
-        if (!raw) continue;
-        let session;
-        try {
-          session = JSON.parse(raw);
-        } catch (_) {
-          continue;
-        }
-        if (!session?.access_token) continue;
+    const auth = readAppAuth();
+    if (!auth) return;
 
-        chrome.runtime.sendMessage({
-          type: 'AUTH_FROM_APP',
-          payload: {
-            token: session.access_token,
-            expiresAt: session.expires_at || 0,
-            userId: session.user?.id || null
-          }
-        }).catch(() => {
-          // Extension context may be invalid during page load — ignore
-        });
-        break; // First valid session is enough
+    chrome.runtime.sendMessage({
+      type: 'AUTH_FROM_APP',
+      payload: auth
+    }).catch(() => {
+      // Extension context may be invalid during page load — ignore
+    });
+  }
+
+  /**
+   * Read auth payload from the app's localStorage keys.
+   * Returns { token, expiresAt, userId, cellarId } or null if not found.
+   */
+  function readAppAuth() {
+    try {
+      const raw = localStorage.getItem(AUTH_STORAGE_KEY);
+      if (!raw) return null;
+
+      let session;
+      try {
+        session = JSON.parse(raw);
+      } catch (_) {
+        return null;
       }
+
+      if (!session?.access_token) return null;
+
+      return {
+        token: session.access_token,
+        expiresAt: session.expires_at || 0,
+        userId: session.user?.id || null,
+        cellarId: localStorage.getItem(CELLAR_STORAGE_KEY) || null
+      };
     } catch (_) {
-      // localStorage may be inaccessible (e.g., file:// pages) — ignore
+      // localStorage may be inaccessible (e.g., file:// pages)
+      return null;
     }
   }
 
@@ -74,23 +94,7 @@
         sendResponse(null);
         return false;
       }
-      try {
-        const keys = Object.keys(localStorage).filter(k => k.endsWith('-auth-token'));
-        for (const key of keys) {
-          const raw = localStorage.getItem(key);
-          if (!raw) continue;
-          let session;
-          try { session = JSON.parse(raw); } catch (_) { continue; }
-          if (!session?.access_token) continue;
-          sendResponse({
-            token: session.access_token,
-            expiresAt: session.expires_at || 0,
-            userId: session.user?.id || null
-          });
-          return false;
-        }
-      } catch (_) {}
-      sendResponse(null);
+      sendResponse(readAppAuth());
       return false;
     }
   });
