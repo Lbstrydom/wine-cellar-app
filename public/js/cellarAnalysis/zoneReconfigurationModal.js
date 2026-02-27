@@ -69,6 +69,92 @@ function renderError(message) {
   setApplyReadyState(false);
 }
 
+/**
+ * Returns true if the zone ID is a buffer/reserve placeholder zone.
+ * @param {string} zoneId
+ */
+function isBufferZone(zoneId) {
+  return typeof zoneId === 'string' && zoneId.toLowerCase().includes('buffer');
+}
+
+/**
+ * Convert an internal zone ID to a user-friendly label.
+ * Translates buffer IDs (e.g. "red_buffer") to readable names ("Red Reserve").
+ * @param {string} zoneId
+ * @returns {string}
+ */
+function prettifyZoneId(zoneId) {
+  if (!zoneId) return '';
+  if (!isBufferZone(zoneId)) return zoneId;
+  // "red_buffer" → "Red Reserve", "white_buffer" → "White Reserve", etc.
+  const colour = zoneId.replace(/_?buffer$/i, '').replace(/_/g, ' ').trim();
+  const label = colour ? `${colour.charAt(0).toUpperCase()}${colour.slice(1)} Reserve` : 'Reserve';
+  return label;
+}
+
+/**
+ * Collapse transient buffer hops in the action list.
+ *
+ * When the algorithm uses a buffer zone as a temporary swap variable the
+ * action list contains pairs like:
+ *   { rowNumber: 10, fromZoneId: 'shiraz',      toZoneId: 'red_buffer' }
+ *   { rowNumber: 10, fromZoneId: 'red_buffer',  toZoneId: 'appassimento' }
+ *
+ * From the user's perspective these are a single move: Row 10 shiraz → appassimento.
+ * This function merges such pairs into one display action while preserving the
+ * original API indices on each item (needed by the skip-checkbox logic).
+ *
+ * Actions where the buffer IS the final destination (the row genuinely ends
+ * up in Red Reserve) or the buffer is the permanent source are kept as-is.
+ *
+ * @param {Array} actions - Raw actions from the plan API
+ * @returns {Array} Collapsed display actions, each with `_origIndices: number[]`
+ */
+function collapseBufferHops(actions) {
+  const tagged = actions.map((a, i) => ({ ...a, _origIdx: i }));
+  const result = [];
+  const consumed = new Set();
+
+  for (let i = 0; i < tagged.length; i++) {
+    if (consumed.has(i)) continue;
+    const a = tagged[i];
+
+    if (a.type === 'reallocate_row' && isBufferZone(a.toZoneId)) {
+      // Look for a later action that moves the SAME row OUT of the buffer.
+      const pairIdx = tagged.findIndex((b, j) =>
+        j > i &&
+        !consumed.has(j) &&
+        b.type === 'reallocate_row' &&
+        b.rowNumber === a.rowNumber &&
+        isBufferZone(b.fromZoneId)
+      );
+
+      if (pairIdx !== -1) {
+        const b = tagged[pairIdx];
+        consumed.add(pairIdx);
+        // Use the more descriptive reason (longer wins); fall back to either.
+        const mergedReason = (!a.reason && !b.reason) ? ''
+          : (!a.reason) ? b.reason
+          : (!b.reason) ? a.reason
+          : (b.reason.length >= a.reason.length ? b.reason : a.reason);
+
+        result.push({
+          ...a,
+          toZoneId: b.toZoneId,
+          reason: mergedReason,
+          bottlesAffected: Math.max(a.bottlesAffected ?? 0, b.bottlesAffected ?? 0),
+          _origIndices: [a._origIdx, b._origIdx],
+        });
+        continue;
+      }
+    }
+
+    result.push({ ...a, _origIndices: [a._origIdx] });
+  }
+
+  return result;
+}
+
 function renderPlan(plan) {
   const { subtitle, body } = getEls();
   if (!body) return;
@@ -81,12 +167,13 @@ function renderPlan(plan) {
     subtitle.textContent = plan?.reasoning ? plan.reasoning : 'Review the proposed changes before applying.';
   }
 
-  const actions = Array.isArray(plan?.actions) ? plan.actions : [];
+  const rawActions = Array.isArray(plan?.actions) ? plan.actions : [];
+  const actions = collapseBufferHops(rawActions);
 
   const summaryHtml = `
     <div class="reconfig-summary">
       <div><strong>Summary</strong></div>
-      <div>• Zones changed: ${escapeHtml(String(summary.zonesChanged ?? actions.length))}</div>
+      <div>• Zones changed: ${escapeHtml(String(summary.zonesChanged ?? rawActions.length))}</div>
       <div>• Bottles affected: ${escapeHtml(String(summary.bottlesAffected ?? 0))}</div>
       <div>• Misplaced reduced (estimate): ${escapeHtml(String(summary.misplacedBefore ?? 0))} → ${escapeHtml(String(summary.misplacedAfter ?? 0))}</div>
     </div>
@@ -110,16 +197,21 @@ function renderAction(action, idx) {
   const reason = escapeHtml(action?.reason || '');
   const bottlesAffected = action?.bottlesAffected;
 
+  // Original API indices — may be multiple when buffer hops were collapsed.
+  const origIndices = JSON.stringify(action._origIndices ?? [idx]);
+
   let title = escapeHtml(String(type || 'action'));
 
   if (type === 'reallocate_row') {
-    title = `Reallocate Row ${escapeHtml(String(action.rowNumber || '?'))} from ${escapeHtml(action.fromZoneId || '')} → ${escapeHtml(action.toZoneId || '')}`;
+    const from = escapeHtml(prettifyZoneId(action.fromZoneId || ''));
+    const to = escapeHtml(prettifyZoneId(action.toZoneId || ''));
+    title = `Reallocate Row ${escapeHtml(String(action.rowNumber || '?'))} from ${from} → ${to}`;
   } else if (type === 'expand_zone') {
-    title = `Expand ${escapeHtml(action.zoneId || '')}`;
+    title = `Expand ${escapeHtml(prettifyZoneId(action.zoneId || ''))}`;
   } else if (type === 'merge_zones') {
-    title = `Merge ${escapeHtml((action.sourceZones || []).join(', '))} → ${escapeHtml(action.targetZoneId || '')}`;
+    title = `Merge ${escapeHtml((action.sourceZones || []).map(prettifyZoneId).join(', '))} → ${escapeHtml(prettifyZoneId(action.targetZoneId || ''))}`;
   } else if (type === 'retire_zone') {
-    title = `Retire ${escapeHtml(action.zoneId || '')} → ${escapeHtml(action.mergeIntoZoneId || '')}`;
+    title = `Retire ${escapeHtml(prettifyZoneId(action.zoneId || ''))} → ${escapeHtml(prettifyZoneId(action.mergeIntoZoneId || ''))}`;
   }
 
   const reasonHtml = reason ? `<div class="reconfig-action-reason">${reason}</div>` : '';
@@ -136,7 +228,7 @@ function renderAction(action, idx) {
       <div class="reconfig-action-header">
         <div class="reconfig-action-title">${idx + 1}. ${title}</div>
         <label class="reconfig-skip">
-          <input type="checkbox" data-reconfig-skip="${idx}">
+          <input type="checkbox" data-reconfig-skip='${origIndices}'>
           <span>Skip</span>
         </label>
       </div>
@@ -154,8 +246,17 @@ function getSkipIndices() {
   const skip = [];
   boxes.forEach((input) => {
     if (!input.checked) return;
-    const idx = Number.parseInt(input.dataset.reconfigSkip, 10);
-    if (Number.isFinite(idx)) skip.push(idx);
+    try {
+      const indices = JSON.parse(input.dataset.reconfigSkip);
+      if (Array.isArray(indices)) {
+        indices.forEach(i => { if (Number.isFinite(i)) skip.push(i); });
+      } else if (Number.isFinite(indices)) {
+        skip.push(indices);
+      }
+    } catch {
+      const idx = Number.parseInt(input.dataset.reconfigSkip, 10);
+      if (Number.isFinite(idx)) skip.push(idx);
+    }
   });
   return skip;
 }
