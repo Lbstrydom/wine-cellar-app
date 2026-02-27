@@ -23,6 +23,50 @@ const STATES = {
   gaps:            document.getElementById('state-gaps')
 };
 
+// ── Wine extraction ───────────────────────────────────────────────────────────
+
+/**
+ * Extract wine data from the given tab.
+ *
+ * Phase A — message the already-injected content script (fast path).
+ * Phase B — if content script isn't loaded (Chrome "Ask before accessing"
+ *           mode or first visit after extension reload), inject extractors.js
+ *           programmatically via chrome.scripting.executeScript and run
+ *           extraction inline. This bypasses the manifest content_script
+ *           injection entirely and always works on http/https pages.
+ *
+ * @param {number} tabId
+ * @returns {Promise<object|null>}
+ */
+async function extractWineFromTab(tabId) {
+  // Phase A: try the pre-injected content script
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_WINE' });
+    if (resp?.wine) return resp.wine;
+  } catch (_) {
+    // Content script not loaded — fall through to Phase B
+  }
+
+  // Phase B: programmatic injection via scripting API
+  // Only works on http/https (not chrome://, about:, etc.)
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['shared/extractors.js']
+    });
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => (typeof window.WineExtractors !== 'undefined'
+        ? window.WineExtractors.extractWineFromPage()
+        : null)
+    });
+    return result || null;
+  } catch (_) {
+    // Non-http page (internal Chrome page, PDF, etc.) — ignore
+    return null;
+  }
+}
+
 // ── Lifecycle ─────────────────────────────────────────────────────────────────
 
 async function init() {
@@ -47,16 +91,14 @@ async function init() {
   }
   currentAuth = auth;
 
-  // 2. Ask content script to extract wine from the active tab
+  // 2. Extract wine from the active tab — two-phase approach:
+  //    Phase A: message the already-injected content script (instant).
+  //    Phase B: if not loaded yet (e.g. Chrome "Ask before accessing" mode
+  //             blocked auto-injection), inject extractors.js on-demand
+  //             via chrome.scripting.executeScript and run extraction inline.
   const tab = await getActiveTab();
   if (tab?.id) {
-    try {
-      const resp = await chrome.tabs.sendMessage(tab.id, { type: 'EXTRACT_WINE' });
-      detectedWine = resp?.wine || null;
-    } catch (_) {
-      // Content script not injected (internal page, PDF, etc.) — ignore
-      detectedWine = null;
-    }
+    detectedWine = await extractWineFromTab(tab.id);
   }
 
   // 3. Fetch gap summary (used in both product + gaps views)
