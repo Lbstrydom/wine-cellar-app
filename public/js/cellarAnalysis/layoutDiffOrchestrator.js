@@ -9,7 +9,7 @@
 
 import { showToast, shortenWineName, escapeHtml } from '../utils.js';
 import { refreshLayout } from '../app.js';
-import { executeCellarMoves, validateMoves, getProposedBottleLayout } from '../api.js';
+import { executeCellarMoves, validateMoves, getProposedBottleLayout, getZoneMap } from '../api.js';
 import {
   getCurrentAnalysis,
   getLayoutProposal, setLayoutProposal,
@@ -22,6 +22,24 @@ import { enableProposedLayoutEditing, disableProposedLayoutEditing, getUndoStack
 import { refreshAnalysis } from './analysis.js';
 
 const DIFF_CONTAINER_ID = 'layout-diff-grid';
+let activeZoneMap = {};
+let completedMoveSteps = new Set();
+
+function getStepKey(from, to) {
+  return `${from}->${to}`;
+}
+
+function setDiffFocusMode(enabled) {
+  const summaryEl = document.getElementById('analysis-summary');
+  const alertsEl = document.getElementById('analysis-alerts');
+  const zonesEl = document.getElementById('analysis-zones');
+  const compactionEl = document.getElementById('analysis-compaction');
+
+  if (summaryEl) summaryEl.style.display = enabled ? 'none' : '';
+  if (alertsEl) alertsEl.style.display = enabled ? 'none' : '';
+  if (zonesEl) zonesEl.style.display = enabled ? 'none' : '';
+  if (compactionEl) compactionEl.style.display = enabled ? 'none' : '';
+}
 
 /**
  * Simple hash of a layout object for stale detection.
@@ -93,9 +111,19 @@ async function openDiffView(proposal) {
   const diffContainer = document.getElementById('layout-diff-container');
   if (!diffContainer) return;
 
+  completedMoveSteps = new Set();
+
   setLayoutProposal(proposal);
   setLayoutFlowState('proposed');
   setCurrentLayoutSnapshot(hashLayout(proposal.currentLayout));
+
+  try {
+    activeZoneMap = await getZoneMap();
+  } catch (_err) {
+    activeZoneMap = {};
+  }
+
+  setDiffFocusMode(true);
 
   // Hide old move sections and CTA banner (diff view replaces both)
   const ctaEl = document.getElementById('layout-proposal-cta');
@@ -127,7 +155,7 @@ async function openDiffView(proposal) {
   const targetLayout = proposal.targetLayout || {};
   const sortPlan = proposal.sortPlan || [];
 
-  const result = renderDiffGrid(DIFF_CONTAINER_ID, currentLayout, targetLayout, sortPlan);
+  const result = renderDiffGrid(DIFF_CONTAINER_ID, currentLayout, targetLayout, sortPlan, activeZoneMap);
 
   if (!result) return;
 
@@ -140,7 +168,7 @@ async function openDiffView(proposal) {
   renderDiffSummary(document.getElementById('layout-diff-summary'), result.stats);
 
   // Render step-by-step move list
-  renderMoveList(document.getElementById('layout-diff-move-list'), sortPlan);
+  renderMoveList(document.getElementById('layout-diff-move-list'), sortPlan, currentLayout);
 
   renderApprovalCTA(document.getElementById('layout-diff-actions'), {
     totalMoves: sortPlan.length,
@@ -216,7 +244,7 @@ function handleSlotSwap(fromSlotId, toSlotId) {
   // Re-render the full grid (simple approach — for large cellars could optimise to 2 slots)
   const currentLayout = buildCurrentLayoutMap(proposal);
   const swapSlots = buildSwapSlotSet(proposal.sortPlan || []);
-  const result = renderDiffGrid(DIFF_CONTAINER_ID, currentLayout, targetLayout, proposal.sortPlan || []);
+  const result = renderDiffGrid(DIFF_CONTAINER_ID, currentLayout, targetLayout, proposal.sortPlan || [], activeZoneMap);
 
   if (result) {
     // Update summary and button count
@@ -346,7 +374,8 @@ async function handleReset() {
     DIFF_CONTAINER_ID,
     freshProposal.currentLayout,
     freshProposal.targetLayout,
-    freshProposal.sortPlan
+    freshProposal.sortPlan,
+    activeZoneMap
   );
 
   if (result) {
@@ -381,6 +410,9 @@ function handleCancel() {
 export function closeDiffView() {
   disableProposedLayoutEditing();
   setLayoutFlowState('idle');
+  completedMoveSteps = new Set();
+  activeZoneMap = {};
+  setDiffFocusMode(false);
 
   const diffContainer = document.getElementById('layout-diff-container');
   if (diffContainer) {
@@ -408,7 +440,7 @@ export function closeDiffView() {
  * @param {HTMLElement} containerEl - Container element
  * @param {Array} sortPlan - Array of { wineId, wineName, from, to, moveType, zoneId }
  */
-function renderMoveList(containerEl, sortPlan) {
+function renderMoveList(containerEl, sortPlan, currentLayout) {
   if (!containerEl || !Array.isArray(sortPlan) || sortPlan.length === 0) {
     if (containerEl) containerEl.innerHTML = '';
     return;
@@ -437,13 +469,21 @@ function renderMoveList(containerEl, sortPlan) {
 
   const totalSteps = swapPairs.length + directMoves.length;
   let stepNum = 0;
+  const wineNameLookup = buildMoveListWineLookup(currentLayout);
 
   const swapHtml = swapPairs.map(({ move, partner }) => {
     stepNum++;
+    const stepKey = getStepKey(move.from, move.to);
+    const isDone = completedMoveSteps.has(stepKey);
     const nameA = move.wineName || `Wine #${move.wineId}`;
-    const nameB = partner?.wineName || '(other bottle)';
+    const fallbackWineId = currentLayout?.[move.to] || null;
+    const fallbackName = fallbackWineId ? (wineNameLookup[fallbackWineId] || `(Wine #${fallbackWineId})`) : '(other bottle)';
+    const nameB = partner?.wineName || fallbackName;
     return `
-      <li class="move-list-item move-list-swap" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}">
+      <li class="move-list-item move-list-swap ${isDone ? 'move-list-item-done' : ''}" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}" data-step-key="${escapeHtml(stepKey)}">
+        <label class="move-list-check-wrap" aria-label="Mark step ${stepNum} done">
+          <input type="checkbox" class="move-list-check" ${isDone ? 'checked' : ''}>
+        </label>
         <span class="move-list-step">${stepNum}</span>
         <span class="move-list-icon">\u21C4</span>
         <div class="move-list-detail">
@@ -458,9 +498,14 @@ function renderMoveList(containerEl, sortPlan) {
 
   const moveHtml = directMoves.map(move => {
     stepNum++;
+    const stepKey = getStepKey(move.from, move.to);
+    const isDone = completedMoveSteps.has(stepKey);
     const name = move.wineName || `Wine #${move.wineId}`;
     return `
-      <li class="move-list-item move-list-direct" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}">
+      <li class="move-list-item move-list-direct ${isDone ? 'move-list-item-done' : ''}" data-from="${escapeHtml(move.from)}" data-to="${escapeHtml(move.to)}" data-step-key="${escapeHtml(stepKey)}">
+        <label class="move-list-check-wrap" aria-label="Mark step ${stepNum} done">
+          <input type="checkbox" class="move-list-check" ${isDone ? 'checked' : ''}>
+        </label>
         <span class="move-list-step">${stepNum}</span>
         <span class="move-list-icon">\u2192</span>
         <div class="move-list-detail">
@@ -472,18 +517,50 @@ function renderMoveList(containerEl, sortPlan) {
     `;
   }).join('');
 
+  const doneCount = completedMoveSteps.size;
+
   containerEl.innerHTML = `
     <details class="move-list-panel" open>
       <summary class="move-list-header">
         <span class="move-list-title">\uD83D\uDCCB Step-by-Step Move Guide</span>
-        <span class="move-list-count">${totalSteps} step${totalSteps === 1 ? '' : 's'}</span>
+        <span class="move-list-count">${doneCount}/${totalSteps} done</span>
       </summary>
       <p class="move-list-desc">Follow these steps in order to reorganise your cellar. Swaps are listed first.</p>
+      <div class="move-list-actions">
+        <button type="button" class="btn btn-secondary btn-small" data-action="mark-all-done">Mark all done</button>
+        <button type="button" class="btn btn-secondary btn-small" data-action="clear-done">Clear checks</button>
+      </div>
       <ol class="move-list">
         ${swapHtml}${moveHtml}
       </ol>
     </details>
   `;
+
+  containerEl.querySelector('[data-action="mark-all-done"]')?.addEventListener('click', () => {
+    containerEl.querySelectorAll('.move-list-item').forEach(item => {
+      const key = item.dataset.stepKey;
+      if (key) completedMoveSteps.add(key);
+    });
+    renderMoveList(containerEl, sortPlan, currentLayout);
+  });
+
+  containerEl.querySelector('[data-action="clear-done"]')?.addEventListener('click', () => {
+    completedMoveSteps = new Set();
+    renderMoveList(containerEl, sortPlan, currentLayout);
+  });
+
+  containerEl.querySelectorAll('.move-list-check').forEach(check => {
+    check.addEventListener('change', (e) => {
+      const item = e.target.closest('.move-list-item');
+      const stepKey = item?.dataset.stepKey;
+      if (!stepKey) return;
+      if (e.target.checked) completedMoveSteps.add(stepKey);
+      else completedMoveSteps.delete(stepKey);
+      item.classList.toggle('move-list-item-done', e.target.checked);
+      const countEl = containerEl.querySelector('.move-list-count');
+      if (countEl) countEl.textContent = `${completedMoveSteps.size}/${totalSteps} done`;
+    });
+  });
 
   // Wire hover highlight: hovering a move-list item highlights source + target slots in the grid
   containerEl.querySelectorAll('.move-list-item').forEach(item => {
@@ -498,6 +575,22 @@ function renderMoveList(containerEl, sortPlan) {
       highlightSlotPair(from, to, false);
     });
   });
+}
+
+function buildMoveListWineLookup(currentLayout) {
+  const lookup = {};
+  const proposal = getLayoutProposal();
+  const target = proposal?.targetLayout || {};
+  Object.values(target).forEach((w) => {
+    if (w?.wineId && w?.wineName && !lookup[w.wineId]) {
+      lookup[w.wineId] = w.wineName;
+    }
+  });
+  Object.entries(currentLayout || {}).forEach(([, wineId]) => {
+    if (!wineId || lookup[wineId]) return;
+    lookup[wineId] = `Wine #${wineId}`;
+  });
+  return lookup;
 }
 
 /**

@@ -8,7 +8,6 @@
  */
 
 import { shortenWineName, escapeHtml } from '../utils.js';
-import { fetchLayout } from '../api.js';
 import { state } from '../app.js';
 
 /**
@@ -354,9 +353,10 @@ function buildSlotTooltip(diffType, currentWineId, targetWine, wineNames) {
  * @param {Object} currentLayout - Map of slotId → wineId (from API)
  * @param {Object} targetLayout - Map of slotId → { wineId, wineName, zoneId, colour } (from API)
  * @param {Array} sortPlan - Array of move objects from computeSortPlan
+ * @param {Object<string, {zoneId: string, displayName: string, wineCount?: number, status?: string}>} [zoneMap={}] - Current row->zone mapping
  * @returns {{ stats: Object, classifiedSlots: Array }|null}
  */
-export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPlan) {
+export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPlan, zoneMap = {}) {
   const container = document.getElementById(containerId);
   if (!container) return null;
 
@@ -368,6 +368,21 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
     container.innerHTML = '<div class="diff-no-data">No cellar layout available.</div>';
     return null;
   }
+
+  const hasZoneConfig = Object.keys(zoneMap).length > 0;
+  const shell = document.createElement('div');
+  shell.className = 'layout-diff-grid-shell';
+
+  const zoneLabelsEl = document.createElement('div');
+  zoneLabelsEl.className = 'zone-labels diff-zone-labels';
+  if (!hasZoneConfig) {
+    zoneLabelsEl.style.display = 'none';
+  }
+  shell.appendChild(zoneLabelsEl);
+
+  const gridEl = document.createElement('div');
+  gridEl.className = 'layout-diff-grid-main';
+  shell.appendChild(gridEl);
 
   const swapSlots = buildSwapSlotSet(sortPlan);
   const slotMoveMap = buildSlotMoveMap(sortPlan);
@@ -390,7 +405,26 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
       colHeader.textContent = `C${c}`;
       headerRow.appendChild(colHeader);
     }
-    container.appendChild(headerRow);
+    gridEl.appendChild(headerRow);
+  }
+
+  const zoneSpans = [];
+  if (hasZoneConfig) {
+    let currentSpan = null;
+    cellarRows.forEach((row, index) => {
+      const rowNum = row.row ?? row.row_num;
+      const rowId = `R${rowNum}`;
+      const zoneInfo = zoneMap[rowId];
+      const zoneId = zoneInfo?.zoneId || 'not-configured';
+
+      if (currentSpan && currentSpan.zoneId === zoneId) {
+        currentSpan.rowCount++;
+      } else {
+        if (currentSpan) zoneSpans.push(currentSpan);
+        currentSpan = { zoneId, zoneInfo, rowCount: 1, startIndex: index };
+      }
+    });
+    if (currentSpan) zoneSpans.push(currentSpan);
   }
 
   // Render grid rows
@@ -418,8 +452,40 @@ export function renderDiffGrid(containerId, currentLayout, targetLayout, sortPla
       rowEl.appendChild(slotEl);
     }
 
-    container.appendChild(rowEl);
+    gridEl.appendChild(rowEl);
   }
+
+  if (hasZoneConfig) {
+    const colHeaders = gridEl.querySelector('.diff-col-headers');
+    const headerOffset = colHeaders?.offsetHeight || 0;
+    if (headerOffset > 0) {
+      zoneLabelsEl.style.paddingTop = `${headerOffset + 4}px`;
+    }
+
+    const firstRow = gridEl.querySelector('.diff-row:not(.diff-col-headers)');
+    const rowHeight = firstRow?.offsetHeight || 55;
+    const GRID_GAP = 3;
+
+    zoneSpans.forEach(span => {
+      const zoneLabel = document.createElement('div');
+      zoneLabel.className = 'zone-label diff-zone-rail-label';
+      const spanHeight = (rowHeight * span.rowCount) + (GRID_GAP * (span.rowCount - 1));
+      zoneLabel.style.height = `${spanHeight}px`;
+
+      if (span.zoneInfo) {
+        zoneLabel.textContent = span.zoneInfo.displayName;
+        zoneLabel.title = `${span.zoneInfo.displayName} (${span.zoneInfo.wineCount || 0} bottles)`;
+        if (span.zoneInfo.status) zoneLabel.classList.add(span.zoneInfo.status);
+      } else {
+        zoneLabel.textContent = 'Not configured';
+        zoneLabel.classList.add('not-configured');
+      }
+
+      zoneLabelsEl.appendChild(zoneLabel);
+    });
+  }
+
+  container.appendChild(shell);
 
   const stats = computeDiffStats(classifiedSlots);
   return { stats, classifiedSlots };
