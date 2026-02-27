@@ -318,6 +318,14 @@ async function startAuthenticatedApp() {
     // Initialize zoom controls after grid is rendered
     initZoomControls();
 
+    // Deep-link support: honour ?view=X so external links (e.g. browser extension)
+    // can open a specific tab directly (e.g. ?view=recipes for the buying guide).
+    const VALID_VIEWS = ['grid', 'analysis', 'pairing', 'recipes', 'wines', 'history'];
+    const urlView = new URLSearchParams(window.location.search).get('view');
+    if (urlView && VALID_VIEWS.includes(urlView)) {
+      switchView(urlView);
+    }
+
     // Listen for grape health changes — refresh data if wines were reclassified
     document.addEventListener('grape-health:changed', (e) => {
       const reclassified = e.detail?.reclassified || 0;
