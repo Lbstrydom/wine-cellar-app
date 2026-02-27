@@ -356,22 +356,26 @@ export async function runAcquisitionWorkflow(options = {}) {
  * @param {string} [options.slot] - Specific slot to place in
  * @param {number} [options.quantity] - Number of bottles (default 1)
  * @param {boolean} [options.addToFridge] - Add to fridge instead of cellar
+ * @param {boolean} [options.skipEnrichment] - Skip background enrichment
+ * @param {Object} [options.transaction] - DB connection to use (for transactional writes)
  * @returns {Promise<Object>} Save result
  */
 export async function saveAcquiredWine(wineData, options = {}) {
-  const { quantity = 1, cellarId } = options;
+  const { quantity = 1, cellarId, skipEnrichment = false, transaction = null } = options;
+  const query = transaction || db;
 
   // Create wine in database (R2-#12: use RETURNING id + .get() for PostgreSQL compatibility)
-  const insertResult = await db.prepare(`
+  const insertResult = await query.prepare(`
     INSERT INTO wines (
-      cellar_id, wine_name, vintage, colour, style, vivino_rating, price_eur,
+      cellar_id, wine_name, producer, vintage, colour, style, vivino_rating, price_eur,
       country, region, alcohol_pct, drink_from, drink_until,
       vivino_id, vivino_url, vivino_confirmed
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     RETURNING id
   `).get(
     cellarId,
     wineData.wine_name,
+    wineData.producer || null,
     wineData.vintage || null,
     wineData.colour || 'white',
     wineData.style || null,
@@ -399,7 +403,7 @@ export async function saveAcquiredWine(wineData, options = {}) {
 
     // If fridge eligible and user wants fridge, find fridge slot
     if (options.addToFridge && placement.fridge.eligible) {
-      const fridgeSlots = await db.prepare(
+      const fridgeSlots = await query.prepare(
         "SELECT location_code FROM slots WHERE cellar_id = ? AND location_code LIKE 'F%' AND wine_id IS NULL ORDER BY location_code"
       ).all(cellarId);
       if (fridgeSlots.length > 0) {
@@ -427,9 +431,9 @@ export async function saveAcquiredWine(wineData, options = {}) {
       }
 
       // Check if slot is available
-      const existing = await db.prepare('SELECT id FROM slots WHERE cellar_id = ? AND location_code = ? AND wine_id IS NOT NULL').get(cellarId, slotToUse);
+      const existing = await query.prepare('SELECT id FROM slots WHERE cellar_id = ? AND location_code = ? AND wine_id IS NOT NULL').get(cellarId, slotToUse);
       if (!existing) {
-        await db.prepare(`
+        await query.prepare(`
           INSERT INTO slots (cellar_id, location_code, wine_id)
           VALUES (?, ?, ?)
           ON CONFLICT(cellar_id, location_code) DO UPDATE SET wine_id = excluded.wine_id
@@ -439,14 +443,16 @@ export async function saveAcquiredWine(wineData, options = {}) {
     }
   }
 
-  // Start enrichment in background
-  enrichWineData({ ...wineData, id: wineId }).then(enrichment => {
-    if (enrichment.ratings && enrichment.ratings.ratings) {
-      logger.info('AcquisitionWorkflow', `Enrichment complete: ${enrichment.ratings.ratings.length} ratings found`);
-    }
-  }).catch(err => {
-    logger.error('AcquisitionWorkflow', `Background enrichment failed: ${err.message}`);
-  });
+  // Start enrichment in background (skippable for cart-to-cellar conversion)
+  if (!skipEnrichment) {
+    enrichWineData({ ...wineData, id: wineId }).then(enrichment => {
+      if (enrichment.ratings && enrichment.ratings.ratings) {
+        logger.info('AcquisitionWorkflow', `Enrichment complete: ${enrichment.ratings.ratings.length} ratings found`);
+      }
+    }).catch(err => {
+      logger.error('AcquisitionWorkflow', `Background enrichment failed: ${err.message}`);
+    });
+  }
 
   // Advisory consistency warnings (fail-open)
   let warnings = [];

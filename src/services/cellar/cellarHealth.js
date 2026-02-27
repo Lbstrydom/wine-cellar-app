@@ -594,11 +594,48 @@ export async function getAtRiskWines(limit = 20, cellarId) {
 }
 
 /**
- * Generate shopping list from style gaps.
+ * Generate shopping list.
+ * Delegates to the buying guide when recipes exist; falls back
+ * to cellar-health-based gap logic for users with no recipes.
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Shopping list
  */
 export async function generateShoppingList(cellarId) {
+  try {
+    const { generateBuyingGuide } = await import('../recipe/buyingGuide.js');
+    const guide = await generateBuyingGuide(cellarId);
+
+    // Fallback: no recipes or no meaningful targets → use health-based logic
+    if (guide.empty || guide.noTargets || guide.recipeCount === 0) {
+      return originalHealthShoppingList(cellarId);
+    }
+
+    if (guide.gaps.length === 0) {
+      return { gaps: [], totalNeeded: 0, source: 'buying_guide' };
+    }
+
+    return {
+      gaps: guide.gaps.map(g => ({
+        category: g.label,
+        style: g.style,
+        need: g.deficit,
+        projectedNeed: g.projectedDeficit,
+        suggestions: g.suggestions
+      })),
+      totalNeeded: guide.gaps.reduce((s, g) => s + g.deficit, 0),
+      source: 'buying_guide'
+    };
+  } catch {
+    return originalHealthShoppingList(cellarId);
+  }
+}
+
+/**
+ * Original health-based shopping list (fallback for no-recipe users).
+ * @param {string} cellarId - Cellar ID
+ * @returns {Promise<Object>} Shopping list
+ */
+async function originalHealthShoppingList(cellarId) {
   const health = await getCellarHealth(cellarId);
   const gaps = health.metrics.styleCoverage.gaps;
 
@@ -610,7 +647,8 @@ export async function generateShoppingList(cellarId) {
 
   return {
     gaps: suggestions,
-    totalNeeded: gaps.reduce((sum, g) => sum + g.need, 0)
+    totalNeeded: gaps.reduce((sum, g) => sum + g.need, 0),
+    source: 'cellar_health'
   };
 }
 

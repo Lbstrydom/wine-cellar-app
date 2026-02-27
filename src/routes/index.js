@@ -43,6 +43,7 @@ import tastingNotesRoutes from './tastingNotes.js';
 import searchRoutes from './search.js';
 import consistencyRoutes from './consistency.js';
 import recipesRoutes from './recipes.js';
+import buyingGuideItemsRoutes from './buyingGuideItems.js';
 
 const router = Router();
 
@@ -108,5 +109,6 @@ router.use('/admin', requireAuth, adminRoutes);
 router.use('/wines', requireAuth, requireCellarContext, tastingNotesRoutes);     // /wines/:id/tasting-notes, /wines/:id/tasting-notes/regenerate, etc.
 router.use('/consistency', requireAuth, requireCellarContext, consistencyRoutes);  // /consistency/audit, /consistency/check/:id, /consistency/validate
 router.use('/recipes', requireAuth, requireCellarContext, recipesRoutes);          // /recipes, /recipes/import/*, /recipes/sync/*
+router.use('/buying-guide-items', requireAuth, requireCellarContext, buyingGuideItemsRoutes);  // /buying-guide-items CRUD, status, batch
 
 export default router;

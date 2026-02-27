@@ -116,6 +116,17 @@ export {
   jobIdSchema
 } from './rating.js';
 
+// Buying guide item schemas
+export {
+  createItemSchema,
+  updateItemSchema,
+  updateStatusSchema,
+  batchStatusSchema,
+  listItemsQuerySchema,
+  itemIdSchema,
+  inferStyleSchema
+} from './buyingGuideItem.js';
+
 // Restaurant pairing schemas
 export {
   MENU_TYPES,

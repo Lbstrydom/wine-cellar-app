@@ -85,7 +85,8 @@ router.get('/export/json', backupRateLimiter, asyncHandler(async (req, res) => {
       drinking_windows: await safeQuery('SELECT * FROM drinking_windows WHERE wine_id IN (SELECT id FROM wines WHERE cellar_id = $1)', req.cellarId),
       user_settings: await safeQuery('SELECT * FROM user_settings WHERE cellar_id = $1', req.cellarId),
       data_provenance: await safeQuery('SELECT * FROM data_provenance WHERE cellar_id = $1', req.cellarId),
-      reduce_now: await safeQuery('SELECT * FROM reduce_now WHERE cellar_id = $1', req.cellarId)
+      reduce_now: await safeQuery('SELECT * FROM reduce_now WHERE cellar_id = $1', req.cellarId),
+      buying_guide_items: await safeQuery('SELECT * FROM buying_guide_items WHERE cellar_id = $1', req.cellarId)
     }
   };
 
@@ -192,6 +193,7 @@ router.post('/import', asyncHandler(async (req, res) => {
     await safeDelete('DELETE FROM drinking_windows');
     await safeDelete('DELETE FROM data_provenance');
     await safeDelete('DELETE FROM reduce_now');
+    await safeDelete('DELETE FROM buying_guide_items');
     await db.prepare('DELETE FROM wines').run();
   }
 
@@ -325,6 +327,58 @@ router.post('/import', asyncHandler(async (req, res) => {
         );
       } catch (err) {
         stats.errors.push(`History: ${err.message}`);
+      }
+    }
+  }
+
+  // Import buying_guide_items
+  if (backup.data.buying_guide_items && backup.data.buying_guide_items.length > 0) {
+    for (const item of backup.data.buying_guide_items) {
+      try {
+        await db.prepare(`
+          INSERT INTO buying_guide_items (
+            id, cellar_id, wine_name, producer, quantity, style_id, status,
+            inferred_style_confidence, price, currency, vendor_url,
+            vintage, colour, grapes, region, country, notes,
+            source, source_gap_style, converted_wine_id,
+            created_at, updated_at, status_changed_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT (id) DO UPDATE SET
+            wine_name = EXCLUDED.wine_name,
+            producer = EXCLUDED.producer,
+            quantity = EXCLUDED.quantity,
+            style_id = EXCLUDED.style_id,
+            status = EXCLUDED.status,
+            inferred_style_confidence = EXCLUDED.inferred_style_confidence,
+            price = EXCLUDED.price,
+            currency = EXCLUDED.currency,
+            vendor_url = EXCLUDED.vendor_url,
+            vintage = EXCLUDED.vintage,
+            colour = EXCLUDED.colour,
+            grapes = EXCLUDED.grapes,
+            region = EXCLUDED.region,
+            country = EXCLUDED.country,
+            notes = EXCLUDED.notes,
+            source = EXCLUDED.source,
+            source_gap_style = EXCLUDED.source_gap_style,
+            converted_wine_id = EXCLUDED.converted_wine_id,
+            updated_at = EXCLUDED.updated_at,
+            status_changed_at = EXCLUDED.status_changed_at
+        `).run(
+          item.id, req.cellarId, item.wine_name, item.producer || null,
+          item.quantity || 1, item.style_id || null, item.status || 'planned',
+          item.inferred_style_confidence || null, item.price || null,
+          item.currency || 'ZAR', item.vendor_url || null,
+          item.vintage || null, item.colour || null, item.grapes || null,
+          item.region || null, item.country || null, item.notes || null,
+          item.source || 'manual', item.source_gap_style || null,
+          item.converted_wine_id || null,
+          item.created_at || new Date().toISOString(),
+          item.updated_at || new Date().toISOString(),
+          item.status_changed_at || new Date().toISOString()
+        );
+      } catch (err) {
+        stats.errors.push(`BuyingGuideItem ${item.id}: ${err.message}`);
       }
     }
   }

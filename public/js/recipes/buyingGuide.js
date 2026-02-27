@@ -1,11 +1,13 @@
 /**
  * @fileoverview Inline buying guide section for Recipe Library.
- * Shows coverage bar, gap cards, surplus cards, and diversity recommendations.
+ * Shows coverage bar (physical + projected), gap cards with "Add to Plan",
+ * surplus cards, diversity recommendations, and integrated cart panel.
  * @module recipes/buyingGuide
  */
 
 import { getBuyingGuide } from '../api/recipes.js';
 import { escapeHtml } from '../utils.js';
+import { renderCartPanel, openQuickAddForGap } from './cartPanel.js';
 
 /** Style colour classes for visual consistency with profileSummary */
 const STYLE_COLOURS = {
@@ -57,19 +59,33 @@ export async function renderBuyingGuide(container) {
       ? `<span class="buying-guide-season">Season: ${escapeHtml(guide.seasonalBias.charAt(0).toUpperCase() + guide.seasonalBias.slice(1))}</span>`
       : '';
 
+    const cartInfo = guide.activeCartBottles > 0
+      ? ` \u2022 ${guide.activeCartBottles} planned`
+      : '';
+
     container.innerHTML = `
       <div class="buying-guide-panel">
         <div class="buying-guide-header">
           <h3>Buying Guide</h3>
           ${seasonHtml}
         </div>
-        <p class="buying-guide-subtitle">Based on ${guide.recipeCount} recipes${guide.cellarCapacity ? ` \u2022 ${guide.totalBottles} of ${guide.cellarCapacity} slots filled` : ` \u2022 ${guide.totalBottles} bottles`}</p>
+        <p class="buying-guide-subtitle">Based on ${guide.recipeCount} recipes${guide.cellarCapacity ? ` \u2022 ${guide.totalBottles} of ${guide.cellarCapacity} slots filled` : ` \u2022 ${guide.totalBottles} bottles`}${cartInfo}</p>
         ${coverageHtml}
+        <div class="buying-guide-cart-section"></div>
         ${gapsHtml}
         ${surplusesHtml}
         ${diversityHtml}
       </div>
     `;
+
+    // Wire "Add to Plan" buttons on gap cards
+    wireGapAddButtons(container);
+
+    // Render cart panel into its section
+    const cartSection = container.querySelector('.buying-guide-cart-section');
+    if (cartSection) {
+      renderCartPanel(cartSection);
+    }
 
   } catch (err) {
     container.innerHTML = `<p class="no-data">Error loading buying guide: ${escapeHtml(err.message)}</p>`;
@@ -77,21 +93,33 @@ export async function renderBuyingGuide(container) {
 }
 
 /**
- * Render the coverage bar.
+ * Render the dual coverage bar (physical + projected overlay).
  * @param {Object} guide - Buying guide data
  * @returns {string} HTML
  */
 function renderCoverageBar(guide) {
   const pct = guide.bottleCoveragePct;
+  const projectedPct = guide.projectedBottleCoveragePct ?? pct;
   const colourClass = pct >= 80 ? 'coverage-good' : pct >= 50 ? 'coverage-ok' : 'coverage-low';
+  const hasProjection = projectedPct > pct;
+
+  const projectedLabel = hasProjection
+    ? ` <span class="coverage-projected-label">(${projectedPct}% after planned)</span>`
+    : '';
+
+  // Show projected bar as striped overlay if there's a difference
+  const projectedBarHtml = hasProjection
+    ? `<div class="coverage-bar coverage-bar-projected" style="width: ${Math.max(2, projectedPct)}%"></div>`
+    : '';
 
   return `
     <div class="buying-guide-coverage">
       <div class="coverage-label">
-        <span>Your cellar covers <strong>${pct}%</strong> of cooking needs</span>
+        <span>Your cellar covers <strong>${pct}%</strong> of cooking needs${projectedLabel}</span>
         <span class="coverage-detail">${guide.gaps.length} gap${guide.gaps.length !== 1 ? 's' : ''}, ${guide.surpluses.length} surplus${guide.surpluses.length !== 1 ? 'es' : ''}</span>
       </div>
       <div class="coverage-bar-track">
+        ${projectedBarHtml}
         <div class="coverage-bar ${colourClass}" style="width: ${Math.max(2, pct)}%"></div>
       </div>
     </div>
@@ -99,7 +127,7 @@ function renderCoverageBar(guide) {
 }
 
 /**
- * Render gap cards.
+ * Render gap cards with "Add to Plan" buttons and projected deficit.
  * @param {Array} gaps - Gap objects
  * @returns {string} HTML
  */
@@ -117,6 +145,12 @@ function renderGaps(gaps) {
       ? `<div class="gap-suggestions">Try: ${gap.suggestions.map(s => escapeHtml(s)).join(', ')}</div>`
       : '';
 
+    // Show projected deficit when virtual inventory reduces the gap
+    const projectedDeficit = gap.projectedDeficit ?? gap.deficit;
+    const projectedHtml = projectedDeficit < gap.deficit
+      ? `<div class="gap-projected-info">${projectedDeficit === 0 ? 'Covered after planned' : `${projectedDeficit} needed after planned`}</div>`
+      : '';
+
     return `
       <div class="gap-card">
         <div class="gap-card-header">
@@ -126,8 +160,10 @@ function renderGaps(gaps) {
         <div class="gap-card-meta">
           <span class="gap-have-target">${gap.have} of ${gap.target} needed (${gap.demandPct}% demand)</span>
         </div>
+        ${projectedHtml}
         ${signalsHtml}
         ${suggestionsHtml}
+        <button class="gap-add-btn" data-style="${escapeHtml(gap.style)}" data-label="${escapeHtml(gap.label)}" type="button">+ Add to Plan</button>
       </div>
     `;
   }).join('');
@@ -138,6 +174,26 @@ function renderGaps(gaps) {
       <div class="gap-cards">${cardsHtml}</div>
     </div>
   `;
+}
+
+/**
+ * Wire "Add to Plan" button click handlers on gap cards.
+ * @param {HTMLElement} container
+ */
+function wireGapAddButtons(container) {
+  container.querySelectorAll('.gap-add-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const styleId = btn.dataset.style;
+      const label = btn.dataset.label;
+      openQuickAddForGap(styleId, label);
+
+      // Scroll cart section into view
+      const cartSection = container.querySelector('.buying-guide-cart-section');
+      if (cartSection) {
+        cartSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
+  });
 }
 
 /**

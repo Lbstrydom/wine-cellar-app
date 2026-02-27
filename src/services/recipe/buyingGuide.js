@@ -8,38 +8,13 @@
 import db from '../../db/index.js';
 import { matchWineToStyle } from '../pairing/pairingEngine.js';
 import { computeCookingProfile } from './cookingProfile.js';
+import { getActiveItems } from './buyingGuideCart.js';
 import { FOOD_SIGNALS } from '../../config/pairingRules.js';
+import { STYLE_LABELS, SHOPPING_SUGGESTIONS } from '../../config/styleIds.js';
 import logger from '../../utils/logger.js';
 
-/** Shopping suggestions by style bucket */
-const SHOPPING_SUGGESTIONS = {
-  white_crisp: ['Sauvignon Blanc', 'Pinot Grigio', 'Albari\u00f1o', 'Muscadet', 'Vermentino'],
-  white_medium: ['Chardonnay (unoaked)', 'Chenin Blanc', 'Pinot Blanc', 'Gr\u00fcner Veltliner'],
-  white_oaked: ['Oaked Chardonnay', 'White Burgundy', 'White Rioja', 'Fumé Blanc'],
-  white_aromatic: ['Riesling', 'Gew\u00fcrztraminer', 'Viognier', 'Torront\u00e9s'],
-  rose_dry: ['Provence Ros\u00e9', 'C\u00f4tes de Provence', 'Tavel', 'Grenache Ros\u00e9'],
-  red_light: ['Pinot Noir', 'Gamay', 'Beaujolais', 'Valpolicella'],
-  red_medium: ['Merlot', 'C\u00f4tes du Rh\u00f4ne', 'Chianti', 'Rioja', 'Pinotage'],
-  red_full: ['Cabernet Sauvignon', 'Shiraz', 'Malbec', 'Barolo', 'Pinotage'],
-  sparkling_dry: ['Champagne', 'Prosecco', 'Cava', 'Cr\u00e9mant', 'Cap Classique'],
-  sparkling_rose: ['Ros\u00e9 Champagne', 'Ros\u00e9 Prosecco', 'Ros\u00e9 Cap Classique'],
-  dessert: ['Sauternes', 'Port', 'Ice Wine', 'PX Sherry', 'Muscat de Beaumes-de-Venise']
-};
-
-/** Style labels for display */
-const STYLE_LABELS = {
-  white_crisp: 'Crisp White',
-  white_medium: 'Medium White',
-  white_oaked: 'Oaked White',
-  white_aromatic: 'Aromatic White',
-  rose_dry: 'Dry Ros\u00e9',
-  red_light: 'Light Red',
-  red_medium: 'Medium Red',
-  red_full: 'Full Red',
-  sparkling_dry: 'Sparkling',
-  sparkling_rose: 'Sparkling Ros\u00e9',
-  dessert: 'Dessert'
-};
+/** Cache TTL: 1 hour in milliseconds */
+const CACHE_TTL_MS = 60 * 60 * 1000;
 
 /**
  * Generate full buying guide report.
@@ -49,6 +24,12 @@ const STYLE_LABELS = {
  * @returns {Promise<Object>} Buying guide report
  */
 export async function generateBuyingGuide(cellarId, options = {}) {
+  // 0. Check server-side cache (1-hour TTL)
+  if (!options.forceRefresh) {
+    const cached = await getCachedGuide(cellarId);
+    if (cached) return cached;
+  }
+
   // 1. Get cooking profile (cached unless forced)
   const profile = await computeCookingProfile(cellarId, {
     forceRefresh: options.forceRefresh || false
@@ -67,13 +48,14 @@ export async function generateBuyingGuide(cellarId, options = {}) {
   }
 
   // 2b. Get total cellar capacity (all slots, filled + empty)
-  // Targets are computed against capacity so the guide recommends what to
-  // buy to fill the cellar, not just redistribute existing stock.
-  // Fall back to totalBottles if capacity query returns 0 (legacy cellars
-  // without slot rows, or storage-area cellars without R-prefixed codes).
   const rawCapacity = await getCellarCapacity(cellarId);
   const hasRealCapacity = rawCapacity > 0;
   const effectiveCapacity = hasRealCapacity ? rawCapacity : totalBottles;
+
+  // 2c. Get active cart items for virtual inventory projection
+  const activeItems = await getActiveItems(cellarId);
+  const virtualStyleCounts = computeVirtualCounts(activeItems);
+  const activeCartBottles = activeItems.reduce((s, i) => s + (Number(i.quantity) || 0), 0);
 
   // 3. Calculate demand-proportional targets against cellar capacity
   const targets = computeTargets(profile.wineStyleDemand, effectiveCapacity);
@@ -98,20 +80,33 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     };
   }
 
-  // 4. Compute gaps and surpluses
+  // 4. Compute gaps and surpluses (physical only)
   const gaps = computeGaps(targets, styleCounts, profile);
   const surpluses = computeSurpluses(targets, styleCounts, winesByStyle);
+
+  // 4b. Add projected deficit to each gap (physical + virtual)
+  for (const gap of gaps) {
+    const virtualCount = virtualStyleCounts[gap.style] || 0;
+    const projectedHave = (styleCounts[gap.style] || 0) + virtualCount;
+    gap.projectedDeficit = Math.max(0, gap.target - projectedHave);
+  }
 
   // 5. Diversity recommendations
   const diversityRecs = computeDiversityRecs(profile.wineStyleDemand, styleCounts);
 
-  // 6. Coverage percentage
+  // 6. Coverage percentage (physical only)
   const coveredStyles = Object.keys(targets).filter(
     s => targets[s] >= 1 && (styleCounts[s] || 0) >= targets[s]
   ).length;
   const coveragePct = Math.round((coveredStyles / totalTargetedStyles) * 100);
 
-  // 7. Coverage by bottle count
+  // 6b. Projected coverage (physical + virtual)
+  const projectedCoveredStyles = Object.keys(targets).filter(
+    s => targets[s] >= 1 && ((styleCounts[s] || 0) + (virtualStyleCounts[s] || 0)) >= targets[s]
+  ).length;
+  const projectedCoveragePct = Math.round((projectedCoveredStyles / totalTargetedStyles) * 100);
+
+  // 7. Coverage by bottle count (physical)
   let bottlesCovered = 0;
   let bottlesNeeded = 0;
   for (const [style, target] of Object.entries(targets)) {
@@ -124,11 +119,26 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     ? Math.round((bottlesCovered / bottlesNeeded) * 100)
     : 0;
 
+  // 7b. Projected bottle coverage (physical + virtual)
+  let projectedBottlesCovered = 0;
+  for (const [style, target] of Object.entries(targets)) {
+    if (target < 1) continue;
+    const have = (styleCounts[style] || 0) + (virtualStyleCounts[style] || 0);
+    projectedBottlesCovered += Math.min(have, target);
+  }
+  const projectedBottleCoveragePct = bottlesNeeded > 0
+    ? Math.round((projectedBottlesCovered / bottlesNeeded) * 100)
+    : 0;
+
   const guide = {
     coveragePct,
     bottleCoveragePct,
+    projectedCoveragePct,
+    projectedBottleCoveragePct,
     totalBottles,
     cellarCapacity: hasRealCapacity ? rawCapacity : null,
+    activeCartItems: activeItems.length,
+    activeCartBottles,
     gaps,
     surpluses,
     diversityRecs,
@@ -139,7 +149,10 @@ export async function generateBuyingGuide(cellarId, options = {}) {
     hemisphere: profile.hemisphere
   };
 
-  logger.info('BuyingGuide', `Guide for cellar ${cellarId}: ${coveragePct}% coverage, ${gaps.length} gaps, ${surpluses.length} surpluses`);
+  logger.info('BuyingGuide', `Guide for cellar ${cellarId}: ${coveragePct}% (${projectedCoveragePct}% projected), ${gaps.length} gaps, ${activeItems.length} cart items`);
+
+  // Cache the result
+  await cacheGuide(cellarId, guide);
 
   return guide;
 }
@@ -459,4 +472,78 @@ function buildNoWinesGuide(profile) {
     emptyReason: 'no_wines',
     hypotheticalCellarSize: 50
   };
+}
+
+/* ── Virtual inventory helpers ─────────────────────────────── */
+
+/**
+ * Compute virtual style counts from active cart items.
+ * @param {Array} activeItems - Active (non-converted) cart items
+ * @returns {Object} Style -> virtual bottle count
+ */
+function computeVirtualCounts(activeItems) {
+  const counts = {};
+  for (const item of activeItems) {
+    if (!item.style_id) continue;
+    counts[item.style_id] = (counts[item.style_id] || 0) + (Number(item.quantity) || 0);
+  }
+  return counts;
+}
+
+/* ── Server-side cache (buying_guide_cache) ────────────────── */
+
+/**
+ * Get cached buying guide if fresh (within TTL).
+ * @param {string} cellarId - Cellar UUID
+ * @returns {Promise<Object|null>}
+ */
+async function getCachedGuide(cellarId) {
+  try {
+    const row = await db.prepare(
+      'SELECT cache_data, generated_at FROM buying_guide_cache WHERE cellar_id = $1'
+    ).get(cellarId);
+
+    if (!row || !row.cache_data) return null;
+
+    const age = Date.now() - new Date(row.generated_at).getTime();
+    if (age > CACHE_TTL_MS) return null;
+
+    return typeof row.cache_data === 'string'
+      ? JSON.parse(row.cache_data)
+      : row.cache_data;
+  } catch {
+    return null; // Cache miss on error — fall through to computation
+  }
+}
+
+/**
+ * Upsert buying guide cache.
+ * @param {string} cellarId - Cellar UUID
+ * @param {Object} guide - Guide data
+ */
+async function cacheGuide(cellarId, guide) {
+  try {
+    await db.prepare(
+      'INSERT INTO buying_guide_cache (cellar_id, cache_data, generated_at)' +
+      ' VALUES ($1, $2, NOW())' +
+      ' ON CONFLICT (cellar_id) DO UPDATE SET cache_data = $2, generated_at = NOW()'
+    ).run(cellarId, JSON.stringify(guide));
+  } catch (err) {
+    logger.error('BuyingGuide', 'Cache write failed:', err.message);
+  }
+}
+
+/**
+ * Invalidate buying guide cache for a cellar.
+ * Call after wine/recipe/slot/cart-item changes.
+ * @param {string} cellarId - Cellar UUID
+ */
+export async function invalidateBuyingGuideCache(cellarId) {
+  try {
+    await db.prepare(
+      'DELETE FROM buying_guide_cache WHERE cellar_id = $1'
+    ).run(cellarId);
+  } catch {
+    // Non-critical — stale cache will expire via TTL
+  }
 }
