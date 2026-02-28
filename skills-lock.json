@@ -5,6 +5,11 @@
       "source": "supabase/agent-skills",
       "sourceType": "github",
       "computedHash": "e3ba3d760c5f4cc43b02a91fb8924f726c7818f95cc35d79d0a606ca622b72f5"
+    },
+    "use-railway": {
+      "source": "railwayapp/railway-skills",
+      "sourceType": "github",
+      "computedHash": "f652d73c95fc7bbc43c219c6e7df9ac6b408ca55141cd8c266ee16ea9dcbde1d"
     }
   }
 }
