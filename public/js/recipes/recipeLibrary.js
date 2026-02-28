@@ -191,7 +191,7 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
             const dishInput = document.getElementById('dish-input');
             if (dishInput) {
               dishInput.value = name;
-              dishInput.dispatchEvent(new Event('input'));
+              document.getElementById('ask-sommelier')?.click();
             }
           }, 100);
         });

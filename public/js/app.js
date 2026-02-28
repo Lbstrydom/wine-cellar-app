@@ -803,14 +803,30 @@ async function loadDrinkSoonView() {
   if (drinkSoonLoaded) return;
   drinkSoonLoaded = true;
   const container = document.getElementById('drink-soon-list');
+  const summaryEl = document.getElementById('drink-soon-summary');
   if (!container) return;
   container.innerHTML = '<p class="text-muted">Loading…</p>';
+  if (summaryEl) summaryEl.innerHTML = '';
   try {
     const wines = await fetchReduceNow();
     if (!wines || wines.length === 0) {
       container.innerHTML = '<p class="text-muted">No wines flagged as drink soon.</p>';
       return;
     }
+
+    // Summary bar
+    const overdueCount = wines.filter(w => w.priority === 1 || w.priority === '1').length;
+    const soonCount = wines.length - overdueCount;
+    if (summaryEl) {
+      summaryEl.innerHTML = `
+        <div class="drink-soon-summary-bar">
+          <span class="drink-soon-stat">${wines.length} wine${wines.length !== 1 ? 's' : ''} to drink</span>
+          ${overdueCount ? `<span class="drink-soon-stat urgency-now">${overdueCount} overdue</span>` : ''}
+          ${soonCount ? `<span class="drink-soon-stat urgency-soon">${soonCount} approaching</span>` : ''}
+        </div>`;
+    }
+
+    // Wine cards with Find Pairing button
     container.innerHTML = wines.map(w => {
       const urgencyClass = (w.priority === 1 || w.priority === '1') ? 'now' : 'soon';
       const urgencyLabel = urgencyClass === 'now' ? '⚠ Overdue' : '⏳ Drink Soon';
@@ -821,9 +837,43 @@ async function loadDrinkSoonView() {
             <div class="drink-soon-card-name">${escapeHtml(w.wine_name || 'Unknown')}</div>
             ${w.vintage ? `<div class="drink-soon-card-vintage">${escapeHtml(String(w.vintage))}${w.reduce_reason ? ` — ${escapeHtml(w.reduce_reason)}` : ''}</div>` : ''}
           </div>
+          <button class="btn btn-small btn-secondary drink-soon-pair-btn"
+                  data-wine="${escapeHtml(w.wine_name || '')}" title="Find food pairing">🍷 Pair</button>
           <span class="drink-soon-tag ${urgencyClass}">${urgencyLabel}</span>
         </div>`;
     }).join('');
+
+    // Wire pairing buttons
+    container.querySelectorAll('.drink-soon-pair-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const wineName = btn.dataset.wine;
+        switchView('pairing');
+        setTimeout(() => {
+          const dishInput = document.getElementById('dish-input');
+          if (dishInput) {
+            dishInput.value = `Pair with ${wineName}`;
+            document.getElementById('ask-sommelier')?.click();
+          }
+        }, 150);
+      });
+    });
+
+    // Settings link for rule adjustment
+    container.insertAdjacentHTML('afterend',
+      `<p class="drink-soon-settings-link">
+        Adjust drink-soon rules in <button type="button" class="link-btn" id="drink-soon-go-settings">Settings</button>
+      </p>`);
+    document.getElementById('drink-soon-go-settings')?.addEventListener('click', () => {
+      switchView('settings');
+      setTimeout(() => {
+        const section = document.querySelector('[data-section-id="drink-soon-rules"]');
+        if (section) {
+          const body = section.closest('.settings-section')?.querySelector('.settings-section-body');
+          if (body?.classList.contains('collapsed')) section.click();
+          section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      }, 150);
+    });
   } catch (err) {
     console.error('[App] Failed to load drink soon view:', err);
     container.innerHTML = '<p class="text-muted">Failed to load drink soon wines.</p>';

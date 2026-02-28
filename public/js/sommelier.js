@@ -432,10 +432,7 @@ export function initSommelier() {
   document.getElementById('go-to-ai-picks')?.addEventListener('click', () => {
     switchView('grid');
     setTimeout(() => {
-      const panel = document.getElementById('drink-tonight-panel');
-      if (panel?.classList.contains('collapsed')) {
-        document.getElementById('toggle-recommendations')?.click();
-      }
+      import('./recommendations.js').then(({ expandPanel }) => expandPanel());
     }, 100);
   });
 

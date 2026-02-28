@@ -12825,6 +12825,45 @@ body.move-guide-active #view-grid {
   color: #000;
 }
 
+.drink-soon-summary-bar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0;
+  font-size: 0.85rem;
+  color: var(--text-muted, #999);
+}
+.drink-soon-stat {
+  font-weight: 600;
+}
+.drink-soon-stat.urgency-now {
+  color: var(--danger, #e05252);
+}
+.drink-soon-stat.urgency-soon {
+  color: var(--warning, #d4a843);
+}
+.drink-soon-pair-btn {
+  flex-shrink: 0;
+  font-size: 0.75rem;
+}
+.drink-soon-settings-link {
+  margin-top: 1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted, #999);
+}
+.link-btn {
+  background: none;
+  border: none;
+  color: var(--accent, #d4a843);
+  cursor: pointer;
+  font-size: inherit;
+  text-decoration: underline;
+  padding: 0;
+}
+.link-btn:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+
 /* ─── Phase 5: Pairing AI cross-link ─────────────────────────────────────── */
 .pairing-ai-crosslink {
   display: flex;

@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260228a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260228b">
 </head>
 <body>
   <header>
@@ -71,27 +71,37 @@
       <span></span><span></span><span></span>
     </button>
     <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Views">
-      <button class="tab active" data-parent="cellar" role="tab" aria-selected="true">Cellar</button>
-      <button class="tab" data-parent="pairing" role="tab" aria-selected="false">Pairing</button>
-      <button class="tab" data-parent="kitchen" role="tab" aria-selected="false">Kitchen</button>
-      <button class="tab" data-parent="collection" role="tab" aria-selected="false">Collection</button>
-      <button class="tab" data-parent="settings" role="tab" aria-selected="false">Settings</button>
+      <button class="tab active" data-parent="cellar" role="tab"
+              aria-selected="true" id="tab-cellar-parent">Cellar</button>
+      <button class="tab" data-parent="pairing" data-view="pairing" role="tab"
+              aria-selected="false" id="tab-pairing" aria-controls="view-pairing">Pairing</button>
+      <button class="tab" data-parent="kitchen" data-view="recipes" role="tab"
+              aria-selected="false" id="tab-kitchen" aria-controls="view-recipes">Kitchen</button>
+      <button class="tab" data-parent="collection" role="tab"
+              aria-selected="false" id="tab-collection-parent">Collection</button>
+      <button class="tab" data-parent="settings" data-view="settings" role="tab"
+              aria-selected="false" id="tab-settings" aria-controls="view-settings">Settings</button>
     </div>
     <!-- Sub-tab rows (shown when parent tab is active) -->
-    <div class="sub-tabs-row" id="sub-tabs-cellar" data-parent="cellar">
-      <button class="sub-tab active" data-view="grid" role="tab" aria-selected="true">Grid</button>
-      <button class="sub-tab" data-view="analysis" role="tab" aria-selected="false">Analysis</button>
+    <div class="sub-tabs-row" id="sub-tabs-cellar" data-parent="cellar" role="tablist" aria-label="Cellar views">
+      <button class="sub-tab active" data-view="grid" role="tab"
+              aria-selected="true" id="stab-grid" aria-controls="view-grid">Grid</button>
+      <button class="sub-tab" data-view="analysis" role="tab"
+              aria-selected="false" id="stab-analysis" aria-controls="view-analysis">Analysis</button>
     </div>
-    <div class="sub-tabs-row" id="sub-tabs-collection" data-parent="collection" hidden>
-      <button class="sub-tab" data-view="wines" role="tab" aria-selected="false">Wine List</button>
-      <button class="sub-tab" data-view="history" role="tab" aria-selected="false">History</button>
-      <button class="sub-tab" data-view="drinksoon" role="tab" aria-selected="false">Drink Soon</button>
+    <div class="sub-tabs-row" id="sub-tabs-collection" data-parent="collection" hidden role="tablist" aria-label="Collection views">
+      <button class="sub-tab" data-view="wines" role="tab"
+              aria-selected="false" id="stab-wines" aria-controls="view-wines">Wine List</button>
+      <button class="sub-tab" data-view="history" role="tab"
+              aria-selected="false" id="stab-history" aria-controls="view-history">History</button>
+      <button class="sub-tab" data-view="drinksoon" role="tab"
+              aria-selected="false" id="stab-drinksoon" aria-controls="view-drinksoon">Drink Soon</button>
     </div>
   </nav>
 
   <main id="main-content">
   <!-- Grid View -->
-  <div class="view active" id="view-grid" role="tabpanel" aria-labelledby="tab-grid">
+  <div class="view active" id="view-grid" role="tabpanel" aria-labelledby="stab-grid">
     <!-- AI Drink Recommendations Panel -->
     <section class="recommendation-panel" id="drink-tonight-panel">
       <div class="recommendation-header">
@@ -167,7 +177,7 @@
   </div>
 
   <!-- Analysis View -->
-  <div class="view" id="view-analysis" role="tabpanel" aria-labelledby="tab-analysis" hidden>
+  <div class="view" id="view-analysis" role="tabpanel" aria-labelledby="stab-analysis" hidden>
     <div class="analysis-view-header">
       <h2>Cellar Analysis</h2>
       <div class="analysis-actions">
@@ -323,10 +333,10 @@
   </div>
 
   <!-- Recipes View (lazy-loaded) -->
-  <div class="view" id="view-recipes" role="tabpanel" aria-labelledby="tab-recipes" hidden></div>
+  <div class="view" id="view-recipes" role="tabpanel" aria-labelledby="tab-kitchen" hidden></div>
 
   <!-- Wine List View (merged Drink Soon + All Wines) -->
-  <div class="view" id="view-wines" role="tabpanel" aria-labelledby="tab-wines" hidden>
+  <div class="view" id="view-wines" role="tabpanel" aria-labelledby="stab-wines" hidden>
     <div class="wine-list-header">
       <h2>Wine List</h2>
       <div class="wine-list-filters">
@@ -372,20 +382,22 @@
   </div>
 
   <!-- History View -->
-  <div class="view" id="view-history" role="tabpanel" aria-labelledby="tab-history" hidden>
+  <div class="view" id="view-history" role="tabpanel" aria-labelledby="stab-history" hidden>
     <h2 class="view-title">Consumption History</h2>
     <div class="history-list" id="history-list"></div>
   </div>
 
   <!-- Drink Soon View -->
-  <div class="view" id="view-drinksoon" role="tabpanel" hidden>
+  <div class="view" id="view-drinksoon" role="tabpanel" aria-labelledby="stab-drinksoon" hidden>
     <h2 class="view-title">Drink Soon</h2>
     <p class="view-subtitle">Wines approaching or past their optimal drinking window</p>
+    <div id="drink-soon-summary"></div>
     <div id="drink-soon-list"></div>
   </div>
 
   <!-- Pairing View -->
   <div class="view" id="view-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
+
     <!-- Mode Toggle -->
     <div class="restaurant-mode-toggle form-toggle" role="tablist" aria-label="Pairing mode">
       <button class="toggle-btn active" data-mode="cellar" type="button"
