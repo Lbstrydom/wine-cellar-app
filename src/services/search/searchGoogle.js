@@ -90,7 +90,7 @@ export async function searchGoogle(query, domains = [], queryType = 'serp_broad'
         logger.info('Search', `Fallback query: "${simplifiedQuery}"`);
 
         try {
-          const fallbackResults = await searchGoogle(simplifiedQuery, domains, queryType, budget);
+          const fallbackResults = await searchGoogle(simplifiedQuery, domains, queryType, budget, localeOptions);
           if (fallbackResults.length > 0) {
             results = fallbackResults;
             logger.info('Search', `Fallback successful: found ${results.length} results`);

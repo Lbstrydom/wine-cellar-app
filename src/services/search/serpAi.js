@@ -11,27 +11,15 @@
 import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
-// circuitBreaker reserved for future resilience patterns
 import { TIMEOUTS } from '../../config/scraperConfig.js';
 import { calculateIdentityScore } from '../wine/wineIdentity.js';
+import { createTimeoutAbort } from '../shared/fetchUtils.js';
+import { getCachedSerpResults, cacheSerpResults } from '../shared/cacheService.js';
+import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 
 const BRIGHTDATA_API_KEY = process.env.BRIGHTDATA_API_KEY;
 const BRIGHTDATA_SERP_ZONE = process.env.BRIGHTDATA_SERP_ZONE;
 const BRIGHTDATA_API_URL = 'https://api.brightdata.com/serp/req';
-
-/**
- * Create timeout AbortController.
- * @param {number} ms - Timeout in milliseconds
- * @returns {{ controller: AbortController, cleanup: Function }}
- */
-function createTimeoutAbort(ms) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), ms);
-  return {
-    controller,
-    cleanup: () => clearTimeout(timeoutId)
-  };
-}
 
 /**
  * Extract AI fields from SERP response body.
@@ -104,15 +92,30 @@ function combineAiContent(aiFields) {
  * @param {string} query - Search query
  * @returns {Promise<Object|null>} Full SERP response with AI fields
  */
-export async function searchGoogleWithFullResponse(query) {
+export async function searchGoogleWithFullResponse(query, localeOptions = {}) {
   if (!BRIGHTDATA_API_KEY || !BRIGHTDATA_SERP_ZONE) {
     logger.warn('SerpAI', 'BRIGHTDATA_API_KEY or BRIGHTDATA_SERP_ZONE not configured');
     return null;
   }
 
-  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10&hl=en&gl=us`;
+  const { hl = 'en', gl = 'us' } = localeOptions;
 
-  logger.info('SerpAI', `Fetching full SERP for: "${query.substring(0, 50)}..."`);
+  // Check SERP cache first to avoid duplicate BrightData API charges
+  const queryParams = { query, domains: [], hl, gl };
+  try {
+    const cached = await getCachedSerpResults(queryParams);
+    if (cached) {
+      logger.info('SerpAI', `SERP cache HIT for: "${query.substring(0, 50)}..." (${hl}/${gl})`);
+      // Reconstruct full response from cached organic results
+      return extractSerpAiFields({ organic: cached.results });
+    }
+  } catch (err) {
+    logger.warn('SerpAI', `SERP cache lookup failed: ${err.message}`);
+  }
+
+  const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(query)}&num=10&hl=${hl}&gl=${gl}`;
+
+  logger.info('SerpAI', `Fetching full SERP for: "${query.substring(0, 50)}..." (${hl}/${gl})`);
 
   const { controller, cleanup } = createTimeoutAbort(TIMEOUTS.SERP_API_TIMEOUT || 15000);
 
@@ -154,6 +157,21 @@ export async function searchGoogleWithFullResponse(query) {
 
     logger.info('SerpAI', `SERP fields: AI Overview=${!!aiFields.aiOverview}, KG=${!!aiFields.knowledgeGraph}, Featured=${!!aiFields.featuredSnippet}, Organic=${aiFields.organicResults.length}`);
 
+    // Cache the organic results for reuse by Tier 3 (searchGoogle.js)
+    try {
+      if (aiFields.organicResults.length > 0) {
+        const cacheableResults = aiFields.organicResults.map(item => ({
+          title: item.title || '',
+          url: item.link || item.url || '',
+          snippet: (item.description || item.snippet || '').replace(/Read more$/, '').trim(),
+          source: (item.link || item.url || '').replace(/^https?:\/\/(?:www\.)?/, '').split('/')[0]
+        }));
+        await cacheSerpResults(queryParams, 'serp_ai_full', cacheableResults);
+      }
+    } catch (err) {
+      logger.warn('SerpAI', `SERP cache write failed: ${err.message}`);
+    }
+
     return aiFields;
 
   } catch (error) {
@@ -180,10 +198,15 @@ async function quickClaudeExtraction(content, wine) {
 
   const vintage = wine.vintage || 'NV';
 
+  // Sanitize profile fields for context line
+  const sanitize = (s, max = 100) => (s || '').replace(/[\n\r\t]/g, ' ').substring(0, max).trim();
+  const contextParts = [wine.colour, sanitize(wine.style), sanitize(wine.grapes), sanitize(wine.region), wine.country].filter(Boolean);
+  const contextLine = contextParts.length ? `\nCONTEXT: ${contextParts.join(' · ')}` : '';
+
   // FAST prompt - minimal tokens, JSON-only output
   const prompt = `Extract wine ratings from this text. Return ONLY JSON.
 
-WINE: ${wine.wine_name || wine.name} ${vintage}
+WINE: ${wine.wine_name || wine.name} ${vintage}${contextLine}
 
 TEXT:
 ${content.substring(0, 2000)}
@@ -195,20 +218,18 @@ Rules: Only ${vintage} vintage. Empty array if no ratings found. grape_varieties
 
   try {
     const message = await anthropic.messages.create({
-      model: getModelForTask('ratings'),
-      max_tokens: 500,
+      model: getModelForTask('ratingExtraction'),
+      max_tokens: 800,
       messages: [{ role: 'user', content: prompt }]
     });
 
     const responseText = message.content[0]?.text || '';
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
 
-    if (jsonMatch) {
-      const extracted = JSON.parse(jsonMatch[0]);
-      return extracted;
+    try {
+      return extractJsonWithRepair(responseText);
+    } catch {
+      return null;
     }
-
-    return null;
   } catch (error) {
     logger.warn('SerpAI', `Quick Claude extraction failed: ${error.message}`);
     return null;

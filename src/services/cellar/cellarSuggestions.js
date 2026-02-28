@@ -802,3 +802,116 @@ export function generateSameWineGroupingMoves(slotToWine, zoneMap) {
 
   return moves;
 }
+
+/**
+ * Generate cross-row grouping moves for wines scattered across multiple rows
+ * within the same zone. Only suggests moves when ALL scattered bottles can fit
+ * into the anchor row (no partial consolidation).
+ *
+ * Must be called AFTER generateSameWineGroupingMoves() and receive the same-row
+ * moves to avoid conflicting suggestions via occupancy tracking.
+ *
+ * @param {Map} slotToWine - Map of slotId → wine object (with .id, .wine_name)
+ * @param {Object} zoneMap - Row-to-zone mapping from getActiveZoneMap()
+ * @param {Array<Object>} sameRowMoves - Moves from generateSameWineGroupingMoves()
+ * @returns {Array<Object>} Cross-row grouping move suggestions (priority 6)
+ */
+export function generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves = []) {
+  const moves = [];
+
+  // Build simulated occupancy from same-row pass to avoid conflicts
+  const allocatedTargets = new Set(sameRowMoves.map(m => m.to));
+  const allocatedSources = new Set(sameRowMoves.map(m => m.from));
+
+  // Build wineId → Map<zoneId, [{slotId, row, col}]>
+  const wineZoneSlots = new Map();
+  for (const [slotId, wine] of slotToWine) {
+    const parsed = parseSlot(slotId);
+    if (!parsed || parsed.row === 0) continue; // Skip fridge slots
+    const rowId = `R${parsed.row}`;
+    const zone = zoneMap[rowId];
+    if (!zone) continue;
+    const zoneId = zone.zoneId;
+
+    if (!wineZoneSlots.has(wine.id)) wineZoneSlots.set(wine.id, new Map());
+    const zoneSlots = wineZoneSlots.get(wine.id);
+    if (!zoneSlots.has(zoneId)) zoneSlots.set(zoneId, []);
+    zoneSlots.get(zoneId).push({ slotId, row: parsed.row, col: parsed.col, wine });
+  }
+
+  // Build current occupied set from slotToWine
+  const occupiedSet = new Set(slotToWine.keys());
+
+  for (const [wineId, zoneSlots] of wineZoneSlots) {
+    for (const [zoneId, slots] of zoneSlots) {
+      // Group by row
+      const rowGroups = new Map();
+      for (const s of slots) {
+        if (!rowGroups.has(s.row)) rowGroups.set(s.row, []);
+        rowGroups.get(s.row).push(s);
+      }
+
+      // Only care about wines spanning 2+ rows with 2+ total bottles
+      if (rowGroups.size < 2 || slots.length < 2) continue;
+
+      // Find anchor row (row with most bottles of this wine)
+      let anchorRow = null;
+      let anchorCount = 0;
+      for (const [row, rowSlots] of rowGroups) {
+        if (rowSlots.length > anchorCount) {
+          anchorCount = rowSlots.length;
+          anchorRow = row;
+        }
+      }
+
+      // Scattered bottles = bottles NOT in anchor row, NOT already being moved by same-row pass
+      const scattered = slots.filter(s =>
+        s.row !== anchorRow && !allocatedSources.has(s.slotId)
+      );
+      if (scattered.length === 0) continue;
+
+      // Count empty slots in anchor row, excluding already-allocated targets
+      const maxCol = anchorRow === 1 ? 7 : 9;
+      const emptyInAnchor = [];
+      for (let c = 1; c <= maxCol; c++) {
+        const slotId = `R${anchorRow}C${c}`;
+        if (!occupiedSet.has(slotId) && !allocatedTargets.has(slotId)) {
+          emptyInAnchor.push(slotId);
+        }
+      }
+
+      // Only suggest when ALL scattered bottles can fit (no partial consolidation)
+      if (emptyInAnchor.length < scattered.length) continue;
+
+      // Find closest empty slots to existing anchor bottles for tight grouping
+      const anchorCols = rowGroups.get(anchorRow).map(s => s.col);
+      const anchorCenter = anchorCols.reduce((a, b) => a + b, 0) / anchorCols.length;
+
+      const sortedEmpty = emptyInAnchor
+        .map(slotId => {
+          const col = parseInt(slotId.match(/C(\d+)$/)[1], 10);
+          return { slotId, dist: Math.abs(col - anchorCenter) };
+        })
+        .sort((a, b) => a.dist - b.dist);
+
+      const wineName = scattered[0].wine.wine_name;
+
+      for (let i = 0; i < scattered.length; i++) {
+        const target = sortedEmpty[i].slotId;
+        moves.push({
+          type: 'grouping',
+          wineId,
+          wineName,
+          from: scattered[i].slotId,
+          to: target,
+          reason: `Consolidate ${wineName} into R${anchorRow} (cross-row grouping)`,
+          confidence: 'medium',
+          priority: 6
+        });
+        allocatedTargets.add(target); // Prevent collision within cross-row pass
+      }
+    }
+  }
+
+  return moves;
+}

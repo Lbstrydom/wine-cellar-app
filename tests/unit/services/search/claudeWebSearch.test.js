@@ -69,13 +69,13 @@ describe('claudeWebSearch', () => {
 
       expect(mockCreate).toHaveBeenCalledOnce();
 
-      // Verify tools include web search and web fetch
+      // Verify tools include web search, web fetch, and structured output tool
       const callArgs = mockCreate.mock.calls[0];
       const params = callArgs[0];
-      expect(params.tools).toEqual([
-        { type: 'web_search_20260209', name: 'web_search' },
-        { type: 'web_fetch_20260209', name: 'web_fetch' }
-      ]);
+      expect(params.tools).toHaveLength(3);
+      expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search' });
+      expect(params.tools[1]).toEqual({ type: 'web_fetch_20260209', name: 'web_fetch' });
+      expect(params.tools[2].name).toBe('save_wine_ratings');
 
       // Verify beta header is passed
       const options = callArgs[1];
@@ -163,10 +163,20 @@ describe('claudeWebSearch', () => {
       expect(result).toBeNull();
     });
 
-    it('should repair truncated JSON', async () => {
+    it('should extract ratings from save_wine_ratings tool_use block (primary path)', async () => {
       mockCreate.mockResolvedValue({
         content: [
-          { type: 'text', text: '{"ratings":[{"source":"Test","source_lens":"critics","score_type":"points","raw_score":"90","raw_score_numeric":90,"reviewer_name":"","tasting_notes":"","vintage_match":"exact","confidence":"high","source_url":""}],"tasting_notes":null' }
+          { type: 'web_search_tool_result', content: [
+            { type: 'web_search_result', url: 'https://example.com/review', title: 'Review' }
+          ]},
+          { type: 'tool_use', name: 'save_wine_ratings', input: {
+            ratings: [{ source: 'Tim Atkin', source_lens: 'critics', score_type: 'points', raw_score: '93', raw_score_numeric: 93, reviewer_name: 'Tim Atkin', tasting_notes: '', vintage_match: 'exact', confidence: 'high', source_url: 'https://example.com/review' }],
+            tasting_notes: null,
+            drinking_window: null,
+            food_pairings: [],
+            style_summary: '',
+            grape_varieties: ['Pinotage']
+          }}
         ]
       });
 
@@ -174,6 +184,10 @@ describe('claudeWebSearch', () => {
 
       expect(result).not.toBeNull();
       expect(result.ratings).toHaveLength(1);
+      expect(result.ratings[0].source).toBe('Tim Atkin');
+      expect(result.ratings[0].raw_score_numeric).toBe(93);
+      expect(result.grape_varieties).toEqual(['Pinotage']);
+      expect(result._sources).toHaveLength(1);
     });
 
     it('should include wine context in prompt', async () => {
@@ -192,6 +206,63 @@ describe('claudeWebSearch', () => {
       // Country-specific sources
       expect(prompt).toContain('Tim Atkin');
       expect(prompt).toContain('Platter Guide');
+    });
+
+    it('should include style/grapes/region profile in prompt when present', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"ratings":[],"tasting_notes":null,"drinking_window":null,"food_pairings":[],"style_summary":""}' }]
+      });
+
+      await claudeWebSearch({
+        ...mockWine,
+        style: 'Full-bodied',
+        grapes: 'Pinotage',
+        region: 'Stellenbosch'
+      });
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+      expect(prompt).toContain('Wine profile:');
+      expect(prompt).toContain('Full-bodied');
+      expect(prompt).toContain('Pinotage');
+      expect(prompt).toContain('Stellenbosch');
+      expect(prompt).toContain('Do NOT add these terms to your web search queries');
+      // Style/grapes/region in CRITICAL RULES section
+      expect(prompt).toContain('Style: Full-bodied');
+      expect(prompt).toContain('Grapes: Pinotage');
+      expect(prompt).toContain('Region: Stellenbosch');
+    });
+
+    it('should omit profile line when wine has no style/grapes/region', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"ratings":[],"tasting_notes":null,"drinking_window":null,"food_pairings":[],"style_summary":""}' }]
+      });
+
+      await claudeWebSearch(mockWine);
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+      expect(prompt).not.toContain('Wine profile:');
+      expect(prompt).not.toContain('Do NOT add these terms');
+    });
+
+    it('should sanitize profile fields (strip newlines, truncate)', async () => {
+      mockCreate.mockResolvedValue({
+        content: [{ type: 'text', text: '{"ratings":[],"tasting_notes":null,"drinking_window":null,"food_pairings":[],"style_summary":""}' }]
+      });
+
+      await claudeWebSearch({
+        ...mockWine,
+        style: 'Full\nbodied\twith\rtabs',
+        grapes: 'A'.repeat(200),
+        region: ''
+      });
+
+      const prompt = mockCreate.mock.calls[0][0].messages[0].content;
+      // Newlines/tabs stripped
+      expect(prompt).toContain('Full bodied with tabs');
+      expect(prompt).not.toContain('Full\nbodied');
+      // Truncated to 100 chars
+      expect(prompt).toContain('A'.repeat(100));
+      expect(prompt).not.toContain('A'.repeat(101));
     });
 
     it('should handle NV wines correctly', async () => {

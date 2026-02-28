@@ -9,6 +9,8 @@ import { searchWineRatings, fetchPageContent, fetchAuthenticatedRatings } from '
 import { LENS_CREDIBILITY, getSource as getSourceConfig } from '../../config/unifiedSources.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import { extractDomain } from '../../utils/url.js';
+import { extractJsonWithRepair } from '../shared/jsonUtils.js';
+import { tryStructuredExtraction } from './structuredParsers.js';
 import logger from '../../utils/logger.js';
 import db from '../../db/index.js';
 
@@ -27,6 +29,33 @@ function addVintageToUrl(url, vintage) {
   urlObj.searchParams.delete('year');
   urlObj.searchParams.set('year', String(vintage));
   return urlObj.toString();
+}
+
+/**
+ * Normalize a structured parser result to the standard rating shape.
+ * @param {Object} structured - Result from tryStructuredExtraction
+ * @param {Object} page - Page object with url, title, source info
+ * @returns {Object} Normalized rating object
+ * @private
+ */
+function normalizeStructuredResult(structured, page) {
+  const isStarScale = structured.bestRating && structured.bestRating <= 5;
+  const scoreType = isStarScale ? 'stars' : 'points';
+
+  return {
+    source: structured.source === 'structured' || structured.source === 'microdata'
+      ? extractDomain(page.url).replace(/^www\./, '').split('.')[0]
+      : structured.source,
+    lens: 'community',
+    score_type: scoreType,
+    raw_score: String(structured.rating),
+    normalised_score: isStarScale ? Math.round(structured.rating * 20) : structured.rating,
+    rating_count: structured.ratingCount || null,
+    source_url: page.url,
+    evidence_excerpt: `${structured.extractionMethod}: ${structured.rating}`,
+    vintage_match: structured.vintage ? 'exact' : 'inferred',
+    match_confidence: structured.confidence || 'high'
+  };
 }
 
 /**
@@ -141,20 +170,51 @@ export async function fetchWineRatings(wine, options = {}) {
     logger.info('Ratings', `Will also extract from ${snippetsForExtraction.length} snippets (failed fetches + extras)`);
   }
 
-  // Step 3: Ask Claude to extract ratings from page contents
-  const parsePrompt = buildExtractionPrompt(wineName, vintage, validPages);
-  const ratingsModel = getModelForTask('ratings');
+  // Step 2.5 (Tier 0): Try deterministic structured extraction before Claude
+  const structuredRatings = [];
+  const pagesForClaude = [];
 
-  logger.info('Ratings', 'Sending to Claude for extraction...');
+  for (const page of validPages) {
+    const domain = extractDomain(page.url);
+    const structured = tryStructuredExtraction(page.content, domain);
 
-  const parseResponse = await anthropic.messages.create({
-    model: ratingsModel,
-    max_tokens: 2000,
-    messages: [{ role: 'user', content: parsePrompt }]
-  });
+    if (structured?.rating) {
+      logger.info('Ratings', `Tier 0: Structured extraction from ${domain} → ${structured.rating} (${structured.extractionMethod})`);
+      structuredRatings.push(normalizeStructuredResult(structured, page));
+    } else {
+      pagesForClaude.push(page);
+    }
+  }
 
-  const responseText = parseResponse.content[0].text;
-  const parsed = parseRatingResponse(responseText, 'Extraction');
+  if (structuredRatings.length > 0) {
+    logger.info('Ratings', `Tier 0: ${structuredRatings.length} ratings extracted deterministically, ${pagesForClaude.length} pages need Claude`);
+  }
+
+  // Step 3: Ask Claude to extract from remaining pages (skip if all parsed structurally)
+  let parsed;
+  if (pagesForClaude.length > 0) {
+    const parsePrompt = buildExtractionPrompt(wineName, vintage, pagesForClaude);
+    const ratingsModel = getModelForTask('ratings');
+
+    logger.info('Ratings', `Sending ${pagesForClaude.length} pages to Claude for extraction...`);
+
+    const parseResponse = await anthropic.messages.create({
+      model: ratingsModel,
+      max_tokens: 2000,
+      messages: [{ role: 'user', content: parsePrompt }]
+    });
+
+    const responseText = parseResponse.content[0].text;
+    parsed = parseRatingResponse(responseText, 'Extraction');
+  } else {
+    logger.info('Ratings', 'Tier 0: All pages parsed structurally, skipping Claude extraction');
+    parsed = { ratings: [], search_notes: 'All ratings extracted via structured parsers' };
+  }
+
+  // Merge structured ratings into parsed results
+  if (structuredRatings.length > 0) {
+    parsed.ratings = [...structuredRatings, ...(parsed.ratings || [])];
+  }
 
   // Enrich ratings with source metadata
   if (parsed.ratings) {
@@ -571,54 +631,26 @@ RULES:
 }
 
 /**
- * Parse rating response with multiple fallback strategies.
+ * Parse rating response using shared JSON extraction with repair.
  * @param {string} text - Response text
  * @param {string} source - Source label for logging
  * @returns {Object} Parsed ratings
  */
 function parseRatingResponse(text, source = 'Unknown') {
-  // Strategy 1: Direct parse
   try {
-    const parsed = JSON.parse(text.trim());
+    const parsed = extractJsonWithRepair(text);
     if (parsed.ratings && Array.isArray(parsed.ratings)) {
       return parsed;
     }
-  } catch (_e) {
-    // Continue to fallbacks
+    // Valid JSON but missing ratings array
+    return { ...parsed, ratings: parsed.ratings || [] };
+  } catch {
+    logger.error('Claude', `[${source}] Failed to parse: ` + text.substring(0, 300));
+    return {
+      ratings: [],
+      search_notes: `${source}: Could not parse results`
+    };
   }
-
-  // Strategy 2: Extract from code block
-  const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  if (codeBlockMatch) {
-    try {
-      const parsed = JSON.parse(codeBlockMatch[1].trim());
-      if (parsed.ratings && Array.isArray(parsed.ratings)) {
-        return parsed;
-      }
-    } catch (_e) {
-      // Continue to fallbacks
-    }
-  }
-
-  // Strategy 3: Find JSON object in text
-  const objectMatch = text.match(/\{[\s\S]*?"ratings"\s*:\s*\[[\s\S]*?\][\s\S]*?\}/);
-  if (objectMatch) {
-    try {
-      const parsed = JSON.parse(objectMatch[0]);
-      if (parsed.ratings && Array.isArray(parsed.ratings)) {
-        return parsed;
-      }
-    } catch (_e) {
-      // Continue to fallback
-    }
-  }
-
-  // Final fallback
-  logger.error('Claude', `[${source}] Failed to parse: ` + text.substring(0, 300));
-  return {
-    ratings: [],
-    search_notes: `${source}: Could not parse results`
-  };
 }
 
 /**

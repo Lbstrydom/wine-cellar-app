@@ -992,6 +992,10 @@ function handleWineCardClick(wine) {
  */
 function renderWineTable(wines, container) {
   const COLOUR_OPTIONS = ['red', 'white', 'rose', 'orange', 'sparkling', 'dessert', 'fortified'];
+  const COLOUR_HEX_MAP = {
+    red: '#c0392b', white: '#e6d3a0', rose: '#e88fa0',
+    orange: '#e09050', sparkling: '#a0c8e0', dessert: '#c8a030', fortified: '#8060a0'
+  };
 
   if (wines.length === 0) {
     container.innerHTML = '<p class="empty-message">No wines match your filters</p>';
@@ -1022,9 +1026,11 @@ function renderWineTable(wines, container) {
   const rows = wines.map(wine => {
     const isReduceNow = state.reduceNowIds.has(wine.id);
     const colourClass = escapeHtml(wine.colour || '');
-    const colourOptions = COLOUR_OPTIONS.map(c =>
-      `<option value="${c}"${wine.colour === c ? ' selected' : ''}>${c.charAt(0).toUpperCase() + c.slice(1)}</option>`
-    ).join('');
+    const colourLabel = (wine.colour || '').charAt(0).toUpperCase() + (wine.colour || '').slice(1);
+    const colourPickerOptions = COLOUR_OPTIONS.map(c => {
+      const cLabel = c.charAt(0).toUpperCase() + c.slice(1);
+      return `<button type="button" class="colour-picker-option${wine.colour === c ? ' selected' : ''}" role="option" aria-selected="${wine.colour === c}" tabindex="-1" data-value="${c}"><span class="colour-swatch" style="background:${COLOUR_HEX_MAP[c]}"></span><span>${cLabel}</span></button>`;
+    }).join('');
 
     return `
       <tr class="wine-table-row ${colourClass}${isReduceNow ? ' drink-soon-row' : ''}" data-wine-id="${wine.id}">
@@ -1033,8 +1039,14 @@ function renderWineTable(wines, container) {
         <td class="col-name editable" data-field="wine_name" data-wine-id="${wine.id}">${escapeHtml(wine.wine_name || '')}</td>
         <td class="col-producer editable" data-field="producer" data-wine-id="${wine.id}">${escapeHtml(wine.producer || '')}</td>
         <td class="col-vintage editable" data-field="vintage" data-type="integer" data-wine-id="${wine.id}">${wine.vintage || ''}</td>
-        <td class="col-colour-name editable-select" data-field="colour" data-wine-id="${wine.id}">
-          <select class="inline-select" data-field="colour" data-wine-id="${wine.id}">${colourOptions}</select>
+        <td class="col-colour-name">
+          <div class="colour-picker" data-wine-id="${wine.id}">
+            <button type="button" class="colour-picker-trigger" role="combobox" aria-expanded="false" aria-haspopup="listbox">
+              <span class="colour-swatch" style="background:${COLOUR_HEX_MAP[wine.colour] || '#666'}"></span>
+              <span class="colour-picker-label">${colourLabel}</span>
+            </button>
+            <div class="colour-picker-dropdown" role="listbox" hidden>${colourPickerOptions}</div>
+          </div>
         </td>
         <td class="col-style editable" data-field="style" data-wine-id="${wine.id}">${escapeHtml(wine.style || '')}</td>
         <td class="col-grapes editable" data-field="grapes" data-wine-id="${wine.id}">${escapeHtml(wine.grapes || '')}</td>
@@ -1129,30 +1141,138 @@ function renderWineTable(wines, container) {
     cell.addEventListener('click', () => startInlineEdit(cell));
   });
 
-  // Wire colour select inline edits
-  container.querySelectorAll('.inline-select').forEach(sel => {
-    sel.addEventListener('change', async () => {
-      const wineId = Number(sel.dataset.wineId);
-      const field = sel.dataset.field;
-      const value = sel.value;
-      try {
-        await updateWine(wineId, { [field]: value });
-        // Update local state
-        const wine = state.wineListData.find(w => w.id === wineId);
-        if (wine) wine[field] = value;
-        // Update row colour class
-        const row = sel.closest('.wine-table-row');
-        if (row) {
-          COLOUR_OPTIONS.forEach(c => row.classList.remove(c));
-          if (value) row.classList.add(value);
-          row.querySelector('.colour-dot')?.setAttribute('class', `colour-dot ${value}`);
-          row.querySelector('.colour-dot')?.setAttribute('title', value);
-        }
-        showToast('Saved');
-      } catch (err) {
-        showToast(`Error: ${err.message}`);
+  // --- Colour picker: delegated click + keyboard handlers ---
+  function closeAllColourPickers(exceptPicker) {
+    container.querySelectorAll('.colour-picker-dropdown:not([hidden])').forEach(dd => {
+      const picker = dd.closest('.colour-picker');
+      if (picker !== exceptPicker) {
+        dd.hidden = true;
+        picker.querySelector('.colour-picker-trigger')?.setAttribute('aria-expanded', 'false');
       }
     });
+  }
+
+  async function selectColour(picker, value) {
+    const wineId = Number(picker.dataset.wineId);
+    const label = value.charAt(0).toUpperCase() + value.slice(1);
+    try {
+      await updateWine(wineId, { colour: value });
+      const wine = state.wineListData.find(w => w.id === wineId);
+      if (wine) wine.colour = value;
+      // Update picker UI
+      const trigger = picker.querySelector('.colour-picker-trigger');
+      trigger.querySelector('.colour-swatch').style.background = COLOUR_HEX_MAP[value] || '#666';
+      trigger.querySelector('.colour-picker-label').textContent = label;
+      // Update row
+      const row = picker.closest('.wine-table-row');
+      if (row) {
+        COLOUR_OPTIONS.forEach(c => row.classList.remove(c));
+        if (value) row.classList.add(value);
+        row.querySelector('.colour-dot')?.setAttribute('class', `colour-dot ${value}`);
+        row.querySelector('.colour-dot')?.setAttribute('title', value);
+      }
+      // Update selected state in dropdown
+      picker.querySelectorAll('.colour-picker-option').forEach(opt => {
+        const isSelected = opt.dataset.value === value;
+        opt.classList.toggle('selected', isSelected);
+        opt.setAttribute('aria-selected', String(isSelected));
+      });
+      showToast('Saved');
+    } catch (err) {
+      showToast(`Error: ${err.message}`);
+    }
+    // Close dropdown
+    const dd = picker.querySelector('.colour-picker-dropdown');
+    dd.hidden = true;
+    picker.querySelector('.colour-picker-trigger')?.setAttribute('aria-expanded', 'false');
+    picker.querySelector('.colour-picker-trigger')?.focus();
+  }
+
+  container.addEventListener('click', (e) => {
+    const trigger = e.target.closest('.colour-picker-trigger');
+    if (trigger) {
+      e.preventDefault();
+      const picker = trigger.closest('.colour-picker');
+      const dd = picker.querySelector('.colour-picker-dropdown');
+      const isOpen = !dd.hidden;
+      closeAllColourPickers();
+      if (!isOpen) {
+        dd.hidden = false;
+        trigger.setAttribute('aria-expanded', 'true');
+        // Focus first or selected option
+        const selected = dd.querySelector('.colour-picker-option.selected') || dd.querySelector('.colour-picker-option');
+        selected?.focus();
+      }
+      return;
+    }
+    const option = e.target.closest('.colour-picker-option');
+    if (option) {
+      e.preventDefault();
+      const picker = option.closest('.colour-picker');
+      selectColour(picker, option.dataset.value);
+      return;
+    }
+    // Click outside any picker → close all
+    if (!e.target.closest('.colour-picker')) {
+      closeAllColourPickers();
+    }
+  });
+
+  container.addEventListener('keydown', (e) => {
+    const picker = e.target.closest('.colour-picker');
+    if (!picker) return;
+
+    const trigger = picker.querySelector('.colour-picker-trigger');
+    const dd = picker.querySelector('.colour-picker-dropdown');
+    const isOpen = !dd.hidden;
+
+    // On trigger: Enter/Space opens, Escape closes
+    if (e.target === trigger) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        if (isOpen) {
+          dd.hidden = true;
+          trigger.setAttribute('aria-expanded', 'false');
+        } else {
+          closeAllColourPickers();
+          dd.hidden = false;
+          trigger.setAttribute('aria-expanded', 'true');
+          const selected = dd.querySelector('.colour-picker-option.selected') || dd.querySelector('.colour-picker-option');
+          selected?.focus();
+        }
+      }
+      if (e.key === 'Escape' && isOpen) {
+        e.preventDefault();
+        dd.hidden = true;
+        trigger.setAttribute('aria-expanded', 'false');
+      }
+      return;
+    }
+
+    // On option inside dropdown
+    const option = e.target.closest('.colour-picker-option');
+    if (!option || !isOpen) return;
+
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      selectColour(picker, option.dataset.value);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      dd.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+      trigger.focus();
+    } else if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      const next = option.nextElementSibling;
+      if (next) next.focus();
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      const prev = option.previousElementSibling;
+      if (prev) prev.focus();
+    } else if (e.key === 'Tab') {
+      dd.hidden = true;
+      trigger.setAttribute('aria-expanded', 'false');
+    }
   });
 
   // Wire sort headers with visual arrow indicators
@@ -1207,6 +1327,18 @@ function startInlineEdit(cell) {
 
   cell.textContent = '';
   cell.appendChild(input);
+
+  // Country field: add datalist with existing countries for suggestions
+  if (field === 'country' && state.wineListData) {
+    const listId = `country-datalist-${wineId}`;
+    const countries = [...new Set(state.wineListData.map(w => w.country).filter(Boolean))].sort();
+    const datalist = document.createElement('datalist');
+    datalist.id = listId;
+    datalist.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}">`).join('');
+    cell.appendChild(datalist);
+    input.setAttribute('list', listId);
+  }
+
   input.focus();
   input.select();
 

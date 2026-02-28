@@ -1,8 +1,7 @@
 /**
  * @fileoverview Deterministic parsers for structured wine data extraction.
- * Implements Phase 5 of Wine Search Implementation Plan v1.1.
  * Reduces Claude API dependency by extracting from JSON-LD, microdata, and embedded JSON.
- * @planned Ratings pipeline V2 — no production caller yet; used by benchmarks.
+ * Wired into ratingExtraction.js as Tier 0 — deterministic extraction before Claude.
  * @module services/ratings/structuredParsers
  */
 

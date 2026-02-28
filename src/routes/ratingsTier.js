@@ -1,10 +1,7 @@
 /**
- * @fileoverview 3-Tier Waterfall fetch for wine ratings.
- * Implements the sync fetch strategy:
- *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
- *   Tier 2a: Claude Web Search (~10-30s) - Anthropic web search with dynamic filtering
- *   Tier 2b: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
- *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
+ * @fileoverview 3-Tier Waterfall fetch route for wine ratings.
+ * Uses the shared threeTierWaterfall module for tier resolution,
+ * then handles route-specific DB persistence with cellar scoping.
  * @module routes/ratingsTier
  */
 
@@ -12,54 +9,18 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
 import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
-import { fetchWineRatings } from '../services/ai/index.js';
-import { claudeWebSearch, isClaudeWebSearchAvailable } from '../services/search/claudeWebSearch.js';
-import { hybridWineSearch, isGeminiSearchAvailable } from '../services/search/geminiSearch.js';
-import { quickSerpAiExtraction, isSerpAiAvailable } from '../services/search/serpAi.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
-import { withCircuitBreaker, isCircuitOpen } from '../services/shared/circuitBreaker.js';
+import { threeTierWaterfall } from '../services/search/threeTierWaterfall.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateParams } from '../middleware/validate.js';
 import { ratingWineIdSchema } from '../schemas/rating.js';
-
-// Timeout constants for tier waterfall
-const CLAUDE_WEB_SEARCH_TIMEOUT_MS = 30000; // 30 seconds for Claude Web Search
-const GEMINI_TIMEOUT_MS = 45000; // 45 seconds for Gemini + Claude
-const SERP_AI_TIMEOUT_MS = 15000; // 15 seconds for SERP AI extraction
-
-/**
- * Log tier resolution for cost tracking and latency analysis.
- * @param {string} tier - Tier that resolved the request
- * @param {Object} wine - Wine object
- * @param {number} startTime - Start timestamp
- * @param {number} ratingsFound - Number of ratings found
- */
-function logTierResolution(tier, wine, startTime, ratingsFound = 0) {
-  const latencyMs = Date.now() - startTime;
-  logger.info('CostTrack', JSON.stringify({
-    wineId: wine.id,
-    wineName: wine.wine_name,
-    vintage: wine.vintage,
-    tier,
-    ratingsFound,
-    latencyMs,
-    timestamp: new Date().toISOString(),
-    endpoint: 'sync'
-  }));
-}
 
 const router = Router();
 
 /**
  * Fetch ratings from web using 3-tier waterfall strategy.
  * Uses transactional replacement - only deletes if we have valid replacements.
- *
- * 3-Tier Waterfall:
- *   Tier 1: Quick SERP AI (~3-8s) - Extract from AI Overview, Knowledge Graph
- *   Tier 2a: Claude Web Search (~10-30s) - Anthropic web search tools
- *   Tier 2b: Gemini Hybrid (~15-45s) - Gemini grounded search + Claude extraction
- *   Tier 3: Legacy Deep Scraping - Full web scraping with page fetches
  *
  * @route POST /api/wines/:wineId/ratings/fetch
  */
@@ -71,206 +32,12 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
     return res.status(404).json({ error: 'Wine not found' });
   }
 
-  let result;
-  let usedMethod = 'legacy_tier3';
-  let serpForReuse = null;
-  const startTime = Date.now();
   const identityTokens = buildIdentityTokensFromWine(wine);
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 1: Quick SERP AI (~3-8s)
-  // Extract ratings from AI Overview, Knowledge Graph, Featured Snippets
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (isSerpAiAvailable() && !isCircuitOpen('serp_ai')) {
-    try {
-      logger.info('Ratings', `Tier 1: Quick SERP AI for wine ${wineId} (${SERP_AI_TIMEOUT_MS}ms timeout)`);
-
-      const tier1Promise = withCircuitBreaker('serp_ai', () =>
-        quickSerpAiExtraction(wine, identityTokens)
-      );
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Tier 1 SERP AI timed out')), SERP_AI_TIMEOUT_MS)
-      );
-
-      const tier1 = await Promise.race([tier1Promise, timeoutPromise]);
-
-      // Save rawSerp for Tier 3 reuse
-      if (tier1.rawSerp) {
-        serpForReuse = tier1.rawSerp;
-        logger.info('Ratings', `Tier 1: Captured ${serpForReuse.organic?.length || 0} organic results for Tier 3 reuse`);
-      }
-
-      if (tier1.success && tier1.ratings?.length > 0) {
-        const { ratings: validatedTier1 } = validateRatingsWithIdentity(wine, tier1.ratings, identityTokens);
-
-        if (validatedTier1.length > 0) {
-          result = {
-            ratings: validatedTier1,
-            tasting_notes: tier1.tasting_notes,
-            grape_varieties: tier1.grape_varieties || [],
-            search_notes: tier1.search_notes
-          };
-          usedMethod = 'serp_ai_tier1';
-          logTierResolution('tier1_serp_ai', wine, startTime, tier1.ratings.length);
-          logger.info('Ratings', `Tier 1 SUCCESS: ${tier1.ratings.length} ratings in ${Date.now() - startTime}ms`);
-        } else {
-          logger.info('Ratings', 'Tier 1: Identity gate rejected all ratings, proceeding to Tier 2');
-        }
-      } else {
-        logger.info('Ratings', 'Tier 1: No ratings found, proceeding to Tier 2');
-      }
-    } catch (err) {
-      logger.warn('Ratings', `Tier 1 failed: ${err.message}`);
-    }
-  } else if (!isSerpAiAvailable()) {
-    logger.info('Ratings', 'Tier 1: SERP AI not available (missing API keys)');
-  } else {
-    logger.info('Ratings', 'Tier 1: Circuit open, skipping');
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 2a: Claude Web Search (~10-30s)
-  // Uses Anthropic web_search + web_fetch tools with dynamic filtering.
-  // Single API call: Claude searches, fetches pages, and extracts structured data.
-  // Only needs ANTHROPIC_API_KEY (no additional keys).
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (!result && isClaudeWebSearchAvailable() && !isCircuitOpen('claude_web_search')) {
-    try {
-      logger.info('Ratings', `Tier 2a: Claude Web Search for wine ${wineId} (${CLAUDE_WEB_SEARCH_TIMEOUT_MS}ms timeout)`);
-
-      const claudePromise = withCircuitBreaker('claude_web_search', () =>
-        claudeWebSearch(wine)
-      );
-
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Claude Web Search timed out')), CLAUDE_WEB_SEARCH_TIMEOUT_MS)
-      );
-
-      const tier2a = await Promise.race([claudePromise, timeoutPromise]);
-
-      if (tier2a?.ratings?.length > 0) {
-        const normalizedRatings = tier2a.ratings.map(r => ({
-          source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
-          source_lens: r.source_lens || 'critics',
-          score_type: r.score_type || 'points',
-          raw_score: r.raw_score,
-          raw_score_numeric: r.raw_score_numeric,
-          vintage_match: r.vintage_match || 'inferred',
-          match_confidence: r.confidence || 'medium',
-          source_url: r.source_url,
-          tasting_notes: r.tasting_notes
-        }));
-
-        const { ratings: validatedTier2a } = validateRatingsWithIdentity(wine, normalizedRatings, identityTokens);
-
-        if (validatedTier2a.length > 0) {
-          result = {
-            ratings: validatedTier2a,
-            tasting_notes: tier2a.tasting_notes ? JSON.stringify(tier2a.tasting_notes) : null,
-            grape_varieties: tier2a.grape_varieties || [],
-            search_notes: `Found via Claude Web Search (${tier2a._metadata?.sources_count || 0} sources)`
-          };
-          usedMethod = 'claude_web_tier2';
-          logTierResolution('tier2_claude_web', wine, startTime, tier2a.ratings.length);
-          logger.info('Ratings', `Tier 2a SUCCESS: ${tier2a.ratings.length} ratings in ${Date.now() - startTime}ms`);
-        } else {
-          logger.info('Ratings', 'Tier 2a: Identity gate rejected all ratings, proceeding to Tier 2b');
-        }
-      } else {
-        logger.info('Ratings', 'Tier 2a: No ratings found, proceeding to Tier 2b');
-      }
-    } catch (err) {
-      logger.warn('Ratings', `Tier 2a failed: ${err.message}`);
-    }
-  } else if (!result && !isClaudeWebSearchAvailable()) {
-    logger.info('Ratings', 'Tier 2a: Claude Web Search not available');
-  } else if (!result) {
-    logger.info('Ratings', 'Tier 2a: Circuit open, skipping');
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 2b: Gemini Hybrid (~15-45s)
-  // Fallback when Claude Web Search unavailable or fails.
-  // Uses Gemini grounded search + Claude extraction for comprehensive coverage.
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (!result && isGeminiSearchAvailable() && !isCircuitOpen('gemini_hybrid')) {
-    try {
-      logger.info('Ratings', `Tier 2: Gemini Hybrid for wine ${wineId} (${GEMINI_TIMEOUT_MS}ms timeout)`);
-
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
-
-      try {
-        const hybridResult = await withCircuitBreaker('gemini_hybrid', async () => {
-          const res = await hybridWineSearch(wine);
-          if (controller.signal.aborted) {
-            throw new Error('Gemini search aborted due to timeout');
-          }
-          return res;
-        });
-
-        clearTimeout(timeoutId);
-
-        if (hybridResult?.ratings?.length > 0) {
-          const normalizedRatings = hybridResult.ratings.map(r => ({
-            source: r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown',
-            source_lens: r.source_lens || 'critics',
-            score_type: r.score_type || 'points',
-            raw_score: r.raw_score,
-            raw_score_numeric: r.raw_score_numeric,
-            vintage_match: r.vintage_match || 'inferred',
-            match_confidence: r.confidence || 'medium',
-            source_url: r.source_url,
-            tasting_notes: r.tasting_notes
-          }));
-
-          const { ratings: validatedTier2 } = validateRatingsWithIdentity(wine, normalizedRatings, identityTokens);
-
-          if (validatedTier2.length > 0) {
-            result = {
-              ratings: validatedTier2,
-              tasting_notes: hybridResult.tasting_notes ? JSON.stringify(hybridResult.tasting_notes) : null,
-              grape_varieties: hybridResult.grape_varieties || [],
-              search_notes: `Found via Gemini Hybrid (${hybridResult._metadata?.sources_count || 0} sources)`
-            };
-            usedMethod = 'gemini_tier2b';
-            logTierResolution('tier2b_gemini', wine, startTime, hybridResult.ratings.length);
-            logger.info('Ratings', `Tier 2b SUCCESS: ${hybridResult.ratings.length} ratings in ${Date.now() - startTime}ms`);
-          } else {
-            logger.info('Ratings', 'Tier 2b: Identity gate rejected all ratings, proceeding to Tier 3');
-          }
-        } else {
-          logger.info('Ratings', 'Tier 2b: No ratings found, proceeding to Tier 3');
-        }
-      } catch (err) {
-        clearTimeout(timeoutId);
-        throw err;
-      }
-    } catch (err) {
-      logger.warn('Ratings', `Tier 2 failed: ${err.message}`);
-    }
-  } else if (!result && !isGeminiSearchAvailable()) {
-    logger.info('Ratings', 'Tier 2b: Gemini not available (missing API key)');
-  } else if (!result) {
-    logger.info('Ratings', 'Tier 2b: Circuit open, skipping');
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TIER 3: Legacy Deep Scraping
-  // Full web scraping with Claude extraction - slower but comprehensive
-  // Reuses SERP results from Tier 1 to avoid duplicate API calls
-  // ═══════════════════════════════════════════════════════════════════════════
-  if (!result) {
-    logger.info('Ratings', `Tier 3: Legacy Scraping for wine ${wineId}`);
-    const tier3 = await fetchWineRatings(wine, { existingSerpResults: serpForReuse });
-    const { ratings: validatedTier3 } = validateRatingsWithIdentity(wine, tier3.ratings || [], identityTokens);
-
-    result = { ...tier3, ratings: validatedTier3 };
-    usedMethod = 'legacy_tier3';
-    logTierResolution('tier3_legacy', wine, startTime, result.ratings?.length || 0);
-    logger.info('Ratings', `Tier 3 COMPLETE: ${result.ratings?.length || 0} ratings in ${Date.now() - startTime}ms`);
-  }
+  // Run 3-tier waterfall (shared logic — no DB operations)
+  const { result, usedMethod } = await threeTierWaterfall(wine, identityTokens, {
+    endpoint: 'sync'
+  });
 
   // ═══════════════════════════════════════════════════════════════════════════
   // GRAPE PERSISTENCE: Save discovered grape varieties if wine has none
@@ -325,7 +92,6 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const uniqueRatings = [];
 
   for (const rating of newRatings) {
-    // Create a unique key for deduplication
     const sourceKey = rating.source ? rating.source.toLowerCase() : 'unknown';
     const yearKey = rating.competition_year || rating.vintage_match || 'any';
     const key = `${sourceKey}-${yearKey}`;
@@ -349,7 +115,6 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   // Insert new ratings
   let insertedCount = 0;
   for (const rating of uniqueRatings) {
-    // Normalize source ID
     const sourceId = rating.source ? rating.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown';
     const sourceConfig = RATING_SOURCES[sourceId] || SOURCE_REGISTRY[sourceId] || { lens: rating.source_lens || 'critics' };
 

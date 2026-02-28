@@ -11190,6 +11190,16 @@ body.move-guide-active #view-grid {
   border: 1px solid rgba(231, 76, 60, 0.3);
   color: #e74c3c;
 }
+.sync-banner-first {
+  background: rgba(212, 168, 67, 0.15);
+  border: 1px solid var(--accent, #d4a843);
+  color: var(--accent, #d4a843);
+}
+.sync-banner-ok {
+  background: rgba(100, 200, 100, 0.08);
+  border: 1px solid rgba(100, 200, 100, 0.25);
+  color: var(--text-muted, #999);
+}
 
 /* Recipe Pairing Section */
 .recipe-pairing-section {
@@ -12538,17 +12548,68 @@ body.move-guide-active #view-grid {
   box-shadow: 0 0 0 2px rgba(212, 168, 67, 0.3);
 }
 
-/* Inline colour select */
-.inline-select {
-  background: var(--bg-input, #1e1e1e);
-  border: 1px solid rgba(255,255,255,0.15);
-  border-radius: 3px;
-  color: var(--text-primary, #fff);
-  font-size: inherit;
-  padding: 0.1rem 0.25rem;
-  cursor: pointer;
-  max-width: 100px;
+/* Override overflow:hidden on colour column to allow dropdown to escape */
+.wine-table td.col-colour-name {
+  overflow: visible;
 }
+
+/* Custom colour picker dropdown */
+.colour-picker { position: relative; }
+.colour-picker-trigger {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  font-size: inherit;
+  font-family: inherit;
+  line-height: 1.2;
+}
+.colour-picker-trigger:hover { border-color: rgba(255,255,255,0.2); }
+.colour-picker-trigger:focus-visible {
+  outline: 2px solid var(--accent, #d4a843);
+  outline-offset: 1px;
+}
+.colour-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.2);
+  flex-shrink: 0;
+}
+.colour-picker-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 100;
+  background: var(--bg-card, #2a2a2a);
+  border: 1px solid var(--border, rgba(255,255,255,0.12));
+  border-radius: 6px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+}
+.colour-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-primary, #fff);
+  padding: 6px 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  font-size: inherit;
+  font-family: inherit;
+}
+.colour-picker-option:hover,
+.colour-picker-option:focus-visible { background: rgba(255,255,255,0.1); }
+.colour-picker-option.selected { background: rgba(212,168,67,0.2); }
 
 /* View toggle button group */
 .view-toggle-group {

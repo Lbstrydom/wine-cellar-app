@@ -9,12 +9,14 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 import { getSourcesForCountry } from '../../config/unifiedSources.js';
+import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-// Supported Gemini models for grounded search
-// Use gemini-3.0-flash for fastest stable response times with improved accuracy (2026)
+// Gemini model for grounded search. Using base model ID (no date suffix)
+// routes to the latest stable version in the series automatically.
+// Flash optimized for speed + search grounding latency.
 const GEMINI_MODEL = 'gemini-3.0-flash';
 
 /**
@@ -84,6 +86,15 @@ export async function searchWineWithGemini(wine) {
 
   const countryHint = country ? ` This is a ${country} wine.` : '';
 
+  // Sanitize profile fields for prompt context
+  const sanitize = (s, max = 100) => (s || '').replace(/[\n\r\t]/g, ' ').substring(0, max).trim();
+  const style = sanitize(wine.style);
+  const grapes = sanitize(wine.grapes);
+  const region = sanitize(wine.region);
+  const profileLine = [style, grapes, region].filter(Boolean).length
+    ? `\nWine profile (for verification, not search terms): ${[style, grapes, region, country].filter(Boolean).join(' · ')}`
+    : '';
+
   logger.info('GeminiSearch', `Searching for: ${searchQuery} (prioritizing: ${criticList.substring(0, 50)}...)`);
   logger.info('GeminiSearch', `Using model: ${GEMINI_MODEL}, API key configured: ${!!GEMINI_API_KEY}`);
 
@@ -91,7 +102,7 @@ export async function searchWineWithGemini(wine) {
   try {
     // OPTIMIZED PROMPT: Concise format to prevent MAX_TOKENS truncation
     // Goal: Get structured data quickly like Google AI Overview
-    const prompt = `Wine Analyst Report for: ${searchQuery}${countryHint}
+    const prompt = `Wine Analyst Report for: ${searchQuery}${countryHint}${profileLine}
 
 Return ONLY a structured summary (max 800 words):
 
@@ -236,39 +247,6 @@ function buildWineSearchQuery(wineName, vintage, producer) {
  * @param {Object} wine - Original wine object for context
  * @returns {Promise<Object>} Structured wine data
  */
-/**
- * Attempt to repair truncated or malformed JSON.
- * Handles common issues from MAX_TOKENS truncation.
- * @param {string} jsonStr - Potentially malformed JSON string
- * @returns {string} Repaired JSON string
- */
-function repairJson(jsonStr) {
-  let repaired = jsonStr.trim();
-
-  // Count open/close brackets
-  const openBraces = (repaired.match(/{/g) || []).length;
-  const closeBraces = (repaired.match(/}/g) || []).length;
-  const openBrackets = (repaired.match(/\[/g) || []).length;
-  const closeBrackets = (repaired.match(/]/g) || []).length;
-
-  // If truncated mid-string, try to close it
-  // Remove trailing incomplete string/number values
-  repaired = repaired.replace(/,\s*"[^"]*$/, '');  // Truncated string key
-  repaired = repaired.replace(/:\s*"[^"]*$/, ': null');  // Truncated string value
-  repaired = repaired.replace(/:\s*[\d.]+$/, ': null');  // Truncated number
-  repaired = repaired.replace(/,\s*$/, '');  // Trailing comma
-
-  // Close unclosed brackets
-  for (let i = 0; i < openBrackets - closeBrackets; i++) {
-    repaired += ']';
-  }
-  for (let i = 0; i < openBraces - closeBraces; i++) {
-    repaired += '}';
-  }
-
-  return repaired;
-}
-
 export async function extractWineDataWithClaude(geminiResults, wine) {
   if (!geminiResults?.content) {
     logger.warn('GeminiSearch', 'extractWineDataWithClaude called with no content');
@@ -280,11 +258,17 @@ export async function extractWineDataWithClaude(geminiResults, wine) {
 
 
 
+  // Sanitize profile fields for extraction context
+  const exSanitize = (s, max = 100) => (s || '').replace(/[\n\r\t]/g, ' ').substring(0, max).trim();
+  const exStyle = exSanitize(wine.style);
+  const exGrapes = exSanitize(wine.grapes);
+  const exRegion = exSanitize(wine.region);
+
   // OPTIMIZED: Shorter prompt, explicit JSON-only output
   const prompt = `Extract wine data from these search results. Return ONLY valid JSON.
 
 WINE: ${wine.wine_name || wine.name} ${wine.vintage || ''}
-COLOUR: ${wine.colour || 'Unknown'}
+COLOUR: ${wine.colour || 'Unknown'}${exStyle ? `\nSTYLE: ${exStyle}` : ''}${exGrapes ? `\nGRAPES: ${exGrapes}` : ''}${exRegion ? `\nREGION: ${exRegion}` : ''}
 
 SEARCH RESULTS:
 ${geminiResults.content.substring(0, 6000)}
@@ -303,62 +287,33 @@ Rules: Only verified data. Empty array/null for missing. No markdown, no explana
 
   try {
     const message = await anthropic.messages.create({
-      model: getModelForTask('ratings'),
+      model: getModelForTask('ratingExtraction'),
       max_tokens: 2000,
       messages: [{ role: 'user', content: prompt }]
     });
 
     const responseText = message.content[0]?.text || '';
 
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      const jsonStr = jsonMatch[0];
-      let extracted;
-
-      // First attempt: direct parse
-      try {
-        extracted = JSON.parse(jsonStr);
-      } catch (parseErr) {
-        // Second attempt: repair truncated JSON
-        logger.warn('GeminiSearch', `JSON parse failed at position, attempting repair: ${parseErr.message}`);
-        try {
-          const repairedJson = repairJson(jsonStr);
-          extracted = JSON.parse(repairedJson);
-          logger.info('GeminiSearch', 'JSON repair successful');
-        } catch (repairErr) {
-          logger.error('GeminiSearch', `JSON repair failed: ${repairErr.message}`);
-          // Return partial data if we can extract ratings
-          const ratingsMatch = jsonStr.match(/"ratings"\s*:\s*\[([\s\S]*?)\]/);
-          if (ratingsMatch) {
-            try {
-              extracted = { ratings: JSON.parse(`[${ratingsMatch[1]}]`) };
-              logger.info('GeminiSearch', 'Partial extraction: recovered ratings array');
-            } catch {
-              return null;
-            }
-          } else {
-            return null;
-          }
-        }
-      }
-
-      // Add source metadata
-      extracted._metadata = {
-        gemini_model: geminiResults.model,
-        sources_count: geminiResults.sources.length,
-        search_queries: geminiResults.searchQueries,
-        extracted_at: new Date().toISOString()
-      };
-
-      const extractDuration = Date.now() - startTime;
-      logger.info('GeminiSearch', `Claude extraction completed in ${extractDuration}ms: ${extracted.ratings?.length || 0} ratings, ${extracted.tasting_notes?.nose?.length || 0} aromas`);
-
-      return extracted;
+    let extracted;
+    try {
+      extracted = extractJsonWithRepair(responseText);
+    } catch (parseErr) {
+      logger.error('GeminiSearch', `JSON extraction failed: ${parseErr.message}`);
+      return null;
     }
 
-    logger.warn('GeminiSearch', 'Could not parse Claude extraction response');
-    return null;
+    // Add source metadata
+    extracted._metadata = {
+      gemini_model: geminiResults.model,
+      sources_count: geminiResults.sources.length,
+      search_queries: geminiResults.searchQueries,
+      extracted_at: new Date().toISOString()
+    };
+
+    const extractDuration = Date.now() - startTime;
+    logger.info('GeminiSearch', `Claude extraction completed in ${extractDuration}ms: ${extracted.ratings?.length || 0} ratings, ${extracted.tasting_notes?.nose?.length || 0} aromas`);
+
+    return extracted;
   } catch (error) {
     logger.error('GeminiSearch', `Claude extraction failed: ${error.message}`);
     return null;

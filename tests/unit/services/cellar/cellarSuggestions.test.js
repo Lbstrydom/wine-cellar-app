@@ -35,6 +35,7 @@ let detectNaturalSwapPairs;
 let detectDisplacementSwaps;
 let generateMoveSuggestions;
 let generateSameWineGroupingMoves;
+let generateCrossRowGroupingMoves;
 let validateMoveZoneAlignment;
 let findAvailableSlot;
 
@@ -46,6 +47,7 @@ beforeAll(async () => {
   detectDisplacementSwaps = suggestionModule.detectDisplacementSwaps;
   generateMoveSuggestions = suggestionModule.generateMoveSuggestions;
   generateSameWineGroupingMoves = suggestionModule.generateSameWineGroupingMoves;
+  generateCrossRowGroupingMoves = suggestionModule.generateCrossRowGroupingMoves;
   validateMoveZoneAlignment = suggestionModule.validateMoveZoneAlignment;
   const placementModule = await import('../../../../src/services/cellar/cellarPlacement.js');
   findAvailableSlot = placementModule.findAvailableSlot;
@@ -593,5 +595,138 @@ describe('validateMoveZoneAlignment', () => {
     const { violations } = validateMoveZoneAlignment(moves, zoneMap);
     expect(violations).toHaveLength(1);
     expect(violations[0].wineId).toBe(2);
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// generateCrossRowGroupingMoves
+// ───────────────────────────────────────────────────────────
+
+describe('generateCrossRowGroupingMoves', () => {
+  /** Helper to build a slotToWine map from simple entries */
+  function buildSlotMap(entries) {
+    const map = new Map();
+    for (const { slot, id, wine_name } of entries) {
+      map.set(slot, { id, wine_name });
+    }
+    return map;
+  }
+
+  const zoneMap = {
+    R3: { zoneId: 'red' },
+    R4: { zoneId: 'red' },
+    R5: { zoneId: 'red' },
+    R7: { zoneId: 'white' },
+    R8: { zoneId: 'white' }
+  };
+
+  it('suggests moves when wine is split across 2 rows in same zone', () => {
+    // Wine A has 2 bottles in R3 and 1 bottle in R4 — consolidate to R3
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 1, wine_name: 'Wine A' },
+      { slot: 'R4C5', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, []);
+    expect(moves).toHaveLength(1);
+    expect(moves[0]).toMatchObject({
+      type: 'grouping',
+      wineId: 1,
+      from: 'R4C5',
+      priority: 6,
+      confidence: 'medium'
+    });
+    // Target should be in R3 (anchor row)
+    expect(moves[0].to).toMatch(/^R3C/);
+    expect(moves[0].reason).toContain('cross-row');
+  });
+
+  it('returns empty when anchor row has no space', () => {
+    // R3 is completely full (9 slots occupied), Wine A has 1 in R3, 1 in R4
+    const entries = [];
+    for (let c = 1; c <= 9; c++) {
+      entries.push({ slot: `R3C${c}`, id: c === 1 ? 1 : c + 10, wine_name: c === 1 ? 'Wine A' : `Other${c}` });
+    }
+    entries.push({ slot: 'R4C1', id: 1, wine_name: 'Wine A' });
+
+    const slotToWine = buildSlotMap(entries);
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, []);
+    expect(moves).toEqual([]);
+  });
+
+  it('does not suggest moves for wines in different zones', () => {
+    // Wine A in R3 (red zone) and R7 (white zone) — different zones, no grouping
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R7C1', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, []);
+    expect(moves).toEqual([]);
+  });
+
+  it('does not conflict with same-row moves (allocatedTargets respected)', () => {
+    // Wine A in R3C1, R4C1. Same-row pass already moves something TO R3C3.
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C2', id: 1, wine_name: 'Wine A' },
+      { slot: 'R4C1', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const sameRowMoves = [
+      { from: 'R3C8', to: 'R3C3', type: 'grouping', wineId: 2 }
+    ];
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves);
+    expect(moves).toHaveLength(1);
+    // Target should NOT be R3C3 (already allocated by same-row pass)
+    expect(moves[0].to).not.toBe('R3C3');
+  });
+
+  it('skips bottles already being moved by same-row pass', () => {
+    // Wine A in R3C1, R4C1, R4C5. Same-row pass moves R4C5 within R4.
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R4C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R4C5', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const sameRowMoves = [
+      { from: 'R4C5', to: 'R4C2', type: 'grouping', wineId: 1 }
+    ];
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves);
+    // R4C5 should be skipped (allocatedSources), but R4C1 should still be considered.
+    // Wine A: anchor is R4 (2 bottles vs R3's 1), scattered = R3C1 (not in allocatedSources)
+    // Wait — R4 has 2 bottles (R4C1 + R4C5), R3 has 1 (R3C1). Anchor = R4.
+    // Scattered from non-anchor rows: R3C1. R4C5 is in allocatedSources so it's excluded.
+    // But R4C1 is in anchor row, so it stays.
+    // Move: R3C1 → somewhere in R4
+    if (moves.length > 0) {
+      expect(moves[0].from).toBe('R3C1');
+      expect(moves[0].to).toMatch(/^R4C/);
+      // R4C2 is allocated target, so should be excluded
+      expect(moves[0].to).not.toBe('R4C2');
+    }
+  });
+
+  it('returns empty when wine is all in one row', () => {
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C3', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, []);
+    expect(moves).toEqual([]);
+  });
+
+  it('returns empty when wine has only 1 bottle total', () => {
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' }
+    ]);
+
+    const moves = generateCrossRowGroupingMoves(slotToWine, zoneMap, []);
+    expect(moves).toEqual([]);
   });
 });

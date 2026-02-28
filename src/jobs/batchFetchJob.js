@@ -1,10 +1,12 @@
 /**
  * @fileoverview Job handler for batch rating fetch.
+ * Uses the shared 3-Tier Waterfall for each wine (Tier 1 → 2 → 3).
  * @module jobs/batchFetchJob
  */
 
-import { fetchWineRatings, saveExtractedWindows } from '../services/ai/index.js';
-import { calculateWineRatings, saveRatings } from '../services/ratings/ratings.js';
+import { saveExtractedWindows } from '../services/ai/index.js';
+import { calculateWineRatings, saveRatings, buildIdentityTokensFromWine } from '../services/ratings/ratings.js';
+import { threeTierWaterfall } from '../services/search/threeTierWaterfall.js';
 import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
@@ -64,7 +66,11 @@ async function handleBatchFetch(payload, context) {
 
       logger.info('BatchFetchJob', `Fetching: ${wine.wine_name} ${wine.vintage || 'NV'}`);
 
-      const fetchResult = await fetchWineRatings(wine);
+      // Use 3-tier waterfall instead of Tier 3 only
+      const identityTokens = buildIdentityTokensFromWine(wine);
+      const { result: fetchResult, usedMethod } = await threeTierWaterfall(wine, identityTokens, {
+        endpoint: 'batch'
+      });
       const ratings = fetchResult.ratings || [];
 
       // Save ratings
@@ -77,7 +83,10 @@ async function handleBatchFetch(payload, context) {
       }
 
       // Calculate aggregates
-      const aggregates = calculateWineRatings(wineId);
+      const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
+      const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = ? AND key = 'rating_preference'").get(wine.cellar_id);
+      const preference = Number.parseInt(prefSetting?.value || '40', 10);
+      const aggregates = calculateWineRatings(allRatings, wine, preference);
 
       // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
       const currentTime = nowFunc();
@@ -112,7 +121,8 @@ async function handleBatchFetch(payload, context) {
         wineName: wine.wine_name,
         status: 'success',
         ratingsFound: ratings.length,
-        purchaseScore: aggregates.purchase_score
+        purchaseScore: aggregates.purchase_score,
+        method: usedMethod
       });
 
       // Rate limiting: pause between wines to avoid overwhelming APIs

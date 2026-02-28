@@ -12,9 +12,72 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 import { getSourcesForCountry } from '../../config/unifiedSources.js';
+import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 
 /** Beta header required for web search tools */
 const WEB_TOOLS_BETA = 'code-execution-web-tools-2026-02-09';
+
+/** System prompt for focused wine data extraction */
+const SYSTEM_PROMPT = 'You are a wine data extraction assistant. Search the web for wine ratings and reviews, then save the structured results using the save_wine_ratings tool. Never include markdown formatting in your output.';
+
+/** Tool definition for structured JSON output via tool_use */
+const SAVE_WINE_RATINGS_TOOL = {
+  name: 'save_wine_ratings',
+  description: 'Save the extracted wine ratings and review data as structured JSON.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      ratings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            source: { type: 'string' },
+            source_lens: { type: 'string', enum: ['competition', 'critics', 'community'] },
+            score_type: { type: 'string', enum: ['points', 'stars', 'medal'] },
+            raw_score: { type: 'string' },
+            raw_score_numeric: { type: ['number', 'null'] },
+            reviewer_name: { type: 'string' },
+            tasting_notes: { type: 'string' },
+            vintage_match: { type: 'string', enum: ['exact', 'inferred', 'non_vintage'] },
+            confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+            source_url: { type: 'string' }
+          },
+          required: ['source', 'raw_score']
+        }
+      },
+      tasting_notes: {
+        type: ['object', 'null'],
+        properties: {
+          nose: { type: 'array', items: { type: 'string' } },
+          palate: { type: 'array', items: { type: 'string' } },
+          structure: {
+            type: 'object',
+            properties: {
+              body: { type: 'string' },
+              tannins: { type: 'string' },
+              acidity: { type: 'string' }
+            }
+          },
+          finish: { type: 'string' }
+        }
+      },
+      drinking_window: {
+        type: ['object', 'null'],
+        properties: {
+          drink_from: { type: ['integer', 'null'] },
+          drink_by: { type: ['integer', 'null'] },
+          peak: { type: ['integer', 'null'] },
+          recommendation: { type: 'string' }
+        }
+      },
+      food_pairings: { type: 'array', items: { type: 'string' } },
+      style_summary: { type: 'string' },
+      grape_varieties: { type: 'array', items: { type: 'string' } }
+    },
+    required: ['ratings']
+  }
+};
 
 /**
  * Check if Claude Web Search is available.
@@ -82,9 +145,21 @@ export async function claudeWebSearch(wine) {
   const country = wine.country || '';
   const colour = wine.colour || 'Unknown';
 
+  // Sanitize profile fields — truncate and strip control chars for prompt safety
+  const sanitize = (s, max = 100) => (s || '').replace(/[\n\r\t]/g, ' ').substring(0, max).trim();
+  const style = sanitize(wine.style);
+  const grapes = sanitize(wine.grapes);
+  const region = sanitize(wine.region);
+
   const criticList = getCriticList(country);
   const competitionList = getCompetitionList(country);
   const countryHint = country ? ` This is a ${country} wine.` : '';
+  const profileLine = (style || grapes || region)
+    ? `\nWine profile: ${[style, grapes, region, country].filter(Boolean).join(' · ')}`
+    : '';
+  const profileInstruction = (style || grapes || region)
+    ? '\nUse this profile to verify results match the correct wine. Do NOT add these terms to your web search queries.'
+    : '';
 
   logger.info('ClaudeWebSearch', `Starting web search for: ${wineName} ${vintage}`);
   const startTime = Date.now();
@@ -95,32 +170,26 @@ export async function claudeWebSearch(wine) {
     const message = await anthropic.messages.create({
       model: modelId,
       max_tokens: 16000,
+      system: SYSTEM_PROMPT,
       tools: [
         { type: 'web_search_20260209', name: 'web_search' },
-        { type: 'web_fetch_20260209', name: 'web_fetch' }
+        { type: 'web_fetch_20260209', name: 'web_fetch' },
+        SAVE_WINE_RATINGS_TOOL
       ],
       messages: [{
         role: 'user',
-        content: `Find wine ratings and reviews for: ${producer ? producer + ' ' : ''}${wineName} ${vintage}${countryHint}
+        content: `Find wine ratings and reviews for: ${producer ? producer + ' ' : ''}${wineName} ${vintage}${countryHint}${profileLine}${profileInstruction}
 
 Search for ratings from these priority sources:
 - Critics: ${criticList}
 - Competitions: ${competitionList}
 - Community: Vivino, CellarTracker
 
-Return ONLY valid JSON (no markdown, no explanation):
-{
-  "ratings": [{"source":"", "source_lens":"competition|critics|community", "score_type":"points|stars|medal", "raw_score":"", "raw_score_numeric":null, "reviewer_name":"", "tasting_notes":"", "vintage_match":"exact|inferred|non_vintage", "confidence":"high|medium|low", "source_url":""}],
-  "tasting_notes": {"nose":[], "palate":[], "structure":{"body":"", "tannins":"", "acidity":""}, "finish":""},
-  "drinking_window": {"drink_from":null, "drink_by":null, "peak":null, "recommendation":""},
-  "food_pairings": [],
-  "style_summary": "",
-  "grape_varieties": ["Grape1", "Grape2"]
-}
+After searching, call the save_wine_ratings tool with the structured results.
 
 CRITICAL RULES:
 - Only ${vintage} vintage ratings (not other vintages)
-- Wine colour: ${colour}
+- Wine colour: ${colour}${style ? `\n- Style: ${style}` : ''}${grapes ? `\n- Grapes: ${grapes}` : ''}${region ? `\n- Region: ${region}` : ''}
 - Empty array/null for missing data
 - raw_score_numeric must be a number or null
 - source_url must be a real URL from the search results
@@ -132,36 +201,32 @@ CRITICAL RULES:
 
     const duration = Date.now() - startTime;
 
-    // Extract text from response (skip tool_use and web_search_tool_result blocks)
-    const textBlock = message.content?.find(b => b.type === 'text');
-    const responseText = textBlock?.text || '';
-
-    if (!responseText) {
-      const stopReason = message.stop_reason || 'unknown';
-      logger.warn('ClaudeWebSearch', `No text in response after ${duration}ms (${message.content?.length || 0} content blocks, stop_reason: ${stopReason})`);
-      return null;
-    }
-
-    logger.info('ClaudeWebSearch', `Got response in ${duration}ms, ${responseText.length} chars`);
-
-    // Extract JSON from response
-    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      logger.warn('ClaudeWebSearch', 'Could not extract JSON from response');
-      return null;
-    }
+    // Strategy 1: Extract from save_wine_ratings tool_use block (deterministic JSON)
+    const toolUseBlock = message.content?.find(
+      b => b.type === 'tool_use' && b.name === 'save_wine_ratings'
+    );
 
     let extracted;
-    try {
-      extracted = JSON.parse(jsonMatch[0]);
-    } catch (parseErr) {
-      // Attempt repair for truncated JSON
-      logger.warn('ClaudeWebSearch', `JSON parse failed, attempting repair: ${parseErr.message}`);
+    if (toolUseBlock?.input) {
+      extracted = toolUseBlock.input;
+      logger.info('ClaudeWebSearch', `Got structured tool_use response in ${duration}ms`);
+    } else {
+      // Strategy 2: Fall back to text extraction with repair
+      const textBlock = message.content?.find(b => b.type === 'text');
+      const responseText = textBlock?.text || '';
+
+      if (!responseText) {
+        const stopReason = message.stop_reason || 'unknown';
+        logger.warn('ClaudeWebSearch', `No text or tool_use in response after ${duration}ms (${message.content?.length || 0} content blocks, stop_reason: ${stopReason})`);
+        return null;
+      }
+
+      logger.info('ClaudeWebSearch', `Falling back to text extraction in ${duration}ms, ${responseText.length} chars`);
+
       try {
-        extracted = JSON.parse(repairJson(jsonMatch[0]));
-        logger.info('ClaudeWebSearch', 'JSON repair successful');
-      } catch {
-        logger.error('ClaudeWebSearch', 'JSON repair failed');
+        extracted = extractJsonWithRepair(responseText);
+      } catch (parseErr) {
+        logger.error('ClaudeWebSearch', `JSON extraction failed: ${parseErr.message}`);
         return null;
       }
     }
@@ -195,35 +260,6 @@ CRITICAL RULES:
     logger.error('ClaudeWebSearch', `Search failed after ${duration}ms: ${error.message}`);
     return null;
   }
-}
-
-/**
- * Attempt to repair truncated JSON from max_tokens cutoff.
- * @param {string} jsonStr - Potentially malformed JSON
- * @returns {string} Repaired JSON
- */
-function repairJson(jsonStr) {
-  let repaired = jsonStr.trim();
-
-  const openBraces = (repaired.match(/{/g) || []).length;
-  const closeBraces = (repaired.match(/}/g) || []).length;
-  const openBrackets = (repaired.match(/\[/g) || []).length;
-  const closeBrackets = (repaired.match(/]/g) || []).length;
-
-  // Remove trailing incomplete values
-  repaired = repaired.replace(/,\s*"[^"]*$/, '');
-  repaired = repaired.replace(/:\s*"[^"]*$/, ': null');
-  repaired = repaired.replace(/:\s*[\d.]+$/, ': null');
-  repaired = repaired.replace(/,\s*$/, '');
-
-  for (let i = 0; i < openBrackets - closeBrackets; i++) {
-    repaired += ']';
-  }
-  for (let i = 0; i < openBraces - closeBraces; i++) {
-    repaired += '}';
-  }
-
-  return repaired;
 }
 
 export default {

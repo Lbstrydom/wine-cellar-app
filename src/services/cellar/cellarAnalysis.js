@@ -24,7 +24,8 @@ import {
   buildZoneCapacityAlerts,
   getCurrentZoneAllocation,
   generateCompactionMoves,
-  generateSameWineGroupingMoves
+  generateSameWineGroupingMoves,
+  generateCrossRowGroupingMoves
 } from './cellarSuggestions.js';
 import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { auditMoveSuggestions } from './moveAuditor.js';
@@ -190,7 +191,10 @@ export async function analyseCellar(wines) {
   report.summary.gapCount = compactionMoves.length;
 
   // Generate same-wine grouping moves (swap scattered bottles within rows)
-  const groupingMoves = generateSameWineGroupingMoves(slotToWine, zoneMap);
+  const sameRowGroupingMoves = generateSameWineGroupingMoves(slotToWine, zoneMap);
+  // Generate cross-row grouping moves (consolidate wines split across rows in same zone)
+  const crossRowGroupingMoves = generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowGroupingMoves);
+  const groupingMoves = [...sameRowGroupingMoves, ...crossRowGroupingMoves];
   report.groupingMoves = groupingMoves;
   report.summary.groupingMoveCount = groupingMoves.length;
 

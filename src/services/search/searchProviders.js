@@ -188,20 +188,19 @@ export async function searchWineRatings(wineName, vintage, country, style = null
     }
   })();
 
-  // Wait for both targeted and producer searches together
-  const [targetedResultsArrays, producerResults] = await Promise.all([
-    Promise.all(targetedSearchPromises),
-    producerSearchPromise
-  ]);
-
+  // Await targeted searches first so we can abort producer early if sufficient
+  const targetedResultsArrays = await Promise.all(targetedSearchPromises);
   targetedResultsArrays.forEach(results => targetedResults.push(...results));
 
-  // Check if discovery results are high-confidence; if so, abort producer search
+  // Check if discovery results are high-confidence; abort producer before it finishes
   const discoveryConfidence = calculateDiscoveryConfidence(targetedResults);
   if (discoveryConfidence >= LIMITS.MIN_DISCOVERY_CONFIDENCE && !producerController.signal.aborted) {
     logger.info('Search', `Discovery confidence ${(discoveryConfidence * 100).toFixed(0)}% >= ${(LIMITS.MIN_DISCOVERY_CONFIDENCE * 100).toFixed(0)}%, aborting producer search`);
     producerController.abort();
   }
+
+  // Now await producer (may already be aborted/complete)
+  const producerResults = await producerSearchPromise;
 
   logger.info('Search', `Targeted searches found: ${targetedResults.length} results`);
   if (producerResults.length > 0) {
@@ -217,7 +216,7 @@ export async function searchWineRatings(wineName, vintage, country, style = null
     'reviews'
   );
 
-  const broadQuery = queryVariants.primary || `${extractSearchTokens(wineName).join(' ')} ${vintage} rating`;
+  const broadQuery = queryVariants[0] || `${extractSearchTokens(wineName).join(' ')} ${vintage} rating`;
 
   const broadResults = remainingDomains.length > 0
     ? await searchGoogle(broadQuery, remainingDomains, 'serp_broad', budget, { hl, gl })

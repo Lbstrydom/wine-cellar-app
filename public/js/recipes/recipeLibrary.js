@@ -4,6 +4,7 @@
  */
 
 import { listRecipes, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, triggerRecipeSync } from '../api/recipes.js';
+import { getCredentials } from '../api/settings.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { recipeState, persistState } from './state.js';
 import { toggleMenuRecipe, isInMenu } from './menuState.js';
@@ -273,67 +274,156 @@ function safeParseCategories(cats) {
   return [];
 }
 
+/** Module-level guard to prevent double auto-sync triggers */
+const _syncInProgress = {};
+
 /**
  * Load sync status banners for configured providers.
+ * Shows banners whenever credentials exist, even if never synced.
  * @param {HTMLElement} bannerEl - Banner container
  */
 async function loadSyncBanners(bannerEl) {
   if (!bannerEl) return;
 
+  // Discover which providers have credentials
+  let credentialProviders = new Set();
+  try {
+    const creds = await getCredentials();
+    if (creds?.credentials) {
+      for (const c of creds.credentials) {
+        if (c.source === 'paprika' || c.source === 'mealie') credentialProviders.add(c.source);
+      }
+    }
+  } catch { /* credentials endpoint unavailable */ }
+
   const providers = ['paprika', 'mealie'];
   const banners = [];
 
   for (const provider of providers) {
+    if (!credentialProviders.has(provider)) continue;
+    const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+
     try {
       const status = await getRecipeSyncStatus(provider);
-      if (!status.last_sync) continue;
-
       const lastSync = status.last_sync;
-      const lastDate = lastSync.completed_at || lastSync.started_at;
-      const age = Date.now() - new Date(lastDate).getTime();
-      const daysAgo = Math.floor(age / (1000 * 60 * 60 * 24));
-      const isStale = daysAgo >= 7;
-      const isFailed = lastSync.status === 'failed';
 
-      if (isStale || isFailed) {
-        const label = provider.charAt(0).toUpperCase() + provider.slice(1);
-        const msg = isFailed
-          ? `${label} sync failed: ${escapeHtml(lastSync.error_message || 'Unknown error')}`
-          : `${label} last synced ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago`;
+      if (!lastSync) {
+        // Never synced — prominent first-sync banner
         banners.push(`
-          <div class="sync-banner ${isFailed ? 'sync-banner-error' : 'sync-banner-stale'}">
-            <span>${msg}</span>
+          <div class="sync-banner sync-banner-first" data-provider="${provider}">
+            <span>Import your ${label} recipes</span>
             <button class="btn btn-small sync-retry-btn" data-provider="${provider}">Sync Now</button>
           </div>
         `);
+      } else {
+        const lastDate = lastSync.completed_at || lastSync.started_at;
+        const age = Date.now() - new Date(lastDate).getTime();
+        const daysAgo = Math.floor(age / (1000 * 60 * 60 * 24));
+        const isStale = daysAgo >= 7;
+        const isFailed = lastSync.status === 'failed';
+        const recipeCount = lastSync.recipes_synced ?? lastSync.added ?? 0;
+
+        if (isFailed) {
+          banners.push(`
+            <div class="sync-banner sync-banner-error" data-provider="${provider}">
+              <span>${label} sync failed: ${escapeHtml(lastSync.error_message || 'Unknown error')}</span>
+              <button class="btn btn-small sync-retry-btn" data-provider="${provider}">Retry</button>
+            </div>
+          `);
+        } else if (isStale) {
+          banners.push(`
+            <div class="sync-banner sync-banner-stale" data-provider="${provider}">
+              <span>${label} last synced ${daysAgo} day${daysAgo !== 1 ? 's' : ''} ago</span>
+              <button class="btn btn-small sync-retry-btn" data-provider="${provider}">Sync Now</button>
+            </div>
+          `);
+        } else {
+          // Fresh — subtle OK banner
+          banners.push(`
+            <div class="sync-banner sync-banner-ok" data-provider="${provider}">
+              <span>${label} synced ${daysAgo === 0 ? 'today' : daysAgo + ' day' + (daysAgo !== 1 ? 's' : '') + ' ago'}${recipeCount ? ` (${recipeCount} recipes)` : ''}</span>
+              <button class="btn btn-small sync-retry-btn" data-provider="${provider}">Sync Now</button>
+            </div>
+          `);
+        }
+
+        // Auto-sync if stale/never-synced (cellar-scoped, guarded)
+        if (isStale) autoSyncIfStale(provider, bannerEl);
       }
-    } catch { /* provider not configured — skip */ }
+
+      // Never synced → also trigger auto-sync
+      if (!lastSync) autoSyncIfStale(provider, bannerEl);
+    } catch { /* provider sync status unavailable — skip */ }
   }
 
   if (banners.length === 0) return;
   bannerEl.innerHTML = banners.join('');
 
+  // Wire sync buttons (delegated on banner container)
   bannerEl.querySelectorAll('.sync-retry-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const prov = btn.dataset.provider;
+      if (_syncInProgress[prov]) return;
       btn.disabled = true;
       btn.textContent = 'Syncing...';
+      _syncInProgress[prov] = true;
       try {
         const result = await triggerRecipeSync(prov);
         if (result.error) {
           showToast('Sync failed: ' + result.error);
         } else {
           showToast(`Synced: +${result.added || 0} added, ~${result.updated || 0} updated`);
-          btn.closest('.sync-banner')?.remove();
+          // Refresh banners to show updated status
+          await loadSyncBanners(bannerEl);
         }
       } catch (err) {
         showToast('Sync error: ' + err.message);
       } finally {
+        _syncInProgress[prov] = false;
         btn.disabled = false;
         btn.textContent = 'Sync Now';
       }
     });
   });
+}
+
+/**
+ * Auto-sync if stale/never-synced. Cellar-scoped + guarded against double-fire.
+ * @param {string} provider - Provider name (paprika, mealie)
+ * @param {HTMLElement} bannerEl - Banner container for refresh
+ */
+async function autoSyncIfStale(provider, bannerEl) {
+  // Cellar-scoped session key
+  const cellarId = sessionStorage.getItem('wineapp.activeCellarId') || 'default';
+  const sessionKey = `wineapp.autosync.${cellarId}.${provider}`;
+  const failKey = `wineapp.autosync.failed.${cellarId}.${provider}`;
+
+  // Skip if already auto-synced this session for this cellar
+  if (sessionStorage.getItem(sessionKey)) return;
+  // Skip if a previous auto-sync failed this session
+  if (sessionStorage.getItem(failKey)) return;
+  // Skip if sync is already in progress
+  if (_syncInProgress[provider]) return;
+
+  // Mark as triggered for this session
+  sessionStorage.setItem(sessionKey, Date.now().toString());
+  _syncInProgress[provider] = true;
+
+  try {
+    const result = await triggerRecipeSync(provider);
+    if (result.error) {
+      sessionStorage.setItem(failKey, Date.now().toString());
+    } else {
+      const label = provider.charAt(0).toUpperCase() + provider.slice(1);
+      showToast(`${label} auto-synced: +${result.added || 0} added, ~${result.updated || 0} updated`);
+      // Refresh banners
+      await loadSyncBanners(bannerEl);
+    }
+  } catch {
+    sessionStorage.setItem(failKey, Date.now().toString());
+  } finally {
+    _syncInProgress[provider] = false;
+  }
 }
 
 /**

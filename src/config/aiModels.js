@@ -83,6 +83,9 @@ export const TASK_MODELS = {
   // Signal auditor validates cooking profile signal quality
   signalAudit: 'claude-haiku-4-5-20251001',
 
+  // Simple extraction tasks use Haiku 4.5 (text → JSON, no reasoning needed)
+  ratingExtraction: 'claude-haiku-4-5-20251001',
+
   // Simple classification tasks use Haiku 4.5
   wineClassification: 'claude-haiku-4-5-20251001',
   simpleValidation: 'claude-haiku-4-5-20251001'

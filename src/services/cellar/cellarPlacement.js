@@ -519,7 +519,7 @@ function addTokens(tokenSet, values, prefix) {
  * @param {string[]} sameWineSlots - Slot IDs where the same wine already lives
  * @returns {string|null} Adjacent slot ID or null
  */
-function findAdjacentToSameWine(rows, occupiedSet, sameWineSlots) {
+export function findAdjacentToSameWine(rows, occupiedSet, sameWineSlots) {
   const rowSet = new Set(rows);
 
   // Parse same-wine slots into row → [column numbers] map
