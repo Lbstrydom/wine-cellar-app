@@ -14,7 +14,8 @@ vi.mock('../../../public/js/utils.js', () => ({
   escapeHtml: vi.fn(s => s)
 }));
 vi.mock('../../../public/js/app.js', () => ({
-  refreshLayout: vi.fn().mockResolvedValue()
+  refreshLayout: vi.fn().mockResolvedValue(),
+  switchView: vi.fn()
 }));
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn()
@@ -288,14 +289,12 @@ describe('Move Guide lifecycle', () => {
   });
 
   it('should switch to grid tab on open', async () => {
-    const mockTab = createMockElement('button');
-    mockTab.dataset.view = 'grid';
-    document.querySelector.mockReturnValueOnce(mockTab);
+    const { switchView } = await import('../../../public/js/app.js');
 
     await openMoveGuide([
       { type: 'move', from: 'R1C1', to: 'R2C1', wineId: 1, wineName: 'Test' }
     ]);
-    expect(mockTab.click).toHaveBeenCalled();
+    expect(switchView).toHaveBeenCalledWith('grid');
     closeMoveGuide();
   });
 

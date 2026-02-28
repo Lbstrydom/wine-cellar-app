@@ -7,6 +7,7 @@ import { listRecipes, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, tr
 import { showToast, escapeHtml } from '../utils.js';
 import { recipeState, persistState } from './state.js';
 import { toggleMenuRecipe, isInMenu } from './menuState.js';
+import { switchView } from '../app.js';
 
 /**
  * Render the recipe library inside a container.
@@ -179,6 +180,22 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
           }
         });
       });
+
+      // Wire up pairing buttons — switch to Pairing tab and pre-fill dish input
+      grid.querySelectorAll('.recipe-pairing-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const name = btn.dataset.name;
+          switchView('pairing');
+          setTimeout(() => {
+            const dishInput = document.getElementById('dish-input');
+            if (dishInput) {
+              dishInput.value = name;
+              dishInput.dispatchEvent(new Event('input'));
+            }
+          }, 100);
+        });
+      });
     }
 
     // Pagination
@@ -212,6 +229,7 @@ function renderRecipeCard(recipe) {
       <div class="recipe-card-header">
         <h4 class="recipe-card-title">${escapeHtml(recipe.name)}</h4>
         <div class="recipe-card-actions">
+          <button class="recipe-pairing-btn" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="Find wine pairing">🍷</button>
           <button class="recipe-menu-toggle ${inMenu ? 'active' : ''}" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="${inMenu ? 'Remove from menu' : 'Add to menu'}">+M</button>
           <button class="recipe-delete-btn" data-id="${recipe.id}" data-name="${escapeHtml(recipe.name)}" title="Delete">&times;</button>
         </div>

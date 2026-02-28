@@ -59,6 +59,16 @@ export async function initBottles() {
     btn.addEventListener('click', () => setBottleFormMode(btn.dataset.mode));
   });
 
+  // Advanced fields toggle (progressive disclosure)
+  document.getElementById('toggle-advanced-fields')?.addEventListener('click', () => {
+    const adv = document.getElementById('bottle-form-advanced');
+    const btn = document.getElementById('toggle-advanced-fields');
+    if (!adv) return;
+    const isHidden = adv.hasAttribute('hidden');
+    adv.toggleAttribute('hidden', !isHidden);
+    btn.textContent = isHidden ? '− Less fields' : '+ More fields';
+  });
+
   // Initialize sub-modules
   initWineSearch();
   initForm();

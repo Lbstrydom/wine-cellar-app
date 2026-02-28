@@ -6,13 +6,14 @@
 
 import { escapeHtml } from './utils.js';
 import { fetch } from './api.js';
+import { switchView } from './app.js';
 
 /**
  * State for recommendations panel.
  */
 const recState = {
   isLoading: false,
-  isCollapsed: false,
+  isCollapsed: true,
   lastRecommendations: null
 };
 
@@ -33,6 +34,15 @@ export function initRecommendations() {
   const toggleBtn = document.getElementById('toggle-recommendations');
   if (toggleBtn) {
     toggleBtn.addEventListener('click', togglePanel);
+  }
+
+  // Apply initial collapsed state without calling togglePanel() (which would flip the flag)
+  if (recState.isCollapsed) {
+    panel.classList.add('collapsed');
+    const icon = toggleBtn?.querySelector('.toggle-icon');
+    if (icon) icon.textContent = '+';
+    toggleBtn?.setAttribute('aria-expanded', 'false');
+    if (toggleBtn) toggleBtn.title = 'Show panel';
   }
 
   // Bind context selectors
@@ -334,8 +344,7 @@ function getUrgencyLabel(urgency) {
  */
 function navigateToWine(wineId) {
   // Switch to wines view
-  const winesTab = document.querySelector('[data-view="wines"]');
-  if (winesTab) winesTab.click();
+  switchView('wines');
 
   // After a brief delay, scroll to and highlight the wine
   setTimeout(() => {
@@ -349,3 +358,10 @@ function navigateToWine(wineId) {
   }, 200);
 }
 
+/**
+ * Expand the recommendations panel if currently collapsed.
+ * Called from other modules to reveal the panel programmatically.
+ */
+export function expandPanel() {
+  if (recState.isCollapsed) togglePanel();
+}

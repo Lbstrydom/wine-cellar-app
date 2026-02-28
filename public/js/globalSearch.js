@@ -6,6 +6,7 @@
 
 import { escapeHtml } from './utils.js';
 import { fetch } from './api.js';
+import { switchView } from './app.js';
 
 /**
  * Global search state.
@@ -38,6 +39,17 @@ export function initGlobalSearch() {
   createOverlay();
   bindKeyboardShortcuts();
   bindTriggerButton();
+  updateShortcutDisplay();
+}
+
+/**
+ * Update the keyboard shortcut label in the trigger button to match the current platform.
+ */
+function updateShortcutDisplay() {
+  const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ||
+    /Mac/i.test(navigator.userAgent);
+  const kbd = document.querySelector('#global-search-trigger kbd');
+  if (kbd) kbd.textContent = isMac ? '⌘K' : 'Ctrl+K';
 }
 
 /**
@@ -449,8 +461,7 @@ function selectResult(result) {
  */
 function navigateToWine(wineId) {
   // Switch to wines view
-  const winesTab = document.querySelector('[data-view="wines"]');
-  if (winesTab) winesTab.click();
+  switchView('wines');
 
   // After a brief delay, scroll to and highlight the wine
   setTimeout(() => {
@@ -469,8 +480,7 @@ function navigateToWine(wineId) {
  * @param {string} producer - Producer name
  */
 function filterByProducer(producer) {
-  const winesTab = document.querySelector('[data-view="wines"]');
-  if (winesTab) winesTab.click();
+  switchView('wines');
 
   setTimeout(() => {
     const searchInput = document.getElementById('filter-search');
@@ -486,8 +496,7 @@ function filterByProducer(producer) {
  * @param {string} country - Country name
  */
 function filterByCountry(country) {
-  const winesTab = document.querySelector('[data-view="wines"]');
-  if (winesTab) winesTab.click();
+  switchView('wines');
 
   setTimeout(() => {
     const searchInput = document.getElementById('filter-search');
@@ -503,8 +512,7 @@ function filterByCountry(country) {
  * @param {string} style - Wine style
  */
 function filterByStyle(style) {
-  const winesTab = document.querySelector('[data-view="wines"]');
-  if (winesTab) winesTab.click();
+  switchView('wines');
 
   setTimeout(() => {
     const searchInput = document.getElementById('filter-search');
@@ -529,8 +537,7 @@ function executeAction(action) {
       break;
 
     case 'showSommelier': {
-      const pairingTab = document.querySelector('[data-view="pairing"]');
-      if (pairingTab) pairingTab.click();
+      switchView('pairing');
       setTimeout(() => {
         document.getElementById('dish-input')?.focus();
       }, 100);
@@ -538,14 +545,7 @@ function executeAction(action) {
     }
 
     case 'showReduceNow': {
-      const winesTab = document.querySelector('[data-view="wines"]');
-      if (winesTab) winesTab.click();
-      setTimeout(() => {
-        const filterCheckbox = document.getElementById('filter-reduce-now');
-        if (filterCheckbox && !filterCheckbox.checked) {
-          filterCheckbox.click();
-        }
-      }, 100);
+      switchView('drinksoon');
       break;
     }
   }

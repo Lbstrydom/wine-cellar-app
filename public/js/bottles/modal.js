@@ -52,6 +52,12 @@ export function showAddBottleModal(location) {
   const parseResults = document.getElementById('parse-results');
   if (parseResults) parseResults.innerHTML = '';
 
+  // Collapse advanced fields for clean new-wine experience
+  const advDiv = document.getElementById('bottle-form-advanced');
+  const advBtn = document.getElementById('toggle-advanced-fields');
+  if (advDiv) advDiv.setAttribute('hidden', '');
+  if (advBtn) advBtn.textContent = '+ More fields';
+
   // Default to existing wine mode
   setBottleFormMode('existing');
 
@@ -121,6 +127,20 @@ export async function showEditBottleModal(location, wineId) {
     console.error('[modal] Failed to load wine details:', error_.message);
     showToast('Failed to load wine details');
     return;
+  }
+
+  // Auto-expand advanced fields if any secondary field has a value
+  const advFieldIds = ['wine-style', 'wine-grapes', 'wine-producer', 'wine-region',
+    'wine-country', 'wine-price', 'wine-drink-from', 'wine-drink-until'];
+  const hasAdvanced = advFieldIds.some(id => document.getElementById(id)?.value?.trim());
+  const advDiv = document.getElementById('bottle-form-advanced');
+  const advBtn = document.getElementById('toggle-advanced-fields');
+  if (hasAdvanced && advDiv) {
+    advDiv.removeAttribute('hidden');
+    if (advBtn) advBtn.textContent = '− Less fields';
+  } else if (advDiv) {
+    advDiv.setAttribute('hidden', '');
+    if (advBtn) advBtn.textContent = '+ More fields';
   }
 
   // Switch to edit mode (shows form fields)

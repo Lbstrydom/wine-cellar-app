@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260227e">
+  <link rel="stylesheet" href="/css/styles.css?v=20260228a">
 </head>
 <body>
   <header>
@@ -71,13 +71,21 @@
       <span></span><span></span><span></span>
     </button>
     <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Views">
-      <button class="tab active" data-view="grid" role="tab" aria-selected="true" aria-controls="view-grid" id="tab-grid">Cellar Grid</button>
-      <button class="tab" data-view="analysis" role="tab" aria-selected="false" aria-controls="view-analysis" id="tab-analysis">Cellar Analysis</button>
-      <button class="tab" data-view="pairing" role="tab" aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Find Pairing</button>
-      <button class="tab" data-view="recipes" role="tab" aria-selected="false" aria-controls="view-recipes" id="tab-recipes">Recipes</button>
-      <button class="tab" data-view="wines" role="tab" aria-selected="false" aria-controls="view-wines" id="tab-wines">Wine List</button>
-      <button class="tab" data-view="history" role="tab" aria-selected="false" aria-controls="view-history" id="tab-history">History</button>
-      <button class="tab" data-view="settings" role="tab" aria-selected="false" aria-controls="view-settings" id="tab-settings">Settings</button>
+      <button class="tab active" data-parent="cellar" role="tab" aria-selected="true">Cellar</button>
+      <button class="tab" data-parent="pairing" role="tab" aria-selected="false">Pairing</button>
+      <button class="tab" data-parent="kitchen" role="tab" aria-selected="false">Kitchen</button>
+      <button class="tab" data-parent="collection" role="tab" aria-selected="false">Collection</button>
+      <button class="tab" data-parent="settings" role="tab" aria-selected="false">Settings</button>
+    </div>
+    <!-- Sub-tab rows (shown when parent tab is active) -->
+    <div class="sub-tabs-row" id="sub-tabs-cellar" data-parent="cellar">
+      <button class="sub-tab active" data-view="grid" role="tab" aria-selected="true">Grid</button>
+      <button class="sub-tab" data-view="analysis" role="tab" aria-selected="false">Analysis</button>
+    </div>
+    <div class="sub-tabs-row" id="sub-tabs-collection" data-parent="collection" hidden>
+      <button class="sub-tab" data-view="wines" role="tab" aria-selected="false">Wine List</button>
+      <button class="sub-tab" data-view="history" role="tab" aria-selected="false">History</button>
+      <button class="sub-tab" data-view="drinksoon" role="tab" aria-selected="false">Drink Soon</button>
     </div>
   </nav>
 
@@ -125,17 +133,23 @@
       </div>
     </section>
 
+    <!-- Quick navigation to fridge/cellar sections (hidden when storage areas active) -->
+    <nav class="grid-section-nav" id="grid-section-nav" aria-label="Jump to section">
+      <button type="button" class="section-nav-btn" id="nav-to-fridge">▲ Fridge</button>
+      <button type="button" class="section-nav-btn" id="nav-to-cellar">▼ Cellar</button>
+    </nav>
+
     <!-- Dynamic Storage Areas Container (used when areas are configured) -->
     <div class="storage-areas" id="storage-areas-container" style="display: none;"></div>
 
-    <div class="fridge-section zone">
+    <div class="fridge-section zone" id="fridge-section">
       <div class="zone-header">
         <span class="zone-title">Fridge</span>
       </div>
       <div class="fridge-grid" id="fridge-grid"></div>
     </div>
 
-    <div class="zone">
+    <div class="zone" id="cellar-section">
       <div class="zone-header">
         <span class="zone-title">Cellar</span>
         <div class="zoom-controls">
@@ -363,6 +377,13 @@
     <div class="history-list" id="history-list"></div>
   </div>
 
+  <!-- Drink Soon View -->
+  <div class="view" id="view-drinksoon" role="tabpanel" hidden>
+    <h2 class="view-title">Drink Soon</h2>
+    <p class="view-subtitle">Wines approaching or past their optimal drinking window</p>
+    <div id="drink-soon-list"></div>
+  </div>
+
   <!-- Pairing View -->
   <div class="view" id="view-pairing" role="tabpanel" aria-labelledby="tab-pairing" hidden>
     <!-- Mode Toggle -->
@@ -378,6 +399,11 @@
     <!-- Cellar Mode (existing content, wrapped) -->
     <div class="pairing-cellar-section" id="pairing-cellar-section" role="tabpanel"
          aria-labelledby="tab-cellar">
+      <!-- AI Picks cross-link -->
+      <div class="pairing-ai-crosslink" id="pairing-ai-crosslink">
+        <span>🍷 Want AI picks from your cellar?</span>
+        <button type="button" class="btn btn-small btn-secondary" id="go-to-ai-picks">View Recommendations</button>
+      </div>
       <!-- Sommelier section -->
       <div class="natural-pairing">
       <h2 class="view-title">Ask the Sommelier</h2>
@@ -486,7 +512,8 @@
 
     <!-- Rating Preferences Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Rating Preferences</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="rating-preferences">Rating Preferences <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Adjust how professional ratings are weighted when calculating purchase scores.</p>
 
       <div class="preference-slider-container">
@@ -501,11 +528,13 @@
           <span id="preference-description">Slightly favors competition awards</span>
         </div>
       </div>
+          </div>
     </div>
 
     <!-- Display Settings Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Display Settings</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="display">Display Settings <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Adjust theme and text size for better readability on your device.</p>
 
       <fieldset class="theme-selector">
@@ -554,11 +583,13 @@
         </div>
         <p class="text-size-preview">Preview: The quick brown fox jumps over the lazy dog.</p>
       </fieldset>
+          </div>
     </div>
 
     <!-- Drink Soon Auto Rules Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Drink Soon Auto Rules</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="drink-soon-rules">Drink Soon Auto Rules <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Automatically suggest wines to add to your drink-soon list based on criteria.</p>
 
       <div class="settings-toggle-row">
@@ -625,11 +656,13 @@
           <button class="btn btn-secondary btn-small" id="clear-candidates-btn">Dismiss</button>
         </div>
       </div>
+          </div>
     </div>
 
     <!-- Storage Conditions Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Storage Conditions</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="storage-conditions">Storage Conditions <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Adjust drinking window estimates based on your storage temperature. Warmer storage accelerates wine ageing.</p>
 
       <div class="settings-toggle-row">
@@ -665,11 +698,13 @@
           <span class="toggle-label">Heat risk - Wines exposed to 30°C+ temps (adds warning flag)</span>
         </div>
       </div>
+          </div>
     </div>
 
     <!-- Cellar Layout Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Cellar Layout</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="cellar-layout">Cellar Layout <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Control how bottles are arranged in your cellar grid.</p>
 
       <fieldset class="layout-selector">
@@ -724,6 +759,7 @@
           <span id="reconfig-change-pct-display" class="range-value">10%</span>
         </div>
       </div>
+          </div>
     </div>
     </div><!-- /settings-group: Preferences -->
 
@@ -733,7 +769,8 @@
 
     <!-- Account Credentials Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Account Credentials</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="account-credentials">Account Credentials <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Connect your accounts for enhanced rating data. Credentials are encrypted.</p>
 
       <div id="encryption-warning" class="settings-warning" style="display: none;">
@@ -831,11 +868,13 @@
           <li><strong>Jancis Robinson</strong> - Expert ratings</li>
         </ul>
       </div>
+          </div>
     </div>
 
     <!-- Awards Database Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Awards Database</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="awards-database">Awards Database <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Import competition awards from various sources for automatic matching with your cellar.</p>
 
       <!-- Import New Awards -->
@@ -920,6 +959,7 @@
           <p class="no-data">No unmatched awards</p>
         </div>
       </div>
+          </div>
     </div>
     </div><!-- /settings-group: Integrations -->
 
@@ -929,7 +969,8 @@
 
     <!-- Storage Areas Configuration Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Storage Areas</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="storage-areas">Storage Areas <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Configure your wine storage layout: cellar, fridge, racks, or custom areas.</p>
 
       <div class="settings-actions">
@@ -938,11 +979,13 @@
 
       <!-- Onboarding wizard container (hidden by default) -->
       <div id="storage-areas-wizard" class="onboarding-wizard mt-2" style="display: none;"></div>
+          </div>
     </div>
 
     <!-- Backup & Export Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">Backup & Export</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="backup-export">Backup &amp; Export <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Export your cellar data for backup or import from a previous backup.</p>
 
       <!-- Backup Stats -->
@@ -995,12 +1038,14 @@
         </button>
         <p class="form-hint">Warning: Replace mode will delete all existing data before importing.</p>
       </div>
+          </div>
     </div>
 
     <!-- App Installation Section -->
     <!-- Install App Section -->
     <div class="settings-section" id="pwa-install-section">
-      <h3 class="settings-section-title">Install App</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="install-app">Install App <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-section-desc">Install Wine Cellar as an app on your device for quick access and offline support.</p>
       
       <!-- Install button (shown when installable) -->
@@ -1012,11 +1057,13 @@
       <div id="install-status" class="install-status">
         <p id="install-status-message" class="text-muted">Checking installation status...</p>
       </div>
+          </div>
     </div>
 
     <!-- About Section -->
     <div class="settings-section">
-      <h3 class="settings-section-title">About</h3>
+      <button class="settings-section-toggle" aria-expanded="true" data-section-id="about">About <span class="settings-section-arrow">▾</span></button>
+      <div class="settings-section-body">
       <p class="settings-about">
         Wine Cellar App v1.0<br>
         <span class="text-muted">Manage your wine collection with AI-powered features</span>
@@ -1024,6 +1071,7 @@
       <p class="settings-about settings-about-muted">
         <span id="pwa-status">Web App</span>
       </p>
+          </div>
     </div>
     </div><!-- /settings-group: Data & App -->
   </div>
@@ -1251,81 +1299,85 @@
             </div>
           </div>
 
-          <div class="form-row">
-            <div class="form-field">
-              <label for="wine-style">Style</label>
-              <input type="text" id="wine-style" placeholder="e.g., Sauvignon Blanc" list="style-list" />
-              <datalist id="style-list"></datalist>
-            </div>
-          </div>
+          <button type="button" id="toggle-advanced-fields">+ More fields</button>
 
-          <div class="form-row">
-            <div class="form-field">
-              <label for="wine-grapes">Grapes</label>
-              <input type="text" id="wine-grapes" placeholder="e.g., Cabernet Sauvignon, Merlot" maxlength="500" />
+          <div class="bottle-form-advanced" id="bottle-form-advanced" hidden>
+            <div class="form-row">
+              <div class="form-field">
+                <label for="wine-style">Style</label>
+                <input type="text" id="wine-style" placeholder="e.g., Sauvignon Blanc" list="style-list" />
+                <datalist id="style-list"></datalist>
+              </div>
             </div>
-          </div>
 
-          <div class="form-row">
-            <div class="form-field">
-              <label for="wine-rating">Rating</label>
-              <input type="number" id="wine-rating" min="1" max="5" step="0.1" placeholder="e.g., 4.2" />
+            <div class="form-row">
+              <div class="form-field">
+                <label for="wine-grapes">Grapes</label>
+                <input type="text" id="wine-grapes" placeholder="e.g., Cabernet Sauvignon, Merlot" maxlength="500" />
+              </div>
             </div>
-            <div class="form-field">
-              <label for="wine-price">Price (EUR)</label>
-              <input type="number" id="wine-price" min="0" step="0.01" placeholder="e.g., 12.99" />
-            </div>
-          </div>
 
-          <div class="form-row">
-            <div class="form-field">
-              <label for="wine-country">Country</label>
-              <select id="wine-country">
-                <option value="">Select country...</option>
-                <option value="Argentina">Argentina</option>
-                <option value="Australia">Australia</option>
-                <option value="Austria">Austria</option>
-                <option value="Chile">Chile</option>
-                <option value="France">France</option>
-                <option value="Germany">Germany</option>
-                <option value="Greece">Greece</option>
-                <option value="Italy">Italy</option>
-                <option value="New Zealand">New Zealand</option>
-                <option value="Portugal">Portugal</option>
-                <option value="South Africa">South Africa</option>
-                <option value="Spain">Spain</option>
-                <option value="USA">USA</option>
-                <option value="Other">Other</option>
-              </select>
-              <input type="text" id="wine-country-other" class="mt-half" placeholder="Enter country name..." style="display: none;" />
+            <div class="form-row">
+              <div class="form-field">
+                <label for="wine-rating">Rating</label>
+                <input type="number" id="wine-rating" min="1" max="5" step="0.1" placeholder="e.g., 4.2" />
+              </div>
+              <div class="form-field">
+                <label for="wine-price">Price (EUR)</label>
+                <input type="number" id="wine-price" min="0" step="0.01" placeholder="e.g., 12.99" />
+              </div>
             </div>
-          </div>
 
-          <div class="form-row">
-            <div class="form-field">
-              <label for="wine-producer">Producer</label>
-              <input type="text" id="wine-producer" placeholder="e.g., Kanonkop" maxlength="200" />
+            <div class="form-row">
+              <div class="form-field">
+                <label for="wine-country">Country</label>
+                <select id="wine-country">
+                  <option value="">Select country...</option>
+                  <option value="Argentina">Argentina</option>
+                  <option value="Australia">Australia</option>
+                  <option value="Austria">Austria</option>
+                  <option value="Chile">Chile</option>
+                  <option value="France">France</option>
+                  <option value="Germany">Germany</option>
+                  <option value="Greece">Greece</option>
+                  <option value="Italy">Italy</option>
+                  <option value="New Zealand">New Zealand</option>
+                  <option value="Portugal">Portugal</option>
+                  <option value="South Africa">South Africa</option>
+                  <option value="Spain">Spain</option>
+                  <option value="USA">USA</option>
+                  <option value="Other">Other</option>
+                </select>
+                <input type="text" id="wine-country-other" class="mt-half" placeholder="Enter country name..." style="display: none;" />
+              </div>
             </div>
-            <div class="form-field">
-              <label for="wine-region">Region</label>
-              <input type="text" id="wine-region" placeholder="e.g., Stellenbosch" maxlength="200" />
-            </div>
-          </div>
 
-          <div class="form-row drink-window-row">
-            <div class="form-field">
-              <label for="wine-drink-from">Drink From</label>
-              <input type="number" id="wine-drink-from" min="2000" max="2100" placeholder="e.g., 2025" />
+            <div class="form-row">
+              <div class="form-field">
+                <label for="wine-producer">Producer</label>
+                <input type="text" id="wine-producer" placeholder="e.g., Kanonkop" maxlength="200" />
+              </div>
+              <div class="form-field">
+                <label for="wine-region">Region</label>
+                <input type="text" id="wine-region" placeholder="e.g., Stellenbosch" maxlength="200" />
+              </div>
             </div>
-            <div class="form-field">
-              <label for="wine-drink-peak">Peak</label>
-              <input type="number" id="wine-drink-peak" min="2000" max="2100" placeholder="e.g., 2028" />
+
+            <div class="form-row drink-window-row">
+              <div class="form-field">
+                <label for="wine-drink-from">Drink From</label>
+                <input type="number" id="wine-drink-from" min="2000" max="2100" placeholder="e.g., 2025" />
+              </div>
+              <div class="form-field">
+                <label for="wine-drink-peak">Peak</label>
+                <input type="number" id="wine-drink-peak" min="2000" max="2100" placeholder="e.g., 2028" />
+              </div>
+              <div class="form-field">
+                <label for="wine-drink-until">Until</label>
+                <input type="number" id="wine-drink-until" min="2000" max="2100" placeholder="e.g., 2032" />
+              </div>
             </div>
-            <div class="form-field">
-              <label for="wine-drink-until">Until</label>
-              <input type="number" id="wine-drink-until" min="2000" max="2100" placeholder="e.g., 2032" />
-            </div>
-          </div>
+          </div><!-- /.bottle-form-advanced -->
         </div>
 
         <!-- Quantity (for adding) -->

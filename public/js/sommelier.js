@@ -7,6 +7,7 @@ import { askSommelier, getPairingSuggestions, sommelierChat, submitPairingFeedba
 import { showToast, escapeHtml } from './utils.js';
 import { showWineModalFromList } from './modals.js';
 import { renderRecommendation, displayRecommendations } from './pairing.js';
+import { switchView } from './app.js';
 
 const selectedSignals = new Set();
 
@@ -425,6 +426,17 @@ export function initSommelier() {
   document.getElementById('ask-sommelier')?.addEventListener('click', handleAskSommelier);
   document.getElementById('dish-input')?.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handleAskSommelier();
+  });
+
+  // AI Picks cross-link: navigate to Cellar grid and expand the recommendations panel
+  document.getElementById('go-to-ai-picks')?.addEventListener('click', () => {
+    switchView('grid');
+    setTimeout(() => {
+      const panel = document.getElementById('drink-tonight-panel');
+      if (panel?.classList.contains('collapsed')) {
+        document.getElementById('toggle-recommendations')?.click();
+      }
+    }, 100);
   });
 
   document.querySelectorAll('.signal-btn').forEach(btn => {

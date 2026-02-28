@@ -78,6 +78,36 @@ let supabaseClientPromise = null;
 let appStarted = false;
 
 /**
+ * Parent tab → child views mapping for 5-tab navigation.
+ */
+const PARENT_TAB_MAP = {
+  cellar:     ['grid', 'analysis'],
+  pairing:    ['pairing'],
+  kitchen:    ['recipes'],
+  collection: ['wines', 'history', 'drinksoon'],
+  settings:   ['settings']
+};
+
+/**
+ * Child view → parent tab lookup (derived from PARENT_TAB_MAP).
+ */
+const VIEW_TO_PARENT = {};
+for (const [parent, views] of Object.entries(PARENT_TAB_MAP)) {
+  for (const v of views) VIEW_TO_PARENT[v] = parent;
+}
+
+/**
+ * Parent-level URL alias → first child view (for ?view=collection deep-links).
+ */
+const PARENT_URL_MAP = {
+  cellar: 'grid',
+  pairing: 'pairing',
+  kitchen: 'recipes',
+  collection: 'wines',
+  settings: 'settings'
+};
+
+/**
  * Get or create Supabase client.
  * @returns {Promise<Object>}
  */
@@ -301,9 +331,15 @@ async function startAuthenticatedApp() {
   appStarted = true;
 
   try {
-    // Setup navigation
-    document.querySelectorAll('.tab').forEach(tab => {
-      tab.addEventListener('click', () => switchView(tab.dataset.view));
+    // Setup navigation — parent tabs + sub-tabs
+    document.querySelectorAll('.tab[data-parent]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const firstView = PARENT_TAB_MAP[btn.dataset.parent]?.[0];
+        if (firstView) switchView(firstView);
+      });
+    });
+    document.querySelectorAll('.sub-tab[data-view]').forEach(btn => {
+      btn.addEventListener('click', () => switchView(btn.dataset.view));
     });
 
     // Initialize mobile menu
@@ -317,6 +353,12 @@ async function startAuthenticatedApp() {
 
     // Wire modal X close button (CSP-compliant: JS listener, not inline handler)
     document.getElementById('btn-modal-close-x')?.addEventListener('click', closeWineModal);
+
+    // Wire fridge/cellar quick-nav scroll buttons (hidden when storage areas active)
+    document.getElementById('nav-to-fridge')?.addEventListener('click', () =>
+      document.getElementById('fridge-section')?.scrollIntoView({ behavior: 'smooth' }));
+    document.getElementById('nav-to-cellar')?.addEventListener('click', () =>
+      document.getElementById('cellar-section')?.scrollIntoView({ behavior: 'smooth' }));
 
     // Initialise modules
     initModals();
@@ -335,12 +377,16 @@ async function startAuthenticatedApp() {
     // Initialize zoom controls after grid is rendered
     initZoomControls();
 
-    // Deep-link support: honour ?view=X so external links (e.g. browser extension)
-    // can open a specific tab directly (e.g. ?view=recipes for the buying guide).
-    const VALID_VIEWS = ['grid', 'analysis', 'pairing', 'recipes', 'wines', 'history'];
+    // Deep-link support: honour ?view=X so external links can open a specific view/tab.
+    // Supports both direct view names (e.g. ?view=recipes) and parent names (e.g. ?view=collection).
+    const VALID_VIEWS = ['grid', 'analysis', 'pairing', 'recipes', 'wines', 'history', 'drinksoon', 'settings'];
     const urlView = new URLSearchParams(window.location.search).get('view');
-    if (urlView && VALID_VIEWS.includes(urlView)) {
-      switchView(urlView);
+    if (urlView) {
+      if (VALID_VIEWS.includes(urlView)) {
+        switchView(urlView);
+      } else if (PARENT_URL_MAP[urlView]) {
+        switchView(PARENT_URL_MAP[urlView]);
+      }
     }
 
     // Listen for grape health changes — refresh data if wines were reclassified
@@ -675,6 +721,10 @@ async function loadLayout() {
   const fridgeSection = document.querySelector('.fridge-section');
   const cellarZone = document.querySelector('#cellar-container')?.closest('.zone');
 
+  // Show/hide section nav based on layout mode
+  const gridSectionNav = document.getElementById('grid-section-nav');
+  if (gridSectionNav) gridSectionNav.style.display = hasAreas ? 'none' : '';
+
   if (hasAreas) {
     // Show dynamic areas and hide legacy sections
     if (areasContainer) areasContainer.style.display = '';
@@ -741,6 +791,43 @@ async function loadWineList() {
 async function loadHistory() {
   const data = await fetchConsumptionHistory();
   renderHistoryList(data.items);
+}
+
+/** Lazy-load guard for drink soon view. */
+let drinkSoonLoaded = false;
+
+/**
+ * Load the Drink Soon view with wines approaching or past their optimal window.
+ */
+async function loadDrinkSoonView() {
+  if (drinkSoonLoaded) return;
+  drinkSoonLoaded = true;
+  const container = document.getElementById('drink-soon-list');
+  if (!container) return;
+  container.innerHTML = '<p class="text-muted">Loading…</p>';
+  try {
+    const wines = await fetchReduceNow();
+    if (!wines || wines.length === 0) {
+      container.innerHTML = '<p class="text-muted">No wines flagged as drink soon.</p>';
+      return;
+    }
+    container.innerHTML = wines.map(w => {
+      const urgencyClass = (w.priority === 1 || w.priority === '1') ? 'now' : 'soon';
+      const urgencyLabel = urgencyClass === 'now' ? '⚠ Overdue' : '⏳ Drink Soon';
+      return `
+        <div class="drink-soon-card urgency-${urgencyClass}">
+          <span class="colour-dot colour-${escapeHtml(w.colour || 'white')}"></span>
+          <div class="drink-soon-card-info">
+            <div class="drink-soon-card-name">${escapeHtml(w.wine_name || 'Unknown')}</div>
+            ${w.vintage ? `<div class="drink-soon-card-vintage">${escapeHtml(String(w.vintage))}${w.reduce_reason ? ` — ${escapeHtml(w.reduce_reason)}` : ''}</div>` : ''}
+          </div>
+          <span class="drink-soon-tag ${urgencyClass}">${urgencyLabel}</span>
+        </div>`;
+    }).join('');
+  } catch (err) {
+    console.error('[App] Failed to load drink soon view:', err);
+    container.innerHTML = '<p class="text-muted">Failed to load drink soon wines.</p>';
+  }
 }
 
 /**
@@ -1288,13 +1375,7 @@ function initStatButtons() {
   });
 
   document.getElementById('stat-btn-reduce')?.addEventListener('click', () => {
-    switchView('wines');
-    // Pre-check the "Drink Soon" filter
-    const filterReduceNow = document.getElementById('filter-reduce-now');
-    if (filterReduceNow && !filterReduceNow.checked) {
-      filterReduceNow.checked = true;
-      filterReduceNow.dispatchEvent(new Event('change'));
-    }
+    switchView('drinksoon');
   });
 
   document.getElementById('stat-btn-empty')?.addEventListener('click', () => {
@@ -1380,22 +1461,33 @@ function renderHistoryList(items) {
 }
 
 /**
+ * Activate the specified parent tab and show its sub-tab row.
+ * @param {string} parentName - Parent tab identifier
+ */
+function activateParentTab(parentName) {
+  document.querySelectorAll('.tab[data-parent]').forEach(t => {
+    const active = t.dataset.parent === parentName;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', String(active));
+  });
+  document.querySelectorAll('.sub-tabs-row').forEach(row => {
+    row.hidden = row.dataset.parent !== parentName;
+  });
+}
+
+/**
  * Switch view.
  * @param {string} viewName - View to switch to
  */
-function switchView(viewName) {
+export function switchView(viewName) {
   // Update view panels
   document.querySelectorAll('.view').forEach(v => {
     v.classList.remove('active');
     v.hidden = true;
   });
 
-  // Update tab buttons with ARIA
-  document.querySelectorAll('.tab').forEach(t => {
-    t.classList.remove('active');
-    t.setAttribute('aria-selected', 'false');
-    t.setAttribute('tabindex', '-1');
-  });
+  // Activate parent tab and its sub-tab row
+  activateParentTab(VIEW_TO_PARENT[viewName] || viewName);
 
   // Activate selected view
   const activeView = document.getElementById(`view-${viewName}`);
@@ -1404,24 +1496,24 @@ function switchView(viewName) {
     activeView.hidden = false;
   }
 
-  // Activate selected tab
-  const activeTab = document.querySelector(`[data-view="${viewName}"]`);
-  if (activeTab) {
-    activeTab.classList.add('active');
-    activeTab.setAttribute('aria-selected', 'true');
-    activeTab.setAttribute('tabindex', '0');
-  }
+  // Update sub-tab active state
+  document.querySelectorAll('.sub-tab').forEach(t => {
+    const active = t.dataset.view === viewName;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', String(active));
+  });
 
   state.currentView = viewName;
 
   // Close mobile menu after selection
   document.getElementById('tabs-container')?.classList.remove('open');
+  document.getElementById('mobile-menu-btn')?.setAttribute('aria-expanded', 'false');
 
   if (viewName === 'wines') loadWineList();
   if (viewName === 'history') loadHistory();
   if (viewName === 'settings') loadSettings();
+  if (viewName === 'drinksoon') loadDrinkSoonView();
   if (viewName === 'analysis') {
-    // Load analysis when tab is opened
     loadAnalysis();
   }
   if (viewName === 'recipes') {
@@ -1460,9 +1552,9 @@ function initMobileMenu() {
       menuBtn.setAttribute('aria-expanded', 'false');
     });
 
-    // Close menu when a tab is selected
+    // Close menu when a parent tab or sub-tab is selected
     tabsContainer.addEventListener('click', (e) => {
-      if (e.target.classList.contains('tab')) {
+      if (e.target.classList.contains('tab') || e.target.classList.contains('sub-tab')) {
         tabsContainer.classList.remove('open');
         menuBtn.setAttribute('aria-expanded', 'false');
       }

@@ -6,7 +6,7 @@
  */
 
 import { executeCellarMoves } from '../api.js';
-import { refreshLayout } from '../app.js';
+import { refreshLayout, switchView } from '../app.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { addTrackedListener, cleanupNamespace } from '../eventManager.js';
 import { getCurrentAnalysis } from './state.js';
@@ -586,18 +586,25 @@ async function handleRecalculate() {
  * Switch to the cellar grid tab.
  */
 function switchToCellarTab() {
-  const gridTab = document.querySelector('[data-view="grid"]');
-  if (gridTab) {
-    gridTab.click();
-  }
+  switchView('grid');
 }
 
 /**
  * Listen for tab switch events and close the guide if user leaves grid tab.
  */
 function listenForTabSwitch() {
-  document.querySelectorAll('.tab[data-view]').forEach(tab => {
-    if (tab.dataset.view === 'grid') return; // Ignore grid tab clicks
+  // Listen on parent tabs (switching away from Cellar closes the guide)
+  document.querySelectorAll('.tab[data-parent]').forEach(tab => {
+    if (tab.dataset.parent === 'cellar') return; // Ignore Cellar parent tab clicks
+    addTrackedListener(NAMESPACE, tab, 'click', () => {
+      if (guideState.active) {
+        closeMoveGuide();
+      }
+    });
+  });
+  // Listen on sub-tabs within cellar (analysis sub-tab closes the guide)
+  document.querySelectorAll('.sub-tab[data-view]').forEach(tab => {
+    if (tab.dataset.view === 'grid') return; // Ignore grid sub-tab clicks
     addTrackedListener(NAMESPACE, tab, 'click', () => {
       if (guideState.active) {
         closeMoveGuide();

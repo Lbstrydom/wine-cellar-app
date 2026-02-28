@@ -635,7 +635,35 @@ async function handleAddCandidates() {
 /**
  * Initialize settings page event listeners.
  */
+/**
+ * Initialize collapsible settings sections with localStorage persistence.
+ */
+function initCollapsibleSections() {
+  document.querySelectorAll('.settings-section-toggle').forEach(btn => {
+    const sectionId = btn.dataset.sectionId;
+    const body = btn.closest('.settings-section')?.querySelector('.settings-section-body');
+    if (!body) return;
+
+    // Restore collapsed state from localStorage
+    const stored = localStorage.getItem(`settings-section-${sectionId}`);
+    if (stored === 'collapsed') {
+      btn.setAttribute('aria-expanded', 'false');
+      body.classList.add('collapsed');
+    }
+
+    btn.addEventListener('click', () => {
+      const expanded = btn.getAttribute('aria-expanded') === 'true';
+      btn.setAttribute('aria-expanded', String(!expanded));
+      body.classList.toggle('collapsed', expanded);
+      localStorage.setItem(`settings-section-${sectionId}`, expanded ? 'collapsed' : 'expanded');
+    });
+  });
+}
+
 export function initSettings() {
+  // Initialize collapsible sections
+  initCollapsibleSections();
+
   // Initialize display settings (text size)
   initTextSizeSelector();
 

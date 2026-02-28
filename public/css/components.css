@@ -9855,6 +9855,25 @@ body.move-guide-active #view-grid {
   visibility: hidden;
 }
 
+/* --- AI Picks cross-link (Pairing tab) --- */
+
+.pairing-ai-crosslink {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.9rem;
+  background: rgba(var(--accent-rgb), 0.07);
+  border: 1px solid rgba(var(--accent-rgb), 0.25);
+  border-radius: var(--radius, 8px);
+  margin-bottom: 1rem;
+  font-size: 0.875rem;
+  color: var(--text-muted);
+}
+
+.pairing-ai-crosslink span {
+  flex: 1;
+}
+
 /* --- Quick Pair --- */
 
 .restaurant-quick-pair-banner {
@@ -11681,6 +11700,23 @@ body.move-guide-active #view-grid {
   color: var(--accent);
 }
 
+.recipe-pairing-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0.1rem 0.35rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  line-height: 1.2;
+  opacity: 0.7;
+  transition: opacity 0.15s, border-color 0.15s;
+}
+
+.recipe-pairing-btn:hover {
+  opacity: 1;
+  border-color: var(--accent);
+}
+
 .recipe-menu-toggle.active {
   background: var(--accent);
   color: var(--bg-card);
@@ -12630,4 +12666,178 @@ body.move-guide-active #view-grid {
 .wine-row-check {
   cursor: pointer;
   accent-color: var(--accent, #d4a843);
+}
+
+/* ─── Phase 5: Grid section quick-nav ────────────────────────────────────── */
+.grid-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  gap: 0.5rem;
+  background: var(--bg-dark, #1a1a1a);
+  padding: 0.4rem 0.75rem;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.section-nav-btn {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.15);
+  color: var(--text-muted, #999);
+  border-radius: 4px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.section-nav-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-primary, #e0e0e0);
+}
+
+/* ─── Phase 5: Bottle form advanced toggle ───────────────────────────────── */
+.bottle-form-advanced {
+  /* Shown/hidden via the `hidden` attribute; no extra CSS needed for hide.
+     Add a subtle top separator when visible. */
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255,255,255,0.07);
+}
+#toggle-advanced-fields {
+  background: none;
+  border: none;
+  color: var(--accent, #d4a843);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.3rem 0;
+  text-decoration: underline;
+}
+#toggle-advanced-fields:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+
+/* ─── Phase 5: Settings collapsible sections ─────────────────────────────── */
+.settings-section-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--text-primary, #e0e0e0);
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.6rem 0;
+  cursor: pointer;
+  text-align: left;
+}
+.settings-section-toggle:hover {
+  color: var(--accent, #d4a843);
+}
+.settings-section-arrow {
+  font-size: 0.85rem;
+  transition: transform 0.2s;
+  flex-shrink: 0;
+}
+.settings-section-toggle[aria-expanded="false"] .settings-section-arrow {
+  transform: rotate(-90deg);
+}
+.settings-section-body.collapsed {
+  display: none;
+}
+
+/* ─── Phase 5: Sub-tabs row ──────────────────────────────────────────────── */
+.sub-tabs-row {
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.3rem 0.75rem 0;
+  background: var(--bg-nav, var(--bg-dark, #1a1a1a));
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  flex-wrap: wrap;
+}
+.sub-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted, #999);
+  font-size: 0.82rem;
+  padding: 0.3rem 0.7rem;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s;
+}
+.sub-tab:hover {
+  color: var(--text-primary, #e0e0e0);
+}
+.sub-tab.active {
+  color: var(--accent, #d4a843);
+  border-bottom-color: var(--accent, #d4a843);
+}
+@media (max-width: 768px) {
+  .sub-tabs-row {
+    width: 100%;
+    padding-left: 1rem;
+  }
+  .sub-tab {
+    font-size: 0.85em;
+  }
+}
+
+/* ─── Phase 5: Drink Soon view ───────────────────────────────────────────── */
+.drink-soon-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255,255,255,0.04);
+  border-radius: 6px;
+  padding: 0.7rem 0.9rem;
+  margin-bottom: 0.5rem;
+  border-left: 3px solid transparent;
+}
+.drink-soon-card.urgency-now {
+  border-left-color: var(--danger, #e05252);
+}
+.drink-soon-card.urgency-soon {
+  border-left-color: var(--warning, #d4a843);
+}
+.drink-soon-card-info {
+  flex: 1;
+}
+.drink-soon-card-name {
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+.drink-soon-card-vintage {
+  font-size: 0.78rem;
+  color: var(--text-muted, #999);
+}
+.drink-soon-tag {
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.drink-soon-tag.now {
+  background: var(--danger, #e05252);
+  color: #fff;
+}
+.drink-soon-tag.soon {
+  background: var(--warning, #d4a843);
+  color: #000;
+}
+
+/* ─── Phase 5: Pairing AI cross-link ─────────────────────────────────────── */
+.pairing-ai-crosslink {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: rgba(212,168,67,0.07);
+  border: 1px solid rgba(212,168,67,0.2);
+  border-radius: 6px;
+  margin-bottom: 1rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, #999);
+}
+.pairing-ai-crosslink .btn-small {
+  flex-shrink: 0;
 }
