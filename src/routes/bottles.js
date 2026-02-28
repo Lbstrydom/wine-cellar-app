@@ -133,38 +133,45 @@ router.post('/add', asyncHandler(async (req, res) => {
       // Try adjacency-aware placement
       const zoneRows = getZoneRowsForLocation(start_location);
 
-      // Build occupied set for all rows in the zone band
-      const allRowSlots = [];
-      for (const row of zoneRows) {
-        const maxCol = row === 'R1' ? GRID_CONSTANTS.CELLAR_ROW1_COLS : GRID_CONSTANTS.CELLAR_OTHER_COLS;
-        for (let c = 1; c <= maxCol; c++) allRowSlots.push(`${row}C${c}`);
+      // Guard: out-of-range start_location (e.g. R999C1) returns empty zoneRows.
+      // An empty zoneRows would produce IN () — invalid SQL → 500 error.
+      // In that case fall through to consecutive fill (same as no existing same-wine).
+      if (zoneRows.length > 0) {
+        // Build occupied set for all rows in the zone band
+        const allRowSlots = [];
+        for (const row of zoneRows) {
+          const maxCol = row === 'R1' ? GRID_CONSTANTS.CELLAR_ROW1_COLS : GRID_CONSTANTS.CELLAR_OTHER_COLS;
+          for (let c = 1; c <= maxCol; c++) allRowSlots.push(`${row}C${c}`);
+        }
+
+        const rowPlaceholders = allRowSlots.map((_, i) => `$${i + 2}`).join(',');
+        const rowOccupancy = await db.prepare(
+          'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + rowPlaceholders + ')'
+        ).all(req.cellarId, ...allRowSlots);
+
+        const occupiedSet = new Set(
+          rowOccupancy.filter(s => s.wine_id).map(s => s.location_code)
+        );
+
+        // Find adjacent slots one at a time, updating occupied + sameWine after each
+        const adjacentSlots = [];
+        const growingSameWine = [...sameWineSlots];
+
+        for (let i = 0; i < quantity; i++) {
+          const slot = findAdjacentToSameWine(zoneRows, occupiedSet, growingSameWine);
+          if (!slot) break;
+          adjacentSlots.push(slot);
+          occupiedSet.add(slot);          // Mark as occupied for next iteration
+          growingSameWine.push(slot);      // Treat as same-wine for next adjacency calc
+        }
+
+        if (adjacentSlots.length >= quantity) {
+          slotsToFill = adjacentSlots.slice(0, quantity);
+        }
       }
 
-      const rowPlaceholders = allRowSlots.map((_, i) => `$${i + 2}`).join(',');
-      const rowOccupancy = await db.prepare(
-        'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + rowPlaceholders + ')'
-      ).all(req.cellarId, ...allRowSlots);
-
-      const occupiedSet = new Set(
-        rowOccupancy.filter(s => s.wine_id).map(s => s.location_code)
-      );
-
-      // Find adjacent slots one at a time, updating occupied + sameWine after each
-      const adjacentSlots = [];
-      const growingSameWine = [...sameWineSlots];
-
-      for (let i = 0; i < quantity; i++) {
-        const slot = findAdjacentToSameWine(zoneRows, occupiedSet, growingSameWine);
-        if (!slot) break;
-        adjacentSlots.push(slot);
-        occupiedSet.add(slot);          // Mark as occupied for next iteration
-        growingSameWine.push(slot);      // Treat as same-wine for next adjacency calc
-      }
-
-      if (adjacentSlots.length >= quantity) {
-        slotsToFill = adjacentSlots.slice(0, quantity);
-      } else {
-        // Not enough adjacent slots — fall back to consecutive
+      if (!slotsToFill) {
+        // Not enough adjacent slots (or out-of-range location) — fall back to consecutive
         if (emptyConsecutive.length < quantity) {
           return res.status(400).json({
             error: `Not enough empty slots. Found ${emptyConsecutive.length}, need ${quantity}.`

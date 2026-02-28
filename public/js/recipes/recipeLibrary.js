@@ -291,7 +291,7 @@ async function loadSyncBanners(bannerEl) {
     const creds = await getCredentials();
     if (creds?.credentials) {
       for (const c of creds.credentials) {
-        if (c.source === 'paprika' || c.source === 'mealie') credentialProviders.add(c.source);
+        if (c.source_id === 'paprika' || c.source_id === 'mealie') credentialProviders.add(c.source_id);
       }
     }
   } catch { /* credentials endpoint unavailable */ }
@@ -393,8 +393,8 @@ async function loadSyncBanners(bannerEl) {
  * @param {HTMLElement} bannerEl - Banner container for refresh
  */
 async function autoSyncIfStale(provider, bannerEl) {
-  // Cellar-scoped session key
-  const cellarId = sessionStorage.getItem('wineapp.activeCellarId') || 'default';
+  // Cellar-scoped session key — read from localStorage using the app's canonical key
+  const cellarId = localStorage.getItem('active_cellar_id') || 'default';
   const sessionKey = `wineapp.autosync.${cellarId}.${provider}`;
   const failKey = `wineapp.autosync.failed.${cellarId}.${provider}`;
 

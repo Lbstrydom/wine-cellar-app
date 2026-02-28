@@ -984,6 +984,9 @@ function handleWineCardClick(wine) {
   showWineModalFromList(wine);
 }
 
+/** AbortController for colour picker delegated listeners — replaced on each table render */
+let _colourPickerAbort = null;
+
 /**
  * Render wine list as a sortable, inline-editable table.
  * Uses plain <table> (no virtual scrolling) so inline edit inputs are stable.
@@ -1142,6 +1145,11 @@ function renderWineTable(wines, container) {
   });
 
   // --- Colour picker: delegated click + keyboard handlers ---
+  // Abort any listeners from the previous render to prevent accumulation on re-render
+  if (_colourPickerAbort) _colourPickerAbort.abort();
+  _colourPickerAbort = new AbortController();
+  const _colourPickerSignal = _colourPickerAbort.signal;
+
   function closeAllColourPickers(exceptPicker) {
     container.querySelectorAll('.colour-picker-dropdown:not([hidden])').forEach(dd => {
       const picker = dd.closest('.colour-picker');
@@ -1216,7 +1224,7 @@ function renderWineTable(wines, container) {
     if (!e.target.closest('.colour-picker')) {
       closeAllColourPickers();
     }
-  });
+  }, { signal: _colourPickerSignal });
 
   container.addEventListener('keydown', (e) => {
     const picker = e.target.closest('.colour-picker');
@@ -1273,7 +1281,7 @@ function renderWineTable(wines, container) {
       dd.hidden = true;
       trigger.setAttribute('aria-expanded', 'false');
     }
-  });
+  }, { signal: _colourPickerSignal });
 
   // Wire sort headers with visual arrow indicators
   container.querySelectorAll('.sortable').forEach(th => {

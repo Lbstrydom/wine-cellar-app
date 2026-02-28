@@ -443,6 +443,53 @@ describe('POST /bottles/add — adjacency placement (Phase 6.2)', () => {
     expect(mockFindAdjacent).not.toHaveBeenCalled();
     expect(res.body.locations).toEqual(['R5C1', 'R5C2']);
   });
+
+  it('falls back to consecutive fill when start_location row exceeds CELLAR_MAX_ROW (zoneRows guard)', async () => {
+    // R25C1 is beyond CELLAR_MAX_ROW (19) → getZoneRowsForLocation returns []
+    // Without the if (zoneRows.length > 0) guard, an empty IN () would produce invalid SQL → 500
+    db.prepare.mockImplementation((sql) => ({
+      get: vi.fn(() => {
+        if (sql.includes('SELECT id FROM wines')) return Promise.resolve({ id: 1 });
+        return Promise.resolve(null);
+      }),
+      all: vi.fn(() => {
+        if (sql.includes('AND wine_id = $2')) {
+          // Existing same-wine bottle — triggers adjacency code path
+          return Promise.resolve([{ location_code: 'R5C1' }]);
+        }
+        if (sql.includes('IN (')) {
+          // Consecutive slot check for R25C1 — report it as empty
+          return Promise.resolve([{ location_code: 'R25C1', wine_id: null }]);
+        }
+        return Promise.resolve([]);
+      }),
+      run: vi.fn(() => Promise.resolve({ changes: 1 }))
+    }));
+
+    mockTransaction.mockImplementation(async (fn) => {
+      let getCalls = 0;
+      const txDb = {
+        prepare: vi.fn(() => ({
+          get: vi.fn(() => {
+            getCalls++;
+            return Promise.resolve({ cnt: getCalls === 1 ? '5' : '6' });
+          }),
+          run: vi.fn(() => Promise.resolve({ changes: 1 }))
+        }))
+      };
+      mockWrapClient.mockReturnValue(txDb);
+      return fn({});
+    });
+
+    const res = await request(app)
+      .post('/bottles/add')
+      .send({ wine_id: 1, start_location: 'R25C1', quantity: 1 });
+
+    expect(res.status).toBe(200);
+    // findAdjacentToSameWine must NOT be called — zoneRows was [] (row 25 > CELLAR_MAX_ROW)
+    expect(mockFindAdjacent).not.toHaveBeenCalled();
+    expect(res.body.locations).toEqual(['R25C1']);
+  });
 });
 
 // ───────────────────────────────────────────────────────────
