@@ -183,7 +183,16 @@ The user performed a systematic UX audit of every tab, dialog, and sub-view of t
 
 ## Phase 5: Consolidate Pairing & Settings Architecture ✅ DONE (28 Feb 2026)
 
-**Shipped:** 5.7, 5.8, 5.6, 5.5, 5.2, 5.4, 5.3, 5.1 — all items complete. Cache bumped to v175 / ?v=20260228a. All 2837 unit tests pass. Committed `466be8d`, deployed to Railway.
+**Shipped:** 5.7, 5.8, 5.6, 5.5, 5.2, 5.4, 5.3, 5.1 — all items complete. Cache bumped to v176 / ?v=20260228b. All 2837 unit tests pass. Committed `466be8d`, review fixes `08241b4`.
+
+**Post-ship review fixes** (`08241b4`, 28 Feb 2026):
+| # | Severity | Fix |
+|---|----------|-----|
+| 1 | HIGH | Recipe Pair button now clicks `#ask-sommelier` (not `dispatchEvent('input')` which had no listener) |
+| 2 | MEDIUM | sommelier.js uses `import('./recommendations.js').then(({ expandPanel }) => ...)` instead of DOM toggle click |
+| 3 | MEDIUM | Full ARIA wiring: IDs on all parent/sub-tabs, `aria-controls` on sub-tabs, `role=tablist`+`aria-label` on sub-tab rows, all `aria-labelledby` on view panels now point to real element IDs |
+| 4 | MEDIUM | Drink Soon dashboard complete: summary bar (overdue/approaching counts), per-card 🍷 Pair button (auto-triggers search), Settings link (scrolls to drink-soon-rules section) |
+| 5 | LOW | Single-view parent tabs (pairing, kitchen, settings) now carry `data-view` for backward compat per plan spec |
 
 **Implementation order** (simple → complex): 5.7 → 5.8 → 5.6 → 5.5 → 5.2 → 5.4+5.3 → 5.1
 
