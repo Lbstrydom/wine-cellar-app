@@ -10,16 +10,30 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 28 Feb 2026**:
-- **Comprehensive UX Overhaul (Phases 1-4) — COMPLETE** ✅:
-  - Systematic UX audit findings addressed across 4 phases (16 files changed, ~900 lines added).
-  - Plan document: `docs/bug1-plan.md` (reviewer-verified 5-phase plan; Phases 1-4 implemented, Phase 5 deferred).
+- **Search Pipeline Overhaul (Phases 1-6) — COMPLETE** ✅:
+  - Comprehensive audit and refactor of the 3-tier rating search pipeline. ~300 lines of duplication eliminated, 3 bugs fixed, model optimization, structured parsers wired, deterministic JSON output.
+  - Plan document: `.claude/plans/fancy-noodling-candle.md` (7-phase plan; Phases 1-6 implemented, Phase 7 optional Zod schema deferred).
+  - **Phase 1 — P0 Bug Fixes**: (1A) `queryVariants.primary` → `queryVariants[0]` in `searchProviders.js` — query variants were never used. (1B) Locale passthrough in `searchGoogle.js` recursive retry. (1C) SERP cache added to `serpAi.js` — was bypassing cache, causing duplicate BrightData charges.
+  - **Phase 2 — DRY Consolidation**: (2A) Shared `threeTierWaterfall.js` module extracted from `ratingFetchJob.js`. (2B) Refactored 3 callers (`ratingFetchJob.js`, `ratingsTier.js`, `batchFetchJob.js`) to use shared module — batch ops now use full 3-tier waterfall instead of Tier 3 only. (2C) Shared `jsonUtils.js` with `extractJsonWithRepair()` — replaced 4 duplicate JSON repair/extraction implementations across `claudeWebSearch.js`, `geminiSearch.js`, `serpAi.js`, `ratingExtraction.js`.
+  - **Phase 3 — Tier 0 Structured Parsers**: Wired existing deterministic parsers (`structuredParsers.js`) into `ratingExtraction.js` as Tier 0. Vivino `__NEXT_DATA__`, JSON-LD, microdata extracted without LLM calls. ~20-30% of fetched pages skip Claude entirely.
+  - **Phase 4 — Model + Token Optimization**: Added `ratingExtraction` task mapped to Haiku 4.5 for simple text→JSON extraction. `serpAi.js` and `geminiSearch.js` use Haiku instead of Sonnet for extraction. `serpAi.js` max_tokens bumped 500→800 to prevent JSON truncation.
+  - **Phase 5 — Deterministic JSON Output**: `claudeWebSearch.js` now uses `save_wine_ratings` tool definition for structured output via `tool_use` block — no JSON parsing needed. Falls back to text extraction with `extractJsonWithRepair` if no tool_use block. Added system prompt for focused extraction.
+  - **Phase 6 — Producer Hedge Fix**: Fixed `searchProviders.js` producer search cancellation timing — targeted searches awaited first, confidence checked, producer aborted early if sufficient.
+  - **Code Review Fixes**: Removed dead code in `recipeLibrary.js` (unused variables). Fixed N+1 DB reads in `settings.js` credentials endpoint.
+  - New files: `src/services/search/threeTierWaterfall.js`, `src/services/shared/jsonUtils.js`.
+  - **Validation status**: `npm run test:unit` passes at **2859 tests across 117 files**. Benchmark: hit@1 82%, hit@3 96%, MRR 0.89.
+
+- **Comprehensive UX Overhaul (Phases 1-5) — COMPLETE** ✅:
+  - Systematic UX audit findings addressed across 5 phases (16+ files changed, ~900 lines added).
+  - Plan document: `docs/bug1-plan.md` (reviewer-verified 5-phase plan).
   - **Phase 1 — Bug Fixes**: `CAST(COUNT(s.id) AS INTEGER)` in `wines.js` GET endpoint fixes PostgreSQL string concatenation. `Number(w.bottle_count)` defence in `app.js`. Empty parentheses prevention via `replace(/\s*\(\s*\)\s*$/, '')` in POST/PUT routes. Step label `gap: 24px` in `components.css`.
   - **Phase 2 — Wine List Table View**: Expanded GET `/api/wines` with 7 new columns (producer, country, region, grapes, drink_from, drink_until, zone_id). `fetchWines()` limit raised to 500. New `renderWineTable()` (~300 lines) with inline click-to-edit, type coercion (parseInt/parseFloat/null), all 7 colour options, sortable headers. New `batchFetchRatings()` API function for bulk rating search. Table/card toggle with `localStorage` persistence.
   - **Phase 3 — Move System**: `analysis.js` prefers `layoutProposal.sortPlan` as primary move source, mapped to `suggestedMoves` format. `moves.js` zone-grouped rendering with section headers. New `detectCycles()` for circular move chains with buffer slot verification. Consolidation wording fix: "are in non-ideal zones".
-  - **Phase 4 — UX Polish**: Modal X close button. Semantic `<button>` header stats with ARIA labels and `initStatButtons()` navigation. Zone banding (`zone-band-even`/`zone-band-odd`) in grid. Full name tooltips + middle truncation (`\u2026`). Urgency icons (🕐 drink now, ⏳ drink soon). Removed duplicate "Reorganise Zones" CTAs from issue digest. Missing colour filter options (orange, dessert, fortified) added.
+  - **Phase 4 — UX Polish**: Modal X close button. Semantic `<button>` header stats with ARIA labels and `initStatButtons()` navigation. Zone banding (`zone-band-even`/`zone-band-odd`) in grid. Full name tooltips + middle truncation (`\u2026`). Urgency icons (drink now, drink soon). Removed duplicate "Reorganise Zones" CTAs from issue digest. Missing colour filter options (orange, dessert, fortified) added.
+  - **Phase 5 — Tab Consolidation + Progressive Disclosure**: Tab system consolidated with pairing links, progressive disclosure panels, expandable sections. ARIA improvements, auto-trigger fixes, Drink Soon badge.
   - Cache version bumped v172→v174, SW static assets updated.
   - Test fix: `rowCoverageIntegrity.test.js` mock leakage resolved via `vi.importActual()` for `cellarLayoutSettings.js`.
-  - **Validation status**: `npm run test:unit` passes at **2837 tests across 115 files**.
+  - **Validation status**: `npm run test:unit` passes at **2859 tests across 117 files**.
 
 **Previous Enhancements** (27 Feb 2026):
 - **Shopping Cart / Buying Workflow (Phases 1-6) — COMPLETE** ✅:
@@ -381,16 +395,18 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Previous Enhancements** (17 Jan 2026):
 - **3-Tier Waterfall Rating Search Strategy - COMPLETE** ✅:
-  - **Tier 1: Quick SERP AI (~3-8s)** - Extracts ratings from Google AI Overview, Knowledge Graph, Featured Snippets before expensive API calls
-  - **Tier 2: Gemini Hybrid (~15-45s)** - Gemini grounded search with Claude extraction for comprehensive coverage
-  - **Tier 3: Legacy Deep Scraping** - Full web scraping with page fetches (reuses SERP results from Tier 1)
-  - New service: `serpAi.js` for Tier 1 extraction
-  - SERP result reuse between tiers avoids duplicate API calls
+  - **Tier 0: Deterministic Structured Parsers** — Vivino `__NEXT_DATA__`, JSON-LD, microdata extraction without LLM calls (~20-30% of fetches)
+  - **Tier 1: Quick SERP AI (~3-8s)** — Extracts ratings from Google AI Overview, Knowledge Graph, Featured Snippets. SERP cache prevents duplicate BrightData charges.
+  - **Tier 2a: Claude Web Search (~10-30s)** — Uses `web_search_20260209` + `web_fetch_20260209` tools with `save_wine_ratings` tool for deterministic JSON output
+  - **Tier 2b: Gemini Hybrid (~15-45s)** — Fallback: Gemini grounded search + Haiku extraction
+  - **Tier 3: Legacy Deep Scraping** — Full web scraping with page fetches (reuses SERP results from Tier 1)
+  - Shared waterfall module: `threeTierWaterfall.js` (DRY, no DB operations — callers handle persistence)
+  - Shared JSON utilities: `jsonUtils.js` with `extractJsonWithRepair()` used across all tiers
   - Circuit breakers protect against cascading failures (`serp_ai`, `gemini_hybrid`)
-  - AbortController for clean Gemini timeout handling
+  - AbortController for clean Gemini timeout + producer search hedge cancellation
   - Cost tracking logs with `CostTrack` category for latency/tier analysis
-  - Updated Gemini model to `gemini-3.0-flash` (2026)
-  - Files: `serpAi.js` (new), `ratingFetchJob.js`, `ratings.js`, `claude.js`, `geminiSearch.js`
+  - Gemini model: `gemini-3.0-flash` (base ID routes to latest stable)
+  - Files: `threeTierWaterfall.js`, `serpAi.js`, `claudeWebSearch.js`, `geminiSearch.js`, `ratingExtraction.js`, `structuredParsers.js`, `jsonUtils.js`
 
 - **Puppeteer Sandbox Fix (P0)** ✅:
   - Refactored `puppeteerScraper.js` from MCP wrapper to direct `puppeteer.launch()`
@@ -438,7 +454,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Key Differentiators**:
 - Progressive Web App with offline support and cross-platform installation
 - Multi-source rating aggregation with data provenance tracking
-- **3-Tier Waterfall Rating Search** ✨ NEW: Quick SERP AI → Gemini Hybrid → Legacy Scraping
+- **4-Tier Waterfall Rating Search**: Structured Parsers → SERP AI → Claude Web Search / Gemini Hybrid → Legacy Scraping
 - Claude AI integration for pairing, drink recommendations, and tasting analysis
 - **Cloud-native deployment**: Railway + Supabase PostgreSQL
 - **Award Extractor Skill** for structured PDF processing
@@ -447,7 +463,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 - Dynamic cellar zone clustering with 40+ wine categories
 - Automated award database with PDF import
 - Secure HTTPS access via custom domain
-- Comprehensive testing infrastructure (1735+ tests, 62 test files, 85% coverage)
+- Comprehensive testing infrastructure (2859+ tests, 117 test files, 85% coverage)
 - Full-text search with PostgreSQL
 - Virtual list rendering for 1000+ bottle collections
 

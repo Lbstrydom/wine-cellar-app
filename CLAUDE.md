@@ -30,6 +30,7 @@ src/
 │   ├── reduceNow.js       # /api/reduce-now/* endpoints
 │   └── stats.js           # /api/stats endpoint
 ├── config/
+│   ├── aiModels.js        # AI model registry, task→model mapping, thinking config
 │   └── styleIds.js        # Centralized style bucket IDs & labels (11 styles)
 ├── services/
 │   ├── ai/                # Claude/OpenAI/Gemini integration
@@ -39,8 +40,8 @@ src/
 │   ├── ratings/           # Rating extraction & normalization
 │   ├── recipe/            # Buying guide, shopping cart, style inference
 │   ├── scraping/          # Web scraping & document fetching
-│   ├── search/            # Google/SERP search pipeline
-│   ├── shared/            # Cross-domain utilities (cache, circuit breaker, etc.)
+│   ├── search/            # Google/SERP search pipeline, waterfall orchestration
+│   ├── shared/            # Cross-domain utilities (cache, circuit breaker, JSON utils, etc.)
 │   ├── wine/              # Wine identity, parsing, drinking windows
 │   ├── zone/              # Zone management & reconfiguration
 │   └── *.js               # 5 root orchestrators (acquisitionWorkflow, palateProfile, etc.)
@@ -1157,7 +1158,10 @@ All model selection is centralized in `src/config/aiModels.js`. Tasks map to mod
 | `pairingAudit` | Opus 4.6 | medium |
 | `webSearch` | Sonnet 4.6 | none |
 | `sommelier`, `parsing`, `ratings` | Sonnet 4.6 | none |
-| `wineClassification` | Haiku 4.5 | none |
+| `menuParsing`, `tastingExtraction` | Sonnet 4.6 | none |
+| `ratingExtraction` | Haiku 4.5 | none |
+| `signalAudit` | Haiku 4.5 | none |
+| `wineClassification`, `simpleValidation` | Haiku 4.5 | none |
 
 ```javascript
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
@@ -1431,25 +1435,31 @@ items.sort((a, b) => {
 
 ## Search Pipeline Patterns
 
-### 3-Tier Waterfall Strategy
+### Waterfall Strategy
 
-Rating fetches use a cascading waterfall (`src/jobs/ratingFetchJob.js`):
+Rating fetches use a cascading waterfall via shared `src/services/search/threeTierWaterfall.js`:
 
 | Tier | Method | Latency | API Keys Needed |
 |------|--------|---------|-----------------|
+| 0 | Deterministic Structured Parsers | <10ms | None |
 | 1 | Quick SERP AI (BrightData) | 3-8s | `BRIGHTDATA_API_KEY` |
 | 2a | **Claude Web Search** (primary) | 10-30s | `ANTHROPIC_API_KEY` only |
 | 2b | Gemini Hybrid (fallback) | 15-45s | `GEMINI_API_KEY` |
 | 3 | Legacy Deep Scraping | 30-60s | `BRIGHTDATA_API_KEY` |
 
+**Tier 0: Structured Parsers** (`src/services/ratings/structuredParsers.js`):
+Deterministic extraction from Vivino `__NEXT_DATA__`, JSON-LD `aggregateRating`, microdata, and Wine-Searcher pages. Wired into `ratingExtraction.js` — pages that parse structurally skip the Claude extraction call entirely (~20-30% of fetches).
+
 **Tier 2a: Claude Web Search** (`src/services/search/claudeWebSearch.js`):
-Uses Anthropic's `web_search_20260209` and `web_fetch_20260209` tools with dynamic filtering.
-Claude autonomously searches, fetches pages, writes Python to filter results, and extracts
-structured wine data — all in a single API call. Requires beta header:
+Uses Anthropic's `web_search_20260209` and `web_fetch_20260209` tools with a `save_wine_ratings` tool definition for deterministic JSON output via `tool_use` block. Falls back to text extraction with `extractJsonWithRepair()` if no tool_use block. Requires beta header:
 `anthropic-beta: code-execution-web-tools-2026-02-09`
 
 **Tier 2b: Gemini Hybrid** (`src/services/search/geminiSearch.js`):
-Fallback when Claude Web Search fails or circuit is open. Uses Gemini grounded search + Claude extraction (2 API calls).
+Fallback when Claude Web Search fails or circuit is open. Uses Gemini grounded search + Haiku extraction (2 API calls). Gemini model: `gemini-3.0-flash` (base ID routes to latest stable).
+
+**Shared Utilities**:
+- `src/services/search/threeTierWaterfall.js` — Core waterfall logic, tier timeout constants, logging. Does NO database operations — callers handle persistence.
+- `src/services/shared/jsonUtils.js` — `extractJsonWithRepair()` used across all tiers for robust JSON extraction from LLM responses.
 
 ### Query Builder Service Pattern
 
@@ -1463,7 +1473,7 @@ const { hl, gl } = getLocaleParams(wine);
 
 // Build query variants by intent
 const queries = buildQueryVariants(wine, 'reviews');
-// Returns: { primary: "...", fallback: "..." }
+// Returns: string[] (e.g., ["producer wine vintage review", "wine vintage rating"])
 
 // Check if retry needed
 if (shouldRetryWithoutOperators(results, query)) {
