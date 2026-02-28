@@ -66,7 +66,7 @@ router.put('/:key', validateParams(settingsKeySchema), validateBody(updateSettin
 router.get('/credentials', asyncHandler(async (req, res) => {
   const credentials = await db.prepare(`
     SELECT source_id, auth_status, last_used_at, created_at, updated_at,
-           CASE WHEN username_encrypted IS NOT NULL THEN 1 ELSE 0 END as has_username
+           username_encrypted
     FROM source_credentials
     WHERE cellar_id = $1
   `).all(req.cellarId);
@@ -75,10 +75,8 @@ router.get('/credentials', asyncHandler(async (req, res) => {
   const result = [];
   for (const cred of credentials) {
     let maskedUsername = null;
-    if (cred.has_username) {
-      const row = await db.prepare('SELECT username_encrypted FROM source_credentials WHERE cellar_id = $1 AND source_id = $2')
-        .get(req.cellarId, cred.source_id);
-      const username = decrypt(row?.username_encrypted);
+    if (cred.username_encrypted) {
+      const username = decrypt(cred.username_encrypted);
       if (username) {
         // Mask email: show first 2 chars + ... + domain
         const atIndex = username.indexOf('@');
@@ -94,7 +92,7 @@ router.get('/credentials', asyncHandler(async (req, res) => {
       source_id: cred.source_id,
       auth_status: cred.auth_status,
       last_used_at: cred.last_used_at,
-      has_credentials: cred.has_username === 1,
+      has_credentials: !!cred.username_encrypted,
       masked_username: maskedUsername
     });
   }

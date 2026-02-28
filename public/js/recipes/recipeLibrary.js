@@ -136,7 +136,6 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
         btn.addEventListener('click', (e) => {
           e.stopPropagation();
           const id = Number(btn.dataset.id);
-          const name = btn.dataset.name;
           const recipe = recipeState.recipes.find(r => r.id === id);
           if (!recipe) return;
           const added = toggleMenuRecipe({
@@ -154,7 +153,6 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
           // Update menu builder button count
           const menuBtn = document.getElementById('toggle-menu-btn');
           if (menuBtn) {
-            const { menuState } = { menuState: { selectedIds: [] } };
             try {
               const stored = sessionStorage.getItem('wineapp.recipes.menu');
               const parsed = stored ? JSON.parse(stored) : { selectedIds: [] };
