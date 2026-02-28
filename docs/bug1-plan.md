@@ -14,7 +14,7 @@ The user performed a systematic UX audit of every tab, dialog, and sub-view of t
 | Phase 2 | ✅ Done (2.1, 2.2, 2.3, 2.4) | Table view, inline edit, batch ratings, toggle |
 | Phase 3 | ✅ Done (3.1, 3.2, 3.3) | sortPlan primary, zone-grouped, cycle detection |
 | Phase 4 | ✅ Done (4.1-4.4, 4.6, 4.7) | 4.5 (history grouping) deferred |
-| Phase 5 | Deferred | Architectural — future sessions |
+| Phase 5 | ✅ Done (5.1–5.8) | Shipped 28 Feb 2026 — see notes below |
 
 ---
 
@@ -181,51 +181,481 @@ The user performed a systematic UX audit of every tab, dialog, and sub-view of t
 
 ---
 
-## Phase 5: Consolidate Pairing & Settings Architecture
+## Phase 5: Consolidate Pairing & Settings Architecture ✅ DONE (28 Feb 2026)
 
-### 5.1 Unify food-to-wine pairing experience
-- Merge "Tonight's Recommendations" (Cellar Grid) and "From My Cellar" (Find Pairing) into single pairing view
-- "Tonight's Recommendations" panel on grid defaults to collapsed
-- Recipe-level "Find Wine Pairing" deep-links to unified pairing pre-filled with recipe flavour profile
-- Single consistent UI: text input + optional occasion/protein tags + source/colour filters
+**Shipped:** 5.7, 5.8, 5.6, 5.5, 5.2, 5.4, 5.3, 5.1 — all items complete. Cache bumped to v175 / ?v=20260228a. All 2837 unit tests pass. Committed `466be8d`, deployed to Railway.
 
-### 5.2 Break Settings into sub-sections
-- Group into collapsible sections with anchor navigation:
-  - Display (theme, text size)
-  - Drink Soon Rules (drinking window, fallback, evaluate)
-  - Cellar Layout (colour order, fill direction, zone threshold)
-  - Awards Database (→ own expandable section or sub-route)
-  - Integrations (Vivino, Decanter, Paprika, Mealie → behind "Advanced" toggle)
-  - Backup & Export
-  - About
-- Awards Database gets its own header and collapse toggle
+**Implementation order** (simple → complex): 5.7 → 5.8 → 5.6 → 5.5 → 5.2 → 5.4+5.3 → 5.1
 
-### 5.3 Create "Drink Soon" dashboard
-- Dedicated view (or prominent section) consolidating:
-  - All drink-soon wines with reasons
-  - Quick actions (mark as opened, recommend pairing)
-  - Rule adjustment link to Settings
-- Header stat "9 Drink Soon" links here
+### Audit Findings Disposition (28 Feb 2026)
 
-### 5.4 Reduce top-level tabs (7 → 5)
-- Proposed grouping: **Cellar** (Grid + Analysis), **Pairing**, **Kitchen** (Recipes), **Collection** (Wine List + History), **Settings**
-- Sub-tabs within each group
+All 12 findings from independent audit incorporated:
 
-### 5.5 Improve Add dialogs
-- **Add Recipe dialog**: match dark theme (currently white background fields)
-- **Add New Wine form**: progressive disclosure — show Name, Colour, Vintage first; "More fields" toggle reveals Grapes, Producer, Region, Drinking Window, etc.
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| 1 | HIGH | Tab handlers wired in `startAuthenticatedApp()`, not `bindEvents()` | ✅ Accept — plan referenced wrong function |
+| 2 | HIGH | `[data-view]` migration scope incomplete (10 refs across 4 files) | ✅ Accept — keep `data-view` on all navigable buttons + export `switchView` |
+| 3 | HIGH | Single-view parents lose `data-view` target | ✅ Accept — single-view parents keep both `data-parent` AND `data-view` |
+| 4 | HIGH | Recipe deep-link: wrong file, switchView not exported, `input` event won't trigger | ✅ Accept all 3 — fix file ref to `recipeLibrary.js`; export `switchView`; click Ask button |
+| 5 | HIGH | AI Picks reuse underestimates refactor; `#cellar-mode` doesn't exist | ✅ Accept — scale back to cross-link approach instead of embedded clone |
+| 6 | MEDIUM | AI Picks visible in restaurant mode | ✅ Accept (moot with cross-link approach) |
+| 7 | MEDIUM | Quick nav ignores dynamic storage areas | ✅ Accept — hide nav when `hasAreas === true` |
+| 8 | MEDIUM | Tab ARIA attributes under-specified | ✅ Accept — full ARIA added to plan |
+| 9 | MEDIUM | Mobile menu close misses sub-tabs | ✅ Accept — extend listener to `.sub-tab` class |
+| 10 | MEDIUM | Bottle initializer: `initBottleModal()` doesn't exist | ✅ Accept — wire in `initBottles()` in `bottles.js` |
+| 11 | LOW | Quick-nav should use `<button>` not `<a>` | ✅ Accept — change to semantic buttons |
+| 12 | LOW | `VALID_VIEWS` needs `'drinksoon'` (and `'settings'` also missing) | ✅ Accept — add both to allowlist |
+
+**Open Questions resolved:**
+- **Navigation API**: Export `switchView` from `app.js`. Modules use direct import instead of DOM-click hacks
+- **Drink Soon**: Separate view with distinct dashboard UI (not a Wine List filter preset)
+- **AI Picks in restaurant mode**: Moot — using cross-link approach
+
+### Second Audit Findings Disposition (28 Feb 2026)
+
+7 unique findings from second reviewer (overlapping items with first audit omitted):
+
+| # | Severity | Finding | Verdict |
+|---|----------|---------|---------|
+| A1 | MEDIUM | Style field is currently in PRIMARY HTML group — plan moves it to secondary | ✅ Accept as intentional — Style is useful but not essential for quick entry; callout added |
+| A2 | MEDIUM | Quantity in separate `#quantity-section`, mode-dependent visibility | ✅ Accept — Quantity stays primary (outside advanced wrapper); DOM structure note added |
+| A3 | LOW | Settings section count is 11 (not ~9) — all `data-section-id` values needed | ✅ Accept — all 11 IDs enumerated in plan |
+| A4 | HIGH | `switchView()` existing tab deactivation loop (line 1393-1398) would undo `activateParentTab()` | ✅ Accept — loop must be REPLACED not augmented; plan corrected |
+| A5 | MEDIUM | URL deep-linking `?view=` already exists; needs `'drinksoon'` in VALID_VIEWS; parent-level URL resolution | ✅ Accept — already covered by VALID_VIEWS update; parent-level URL mapping added |
+| A6 | LOW | Mobile sub-tab UX undefined | ✅ Accept — sub-tabs inline below parent tabs in mobile drawer; CSS note added |
+| A7 | LOW | Storage areas rendering creates dynamic zone wrappers without IDs | ℹ️ Noted — moot since nav is hidden entirely when `hasAreas`; no dynamic IDs needed |
+
+---
+
+### 5.7 "Tonight's Recommendations" panel — defaults to collapsed
+
+**File**: `public/js/recommendations.js`
+
+- Change `recState.isCollapsed = false` → `true`
+- In `initRecommendations()`, after binding toggle button, apply initial collapsed CSS state directly (do NOT call `togglePanel()` which would flip the state):
+  ```js
+  if (recState.isCollapsed) {
+    panel.classList.add('collapsed');
+    const icon = toggleBtn?.querySelector('.toggle-icon');
+    if (icon) icon.textContent = '+';
+    toggleBtn?.setAttribute('aria-expanded', 'false');
+    if (toggleBtn) toggleBtn.title = 'Show panel';
+  }
+  ```
+
+### 5.8 Search overlay keyboard shortcut — platform-aware
+
+**File**: `public/js/globalSearch.js`
+
+- Add `updateShortcutDisplay()` called from `initGlobalSearch()`:
+  ```js
+  function updateShortcutDisplay() {
+    const isMac = /Mac|iPhone|iPad|iPod/i.test(navigator.platform) ||
+      /Mac/i.test(navigator.userAgent);
+    const kbd = document.querySelector('#global-search-trigger kbd');
+    if (kbd) kbd.textContent = isMac ? '⌘K' : 'Ctrl+K';
+  }
+  ```
+- Keyboard handler already checks `e.metaKey || e.ctrlKey` — no change needed there
 
 ### 5.6 Fridge/Cellar quick navigation
-- Sticky anchor nav: "Fridge ↑ / Cellar ↓" toggle when scrolling Cellar Grid
-- Or: mini-tab toggle at top of grid view
 
-### 5.7 "Tonight's Recommendations" panel
-- Default to collapsed on load
-- Or: move below the main cellar grid
+**Files**: `public/index.html`, `public/css/styles.css`, `public/js/app.js`
 
-### 5.8 Search overlay keyboard shortcut
-- Show "Ctrl+K" on Windows/Linux instead of "⌘K"
-- Detect platform and display appropriate shortcut
+- Add a sticky nav row inside `#view-grid` directly below the recommendations section. Use `<button>` not `<a>` [audit LOW-1]:
+  ```html
+  <nav class="grid-section-nav" id="grid-section-nav" aria-label="Jump to section">
+    <button type="button" class="section-nav-btn" id="nav-to-fridge">▲ Fridge</button>
+    <button type="button" class="section-nav-btn" id="nav-to-cellar">▼ Cellar</button>
+  </nav>
+  ```
+- Add `id="fridge-section"` to existing `.fridge-section.zone` div; add `id="cellar-section"` to the adjacent `.zone` cellar div
+- Bind click in `startAuthenticatedApp()` (where existing nav handlers live) [audit HIGH-1]:
+  ```js
+  document.getElementById('nav-to-fridge')?.addEventListener('click', () =>
+    document.getElementById('fridge-section')?.scrollIntoView({ behavior: 'smooth' }));
+  document.getElementById('nav-to-cellar')?.addEventListener('click', () =>
+    document.getElementById('cellar-section')?.scrollIntoView({ behavior: 'smooth' }));
+  ```
+- **Hide when storage areas active** [audit MED-2, A7] — in `loadLayout()` (app.js line ~678). When `hasAreas === true`, `renderStorageAreas()` creates dynamic zone wrappers without IDs (in `grid.js` line 319). Rather than adding nav anchors to dynamic zones, hide the nav entirely since fridge/cellar sections don't exist in areas mode:
+  ```js
+  const gridSectionNav = document.getElementById('grid-section-nav');
+  if (gridSectionNav) gridSectionNav.style.display = hasAreas ? 'none' : '';
+  ```
+- CSS: `position: sticky; top: 0; z-index: 10; display: flex; gap: 0.5rem; background: var(--bg-dark); padding: 0.4rem;`
+
+### 5.5 Improve Add dialogs
+
+**Files**: `public/index.html` (bottle modal), `public/js/bottles.js`, `public/css/styles.css`
+
+**Add Wine — progressive disclosure:**
+- Primary fields (always visible): Wine Name, Colour, Vintage, Quantity
+- Secondary fields (collapsed by default): Style _(currently in primary group — intentionally demoted for quick-entry UX)_ [audit A1], Grapes, Producer, Region, Country, Price, Drinking Window
+- **DOM note** [audit A2]: Quantity lives in a separate `<div id="quantity-section">` outside `#new-wine-section`, with mode-dependent visibility (add vs edit). It stays outside the advanced wrapper — only fields INSIDE `#new-wine-section` are wrapped
+- In bottle modal HTML, wrap secondary fields (within `#new-wine-section`) in `<div class="bottle-form-advanced" id="bottle-form-advanced" hidden>`
+- Add toggle button (above the wrapper): `<button type="button" class="btn btn-text" id="toggle-advanced-fields">+ More fields</button>`
+- Wire in `initBottles()` in `public/js/bottles.js` (NOT `initBottleModal()` which doesn't exist) [audit MED-5]:
+  ```js
+  document.getElementById('toggle-advanced-fields')?.addEventListener('click', () => {
+    const adv = document.getElementById('bottle-form-advanced');
+    const btn = document.getElementById('toggle-advanced-fields');
+    const isHidden = adv.hasAttribute('hidden');
+    adv.toggleAttribute('hidden', !isHidden);
+    btn.textContent = isHidden ? '− Less fields' : '+ More fields';
+  });
+  ```
+- When populating form for edit (in `showEditBottleModal()` in `bottles/modal.js`), auto-expand if any secondary field has a non-empty value:
+  ```js
+  const advFields = ['wine-style','wine-grapes','wine-producer','wine-region','wine-country','wine-price','wine-drink-from','wine-drink-until'];
+  const hasAdvanced = advFields.some(id => document.getElementById(id)?.value?.trim());
+  if (hasAdvanced) {
+    document.getElementById('bottle-form-advanced')?.removeAttribute('hidden');
+    const btn = document.getElementById('toggle-advanced-fields');
+    if (btn) btn.textContent = '− Less fields';
+  }
+  ```
+
+**Add Recipe dark theme:**
+- Recipe modal form inputs should use existing `form-input` class (already dark-themed); check for any inline `background: white` or `background: #fff` on recipe modal inputs and move to CSS
+
+### 5.2 Break Settings into collapsible sub-sections
+
+**Files**: `public/index.html` (settings HTML), `public/js/settings.js`, `public/css/styles.css`
+
+- Convert each `<h3 class="settings-section-title">` into:
+  ```html
+  <button class="settings-section-toggle" aria-expanded="true"
+          data-section-id="display">
+    Display Settings <span class="settings-section-arrow">▾</span>
+  </button>
+  ```
+- Wrap each section body (everything below the title) in `<div class="settings-section-body">`
+- In `settings.js`, add `initCollapsibleSections()` called from `initSettings()`:
+  ```js
+  function initCollapsibleSections() {
+    document.querySelectorAll('.settings-section-toggle').forEach(btn => {
+      const sectionId = btn.dataset.sectionId;
+      // Restore state from localStorage
+      const stored = localStorage.getItem(`settings-section-${sectionId}`);
+      if (stored === 'collapsed') {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.closest('.settings-section').querySelector('.settings-section-body')
+          .classList.add('collapsed');
+      }
+      btn.addEventListener('click', () => {
+        const expanded = btn.getAttribute('aria-expanded') === 'true';
+        btn.setAttribute('aria-expanded', String(!expanded));
+        btn.closest('.settings-section').querySelector('.settings-section-body')
+          .classList.toggle('collapsed', expanded);
+        localStorage.setItem(`settings-section-${sectionId}`, expanded ? 'collapsed' : 'expanded');
+      });
+    });
+  }
+  ```
+- The 3 `settings-group` group titles (Preferences, Integrations, Data & App) remain plain `<h3>` — only inner `settings-section` headings become toggles
+- **All 11 `data-section-id` values** [audit A3]:
+  1. `rating-preferences` — Rating Preferences
+  2. `display` — Display Settings
+  3. `drink-soon-rules` — Drink Soon Auto Rules
+  4. `storage-conditions` — Storage Conditions
+  5. `cellar-layout` — Cellar Layout
+  6. `account-credentials` — Account Credentials
+  7. `awards-database` — Awards Database
+  8. `storage-areas` — Storage Areas
+  9. `backup-export` — Backup & Export
+  10. `install-app` — Install App
+  11. `about` — About
+- CSS: `.settings-section-body.collapsed { display: none; }` + arrow rotation on toggle button
+
+### 5.4 Reduce top-level tabs (7 → 5) + 5.3 Drink Soon dashboard
+
+**Files**: `public/index.html`, `public/js/app.js`, `public/css/styles.css`
+
+**Routing map:**
+```
+Cellar     → views: grid, analysis      (sub-tabs)
+Pairing    → views: pairing             (single-view)
+Kitchen    → views: recipes             (single-view)
+Collection → views: wines, history, drinksoon  (sub-tabs, drinksoon is new)
+Settings   → views: settings            (single-view)
+```
+
+#### Prerequisite: Export `switchView` [audit HIGH-2, HIGH-4]
+
+**Critical architectural change**: Export `switchView` from `app.js` so other modules can navigate without DOM-click hacks:
+```js
+// app.js — change from:
+function switchView(viewName) { ... }
+// to:
+export function switchView(viewName) { ... }
+```
+
+**Migrate all `querySelector('[data-view="..."]').click()` calls** (10 occurrences across 4 files) [audit HIGH-2]:
+
+| File | Line(s) | Current | Replacement |
+|------|---------|---------|-------------|
+| `app.js` | 1287, 1291, 1301 | Internal `switchView()` calls | Already direct — no change |
+| `app.js` | 1393-1413 | Tab deactivation + `querySelector('[data-view="${viewName}"]')` activation | REPLACE entire block with `activateParentTab()` + sub-tab loop [audit A4] |
+| `globalSearch.js` | 452, 472, 489, 506, 532, 541 | `querySelector('[data-view="wines/pairing"]').click()` | `import { switchView } from './app.js'; switchView('wines')` |
+| `moveGuide.js` | 589 | `querySelector('[data-view="grid"]').click()` | `import { switchView } from './app.js'; switchView('grid')` |
+| `moveGuide.js` | 599 | `querySelectorAll('.tab[data-view]')` for close-on-leave detection | Change to listen for `state.currentView` changes or query `.tab[data-parent], .sub-tab[data-view]` |
+| `recommendations.js` | 337 | `querySelector('[data-view="wines"]').click()` | `import { switchView } from './app.js'; switchView('wines')` |
+
+#### HTML changes in `index.html`
+
+1. Replace 7 `<button class="tab" data-view="...">` with 5 parent tabs. Single-view parents keep BOTH `data-parent` AND `data-view` for backward compat [audit HIGH-3]. Multi-view parents have only `data-parent`:
+   ```html
+   <div class="tabs-container" id="tabs-container" role="tablist" aria-label="Views">
+     <button class="tab active" data-parent="cellar" role="tab"
+             aria-selected="true" id="tab-cellar-parent">Cellar</button>
+     <button class="tab" data-parent="pairing" data-view="pairing" role="tab"
+             aria-selected="false" aria-controls="view-pairing" id="tab-pairing">Pairing</button>
+     <button class="tab" data-parent="kitchen" data-view="recipes" role="tab"
+             aria-selected="false" aria-controls="view-recipes" id="tab-kitchen">Kitchen</button>
+     <button class="tab" data-parent="collection" role="tab"
+             aria-selected="false" id="tab-collection-parent">Collection</button>
+     <button class="tab" data-parent="settings" data-view="settings" role="tab"
+             aria-selected="false" aria-controls="view-settings" id="tab-settings">Settings</button>
+   </div>
+   ```
+   Note: Single-view parents (`pairing`, `kitchen`, `settings`) keep `data-view` so existing `querySelector('[data-view="pairing"]')` calls still work [audit HIGH-3].
+
+2. Add sub-tab rows below main tabs (inside `<nav class="tabs">`):
+   ```html
+   <div class="sub-tabs-row" data-parent="cellar" role="tablist" aria-label="Cellar views">
+     <button class="sub-tab active" data-view="grid" role="tab"
+             aria-selected="true" aria-controls="view-grid">Grid</button>
+     <button class="sub-tab" data-view="analysis" role="tab"
+             aria-selected="false" aria-controls="view-analysis">Analysis</button>
+   </div>
+   <div class="sub-tabs-row" data-parent="collection" hidden role="tablist" aria-label="Collection views">
+     <button class="sub-tab" data-view="wines" role="tab"
+             aria-selected="false" aria-controls="view-wines">Wine List</button>
+     <button class="sub-tab" data-view="history" role="tab"
+             aria-selected="false" aria-controls="view-history">History</button>
+     <button class="sub-tab" data-view="drinksoon" role="tab"
+             aria-selected="false" aria-controls="view-drinksoon">Drink Soon</button>
+   </div>
+   ```
+   Full ARIA attributes included [audit MED-3].
+
+3. Add new `#view-drinksoon` div after `#view-history`:
+   ```html
+   <div class="view" id="view-drinksoon" role="tabpanel"
+        aria-labelledby="tab-drinksoon" hidden>
+     <h2 class="view-title">Drink Soon</h2>
+     <p class="view-subtitle">Wines approaching or past their optimal drinking window</p>
+     <div id="drink-soon-summary"></div>
+     <div id="drink-soon-list"></div>
+   </div>
+   ```
+
+4. Keep all existing `view-*` divs and their IDs unchanged.
+
+#### JS changes in `app.js`
+
+**Add PARENT_TAB_MAP** near top (after existing constants):
+```js
+const PARENT_TAB_MAP = {
+  cellar: ['grid', 'analysis'],
+  pairing: ['pairing'],
+  kitchen: ['recipes'],
+  collection: ['wines', 'history', 'drinksoon'],
+  settings: ['settings']
+};
+const VIEW_TO_PARENT = Object.entries(PARENT_TAB_MAP).reduce((acc, [p, vs]) => {
+  vs.forEach(v => { acc[v] = p; }); return acc;
+}, {});
+```
+
+**Update `VALID_VIEWS`** [audit LOW-2] — add `'drinksoon'` and `'settings'`:
+```js
+const VALID_VIEWS = ['grid', 'analysis', 'pairing', 'recipes', 'wines', 'history', 'settings', 'drinksoon'];
+```
+
+**Add `activateParentTab()`**:
+```js
+function activateParentTab(parentName) {
+  // Update parent tab buttons
+  document.querySelectorAll('.tab[data-parent]').forEach(t => {
+    const active = t.dataset.parent === parentName;
+    t.classList.toggle('active', active);
+    t.setAttribute('aria-selected', String(active));
+    t.setAttribute('tabindex', active ? '0' : '-1');
+  });
+  // Show/hide sub-tab rows
+  document.querySelectorAll('.sub-tabs-row').forEach(row => {
+    row.hidden = row.dataset.parent !== parentName;
+  });
+}
+```
+
+**Modify `switchView()`**:
+1. **REPLACE the existing tab deactivation + activation block** (lines 1393-1413) [audit A4]. The old code does `querySelectorAll('.tab').forEach(...)` which would undo `activateParentTab()` if called after it. Replace the entire block with:
+   ```js
+   // Activate parent tab + show/hide sub-tab rows
+   const parent = VIEW_TO_PARENT[viewName];
+   if (parent) activateParentTab(parent);
+
+   // Activate the matching sub-tab or single-view tab
+   document.querySelectorAll('.sub-tab').forEach(t => {
+     const active = t.dataset.view === viewName;
+     t.classList.toggle('active', active);
+     t.setAttribute('aria-selected', String(active));
+     t.setAttribute('tabindex', active ? '0' : '-1');
+   });
+   // For single-view parents (pairing, kitchen, settings) that have data-view,
+   // their active state is already handled by activateParentTab()
+   ```
+   **Key**: `activateParentTab()` handles ALL parent tab states (active class, aria-selected). Sub-tab states are handled by the sub-tab loop. The old blanket `.tab` deactivation is removed entirely.
+
+2. Add Drink Soon lazy-load guard alongside existing guards:
+   ```js
+   if (viewName === 'drinksoon' && !state.drinkSoonLoaded) {
+     state.drinkSoonLoaded = true;
+     loadDrinkSoonView();
+   }
+   ```
+
+**Wire tab/sub-tab handlers** in `startAuthenticatedApp()` [audit HIGH-1]:
+
+Replace existing line 305-306:
+```js
+// OLD (remove):
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => switchView(tab.dataset.view));
+});
+
+// NEW:
+// Parent tab clicks → switch to first sub-view in group
+document.querySelectorAll('.tab[data-parent]').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const parent = btn.dataset.parent;
+    // If parent has data-view (single-view), use it; otherwise use first child
+    const targetView = btn.dataset.view || PARENT_TAB_MAP[parent][0];
+    switchView(targetView);
+  });
+});
+// Sub-tab clicks → switch to that view
+document.querySelectorAll('.sub-tab[data-view]').forEach(btn => {
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
+});
+```
+
+**Update mobile menu close** [audit MED-4] in `initMobileMenu()` (line ~1464):
+```js
+// OLD:
+if (e.target.classList.contains('tab')) {
+// NEW:
+if (e.target.classList.contains('tab') || e.target.classList.contains('sub-tab')) {
+```
+
+**Drink Soon view: `loadDrinkSoonView()`** function in `app.js`:
+- Fetches `/api/reduce-now` (existing endpoint, already used for header stats)
+- Renders wine cards with urgency tag + "Find Pairing" button that calls `switchView('pairing')`
+- Link to Settings for rule adjustment
+- Header `#stat-btn-reduce` click handler (in `initStatButtons()`): change from wines-filter to `switchView('drinksoon')`
+
+**URL deep-linking** [audit A5]: Existing `?view=` parameter handling (line 338-344) already reads `VALID_VIEWS` and calls `switchView()`. Adding `'drinksoon'` and `'settings'` to `VALID_VIEWS` automatically enables `?view=drinksoon`. For parent-level URLs like `?view=collection`, add a resolution step before the switchView call:
+```js
+const PARENT_URL_MAP = { cellar: 'grid', collection: 'wines' };
+const resolvedView = PARENT_URL_MAP[urlView] || urlView;
+if (VALID_VIEWS.includes(resolvedView)) switchView(resolvedView);
+```
+
+**Mobile sub-tab UX** [audit A6]: Sub-tab rows (`.sub-tabs-row`) render inline below parent tabs inside the mobile drawer (`.tabs-container.open`). CSS:
+```css
+@media (max-width: 768px) {
+  .sub-tabs-row { width: 100%; padding-left: 1rem; }
+  .sub-tab { font-size: 0.85em; }
+}
+```
+Sub-tab rows are shown/hidden by `activateParentTab()` — when a parent without sub-tabs is active, the row stays `hidden`.
+
+### 5.1 Unify food-to-wine pairing experience — SCALED BACK [audit HIGH-5]
+
+**Rationale for scale-back**: `recommendations.js` is hardwired to fixed container IDs (`#recommendation-cards`, `#rec-occasion`, `#rec-food`, `#rec-food-detail`). A `loadRecommendationsInto()` refactor would require parameterising 6+ getElementById calls and duplicating context selectors. Instead, use a **cross-link approach**: the Pairing tab gets a button that navigates to the Grid view and expands the recommendations panel.
+
+**Files**: `public/index.html` (pairing view), `public/js/sommelier.js`, `public/js/recommendations.js`, `public/js/recipes/recipeLibrary.js`
+
+**AI Picks cross-link in Pairing tab:**
+
+Add inside `#pairing-cellar-section` (actual ID, not `#cellar-mode`) [audit HIGH-5], so it hides with restaurant mode [audit MED-1]:
+```html
+<div class="pairing-ai-crosslink" id="pairing-ai-crosslink">
+  <span>Want AI-curated picks based on your cellar?</span>
+  <button class="btn btn-secondary btn-small" id="go-to-ai-picks">
+    AI Cellar Picks →
+  </button>
+</div>
+```
+
+Wire in `sommelier.js` `initSommelier()`:
+```js
+document.getElementById('go-to-ai-picks')?.addEventListener('click', () => {
+  import('./app.js').then(({ switchView }) => {
+    switchView('grid');
+    // Expand recommendations panel if collapsed
+    setTimeout(() => {
+      import('./recommendations.js').then(({ expandPanel }) => expandPanel());
+    }, 100);
+  });
+});
+```
+
+In `recommendations.js`, export a small `expandPanel()` helper:
+```js
+export function expandPanel() {
+  if (recState.isCollapsed) togglePanel();
+}
+```
+
+**Recipe → Pairing deep-link:**
+
+In `public/js/recipes/recipeLibrary.js` (NOT `buyingGuide.js`) [audit HIGH-4], add a "Pair" button to `renderRecipeCard()` (line ~214):
+```js
+<button class="recipe-pair-btn" data-name="${escapeHtml(recipe.name)}" title="Find wine pairing">🍷</button>
+```
+
+After render in `loadAndRenderRecipes()`, bind click handlers:
+```js
+grid.querySelectorAll('.recipe-pair-btn').forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    import('../app.js').then(({ switchView }) => {
+      switchView('pairing');
+      setTimeout(() => {
+        const dishInput = document.getElementById('dish-input');
+        if (dishInput) {
+          dishInput.value = btn.dataset.name;
+          // Trigger search by clicking the Ask button (not dispatching input event) [audit HIGH-4]
+          document.getElementById('ask-sommelier')?.click();
+        }
+      }, 150);
+    });
+  });
+});
+```
+
+---
+
+## Files Changed Summary (Phase 5)
+
+| File | Changes |
+|------|---------|
+| `public/js/recommendations.js` | Default collapsed; export `expandPanel()` |
+| `public/js/globalSearch.js` | `updateShortcutDisplay()`; replace 6× `[data-view].click()` with `switchView()` import |
+| `public/index.html` | 5 parent tabs + sub-tabs (full ARIA), `#view-drinksoon`, grid-section-nav, bottle-form-advanced, pairing cross-link |
+| `public/js/app.js` | Export `switchView`; `PARENT_TAB_MAP`, `activateParentTab()`; `switchView()` parent/sub-tab updates; `loadDrinkSoonView()`; nav scroll handlers; `VALID_VIEWS` + `'drinksoon','settings'`; mobile menu `.sub-tab` close |
+| `public/js/settings.js` | `initCollapsibleSections()` called from `initSettings()` |
+| `public/js/bottles.js` | Toggle advanced fields handler in `initBottles()` |
+| `public/js/bottles/modal.js` | Auto-expand advanced fields in `showEditBottleModal()` |
+| `public/js/recipes/recipeLibrary.js` | "Pair" deep-link button per recipe card |
+| `public/js/sommelier.js` | Wire AI Picks cross-link button |
+| `public/js/cellarAnalysis/moveGuide.js` | Replace 2× `[data-view].click()` with `switchView()` import |
+| `public/css/styles.css` | Sub-tabs, grid-section-nav, settings toggles, bottle-form-advanced, pairing cross-link |
+| `public/sw.js` | Bump `CACHE_VERSION` v174 → v175 |
+| `public/index.html` | Bump `?v=` in CSS link |
 
 ---
 
@@ -288,13 +718,22 @@ All 15 reviewer corrections were verified against the codebase. Disposition:
 | `public/css/styles.css` | Zone banding, badge icons+borders, modal X, stat hover |
 | `public/js/cellarAnalysis/analysis.js` | Remove dup Reorganise button |
 
-### Phase 5 (Architecture — future sessions)
+### Phase 5 (Architecture) ✅ DONE
 | File | Changes |
 |------|---------|
-| Multiple pairing files | Unify pairing entry points |
-| `public/js/app.js` | Tab restructuring, Drink Soon dashboard, history grouping |
-| Settings-related files | Sub-section navigation |
-| Various dialogs | Dark theme consistency, progressive disclosure |
+| `public/js/recommendations.js` | Default collapsed (5.7); export `expandPanel()` (5.1) |
+| `public/js/globalSearch.js` | `updateShortcutDisplay()` (5.8); replace 6× `.click()` with `switchView()` import |
+| `public/index.html` | 5 parent tabs + sub-tabs with full ARIA (5.4); `#view-drinksoon` (5.3); grid-section-nav (5.6); bottle-form-advanced wrapper + toggle (5.5); pairing AI cross-link (5.1) |
+| `public/js/app.js` | Export `switchView`; `PARENT_TAB_MAP`, `activateParentTab()`; `switchView()` rewrite; `loadDrinkSoonView()`; nav scroll handlers; `VALID_VIEWS` + `'drinksoon','settings'`; mobile `.sub-tab` close; `stat-btn-reduce` → `switchView('drinksoon')` |
+| `public/js/settings.js` | `initCollapsibleSections()` with `localStorage` persistence (5.2) |
+| `public/js/bottles.js` | Toggle advanced fields handler in `initBottles()` (5.5) |
+| `public/js/bottles/modal.js` | Auto-expand advanced fields in `showEditBottleModal()` (5.5) |
+| `public/js/recipes/recipeLibrary.js` | 🍷 Pair button per card; `switchView('pairing')` + pre-fill dish input (5.1) |
+| `public/js/sommelier.js` | Wire AI Picks cross-link → `switchView('grid')` + expand panel (5.1) |
+| `public/js/cellarAnalysis/moveGuide.js` | Replace 2× `.click()` with `switchView()` import; listener updated for parent/sub-tabs |
+| `public/css/components.css` | Sub-tabs, grid-section-nav, settings toggles, bottle-form-advanced, pairing cross-link, recipe pair button, drink-soon cards |
+| `public/sw.js` | Bump `CACHE_VERSION` v174 → v175; CSS `?v=20260228a` |
+| `tests/unit/cellarAnalysis/moveGuide.test.js` | Add `switchView: vi.fn()` to app.js mock; update tab-switch assertion |
 
 ### Always
 | File | Changes |
