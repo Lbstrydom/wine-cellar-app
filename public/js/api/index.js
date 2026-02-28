@@ -77,6 +77,7 @@ export {
   getWineSourceRatings,
   fetchWineRatingsFromApi,
   fetchRatingsAsync,
+  batchFetchRatings,
   getRatingsJobStatus,
   getIdentityDiagnostics,
   addManualRating,

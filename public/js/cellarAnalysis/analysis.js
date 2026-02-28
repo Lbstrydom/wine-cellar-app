@@ -284,6 +284,30 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   }
   renderConsolidationCards(analysis);
   renderLayoutProposalCTA(analysis);
+
+  // Phase 3.1: Prefer sortPlan as the primary move list when available.
+  // sortPlan comes from the optimal layout solver and is more precise than
+  // the greedy suggestedMoves. Map to suggestedMoves format so all execution
+  // code (executeMove, executeSwap, dismiss, recheckSwaps) remains unchanged.
+  if (Array.isArray(analysis.layoutProposal?.sortPlan) && analysis.layoutProposal.sortPlan.length > 0) {
+    analysis.suggestedMoves = analysis.layoutProposal.sortPlan.map(m => ({
+      type: 'move',
+      wineId: m.wineId,
+      wineName: m.wineName,
+      from: m.from,
+      to: m.to,
+      toZone: m.zoneId || null,
+      toZoneId: m.zoneId || null,
+      reason: 'Optimal placement',
+      confidence: m.confidence || 'high',
+      priority: 1
+    }));
+    // Recalculate the swap flag for the updated move list
+    const _src = new Set(analysis.suggestedMoves.map(m => m.from));
+    const _dst = new Set(analysis.suggestedMoves.map(m => m.to));
+    analysis.movesHaveSwaps = [..._src].some(s => _dst.has(s));
+  }
+
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
   renderCompactionMoves(analysis.compactionMoves);
   renderRowAllocationInfo(analysis.layoutSettings);

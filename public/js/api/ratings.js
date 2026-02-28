@@ -80,6 +80,21 @@ export async function fetchRatingsAsync(wineId) {
 }
 
 /**
+ * Queue batch ratings fetch for multiple wines.
+ * @param {number[]} wineIds - Array of wine IDs (max 100)
+ * @param {boolean} [forceRefresh=true] - Whether to force a fresh fetch
+ * @returns {Promise<{jobId: number, message: string}>}
+ */
+export async function batchFetchRatings(wineIds, forceRefresh = true) {
+  const res = await fetch(`${API_BASE}/api/ratings/batch-fetch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wineIds, forceRefresh })
+  });
+  return handleResponse(res, 'Failed to queue batch ratings fetch');
+}
+
+/**
  * Get status for a ratings job.
  * @param {number} jobId - Job ID
  * @returns {Promise<Object>}

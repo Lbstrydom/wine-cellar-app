@@ -58,12 +58,12 @@ function classifyAlert(alert, summary) {
     const data = alert.data || {};
     const zoneName = data.overflowingZoneName || data.overflowingZoneId || 'zone';
     const wineCount = Array.isArray(data.winesNeedingPlacement) ? data.winesNeedingPlacement.length : 0;
+    // No CTA here — the Zone Issues banner in Cellar Review workspace provides
+    // the canonical "Reorganise Zones" action for capacity alerts.
     return {
       workspace: 'structure',
       severity: 'warning',
       message: `${zoneName}: ${wineCount} bottle(s) over capacity`,
-      cta: 'Reorganise Zones',
-      ctaAction: 'reorganise-zones',
       sourceAlert: alert
     };
   }
@@ -160,27 +160,25 @@ export function buildDigestGroups(analysis) {
   }
 
   // Add color adjacency summary (suppressed from classifyAlert, shown as one line)
+  // No CTA here — the Zone Issues banner in Cellar Review already provides "Reorganise Zones".
   const colorAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
   if (colorAlerts.length > 0) {
     groups.structure.push({
       workspace: 'structure',
       severity: 'warning',
-      message: `${colorAlerts.length} color boundary violation(s)`,
-      cta: 'Reorganise Zones',
-      ctaAction: 'reorganise-zones'
+      message: `${colorAlerts.length} color boundary violation(s)`
     });
   }
 
   // Add colour order violation summary (suppressed from classifyAlert, shown as one line)
+  // No CTA here — the Zone Issues banner in Cellar Review already provides "Reorganise Zones".
   const colourOrderAlerts = alerts.filter(a => a.type === 'colour_order_violation');
   if (colourOrderAlerts.length > 0) {
     const issueCount = colourOrderAlerts[0]?.data?.issues?.length || colourOrderAlerts.length;
     groups.structure.push({
       workspace: 'structure',
       severity: 'warning',
-      message: `${issueCount} colour order violation(s)`,
-      cta: 'Reorganise Zones',
-      ctaAction: 'reorganise-zones'
+      message: `${issueCount} colour order violation(s)`
     });
   }
 
@@ -208,12 +206,11 @@ export function buildDigestGroups(analysis) {
     }, 0);
     // Replace individual capacity items with one consolidated item
     groups.structure = groups.structure.filter(i => i.sourceAlert?.type !== 'zone_capacity_issue');
+    // No CTA — Zone Issues banner in Cellar Review provides "Reorganise Zones" for capacity alerts.
     groups.structure.unshift({
       workspace: 'structure',
       severity: 'warning',
-      message: `${capacityItems.length} zones over capacity (${totalAffected} bottles affected)`,
-      cta: 'Reorganise Zones',
-      ctaAction: 'reorganise-zones'
+      message: `${capacityItems.length} zones over capacity (${totalAffected} bottles affected)`
     });
   }
 

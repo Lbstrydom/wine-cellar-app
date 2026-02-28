@@ -16,10 +16,13 @@ import {
   setActiveCellarId,
   setInviteCode,
   clearAuthState,
-  setAuthErrorHandler
+  setAuthErrorHandler,
+  updateWine,
+  batchFetchRatings,
+  getRatingsJobStatus
 } from './api.js';
 import { renderFridge, renderCellar, renderStorageAreas, initZoomControls } from './grid.js';
-import { initModals, showWineModalFromList } from './modals.js';
+import { initModals, showWineModalFromList, closeWineModal } from './modals.js';
 import { initSommelier } from './sommelier.js';
 import { initBottles } from './bottles.js';
 import { initSettings, loadSettings, loadTextSize } from './settings.js';
@@ -53,6 +56,14 @@ export const state = {
   reduceNowIds: new Set(),
   virtualListActive: false
 };
+
+/**
+ * Wine list view mode preference ('table' or 'cards').
+ * Stored in localStorage so preference persists across sessions.
+ */
+let wineViewMode = (() => {
+  try { return localStorage.getItem('wineViewMode') || 'table'; } catch { return 'table'; }
+})();
 
 /**
  * Threshold for using virtual list (items count).
@@ -300,6 +311,12 @@ async function startAuthenticatedApp() {
 
     // Initialize wine list filters
     initWineListFilters();
+
+    // Initialize header stat buttons (navigate on click)
+    initStatButtons();
+
+    // Wire modal X close button (CSP-compliant: JS listener, not inline handler)
+    document.getElementById('btn-modal-close-x')?.addEventListener('click', closeWineModal);
 
     // Initialise modules
     initModals();
@@ -650,7 +667,7 @@ async function initAuth() {
 /**
  * Load cellar layout.
  */
-export async function loadLayout() {
+async function loadLayout() {
   state.layout = await fetchLayout();
 
   const hasAreas = Array.isArray(state.layout?.areas) && state.layout.areas.length > 0;
@@ -679,7 +696,7 @@ export async function loadLayout() {
 /**
  * Load statistics.
  */
-export async function loadStats() {
+async function loadStats() {
   const stats = await fetchStats();
   state.stats = stats;
   document.getElementById('stat-total').textContent = stats.total_bottles;
@@ -695,7 +712,7 @@ export async function loadStats() {
 /**
  * Load wine list with reduce-now data.
  */
-export async function loadWineList() {
+async function loadWineList() {
   const [winesResponse, reduceNow] = await Promise.all([
     fetchWines(),
     fetchReduceNow()
@@ -721,7 +738,7 @@ export async function loadWineList() {
 /**
  * Load consumption history.
  */
-export async function loadHistory() {
+async function loadHistory() {
   const data = await fetchConsumptionHistory();
   renderHistoryList(data.items);
 }
@@ -751,7 +768,7 @@ function getFilteredWines() {
   const sortBy = document.getElementById('filter-sort')?.value || 'name';
   const searchTerm = document.getElementById('filter-search')?.value?.toLowerCase() || '';
 
-  let filtered = state.wineListData.filter(w => w.bottle_count > 0);
+  let filtered = state.wineListData.filter(w => Number(w.bottle_count) > 0);
 
   // Apply reduce-now filter
   if (showReduceOnly) {
@@ -784,7 +801,11 @@ function getFilteredWines() {
       case 'price':
         return (a.price_eur || 0) - (b.price_eur || 0);
       case 'count':
-        return b.bottle_count - a.bottle_count;
+        return Number(b.bottle_count) - Number(a.bottle_count);
+      case 'producer':
+        return (a.producer || '').localeCompare(b.producer || '');
+      case 'colour':
+        return (a.colour || '').localeCompare(b.colour || '');
       case 'name':
       default:
         return (a.wine_name || '').localeCompare(b.wine_name || '');
@@ -827,8 +848,317 @@ function handleWineCardClick(wine) {
 }
 
 /**
+ * Render wine list as a sortable, inline-editable table.
+ * Uses plain <table> (no virtual scrolling) so inline edit inputs are stable.
+ * @param {Array} wines - Filtered wine list
+ * @param {HTMLElement} container - Target container
+ */
+function renderWineTable(wines, container) {
+  const COLOUR_OPTIONS = ['red', 'white', 'rose', 'orange', 'sparkling', 'dessert', 'fortified'];
+
+  if (wines.length === 0) {
+    container.innerHTML = '<p class="empty-message">No wines match your filters</p>';
+    return;
+  }
+
+  const thead = `
+    <thead>
+      <tr>
+        <th class="col-check"><input type="checkbox" id="wine-table-select-all" title="Select all"></th>
+        <th class="col-colour"></th>
+        <th class="col-name sortable" data-sort="name">Wine Name</th>
+        <th class="col-producer sortable" data-sort="producer">Producer</th>
+        <th class="col-vintage sortable" data-sort="vintage-asc">Vintage</th>
+        <th class="col-colour-name sortable" data-sort="colour">Colour</th>
+        <th class="col-style">Style</th>
+        <th class="col-grapes">Grapes</th>
+        <th class="col-region">Region</th>
+        <th class="col-country sortable" data-sort="country">Country</th>
+        <th class="col-qty sortable" data-sort="count">Qty</th>
+        <th class="col-rating sortable" data-sort="rating">Rating</th>
+        <th class="col-drink-window">Window</th>
+        <th class="col-location">Location</th>
+        <th class="col-actions">Actions</th>
+      </tr>
+    </thead>`;
+
+  const rows = wines.map(wine => {
+    const isReduceNow = state.reduceNowIds.has(wine.id);
+    const colourClass = escapeHtml(wine.colour || '');
+    const colourOptions = COLOUR_OPTIONS.map(c =>
+      `<option value="${c}"${wine.colour === c ? ' selected' : ''}>${c.charAt(0).toUpperCase() + c.slice(1)}</option>`
+    ).join('');
+
+    return `
+      <tr class="wine-table-row ${colourClass}${isReduceNow ? ' drink-soon-row' : ''}" data-wine-id="${wine.id}">
+        <td class="col-check"><input type="checkbox" class="wine-row-check" data-wine-id="${wine.id}"></td>
+        <td class="col-colour"><span class="colour-dot ${colourClass}" title="${colourClass}"></span></td>
+        <td class="col-name editable" data-field="wine_name" data-wine-id="${wine.id}">${escapeHtml(wine.wine_name || '')}</td>
+        <td class="col-producer editable" data-field="producer" data-wine-id="${wine.id}">${escapeHtml(wine.producer || '')}</td>
+        <td class="col-vintage editable" data-field="vintage" data-type="integer" data-wine-id="${wine.id}">${wine.vintage || ''}</td>
+        <td class="col-colour-name editable-select" data-field="colour" data-wine-id="${wine.id}">
+          <select class="inline-select" data-field="colour" data-wine-id="${wine.id}">${colourOptions}</select>
+        </td>
+        <td class="col-style editable" data-field="style" data-wine-id="${wine.id}">${escapeHtml(wine.style || '')}</td>
+        <td class="col-grapes editable" data-field="grapes" data-wine-id="${wine.id}">${escapeHtml(wine.grapes || '')}</td>
+        <td class="col-region editable" data-field="region" data-wine-id="${wine.id}">${escapeHtml(wine.region || '')}</td>
+        <td class="col-country editable" data-field="country" data-wine-id="${wine.id}">${escapeHtml(wine.country || '')}</td>
+        <td class="col-qty">${Number(wine.bottle_count)}</td>
+        <td class="col-rating">${wine.vivino_rating ? `★ ${wine.vivino_rating}` : '-'}</td>
+        <td class="col-drink-window">${wine.drink_from || wine.drink_until ? `${wine.drink_from || '?'}–${wine.drink_until || '?'}` : '-'}</td>
+        <td class="col-location">${escapeHtml(wine.locations || '-')}</td>
+        <td class="col-actions">
+          <button class="btn btn-small btn-secondary wine-table-view-btn" data-wine-id="${wine.id}" type="button" title="View details">View</button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  container.innerHTML = `
+    <div class="wine-table-toolbar" id="wine-table-toolbar" hidden>
+      <span class="wine-table-selected-count" id="wine-table-selected-count">0 selected</span>
+      <button class="btn btn-small btn-primary" id="wine-table-batch-ratings" type="button">Search Ratings</button>
+      <button class="btn btn-small btn-secondary" id="wine-table-deselect-all" type="button">Deselect all</button>
+    </div>
+    <table class="wine-table"><tbody>${rows}</tbody></table>`;
+  // Prepend thead inside the table
+  const table = container.querySelector('.wine-table');
+  table.insertAdjacentHTML('afterbegin', thead);
+
+  // Multi-select: update toolbar visibility + count
+  function updateSelectionUI() {
+    const checked = container.querySelectorAll('.wine-row-check:checked');
+    const toolbar = container.querySelector('#wine-table-toolbar');
+    const countEl = container.querySelector('#wine-table-selected-count');
+    const batchBtn = container.querySelector('#wine-table-batch-ratings');
+    if (toolbar) toolbar.hidden = checked.length === 0;
+    if (countEl) countEl.textContent = `${checked.length} selected`;
+    if (batchBtn) batchBtn.textContent = `Search Ratings (${checked.length})`;
+  }
+
+  // Select-all checkbox
+  const selectAll = container.querySelector('#wine-table-select-all');
+  if (selectAll) {
+    selectAll.addEventListener('change', () => {
+      container.querySelectorAll('.wine-row-check').forEach(cb => { cb.checked = selectAll.checked; });
+      updateSelectionUI();
+    });
+  }
+
+  // Row checkboxes
+  container.querySelectorAll('.wine-row-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const allChecks = container.querySelectorAll('.wine-row-check');
+      const checkedCount = container.querySelectorAll('.wine-row-check:checked').length;
+      if (selectAll) selectAll.indeterminate = checkedCount > 0 && checkedCount < allChecks.length;
+      if (selectAll) selectAll.checked = checkedCount === allChecks.length;
+      updateSelectionUI();
+    });
+  });
+
+  // Deselect-all button
+  const deselectBtn = container.querySelector('#wine-table-deselect-all');
+  if (deselectBtn) {
+    deselectBtn.addEventListener('click', () => {
+      container.querySelectorAll('.wine-row-check').forEach(cb => { cb.checked = false; });
+      if (selectAll) { selectAll.checked = false; selectAll.indeterminate = false; }
+      updateSelectionUI();
+    });
+  }
+
+  // Bulk Search Ratings with polling progress
+  const batchRatingsBtn = container.querySelector('#wine-table-batch-ratings');
+  if (batchRatingsBtn) {
+    batchRatingsBtn.addEventListener('click', async () => {
+      const wineIds = [...container.querySelectorAll('.wine-row-check:checked')]
+        .map(cb => Number(cb.dataset.wineId));
+      if (wineIds.length === 0) return;
+      batchRatingsBtn.disabled = true;
+      batchRatingsBtn.textContent = 'Queuing…';
+      try {
+        const result = await batchFetchRatings(wineIds);
+        showToast(`Queued ratings search for ${wineIds.length} wine${wineIds.length === 1 ? '' : 's'}`);
+        // Poll job status until complete
+        pollRatingsJob(result.jobId, batchRatingsBtn, wineIds.length);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+        batchRatingsBtn.disabled = false;
+        updateSelectionUI();
+      }
+    });
+  }
+
+  // Wire inline-edit: click on editable cell → replace with input
+  container.querySelectorAll('.editable').forEach(cell => {
+    cell.addEventListener('click', () => startInlineEdit(cell));
+  });
+
+  // Wire colour select inline edits
+  container.querySelectorAll('.inline-select').forEach(sel => {
+    sel.addEventListener('change', async () => {
+      const wineId = Number(sel.dataset.wineId);
+      const field = sel.dataset.field;
+      const value = sel.value;
+      try {
+        await updateWine(wineId, { [field]: value });
+        // Update local state
+        const wine = state.wineListData.find(w => w.id === wineId);
+        if (wine) wine[field] = value;
+        // Update row colour class
+        const row = sel.closest('.wine-table-row');
+        if (row) {
+          COLOUR_OPTIONS.forEach(c => row.classList.remove(c));
+          if (value) row.classList.add(value);
+          row.querySelector('.colour-dot')?.setAttribute('class', `colour-dot ${value}`);
+          row.querySelector('.colour-dot')?.setAttribute('title', value);
+        }
+        showToast('Saved');
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      }
+    });
+  });
+
+  // Wire sort headers with visual arrow indicators
+  container.querySelectorAll('.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const sortEl = document.getElementById('filter-sort');
+      if (sortEl) {
+        sortEl.value = th.dataset.sort;
+        sortEl.dispatchEvent(new Event('change'));
+      }
+      // Update sort-asc/sort-desc CSS classes for arrow indicators
+      container.querySelectorAll('.sortable').forEach(h => {
+        h.classList.remove('sort-asc', 'sort-desc');
+      });
+      const sortKey = th.dataset.sort;
+      const isDesc = sortKey === 'rating' || sortKey === 'count';
+      th.classList.add(isDesc ? 'sort-desc' : 'sort-asc');
+    });
+  });
+
+  // Wire view buttons
+  container.querySelectorAll('.wine-table-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const wineId = Number(btn.dataset.wineId);
+      const wine = wines.find(w => w.id === wineId);
+      if (wine) showWineModalFromList(wine);
+    });
+  });
+}
+
+/**
+ * Start inline cell editing for a table cell.
+ * @param {HTMLElement} cell - The <td> element to make editable
+ */
+function startInlineEdit(cell) {
+  if (cell.querySelector('input')) return; // Already editing
+
+  const originalValue = cell.textContent.trim();
+  const field = cell.dataset.field;
+  const wineId = Number(cell.dataset.wineId);
+  const dataType = cell.dataset.type || 'text';
+
+  const input = document.createElement('input');
+  input.type = dataType === 'integer' ? 'number' : 'text';
+  input.value = originalValue;
+  input.className = 'inline-edit-input';
+  if (dataType === 'integer') {
+    input.min = '1900';
+    input.max = '2100';
+    input.step = '1';
+  }
+
+  cell.textContent = '';
+  cell.appendChild(input);
+  input.focus();
+  input.select();
+
+  const saveEdit = async () => {
+    const rawValue = input.value.trim();
+    let value;
+    if (dataType === 'integer') {
+      value = rawValue === '' ? null : parseInt(rawValue, 10);
+      if (value !== null && isNaN(value)) value = null;
+    } else if (dataType === 'float') {
+      value = rawValue === '' ? null : parseFloat(rawValue);
+      if (value !== null && isNaN(value)) value = null;
+    } else {
+      value = rawValue === '' ? null : rawValue;
+    }
+
+    cell.textContent = rawValue || '';
+
+    if (String(rawValue) !== String(originalValue)) {
+      try {
+        await updateWine(wineId, { [field]: value });
+        // Update local state
+        const wine = state.wineListData.find(w => w.id === wineId);
+        if (wine) wine[field] = value;
+        showToast('Saved');
+      } catch (err) {
+        cell.textContent = originalValue;
+        showToast(`Error: ${err.message}`);
+      }
+    }
+  };
+
+  input.addEventListener('blur', saveEdit);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+    if (e.key === 'Escape') { cell.textContent = originalValue; }
+  });
+}
+
+/**
+ * Poll a batch ratings job until complete, updating button text with progress.
+ * @param {number} jobId - Job ID to poll
+ * @param {HTMLElement} btn - The batch ratings button element
+ * @param {number} totalCount - Number of wines queued
+ */
+function pollRatingsJob(jobId, btn, totalCount) {
+  const POLL_INTERVAL = 3000;
+  let pollTimer = null;
+
+  async function tick() {
+    try {
+      const status = await getRatingsJobStatus(jobId);
+      const completed = status.completed ?? 0;
+      const total = status.total ?? totalCount;
+      const pct = total > 0 ? Math.round((completed / total) * 100) : 0;
+
+      if (status.status === 'completed' || status.status === 'done') {
+        btn.textContent = 'Search Ratings';
+        btn.disabled = false;
+        showToast(`Ratings search complete — ${completed}/${total} wines processed`);
+        // Reload wine list to show new ratings
+        loadWineList();
+        return;
+      }
+      if (status.status === 'failed' || status.status === 'error') {
+        btn.textContent = 'Search Ratings';
+        btn.disabled = false;
+        showToast(`Ratings search failed: ${status.error || 'unknown error'}`);
+        return;
+      }
+      // Still in progress
+      btn.textContent = `Searching… ${pct}% (${completed}/${total})`;
+      pollTimer = setTimeout(tick, POLL_INTERVAL);
+    } catch (err) {
+      // Network error — stop polling gracefully
+      btn.textContent = 'Search Ratings';
+      btn.disabled = false;
+      showToast(`Lost contact with ratings job: ${err.message}`);
+    }
+  }
+
+  // Start first poll after a short delay
+  pollTimer = setTimeout(tick, POLL_INTERVAL);
+}
+
+/**
  * Render wine list with current filters.
- * Uses virtual scrolling for large lists.
+ * In table mode: plain <table> (no virtual scroll, supports inline edit).
+ * In card mode: virtual scrolling for large lists.
  */
 function renderWineList() {
   const container = document.getElementById('wine-list');
@@ -836,13 +1166,28 @@ function renderWineList() {
   const filtered = getFilteredWines();
 
   // Update stats
-  const totalBottles = filtered.reduce((sum, w) => sum + w.bottle_count, 0);
+  const totalBottles = filtered.reduce((sum, w) => sum + Number(w.bottle_count), 0);
   const reduceCount = filtered.filter(w => state.reduceNowIds.has(w.id)).length;
   statsContainer.innerHTML = `
     <span>${filtered.length} wines</span>
     <span>${totalBottles} bottles</span>
     ${reduceCount > 0 ? `<span class="reduce-badge">${reduceCount} drink soon</span>` : ''}
   `;
+
+  // Table mode: render plain table (no virtual scrolling — preserves inline edit state)
+  if (wineViewMode === 'table') {
+    if (state.virtualListActive) {
+      destroyVirtualList();
+      state.virtualListActive = false;
+      container.classList.remove('virtual-mode');
+    }
+    cleanupNamespace(WINE_LIST_NAMESPACE);
+    container.classList.add('table-mode');
+    renderWineTable(filtered, container);
+    return;
+  }
+
+  container.classList.remove('table-mode');
 
   if (filtered.length === 0) {
     // Clean up virtual list if active
@@ -900,13 +1245,15 @@ function renderWineList() {
 }
 
 /**
- * Initialize wine list filters.
+ * Initialize wine list filters and view toggle.
  */
 function initWineListFilters() {
   const filterReduceNow = document.getElementById('filter-reduce-now');
   const filterColour = document.getElementById('filter-colour');
   const filterSort = document.getElementById('filter-sort');
   const filterSearch = document.getElementById('filter-search');
+  const toggleTable = document.getElementById('view-toggle-table');
+  const toggleCards = document.getElementById('view-toggle-cards');
 
   if (filterReduceNow) filterReduceNow.addEventListener('change', renderWineList);
   if (filterColour) filterColour.addEventListener('change', renderWineList);
@@ -914,6 +1261,45 @@ function initWineListFilters() {
   if (filterSearch) {
     filterSearch.addEventListener('input', debounce(renderWineList, 200));
   }
+
+  // View toggle: table / cards
+  const setViewMode = (mode) => {
+    wineViewMode = mode;
+    try { localStorage.setItem('wineViewMode', mode); } catch { /* ok */ }
+    toggleTable?.classList.toggle('active', mode === 'table');
+    toggleCards?.classList.toggle('active', mode === 'cards');
+    renderWineList();
+  };
+
+  // Set initial toggle button state
+  toggleTable?.classList.toggle('active', wineViewMode === 'table');
+  toggleCards?.classList.toggle('active', wineViewMode === 'cards');
+
+  if (toggleTable) toggleTable.addEventListener('click', () => setViewMode('table'));
+  if (toggleCards) toggleCards.addEventListener('click', () => setViewMode('cards'));
+}
+
+/**
+ * Initialize header stat button click navigation.
+ */
+function initStatButtons() {
+  document.getElementById('stat-btn-total')?.addEventListener('click', () => {
+    switchView('wines');
+  });
+
+  document.getElementById('stat-btn-reduce')?.addEventListener('click', () => {
+    switchView('wines');
+    // Pre-check the "Drink Soon" filter
+    const filterReduceNow = document.getElementById('filter-reduce-now');
+    if (filterReduceNow && !filterReduceNow.checked) {
+      filterReduceNow.checked = true;
+      filterReduceNow.dispatchEvent(new Event('change'));
+    }
+  });
+
+  document.getElementById('stat-btn-empty')?.addEventListener('click', () => {
+    switchView('grid');
+  });
 }
 
 /**
@@ -943,22 +1329,42 @@ function renderHistoryList(items) {
     return;
   }
 
-  container.innerHTML = items.map(item => {
-    const date = new Date(item.consumed_at).toLocaleDateString('en-GB', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric'
+  // Group same-wine + same-date entries: "Vouvray Reserve 2018 × 4"
+  const grouped = [];
+  for (const item of items) {
+    const dateStr = new Date(item.consumed_at).toLocaleDateString('en-GB', {
+      day: 'numeric', month: 'short', year: 'numeric'
     });
+    const key = `${item.wine_name}|${item.vintage || ''}|${dateStr}`;
+    const last = grouped.length > 0 ? grouped[grouped.length - 1] : null;
+    if (last && last._groupKey === key) {
+      last._count++;
+      // Keep the first item's details but collect any unique notes/pairings
+      if (item.consumption_notes && !last._extraNotes.includes(item.consumption_notes)) {
+        last._extraNotes.push(item.consumption_notes);
+      }
+    } else {
+      grouped.push({
+        ...item,
+        _groupKey: key,
+        _dateStr: dateStr,
+        _count: 1,
+        _extraNotes: item.consumption_notes ? [item.consumption_notes] : []
+      });
+    }
+  }
 
+  container.innerHTML = grouped.map(item => {
     const stars = item.consumption_rating
       ? '\u2605'.repeat(Math.floor(item.consumption_rating)) + '\u2606'.repeat(5 - Math.floor(item.consumption_rating))
       : '';
+    const countBadge = item._count > 1 ? ` <span class="history-count">× ${item._count}</span>` : '';
 
     return `
       <div class="history-item ${escapeHtml(item.colour || '')}">
-        <div class="history-date">${escapeHtml(date)}</div>
+        <div class="history-date">${escapeHtml(item._dateStr)}</div>
         <div class="history-details">
-          <div class="history-wine">${escapeHtml(item.wine_name)} ${escapeHtml(item.vintage) || 'NV'}</div>
+          <div class="history-wine">${escapeHtml(item.wine_name)} ${escapeHtml(item.vintage) || 'NV'}${countBadge}</div>
           <div class="history-meta">${escapeHtml(item.style || '')} • ${escapeHtml(item.country || '')}</div>
           ${item.occasion ? `<div class="history-occasion">${escapeHtml(item.occasion)}</div>` : ''}
           ${item.pairing_dish ? `<div class="history-pairing">${escapeHtml(item.pairing_dish)}</div>` : ''}

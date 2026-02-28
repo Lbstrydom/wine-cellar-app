@@ -56,10 +56,27 @@ src/
 public/
 ├── index.html             # HTML structure only (no inline JS/CSS)
 ├── css/
-│   └── styles.css         # All styles
+│   ├── styles.css         # Global styles
+│   └── components.css     # Component-specific styles (table, digest, diff grid, etc.)
 └── js/
     ├── app.js             # Main app initialisation, state management
-    ├── api.js             # API calls wrapper
+    ├── api/               # API calls (authenticated via apiFetch)
+    │   ├── index.js       # Re-export barrel (all API functions)
+    │   ├── base.js        # apiFetch wrapper (adds auth + cellar headers)
+    │   ├── wines.js       # Wine CRUD + fetchWines
+    │   ├── ratings.js     # Rating fetch + batch ratings
+    │   ├── cellar.js      # Cellar analysis, grape backfill, layout
+    │   ├── recipes.js     # Recipe/buying guide API
+    │   ├── buyingGuideItems.js # Shopping cart API
+    │   ├── settings.js    # User settings API
+    │   ├── awards.js      # Award extraction API
+    │   ├── pairing.js     # Food pairing API
+    │   ├── restaurantPairing.js # Restaurant pairing API
+    │   ├── acquisition.js # Wine acquisition workflow API
+    │   ├── palate.js      # Palate profile API
+    │   ├── health.js      # Cellar health API
+    │   ├── profile.js     # User profile API
+    │   └── errors.js      # Error logging API
     ├── pwa.js             # PWA install prompt, SW registration, update notification
     ├── grid.js            # Cellar/fridge grid rendering
     ├── modals.js          # Modal management
@@ -714,21 +731,23 @@ parent.appendChild(el);
 
 ### Frontend API Calls (CRITICAL)
 
-**All API calls to `/api/*` endpoints MUST use `api.js` functions, not raw `fetch()`.**
+**All API calls to `/api/*` endpoints MUST use `api/` module functions, not raw `fetch()`.**
 
-The `api.js` module shadows the global `fetch` with `apiFetch` which automatically adds:
+The `api/base.js` module provides `apiFetch` which automatically adds:
 - `Authorization: Bearer <token>` header (Supabase JWT)
 - `X-Cellar-ID: <cellar_id>` header (multi-tenant isolation)
 
+All domain-specific API functions are re-exported from `api/index.js`.
+
 ```javascript
-// ✅ CORRECT: Use api.js exported functions
-import { getWines, createWine, getBackupInfo } from './api.js';
+// ✅ CORRECT: Use api/ exported functions
+import { fetchWines, updateWine, batchFetchRatings } from './api/index.js';
 
-const wines = await getWines();
-const backup = await getBackupInfo();
+const wines = await fetchWines();
+await updateWine(id, { colour: 'red' });
 
-// ✅ CORRECT: Use the fetch from api.js (automatically authenticated)
-import { fetch } from './api.js';  // This is actually apiFetch
+// ✅ CORRECT: Use the fetch from api/base.js (automatically authenticated)
+import { fetch } from './api/base.js';  // This is actually apiFetch
 
 const response = await fetch('/api/wines');  // Includes auth headers
 
@@ -744,7 +763,7 @@ const response = await fetch('/api/backup/info');  // 401 error!
 
 **Regression Test**: `tests/unit/utils/apiAuthHeaders.test.js` scans all frontend JS files for raw `fetch('/api/...)` patterns and fails if found in new files.
 
-**Legacy Files**: Raw fetch() remains only in `public/js/app.js` (public-config/auth bootstrap) and `public/js/browserTests.js` (test-only). Keep the allowlist minimal; new API calls must go through `public/js/api.js` (including optional-auth error logging).
+**Legacy Files**: Raw fetch() remains only in `public/js/app.js` (public-config/auth bootstrap) and `public/js/browserTests.js` (test-only). Keep the allowlist minimal; new API calls must go through `public/js/api/` modules (including optional-auth error logging).
 
 ---
 
@@ -1607,7 +1626,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Trust client-provided `cellar_id` from request body - always use `req.cellarId` from middleware
 - Write queries without `WHERE cellar_id = $1` filter - causes cross-tenant data leaks
 - Bypass `requireCellarContext` middleware for data routes
-- Use raw `fetch()` for `/api/*` calls in frontend - use `api.js` functions instead (they add auth headers)
+- Use raw `fetch()` for `/api/*` calls in frontend - use `api/` module functions instead (they add auth headers)
 - Parse LLM JSON with ad-hoc greedy regex when `extractJsonFromText()` already exists in `src/services/shared/auditUtils.js`
 - Use `vi.resetModules()` in `--no-isolate` unit tests unless there is no safer alternative
 
@@ -1632,6 +1651,6 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Always use `req.cellarId` in all database queries for user-data tables
 - Include `cellar_id` in UPDATE/DELETE WHERE clauses to prevent cross-tenant modification
 - Apply `requireAuth` + `requireCellarContext` middleware to all data routes
-- Use `api.js` exported functions for all frontend API calls (automatic auth headers)
+- Use `api/` module functions for all frontend API calls (automatic auth headers)
 - Reuse `src/services/shared/auditUtils.js` when implementing any new LLM auditor module
 - Use `vi.importActual()` for real-module imports in `--no-isolate` test files to avoid cross-suite mock leakage

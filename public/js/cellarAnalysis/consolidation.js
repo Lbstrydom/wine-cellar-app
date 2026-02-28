@@ -38,7 +38,7 @@ export function renderConsolidationCards(analysis) {
       <div class="consolidation-header">
         <div>
           <h3>Zone Consolidation</h3>
-          <p class="section-desc">${totalScattered} bottle(s) across ${opportunities.length} zone(s) are in the wrong rows and should be consolidated.</p>
+          <p class="section-desc">${totalScattered} bottle(s) are in non-ideal zones (spread across ${opportunities.length} zone${opportunities.length !== 1 ? 's' : ''}).</p>
         </div>
         ${hasActionableMoves ? '<button class="btn btn-secondary btn-small consolidation-guide-btn">Visual Guide</button>' : ''}
       </div>

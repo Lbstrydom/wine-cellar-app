@@ -215,12 +215,20 @@ router.get('/', validateQuery(paginationSchema), asyncHandler(async (req, res) =
     '  w.vintage,',
     '  w.vivino_rating,',
     '  w.price_eur,',
-    '  COUNT(s.id) as bottle_count,',
+    '  w.producer,',
+    '  w.country,',
+    '  w.region,',
+    '  w.grapes,',
+    '  w.drink_from,',
+    '  w.drink_until,',
+    '  w.zone_id,',
+    '  CAST(COUNT(s.id) AS INTEGER) as bottle_count,',
     '  ' + locationAgg + ' as locations',
     'FROM wines w',
     'LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1',
     'WHERE w.cellar_id = $1',
-    'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur',
+    'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur,',
+    '         w.producer, w.country, w.region, w.grapes, w.drink_from, w.drink_until, w.zone_id',
     'ORDER BY w.colour, w.style, w.wine_name',
     'LIMIT $2 OFFSET $3'
   ].join('\n');
@@ -341,9 +349,13 @@ router.get('/:id', asyncHandler(async (req, res) => {
  */
 router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) => {
   const {
-    style, colour: rawColour, wine_name, vintage, vivino_rating, price_eur, country,
+    style, colour: rawColour, wine_name: rawWineName, vintage, vivino_rating, price_eur, country,
     producer, region, grapes, vivino_id, vivino_url, vivino_confirmed, external_match
   } = req.body;
+  // Strip trailing empty parentheses patterns (e.g. "Kleine Zalze Shiraz ( )" or "Wine ()")
+  const wine_name = typeof rawWineName === 'string'
+    ? rawWineName.replace(/\s*\(\s*\)\s*$/, '').trim()
+    : rawWineName;
   const colour = normalizeColour(rawColour) || rawColour;
   const normalizedGrapes = typeof grapes === 'string' ? grapes.trim() : grapes;
 
@@ -471,11 +483,15 @@ router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) =
  */
 router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema), asyncHandler(async (req, res) => {
   const {
-    style, colour: rawColour, wine_name, vintage, vivino_rating, price_eur, country,
+    style, colour: rawColour, wine_name: rawWineName, vintage, vivino_rating, price_eur, country,
     producer, region, grapes,
     drink_from, drink_peak, drink_until,
     vivino_id, vivino_url, vivino_confirmed
   } = req.body;
+  // Strip trailing empty parentheses patterns (e.g. "Kleine Zalze Shiraz ( )")
+  const wine_name = typeof rawWineName === 'string'
+    ? rawWineName.replace(/\s*\(\s*\)\s*$/, '').trim()
+    : rawWineName;
   const colour = normalizeColour(rawColour) || rawColour;
   const normalizedGrapes = typeof grapes === 'string' ? grapes.trim() : grapes;
 

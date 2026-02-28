@@ -87,15 +87,22 @@ export function maybeShowAnalysisHint(addedCount) {
  */
 export function shortenWineName(name) {
   if (!name) return '';
-  return name
+  const cleaned = name
     // Remove common filler words and designations
     .replace(/\b(Vineyard|Vineyards|Selection|Reserva?|Gran|Superior[e]?|Estate|Winery|Cellars?|Family|Single|Premium|Special|Limited|Edition|Classic)\b/gi, '')
     // Remove year patterns that might be in the name (vintage is shown separately)
     .replace(/\b(19|20)\d{2}\b/g, '')
     // Clean up multiple spaces
     .replace(/\s+/g, ' ')
-    .trim()
-    .substring(0, 25);
+    .trim();
+
+  const MAX_LEN = 25;
+  if (cleaned.length <= MAX_LEN) return cleaned;
+
+  // Middle truncation: preserve producer (start) + distinguishing suffix (end)
+  const keepStart = Math.ceil((MAX_LEN - 1) / 2);   // 12
+  const keepEnd = Math.floor((MAX_LEN - 1) / 2);     // 12
+  return cleaned.substring(0, keepStart) + '\u2026' + cleaned.substring(cleaned.length - keepEnd);
 }
 
 /**

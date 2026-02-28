@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 27 February 2026
+## 28 February 2026
 
 ---
 
@@ -9,7 +9,19 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 27 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 28 Feb 2026**:
+- **Comprehensive UX Overhaul (Phases 1-4) — COMPLETE** ✅:
+  - Systematic UX audit findings addressed across 4 phases (16 files changed, ~900 lines added).
+  - Plan document: `docs/bug1-plan.md` (reviewer-verified 5-phase plan; Phases 1-4 implemented, Phase 5 deferred).
+  - **Phase 1 — Bug Fixes**: `CAST(COUNT(s.id) AS INTEGER)` in `wines.js` GET endpoint fixes PostgreSQL string concatenation. `Number(w.bottle_count)` defence in `app.js`. Empty parentheses prevention via `replace(/\s*\(\s*\)\s*$/, '')` in POST/PUT routes. Step label `gap: 24px` in `components.css`.
+  - **Phase 2 — Wine List Table View**: Expanded GET `/api/wines` with 7 new columns (producer, country, region, grapes, drink_from, drink_until, zone_id). `fetchWines()` limit raised to 500. New `renderWineTable()` (~300 lines) with inline click-to-edit, type coercion (parseInt/parseFloat/null), all 7 colour options, sortable headers. New `batchFetchRatings()` API function for bulk rating search. Table/card toggle with `localStorage` persistence.
+  - **Phase 3 — Move System**: `analysis.js` prefers `layoutProposal.sortPlan` as primary move source, mapped to `suggestedMoves` format. `moves.js` zone-grouped rendering with section headers. New `detectCycles()` for circular move chains with buffer slot verification. Consolidation wording fix: "are in non-ideal zones".
+  - **Phase 4 — UX Polish**: Modal X close button. Semantic `<button>` header stats with ARIA labels and `initStatButtons()` navigation. Zone banding (`zone-band-even`/`zone-band-odd`) in grid. Full name tooltips + middle truncation (`\u2026`). Urgency icons (🕐 drink now, ⏳ drink soon). Removed duplicate "Reorganise Zones" CTAs from issue digest. Missing colour filter options (orange, dessert, fortified) added.
+  - Cache version bumped v172→v174, SW static assets updated.
+  - Test fix: `rowCoverageIntegrity.test.js` mock leakage resolved via `vi.importActual()` for `cellarLayoutSettings.js`.
+  - **Validation status**: `npm run test:unit` passes at **2837 tests across 115 files**.
+
+**Previous Enhancements** (27 Feb 2026):
 - **Shopping Cart / Buying Workflow (Phases 1-6) — COMPLETE** ✅:
   - Turns the buying guide from a read-only gap analysis into a **live shopping workflow** with persistent cart, real-time recalculation, and arrival-to-cellar pipeline.
   - **Phase 1**: Data model (`buying_guide_items` + `buying_guide_cache` tables, RLS, indexes), centralized style taxonomy (`src/config/styleIds.js` — 11 style buckets), Zod validation schemas, backend CRUD service (`buyingGuideCart.js` — 340 lines, 9 exports), route with 13 endpoints (`/api/buying-guide-items`), backup integration.

@@ -397,10 +397,25 @@ export async function renderStorageAreas() {
       if (currentSpan) zoneSpans.push(currentSpan);
     }
 
+    // Build row-to-zone-index map for alternating zone banding
+    const rowZoneBandMap = new Map();
+    if (isCellar && hasZoneConfig) {
+      zoneSpans.forEach((span, spanIndex) => {
+        for (let i = 0; i < span.rowCount; i++) {
+          rowZoneBandMap.set(span.startIndex + i, spanIndex);
+        }
+      });
+    }
+
     // Render rows using col_count; use slots if provided
-    for (const row of areaRows) {
+    for (const [rowIndex, row] of areaRows.entries()) {
       const rowEl = document.createElement('div');
       rowEl.className = 'cellar-row';
+
+      // Zone banding — alternating tint between zone groups
+      if (rowZoneBandMap.has(rowIndex)) {
+        rowEl.classList.add(rowZoneBandMap.get(rowIndex) % 2 === 0 ? 'zone-band-even' : 'zone-band-odd');
+      }
 
       // Row label with inline zone name for cellar areas
       const label = document.createElement('div');
@@ -565,8 +580,6 @@ export function createSlotElement(slot) {
       const p = Math.min(slot.reduce_priority, 3);
       el.classList.add(`priority-${p}`);
       el.classList.add('has-urgency');  // Phase 3.5.5: Mark for color noise reduction
-      const priorityLabels = { 1: 'Drink now', 2: 'Drink soon', 3: 'Hold — not urgent' };
-      el.title = priorityLabels[p] || '';
     }
 
     const drinkClass = getDrinkWindowClass(slot);
@@ -583,11 +596,25 @@ export function createSlotElement(slot) {
       el.dataset.openedAt = slot.opened_at;
     }
 
+    // Full wine name tooltip — wine name + vintage + urgency label for hover
+    const priorityLabels = { 1: 'Drink now', 2: 'Drink soon', 3: 'Hold — not urgent' };
+    const urgencyLabel = slot.reduce_priority
+      ? ` — ${priorityLabels[Math.min(slot.reduce_priority, 3)] || ''}`
+      : '';
+    el.title = `${slot.wine_name || ''}${slot.vintage ? ' ' + slot.vintage : ''}${urgencyLabel}`.trim();
+
+    // Urgency icons — clock for "drink now", hourglass for "drink soon" (accessible: shape + colour)
+    const urgencyIconHtml = slot.reduce_priority === 1
+      ? '<span class="urgency-icon" aria-label="Drink now">🕐</span>'
+      : slot.reduce_priority === 2
+        ? '<span class="urgency-icon" aria-label="Drink soon">⏳</span>'
+        : '';
+
     const shortName = shortenWineName(slot.wine_name);
     const openIcon = slot.is_open ? '<span class="open-indicator" title="Open bottle">🍷</span>' : '';
 
     el.innerHTML = `
-      <div class="slot-name">${shortName}</div>
+      <div class="slot-name">${shortName}${urgencyIconHtml}</div>
       <div class="slot-vintage">${slot.vintage || 'NV'}${openIcon}</div>
       <div class="slot-loc">${slot.location_code}</div>
     `;

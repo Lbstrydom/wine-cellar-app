@@ -11,6 +11,17 @@ vi.mock('../../../../src/db/index.js', () => ({
   default: { prepare: vi.fn() }
 }));
 
+// Must mock cellarLayoutSettings with TOTAL_ROWS to survive --no-isolate leakage
+// from other test files that mock the same module without TOTAL_ROWS.
+vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', async () => {
+  const actual = await vi.importActual('../../../../src/services/shared/cellarLayoutSettings.js');
+  return {
+    ...actual,
+    getCellarLayoutSettings: vi.fn().mockResolvedValue({}),
+    getDynamicColourRowRanges: vi.fn().mockResolvedValue({ whiteRows: [], redRows: [] })
+  };
+});
+
 import { validateAllocationIntegrity } from '../../../../src/routes/cellarReconfiguration.js';
 import { actionInvolvesZone } from '../../../../src/services/zone/zoneReconfigurationPlanner.js';
 

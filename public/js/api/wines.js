@@ -8,11 +8,11 @@ import { API_BASE, apiFetch, handleResponse } from './base.js';
 const fetch = apiFetch;
 
 /**
- * Fetch all wines.
+ * Fetch all wines (up to 500 for full table view).
  * @returns {Promise<Array>}
  */
 export async function fetchWines() {
-  const res = await fetch(`${API_BASE}/api/wines`);
+  const res = await fetch(`${API_BASE}/api/wines?limit=500`);
   return handleResponse(res, 'Failed to fetch wines');
 }
 

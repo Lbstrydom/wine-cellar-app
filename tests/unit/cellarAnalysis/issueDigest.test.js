@@ -42,7 +42,9 @@ describe('issueDigest buildDigestGroups', () => {
       expect(groups.placement).toHaveLength(0);
       expect(groups.structure).toHaveLength(1);
       expect(groups.structure[0].workspace).toBe('structure');
-      expect(groups.structure[0].ctaAction).toBe('reorganise-zones');
+      // No CTA on the summary item — the Zone Issues banner in Cellar Review
+      // workspace provides the canonical "Reorganise Zones" action (Phase 4.7).
+      expect(groups.structure[0].ctaAction).toBeUndefined();
     });
 
     it('uses issue count from data.issues, not alert count', () => {

@@ -9,6 +9,48 @@ import { refreshLayout } from '../app.js';
 import { getCurrentAnalysis, getAIMoveJudgments } from './state.js';
 import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
 
+/**
+ * Detect circular move chains (A→B→C→A) among moves that aren't simple swaps.
+ * @param {Array} moves - Actionable moves (type === 'move')
+ * @param {Set} swapIndices - Indices already identified as pairwise swaps
+ * @returns {Array<Array<Object>>} Array of cycle arrays, each cycle is an ordered list of moves
+ */
+function detectCycles(moves, swapIndices) {
+  // Build adjacency: from → move (only non-swap moves)
+  const adj = new Map();
+  for (let i = 0; i < moves.length; i++) {
+    if (swapIndices.has(i)) continue;
+    const m = moves[i];
+    if (m.from && m.to) adj.set(m.from, { move: m, to: m.to, index: i });
+  }
+
+  const visited = new Set();
+  const cycles = [];
+
+  for (const [startSlot] of adj) {
+    if (visited.has(startSlot)) continue;
+    const chain = [];
+    let current = startSlot;
+    const path = new Set();
+
+    while (current && adj.has(current) && !path.has(current) && !visited.has(current)) {
+      path.add(current);
+      const edge = adj.get(current);
+      chain.push(edge.move);
+      current = edge.to;
+    }
+
+    // If we looped back to the start, it's a cycle
+    if (current === startSlot && chain.length >= 3) {
+      cycles.push(chain);
+    }
+    // Mark all nodes in this path as visited
+    for (const slot of path) visited.add(slot);
+  }
+
+  return cycles;
+}
+
 const AI_BADGE_CONFIG = {
   confirmed: { label: 'AI Confirmed', cssClass: 'ai-badge--confirmed' },
   modified:  { label: 'AI Modified',  cssClass: 'ai-badge--modified' },
@@ -74,6 +116,9 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   // AI judgment badges (when AI advice has been loaded)
   const aiJudgments = getAIMoveJudgments();
 
+  // Phase 3.2: zone-grouped headers when moves have toZone set (sortPlan source)
+  const useZoneGroups = moves.some(m => m.toZone);
+
   const actionableMoves = moves.filter(m => m.type === 'move');
   const sources = new Set(actionableMoves.map(m => m.from));
 
@@ -100,6 +145,13 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   const swapPlural = swapPairs === 1 ? '' : 's';
   const dependentPlural = dependentNonSwapCount === 1 ? '' : 's';
 
+  // Detect cycles (A→B→C→A) — chains of 3+ moves that aren't simple swaps
+  const cycles = detectCycles(actionableMoves, swapIndices);
+
+  // Check for empty buffer slot availability (needed for cycle resolution)
+  const emptySlots = actionableMoves.filter(m => !sources.has(m.to) && !swapIndices.has(actionableMoves.indexOf(m)));
+  const hasBufferSlot = emptySlots.length > 0 || actionableMoves.some(m => m.to && !sources.has(m.to));
+
   // If moves depend on each other, show warning and lock only the dependent ones
   let swapWarning = '';
   if (hasSwaps) {
@@ -108,6 +160,12 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
         <strong>Note:</strong> ${swapPairs} swap${swapPlural} detected — paired bottles shown together for easy swapping.
         Use the <strong>Swap</strong> buttons to execute each pair safely, or use <strong>Execute All</strong>.
       </div>`;
+    }
+    if (cycles.length > 0) {
+      const cycleWarning = hasBufferSlot
+        ? `${cycles.length} circular move chain${cycles.length > 1 ? 's' : ''} detected — these require a temporary empty slot. Use <strong>Execute All</strong> to resolve safely.`
+        : `${cycles.length} circular move chain${cycles.length > 1 ? 's' : ''} detected — please empty one slot first to use as a temporary buffer.`;
+      swapWarning += `<div class="swap-warning${hasBufferSlot ? ' swap-info-notice' : ''}">${cycleWarning}</div>`;
     }
     if (dependentNonSwapCount > 0) {
       swapWarning += `<div class="swap-warning">
@@ -120,15 +178,27 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
   // Track swap partners already rendered as grouped cards
   const renderedAsSwapGroup = new Set();
 
+  // Zone section header tracking (for zone-grouped rendering)
+  let lastRenderedZone = null;
+
   listEl.innerHTML = swapWarning + moves.map((move, index) => {
     // Skip moves already rendered as part of a swap group
     if (renderedAsSwapGroup.has(index)) return '';
+
+    // Zone section header — emitted once per destination zone transition
+    let zoneHeader = '';
+    if (useZoneGroups && move.toZone && move.toZone !== lastRenderedZone) {
+      lastRenderedZone = move.toZone;
+      // Count visible move items in this zone (approximate — some may later be grouped)
+      const zoneCount = moves.filter(m => m.toZone === move.toZone).length;
+      zoneHeader = `<div class="move-zone-header"><span class="move-zone-arrow">→</span> ${escapeHtml(move.toZone)} <span class="move-zone-count">(${zoneCount})</span></div>`;
+    }
 
     if (move.type === 'manual') {
       const zoneFullMsg = move.zoneFullReason
         ? escapeHtml(move.zoneFullReason)
         : `The ${escapeHtml(move.suggestedZone)} zone is full. Use Find Slot to search overflow areas, or run AI Zone Structuring to rebalance.`;
-      return `
+      return zoneHeader + `
         <div class="move-item move-item-manual priority-3" data-move-index="${index}">
           <div class="move-details">
             <div class="move-wine-name">${escapeHtml(move.wineName)}</div>
@@ -168,7 +238,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
       const aiBadgeA = renderAIBadge(aiJudgments, move.wineId);
       const aiBadgeB = renderAIBadge(aiJudgments, partner.wineId);
 
-      return `
+      return zoneHeader + `
         <div class="move-item is-swap-group priority-${move.priority}" data-move-index="${index}" data-swap-partner="${partnerIndex}">
           <div class="move-details">
             <span class="swap-badge">SWAP</span>
@@ -205,7 +275,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
     // AI judgment badge
     const aiBadge = renderAIBadge(aiJudgments, move.wineId);
 
-    return `
+    return zoneHeader + `
       <div class="move-item priority-${move.priority}" data-move-index="${index}">
         <div class="move-details">
           <div class="move-wine-name">${escapeHtml(move.wineName)}${aiBadge}</div>
@@ -213,7 +283,7 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
             <span class="from">${move.from}</span>
             <span class="arrow">→</span>
             <span class="to">${move.to}</span>
-            ${move.toZone ? `<span class="move-zone-label">(${escapeHtml(move.toZone)})</span>` : ''}
+            ${move.toZone && !useZoneGroups ? `<span class="move-zone-label">(${escapeHtml(move.toZone)})</span>` : ''}
           </div>
           <div class="move-reason">${escapeHtml(move.reason)}</div>
         </div>
