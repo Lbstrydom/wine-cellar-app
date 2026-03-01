@@ -1,14 +1,14 @@
 ---
 name: award-extractor
 description: Extracts wine awards from PDF documents. Use when importing competition results, processing wine ratings, or when user mentions "extract awards", "parse awards PDF", "import competition results", or "process wine ratings booklet".
-allowed-tools: Read, Bash(node:*), Bash(sqlite3:*), mcp__pdf-reader__*, mcp__sqlite__*
+allowed-tools: Read, Bash(node:*), mcp__pdf-reader__*
 ---
 
 # Wine Award Extraction Skill
 
 ## Overview
 
-Extracts structured wine award data from PDF competition booklets, rating guides, and certification documents for import into the wine cellar app's awards database.
+Extracts structured wine award data from PDF competition booklets, rating guides, and certification documents for import into the wine cellar app's PostgreSQL awards tables (Supabase).
 
 ## When to Use
 
@@ -19,23 +19,36 @@ Extracts structured wine award data from PDF competition booklets, rating guides
 
 ## Database Schema
 
-Awards are stored in `data/awards.db` with this structure:
+Awards are stored in PostgreSQL (Supabase) across these tables:
 
 ```sql
-CREATE TABLE awards (
-  id INTEGER PRIMARY KEY,
-  wine_name TEXT NOT NULL,
-  producer TEXT,
-  vintage INTEGER,
-  country TEXT,
-  region TEXT,
-  grape_variety TEXT,
-  award_name TEXT NOT NULL,        -- e.g., "IWSC 2024"
-  medal TEXT,                       -- Gold, Silver, Bronze, Trophy
-  score INTEGER,                    -- Points (if applicable)
-  category TEXT,                    -- Competition category
-  source_file TEXT,                 -- Original PDF filename
-  extracted_at TEXT DEFAULT CURRENT_TIMESTAMP
+-- Award sources (competitions)
+CREATE TABLE award_sources (
+    id SERIAL PRIMARY KEY,
+    cellar_id UUID NOT NULL REFERENCES cellars(id) ON DELETE CASCADE,
+    competition_id INTEGER REFERENCES competitions(id),
+    name TEXT NOT NULL,
+    year INTEGER,
+    source_type TEXT,        -- 'pdf', 'webpage', 'text'
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Individual awards
+CREATE TABLE competition_awards (
+    id SERIAL PRIMARY KEY,
+    cellar_id UUID NOT NULL REFERENCES cellars(id) ON DELETE CASCADE,
+    source_id INTEGER REFERENCES award_sources(id),
+    wine_name TEXT NOT NULL,
+    producer TEXT,
+    vintage INTEGER,
+    country TEXT,
+    region TEXT,
+    grape_variety TEXT,
+    medal TEXT,              -- Gold, Silver, Bronze, Trophy
+    score INTEGER,           -- Points (if applicable)
+    category TEXT,           -- Competition category
+    matched_wine_id INTEGER REFERENCES wines(id),
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
@@ -77,19 +90,32 @@ For each wine entry, extract:
 ### Step 4: Validate and Match
 
 Before importing:
-1. Check for duplicate entries in awards.db
+1. Check for duplicate entries in the database
 2. Cross-reference producer names with existing cellar entries
 3. Normalize medal names (GOLD -> Gold, G -> Gold)
 4. Verify vintage years are reasonable (1950-current year)
 
-### Step 5: Import to Database
+### Step 5: Import via API
 
-Use the SQLite MCP to insert awards:
+Use the app's award import API endpoints:
+
+```bash
+# Import from PDF (uses Claude for extraction)
+POST /api/awards/sources/:sourceId/import-pdf
+
+# Import from text (pre-extracted text)
+POST /api/awards/sources/:sourceId/import-text
+
+# Import from webpage
+POST /api/awards/sources/:sourceId/import-webpage
+```
+
+Or generate SQL for direct insertion in Supabase:
 
 ```sql
-INSERT INTO awards (wine_name, producer, vintage, country, region,
-                    grape_variety, award_name, medal, score, category, source_file)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO competition_awards (cellar_id, source_id, wine_name, producer, vintage,
+    country, region, grape_variety, medal, score, category)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 ```
 
 ## Output Format
@@ -152,5 +178,5 @@ Claude will:
 2. Parse the table structure to identify wine entries
 3. Extract medal, producer, wine name, vintage for each entry
 4. Validate data and check for duplicates
-5. Insert into awards.db using sqlite MCP
+5. Import via the app's award import API or generate SQL
 6. Report summary: "Extracted 147 awards, 3 duplicates skipped"

@@ -13,6 +13,7 @@ import { Router } from 'express';
 import { requireAuth, optionalAuth } from '../middleware/auth.js';
 import logger from '../utils/logger.js';
 import { requireCellarContext } from '../middleware/cellarContext.js';
+import { WINE_COUNTRIES, COUNTRY_REGIONS } from '../config/wineRegions.js';
 import wineRoutes from './wines.js';
 import wineRatingsRoutes from './wineRatings.js';
 import winesTastingRoutes from './winesTasting.js';
@@ -44,6 +45,7 @@ import searchRoutes from './search.js';
 import consistencyRoutes from './consistency.js';
 import recipesRoutes from './recipes.js';
 import buyingGuideItemsRoutes from './buyingGuideItems.js';
+import pendingRatingsRoutes from './pendingRatings.js';
 
 const router = Router();
 
@@ -59,6 +61,12 @@ router.get('/public-config', (_req, res) => {
     supabase_url: SUPABASE_URL,
     supabase_anon_key: SUPABASE_ANON_KEY
   });
+});
+
+// Public wine region reference data (no auth — cached by browser + SW)
+router.get('/config/wine-regions', (_req, res) => {
+  res.set('Cache-Control', 'public, max-age=86400'); // 24h browser cache
+  res.json({ countries: WINE_COUNTRIES, regions: COUNTRY_REGIONS });
 });
 
 // Client error logging (optional auth)
@@ -110,5 +118,6 @@ router.use('/wines', requireAuth, requireCellarContext, tastingNotesRoutes);    
 router.use('/consistency', requireAuth, requireCellarContext, consistencyRoutes);  // /consistency/audit, /consistency/check/:id, /consistency/validate
 router.use('/recipes', requireAuth, requireCellarContext, recipesRoutes);          // /recipes, /recipes/import/*, /recipes/sync/*
 router.use('/buying-guide-items', requireAuth, requireCellarContext, buyingGuideItemsRoutes);  // /buying-guide-items CRUD, status, batch
+router.use('/pending-ratings', requireAuth, requireCellarContext, pendingRatingsRoutes);     // /pending-ratings, /pending-ratings/:id/resolve, /pending-ratings/dismiss-all
 
 export default router;

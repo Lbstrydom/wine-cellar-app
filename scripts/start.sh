@@ -4,7 +4,7 @@
 
 set -e
 
-# Set data directory for SQLite (only used if DATABASE_URL is not set)
+# Set data directory for migrations and runtime files
 export DATA_DIR="/app/data"
 echo "Data directory: $DATA_DIR"
 

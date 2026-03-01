@@ -94,3 +94,21 @@ export async function clearSommelierChat(chatId) {
   });
   return handleResponse(res, 'Failed to clear chat');
 }
+
+/**
+ * Create a manual (user-initiated) pairing session.
+ * @param {number} wineId - Wine to pair
+ * @param {string} dish - Dish description
+ * @param {number} [recipeId] - Recipe ID if from recipe library
+ * @returns {Promise<{sessionId: number}>}
+ */
+export async function createManualPairing(wineId, dish, recipeId) {
+  const body = { wineId, dish };
+  if (recipeId) body.recipeId = recipeId;
+  const res = await fetch(`${API_BASE}/api/pairing/sessions/manual`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+  return handleResponse(res, 'Failed to create manual pairing');
+}

@@ -58,7 +58,7 @@ async function testConnection() {
 testConnection();
 
 /**
- * Convert SQLite ? placeholders to PostgreSQL $1, $2 placeholders
+ * Convert legacy ? placeholders to PostgreSQL $1, $2 placeholders
  * @param {string} sql - SQL with ? placeholders
  * @returns {string} SQL with $1, $2 placeholders
  */
@@ -68,7 +68,7 @@ function convertPlaceholders(sql) {
 }
 
 /**
- * PostgreSQL database wrapper with SQLite-compatible API.
+ * PostgreSQL database wrapper with prepare/get/all/run API.
  * All methods return promises that must be awaited.
  */
 class PostgresDB {
@@ -146,7 +146,7 @@ class PostgresDB {
   }
 
   /**
-   * No-op for SQLite pragmas
+   * No-op for legacy pragma calls
    */
   pragma() {}
 }

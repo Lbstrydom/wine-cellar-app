@@ -97,8 +97,16 @@ export {
   choosePairingWine,
   submitPairingFeedback,
   sommelierChat,
-  clearSommelierChat
+  clearSommelierChat,
+  createManualPairing
 } from './pairing.js';
+
+// Pending ratings (drink-now-rate-later)
+export {
+  getPendingRatings,
+  resolvePendingRating,
+  dismissAllPendingRatings
+} from './pendingRatings.js';
 
 // Cellar zones, reconfiguration, analysis
 export {
@@ -225,6 +233,22 @@ export {
   getMenuPairing,
   getBuyingGuide
 } from './recipes.js';
+
+// Buying guide items (shopping cart)
+export {
+  listCartItems,
+  getCartSummary,
+  getGapSummary,
+  getCartItem,
+  createCartItem,
+  updateCartItem,
+  updateCartItemStatus,
+  batchUpdateStatus,
+  deleteCartItem,
+  inferStyle,
+  arriveItem,
+  convertToCellar
+} from './buyingGuideItems.js';
 
 // Error logging
 export {

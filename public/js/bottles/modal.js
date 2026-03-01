@@ -4,10 +4,12 @@
  */
 
 import { fetchWine } from '../api.js';
-import { showToast, WINE_COUNTRIES, getAllSlotsFromLayout } from '../utils.js';
+import { showToast, getAllSlotsFromLayout } from '../utils.js';
 import { state } from '../app.js';
 import { bottleState, resetBottleState } from './state.js';
 import { clearUploadedImage } from './imageParsing.js';
+import { setCountryRegionValues, populateCountryDropdown } from './dropdownHelpers.js';
+import { loadWineRegions } from '../config/wineRegions.js';
 
 /**
  * Find slot data from current layout.
@@ -58,6 +60,9 @@ export function showAddBottleModal(location) {
   if (advDiv) advDiv.setAttribute('hidden', '');
   if (advBtn) advBtn.textContent = '+ More fields';
 
+  // Ensure country dropdown is populated
+  loadWineRegions().then(() => populateCountryDropdown());
+
   // Default to existing wine mode
   setBottleFormMode('existing');
 
@@ -100,25 +105,12 @@ export async function showEditBottleModal(location, wineId) {
     document.getElementById('wine-rating').value = wine.vivino_rating || '';
     document.getElementById('wine-price').value = wine.price_eur || '';
 
-    // Handle country dropdown with "Other" option
-    const countrySelect = document.getElementById('wine-country');
-    const countryOther = document.getElementById('wine-country-other');
-    if (wine.country && WINE_COUNTRIES.includes(wine.country)) {
-      countrySelect.value = wine.country;
-      if (countryOther) countryOther.style.display = 'none';
-    } else if (wine.country) {
-      countrySelect.value = 'Other';
-      if (countryOther) {
-        countryOther.value = wine.country;
-        countryOther.style.display = 'block';
-      }
-    } else {
-      countrySelect.value = '';
-      if (countryOther) countryOther.style.display = 'none';
-    }
+    // Populate country/region dropdowns from canonical data and set values
+    await loadWineRegions();
+    populateCountryDropdown();
+    setCountryRegionValues(wine);
 
     document.getElementById('wine-producer').value = wine.producer || '';
-    document.getElementById('wine-region').value = wine.region || '';
     document.getElementById('wine-drink-from').value = wine.drink_from || '';
     document.getElementById('wine-drink-peak').value = wine.drink_peak || '';
     document.getElementById('wine-drink-until').value = wine.drink_until || '';

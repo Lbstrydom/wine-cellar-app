@@ -79,6 +79,15 @@ export const sessionFeedbackSchema = z.object({
 });
 
 /**
+ * POST /sessions/manual body.
+ */
+export const manualPairingSchema = z.object({
+  wineId: z.coerce.number().int().positive('wineId is required'),
+  dish: z.string().min(1, 'Please describe a dish').max(500).trim(),
+  recipeId: z.coerce.number().int().positive().optional()
+});
+
+/**
  * Session ID param schema.
  */
 export const sessionIdSchema = z.object({

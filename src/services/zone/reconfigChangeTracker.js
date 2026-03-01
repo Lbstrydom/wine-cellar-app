@@ -31,7 +31,7 @@ export async function getReconfigChangeThresholdPct(cellarId) {
       if (Number.isFinite(parsed) && parsed >= 0 && parsed <= 100) return parsed;
     }
   } catch {
-    // table may not exist in dev/SQLite — fall through
+    // table may not exist yet — fall through
   }
 
   // 2. Env-var override

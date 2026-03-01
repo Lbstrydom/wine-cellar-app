@@ -17,7 +17,7 @@ Personal wine cellar management with visual grid layout and AI-powered pairing s
 ## Tech Stack
 
 - **Backend**: Node.js + Express
-- **Database**: PostgreSQL (Supabase) / SQLite (local)
+- **Database**: PostgreSQL (Supabase)
 - **AI**: Claude API (Anthropic)
 - **Deployment**: Railway (auto-deploy from GitHub)
 - **Domain**: Cloudflare DNS
@@ -28,7 +28,7 @@ Personal wine cellar management with visual grid layout and AI-powered pairing s
 # Install dependencies
 npm install
 
-# Run locally with SQLite
+# Set DATABASE_URL in .env pointing to Supabase
 npm run dev
 ```
 
@@ -127,13 +127,8 @@ wine-cellar-app/
 railway logs
 ```
 
-**Local development with PostgreSQL:**
+**Local development:**
 ```bash
-DATABASE_URL="your-supabase-url" npm run dev
-```
-
-**Reset local SQLite:**
-```bash
-rm data/cellar.db
-npm run dev  # Creates fresh database
+# Set DATABASE_URL in .env pointing to Supabase PostgreSQL
+npm run dev
 ```

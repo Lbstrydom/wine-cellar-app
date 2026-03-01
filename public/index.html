@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260228c">
+  <link rel="stylesheet" href="/css/styles.css?v=20260228e">
 </head>
 <body>
   <header>
@@ -100,6 +100,9 @@
   </nav>
 
   <main id="main-content">
+  <!-- Rating Reminder Bar (non-blocking, polite live region) -->
+  <div id="rating-reminder-bar" class="rating-reminder-bar" style="display:none;" role="status"></div>
+
   <!-- Grid View -->
   <div class="view active" id="view-grid" role="tabpanel" aria-labelledby="stab-grid">
     <!-- AI Drink Recommendations Panel -->
@@ -1175,9 +1178,18 @@
       <div class="modal-actions">
         <button class="btn btn-danger" id="btn-drink">Drink This</button>
         <button class="btn btn-warning" id="btn-open-bottle">Mark Open</button>
+        <button class="btn btn-secondary" id="btn-pair-wine">Pair with Dish</button>
         <button class="btn btn-secondary" id="btn-add-another">+ Add Another</button>
         <button class="btn btn-secondary" id="btn-edit-wine">Edit</button>
         <button class="btn btn-secondary" id="btn-close">Close</button>
+      </div>
+      <div id="manual-pair-panel" class="manual-pair-panel" style="display:none;">
+        <label for="manual-pair-dish">What dish are you pairing with?</label>
+        <input type="text" id="manual-pair-dish" placeholder="e.g. Grilled lamb chops..." />
+        <div class="manual-pair-actions">
+          <button class="btn btn-primary btn-sm" id="manual-pair-confirm">Start Pairing</button>
+          <button class="btn btn-secondary btn-sm" id="manual-pair-cancel">Cancel</button>
+        </div>
       </div>
     </div>
   </div>
@@ -1345,19 +1357,7 @@
                 <label for="wine-country">Country</label>
                 <select id="wine-country">
                   <option value="">Select country...</option>
-                  <option value="Argentina">Argentina</option>
-                  <option value="Australia">Australia</option>
-                  <option value="Austria">Austria</option>
-                  <option value="Chile">Chile</option>
-                  <option value="France">France</option>
-                  <option value="Germany">Germany</option>
-                  <option value="Greece">Greece</option>
-                  <option value="Italy">Italy</option>
-                  <option value="New Zealand">New Zealand</option>
-                  <option value="Portugal">Portugal</option>
-                  <option value="South Africa">South Africa</option>
-                  <option value="Spain">Spain</option>
-                  <option value="USA">USA</option>
+                  <!-- Populated dynamically by dropdownHelpers.js -->
                   <option value="Other">Other</option>
                 </select>
                 <input type="text" id="wine-country-other" class="mt-half" placeholder="Enter country name..." style="display: none;" />
@@ -1371,7 +1371,12 @@
               </div>
               <div class="form-field">
                 <label for="wine-region">Region</label>
-                <input type="text" id="wine-region" placeholder="e.g., Stellenbosch" maxlength="200" />
+                <select id="wine-region">
+                  <option value="">Select region...</option>
+                  <!-- Populated dynamically based on country -->
+                  <option value="Other">Other</option>
+                </select>
+                <input type="text" id="wine-region-other" class="mt-half" placeholder="Enter region name..." style="display: none;" maxlength="200" />
               </div>
             </div>
 
@@ -1478,6 +1483,18 @@
 
         <button class="btn btn-primary auth-submit" type="submit" id="auth-submit-btn">Continue</button>
       </form>
+    </div>
+  </div>
+
+  <!-- Wine Picker Modal (manual pairing: recipe → wine direction) -->
+  <div class="modal-overlay" id="wine-picker-modal" style="display:none;" role="dialog" aria-modal="true" aria-label="Pick a wine">
+    <div class="modal modal-sm">
+      <h2>Pick a Wine</h2>
+      <input type="text" id="wine-picker-search" placeholder="Search wines..." class="mb-1" />
+      <div id="wine-picker-list" class="wine-picker-list"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-secondary" id="wine-picker-cancel">Cancel</button>
+      </div>
     </div>
   </div>
 

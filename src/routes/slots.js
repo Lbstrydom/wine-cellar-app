@@ -21,6 +21,7 @@ import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTrack
 import { adjustZoneCountAfterBottleCrud } from '../services/cellar/cellarAllocation.js';
 import { parseSlot, detectRowGaps } from '../services/cellar/cellarMetrics.js';
 import { getCellarLayoutSettings } from '../services/shared/cellarLayoutSettings.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -163,15 +164,17 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
 
   const wineId = slot.wine_id;
   let remainingCount = 0;
+  let consumptionLogId = null;
 
   // Perform drink operation atomically using PostgreSQL transaction
   await db.transaction(async (client) => {
-    // Log consumption
-    await client.query(
+    // Log consumption (RETURNING id for pending_rating FK)
+    const logResult = await client.query(
       `INSERT INTO consumption_log (wine_id, slot_location, cellar_id, occasion, pairing_dish, rating, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
       [wineId, location, req.cellarId, occasion || null, pairing_dish || null, rating || null, notes || null]
     );
+    consumptionLogId = logResult.rows[0].id;
 
     // Clear slot
     await client.query('UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2', [req.cellarId, location]);
@@ -196,6 +199,13 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
   // Invalidate buying guide cache — bottle count changed
   invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId);
+
+  // Create pending rating if user didn't rate on the spot (fire-and-forget)
+  if (!rating && consumptionLogId) {
+    createPendingRating(req.cellarId, consumptionLogId, wineId, location).catch(err => {
+      logger.warn('PendingRating', `Failed to create: ${err.message}`);
+    });
+  }
 
   // Compute compaction suggestions for the affected row
   const compactionSuggestions = await getRowCompactionSuggestions(location, req.cellarId);
@@ -389,4 +399,24 @@ async function getRowCompactionSuggestions(location, cellarId) {
       wineName: gap.wineName,
       reason: `Fill gap — keep row ${gap.row} packed from the ${fillDirection}`
     }));
+}
+
+/**
+ * Create a pending rating record for a consumed wine that wasn't rated.
+ * Fire-and-forget — failures are logged but don't affect the drink response.
+ * @param {string} cellarId - Cellar UUID
+ * @param {number} consumptionLogId - ID from consumption_log
+ * @param {number} wineId - Wine ID
+ * @param {string} locationCode - Slot location code
+ */
+async function createPendingRating(cellarId, consumptionLogId, wineId, locationCode) {
+  const wine = await db.prepare(
+    'SELECT wine_name, vintage, colour, style FROM wines WHERE id = $1 AND cellar_id = $2'
+  ).get(wineId, cellarId);
+  if (!wine) return;
+
+  await db.prepare(`
+    INSERT INTO pending_ratings (cellar_id, consumption_log_id, wine_id, wine_name, vintage, colour, style, location_code)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+  `).run(cellarId, consumptionLogId, wineId, wine.wine_name, wine.vintage, wine.colour, wine.style, locationCode);
 }

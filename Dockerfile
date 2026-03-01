@@ -1,7 +1,7 @@
 # Wine Cellar App - Docker Image
 FROM node:20-alpine
 
-# Install dependencies for better-sqlite3, dos2unix, and Chromium for Puppeteer
+# Install build tools (dos2unix, native deps) and Chromium for Puppeteer
 RUN apk add --no-cache python3 make g++ dos2unix \
     chromium \
     nss \

@@ -36,6 +36,9 @@ import { initRecommendations } from './recommendations.js';
 import { initErrorBoundary } from './errorBoundary.js';
 import { addTrackedListener, cleanupNamespace } from './eventManager.js';
 import { registerServiceWorker } from './pwa.js';
+import { getCountries, getRegionsForCountry, loadWineRegions } from './config/wineRegions.js';
+import { checkPendingRatings } from './ratingReminder.js';
+import { initManualPairing } from './manualPairing.js';
 
 /** @type {boolean} Enable verbose logging via localStorage.setItem('debug', 'true') */
 const DEBUG = (() => { try { return localStorage.getItem('debug') === 'true'; } catch { return false; } })();
@@ -331,6 +334,9 @@ async function startAuthenticatedApp() {
   appStarted = true;
 
   try {
+    // Pre-load wine region data for dropdowns (fire-and-forget)
+    loadWineRegions().catch(() => {});
+
     // Setup navigation — parent tabs + sub-tabs
     document.querySelectorAll('.tab[data-parent]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -369,10 +375,14 @@ async function startAuthenticatedApp() {
     initGlobalSearch();
     initAccessibility();
     initRecommendations();
+    initManualPairing();
     await initBottles();
 
     // Load initial data with error handling to prevent PWA freeze
     await loadInitialData();
+
+    // Check for pending wine ratings (fire-and-forget, non-blocking)
+    checkPendingRatings();
 
     // Initialize zoom controls after grid is rendered
     initZoomControls();
@@ -1336,13 +1346,28 @@ function startInlineEdit(cell) {
   cell.textContent = '';
   cell.appendChild(input);
 
-  // Country field: add datalist with existing countries for suggestions
+  // Country field: merge canonical countries with custom ones already in cellar
   if (field === 'country' && state.wineListData) {
+    const existingCountries = state.wineListData.map(w => w.country).filter(Boolean);
+    const allCountries = [...new Set([...getCountries(), ...existingCountries])].sort();
     const listId = `country-datalist-${wineId}`;
-    const countries = [...new Set(state.wineListData.map(w => w.country).filter(Boolean))].sort();
     const datalist = document.createElement('datalist');
     datalist.id = listId;
-    datalist.innerHTML = countries.map(c => `<option value="${escapeHtml(c)}">`).join('');
+    datalist.innerHTML = allCountries.map(c => `<option value="${escapeHtml(c)}">`).join('');
+    cell.appendChild(datalist);
+    input.setAttribute('list', listId);
+  }
+
+  // Region field: show regions for the wine's country + custom regions in cellar
+  if (field === 'region' && state.wineListData) {
+    const wine = state.wineListData.find(w => w.id === wineId);
+    const countryRegions = wine?.country ? getRegionsForCountry(wine.country) : [];
+    const existingRegions = state.wineListData.map(w => w.region).filter(Boolean);
+    const allRegions = [...new Set([...countryRegions, ...existingRegions])].sort();
+    const listId = `region-datalist-${wineId}`;
+    const datalist = document.createElement('datalist');
+    datalist.id = listId;
+    datalist.innerHTML = allRegions.map(r => `<option value="${escapeHtml(r)}">`).join('');
     cell.appendChild(datalist);
     input.setAttribute('list', listId);
   }

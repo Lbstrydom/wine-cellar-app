@@ -1,7 +1,11 @@
 /**
  * @fileoverview Unit tests for cellar placement matching.
+ * Mock implementations for cellarLayoutSettings and cellarAllocation are
+ * re-applied in beforeEach to survive --no-isolate cross-file overrides.
  * @module tests/unit/services/cellar/cellarPlacement.test
  */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../../src/db/index.js', () => ({
   default: {
@@ -35,6 +39,34 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
 
 import { findBestZone, findAvailableSlot, inferColor } from '../../../../src/services/cellar/cellarPlacement.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from '../../../../src/services/cellar/cellarAllocation.js';
+import { getCellarLayoutSettings, getDynamicColourRowRanges, isWhiteFamily } from '../../../../src/services/shared/cellarLayoutSettings.js';
+
+/**
+ * Re-apply mock implementations that may be clobbered in --no-isolate by other
+ * test files mocking the same modules.
+ */
+function resetLayoutMocks() {
+  getCellarLayoutSettings.mockResolvedValue({
+    fillDirection: 'left',
+    colourOrder: 'whites-top'
+  });
+  getDynamicColourRowRanges.mockResolvedValue({
+    whiteRows: [1, 2, 3, 4, 5, 6, 7],
+    redRows: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+    whiteRowCount: 7,
+    redRowCount: 12
+  });
+  isWhiteFamily.mockImplementation((colour) => {
+    const whiteFamilyColours = ['white', 'rose', 'rosé', 'orange', 'sparkling', 'dessert', 'fortified'];
+    return whiteFamilyColours.includes((colour || '').toLowerCase());
+  });
+}
+
+function resetAllocationMocks() {
+  getZoneRows.mockResolvedValue([]);
+  allocateRowToZone.mockRejectedValue(new Error('No rows'));
+  getActiveZoneMap.mockResolvedValue({});
+}
 
 describe('inferColor expanded grape coverage', () => {
   it.each([
@@ -195,6 +227,8 @@ describe('findAvailableSlot uses allocated rows regardless of colour region (Pha
   // in allocateRowToZone(). (See external review Finding #6)
   beforeEach(() => {
     vi.clearAllMocks();
+    resetLayoutMocks();
+    resetAllocationMocks();
   });
 
   it('uses a white zone row even if in red territory (allocated rows are committed)', async () => {
@@ -267,6 +301,8 @@ describe('findAvailableSlot uses allocated rows regardless of colour region (Pha
 describe('findAvailableSlot allowFallback + enforceAffinity overflow chain', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetLayoutMocks();
+    resetAllocationMocks();
   });
 
   /**

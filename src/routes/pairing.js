@@ -21,6 +21,7 @@ import {
   extractSignalsSchema,
   shortlistSchema,
   hybridPairingSchema,
+  manualPairingSchema,
   sessionChooseSchema,
   sessionFeedbackSchema,
   sessionIdSchema
@@ -294,6 +295,7 @@ export default router;
 
 // ================= Pairing Feedback & User Profile Endpoints =================
 import {
+  createManualPairingSession,
   recordWineChoice,
   recordFeedback,
   getPendingFeedbackSessions,
@@ -301,6 +303,36 @@ import {
   getPairingStats,
   FAILURE_REASONS
 } from '../services/pairing/pairingSession.js';
+import * as recipeService from '../services/recipe/recipeService.js';
+
+/**
+ * POST /api/pairing/sessions/manual
+ * Create a manual (user-initiated, no AI) pairing session.
+ */
+router.post('/sessions/manual', validateBody(manualPairingSchema), asyncHandler(async (req, res) => {
+  const { wineId, dish, recipeId } = req.body;
+
+  // Validate wine belongs to this cellar
+  const wine = await db.prepare(
+    'SELECT id FROM wines WHERE id = $1 AND cellar_id = $2'
+  ).get(wineId, req.cellarId);
+  if (!wine) return res.status(404).json({ error: 'Wine not found' });
+
+  // Validate recipe belongs to this cellar (if provided)
+  if (recipeId) {
+    const recipe = await recipeService.getRecipe(req.cellarId, recipeId);
+    if (!recipe) return res.status(404).json({ error: 'Recipe not found' });
+  }
+
+  const sessionId = await createManualPairingSession({
+    cellarId: req.cellarId,
+    wineId,
+    dish,
+    recipeId
+  });
+
+  res.status(201).json({ sessionId });
+}));
 
 /**
  * POST /api/pairing/sessions/:id/choose

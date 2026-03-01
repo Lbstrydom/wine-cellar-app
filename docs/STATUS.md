@@ -1,15 +1,46 @@
 # Wine Cellar App - Status Report
-## 28 February 2026
+## 1 March 2026
 
 ---
 
 ## Executive Summary
 
-The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on **Railway** with **Supabase PostgreSQL** database. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, a shopping cart / buying workflow with arrival-to-cellar pipeline, and comprehensive test coverage.
+The Wine Cellar App is a production-ready Progressive Web App for wine collection management, deployed on **Railway** with **Supabase PostgreSQL** database. It combines traditional inventory management with AI-powered features including natural language pairing recommendations, automated rating aggregation from 50+ sources, intelligent cellar organization, a shopping cart / buying workflow with arrival-to-cellar pipeline, manual wine-food pairing, and comprehensive test coverage.
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 28 Feb 2026**:
+**Recent Enhancements** ✨ **NEW - 1 Mar 2026**:
+- **Drink-Now-Rate-Later Reminder System — COMPLETE** ✅:
+  - New `pending_ratings` table (migration 060) tracks consumed wines awaiting user rating, linked to `consumption_log` events.
+  - `GET /api/pending-ratings` returns unresolved ratings (separates `needsRating` vs `alreadyRated`). `PUT /api/pending-ratings/:id/resolve` saves rating to both `consumption_log` and `wines.personal_rating`. `PUT /api/pending-ratings/dismiss-all` for batch dismiss.
+  - Frontend `ratingReminder.js`: non-blocking collapsed bar with expandable inline rating cards (1-5 stars + notes). Triggered fire-and-forget after initial data load. Uses `role="status"` (polite live region).
+  - Integration: `slots.js` POST drink endpoint captures `consumptionLogId` and creates pending rating automatically if user doesn't rate on the spot.
+  - New files: `src/routes/pendingRatings.js`, `public/js/api/pendingRatings.js`, `public/js/ratingReminder.js`, `data/migrations/060_pending_ratings.sql`.
+
+- **Manual Wine-Dish Pairings — COMPLETE** ✅:
+  - Users can create pairings directly without AI by selecting a wine and entering a dish. New `POST /api/pairing/sessions/manual` endpoint creates pairing sessions with `source='manual'`.
+  - `manualPairing.js` coordinator: `pickWine()` (modal with search/filter), `handleManualPairFromWine()` (from wine detail), `manualPairFromRecipe()` (from recipe library).
+  - Integration with recipe library: "Pair Wine" button on recipe cards opens wine picker → creates session.
+  - New files: `public/js/manualPairing.js`, migration 059 adds `source` and `recipe_id` columns to `pairing_sessions`.
+
+- **Wine Region Dropdown System — COMPLETE** ✅:
+  - Comprehensive country→region mapping (50+ countries, 500+ regions) in `src/config/wineRegions.js` and `public/js/config/wineRegions.js`.
+  - `dropdownHelpers.js`: cascading country/region `<select>` population with "Other" fallback for unknown values.
+  - Integrated into bottle add/edit form (`bottles/form.js`): country change cascades to region dropdown.
+
+- **Reduce-Now Auto-Evaluation — COMPLETE** ✅:
+  - `evaluateSingleWine()` exported from `reduceNow.js`: lightweight single-wine evaluation against drinking window, age, and rating thresholds.
+  - Fire-and-forget calls after wine creation/update in `wines.js` routes.
+  - Bug fixes in `/evaluate` endpoint: `w.grape` → `w.grapes`, per-wine try-catch, robust rating parsing, vintage validation.
+
+- **Infrastructure Cleanup**:
+  - Removed legacy SQLite artefacts: `data/migrate.py`, `data/schema.sqlite.sql`, `scripts/migrate-awards-db.js`, `scripts/migrate-to-postgres.js`.
+  - Dockerfile simplified (PostgreSQL-only). `docker-compose.yml` requires `DATABASE_URL`.
+  - Completed plan documents archived to `docs/archive/` (bug1-plan.md, buy-plan.md, shop-plan.md).
+
+- **Validation status**: `npm run test:unit` passes at **2849 tests across 117 files**.
+
+**Previous Enhancements** (28 Feb 2026):
 - **Search Pipeline Overhaul (Phases 1-6) — COMPLETE** ✅:
   - Comprehensive audit and refactor of the 3-tier rating search pipeline. ~300 lines of duplication eliminated, 3 bugs fixed, model optimization, structured parsers wired, deterministic JSON output.
   - Plan document: `.claude/plans/fancy-noodling-candle.md` (7-phase plan; Phases 1-6 implemented, Phase 7 optional Zod schema deferred).
@@ -22,6 +53,7 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Code Review Fixes**: Removed dead code in `recipeLibrary.js` (unused variables). Fixed N+1 DB reads in `settings.js` credentials endpoint.
   - New files: `src/services/search/threeTierWaterfall.js`, `src/services/shared/jsonUtils.js`.
   - **Validation status**: `npm run test:unit` passes at **2859 tests across 117 files**. Benchmark: hit@1 82%, hit@3 96%, MRR 0.89.
+  - Plan document: `.claude/plans/fancy-noodling-candle.md`.
 
 - **Comprehensive UX Overhaul (Phases 1-5) — COMPLETE** ✅:
   - Systematic UX audit findings addressed across 5 phases (16+ files changed, ~900 lines added).

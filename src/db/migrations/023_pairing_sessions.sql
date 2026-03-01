@@ -1,5 +1,5 @@
 -- Pairing Sessions: captures every Find Pairing interaction
--- Supports both PostgreSQL (production) and SQLite (local dev)
+-- PostgreSQL (Supabase)
 
 CREATE TABLE IF NOT EXISTS pairing_sessions (
   id SERIAL PRIMARY KEY,
@@ -41,7 +41,7 @@ CREATE INDEX IF NOT EXISTS idx_pairing_sessions_wine ON pairing_sessions(chosen_
 CREATE INDEX IF NOT EXISTS idx_pairing_sessions_date ON pairing_sessions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_pairing_sessions_consumption ON pairing_sessions(consumption_log_id);
 
--- GIN index for JSONB queries (PostgreSQL only, skip for SQLite)
+-- GIN index for JSONB queries (optional, enable if needed)
 -- CREATE INDEX IF NOT EXISTS idx_pairing_sessions_signals ON pairing_sessions USING GIN (food_signals);
 
 -- Partial index for pending feedback queries

@@ -11,6 +11,8 @@ import { closeBottleModal } from './modal.js';
 import { showSlotPickerModal } from './slotPicker.js';
 import { showWineConfirmation } from './wineConfirmation.js';
 import { showWineDisambiguation } from './disambiguationModal.js';
+import { populateCountryDropdown, populateRegionDropdown } from './dropdownHelpers.js';
+import { loadWineRegions } from '../config/wineRegions.js';
 
 /**
  * Initialize form event handlers.
@@ -24,15 +26,34 @@ export function initForm() {
   // Delete button
   document.getElementById('bottle-delete-btn')?.addEventListener('click', handleDeleteBottle);
 
-  // Country dropdown "Other" handler
+  // Load region data then populate country dropdown
+  loadWineRegions().then(() => populateCountryDropdown());
+
+  // Country change → cascade to region + handle "Other"
   const countrySelect = document.getElementById('wine-country');
-  const countryOther = document.getElementById('wine-country-other');
-  if (countrySelect && countryOther) {
+  if (countrySelect) {
     countrySelect.addEventListener('change', () => {
-      countryOther.style.display = countrySelect.value === 'Other' ? 'block' : 'none';
-      if (countrySelect.value !== 'Other') {
-        countryOther.value = '';
+      const country = countrySelect.value;
+
+      // "Other" text input toggle
+      const countryOther = document.getElementById('wine-country-other');
+      if (countryOther) {
+        countryOther.style.display = country === 'Other' ? 'block' : 'none';
+        if (country !== 'Other') countryOther.value = '';
       }
+
+      // Cascade: populate region dropdown
+      populateRegionDropdown(country);
+    });
+  }
+
+  // Region "Other" handler
+  const regionSelect = document.getElementById('wine-region');
+  const regionOther = document.getElementById('wine-region-other');
+  if (regionSelect && regionOther) {
+    regionSelect.addEventListener('change', () => {
+      regionOther.style.display = regionSelect.value === 'Other' ? 'block' : 'none';
+      if (regionSelect.value !== 'Other') regionOther.value = '';
     });
   }
 }
@@ -55,6 +76,23 @@ function getCountryValue() {
 }
 
 /**
+ * Get the selected region value, handling "Other" option.
+ * @returns {string|null} Region value
+ */
+function getRegionValue() {
+  const regionSelect = document.getElementById('wine-region');
+  const regionOther = document.getElementById('wine-region-other');
+
+  if (!regionSelect) return null;
+
+  if (regionSelect.value === 'Other' && regionOther) {
+    return regionOther.value.trim() || null;
+  }
+
+  return regionSelect.value || null;
+}
+
+/**
  * Collect wine data from form.
  * @returns {Object} Wine form data
  */
@@ -69,7 +107,7 @@ function collectWineFormData() {
     price_eur: document.getElementById('wine-price').value || null,
     country: getCountryValue(),
     producer: document.getElementById('wine-producer')?.value?.trim() || null,
-    region: document.getElementById('wine-region')?.value?.trim() || null,
+    region: getRegionValue(),
     drink_from: document.getElementById('wine-drink-from')?.value || null,
     drink_peak: document.getElementById('wine-drink-peak')?.value || null,
     drink_until: document.getElementById('wine-drink-until')?.value || null

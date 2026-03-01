@@ -9,6 +9,7 @@ import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
 import { renderTastingServiceCard } from './tastingService.js';
+import { handleManualPairFromWine } from './manualPairing.js';
 
 let currentSlot = null;
 let pendingQuantityWine = null; // { wineId, wineName }
@@ -267,11 +268,15 @@ export async function handleDrinkBottle() {
   if (!currentSlot) return;
 
   const location = currentSlot.location_code;
+  // Capture wine data before closeWineModal() nulls currentSlot
+  const wineName = currentSlot.wine_name || 'Wine';
 
   try {
     const data = await drinkBottle(location);
     closeWineModal();
-    showToast(`Enjoyed! ${data.remaining_bottles} bottles remaining`);
+    showToast(`Enjoyed ${wineName}! ${data.remaining_bottles} bottles remaining`);
+    // Subtle hint — not a blocking modal
+    showToast('You can rate this wine later — we\'ll remind you next time', 5000);
     if (data.compaction_suggestions?.length > 0) {
       const count = data.compaction_suggestions.length;
       showToast(`${count} gap${count > 1 ? 's' : ''} detected — check Analysis for compaction suggestions`, 4000);
@@ -507,6 +512,22 @@ export function initModals() {
   document.getElementById('save-manual-window')?.addEventListener('click', handleSaveManualWindow);
   document.getElementById('modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-overlay') closeWineModal();
+  });
+
+  // Manual pairing: wine → dish direction
+  document.getElementById('btn-pair-wine')?.addEventListener('click', () => {
+    const panel = document.getElementById('manual-pair-panel');
+    if (!panel) return;
+    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    document.getElementById('manual-pair-dish')?.focus();
+  });
+  document.getElementById('manual-pair-confirm')?.addEventListener('click', () => {
+    if (!currentSlot?.wine_id) return;
+    handleManualPairFromWine(currentSlot.wine_id, currentSlot.wine_name || 'this wine');
+  });
+  document.getElementById('manual-pair-cancel')?.addEventListener('click', () => {
+    const panel = document.getElementById('manual-pair-panel');
+    if (panel) panel.style.display = 'none';
   });
 
   // Add quantity modal handlers

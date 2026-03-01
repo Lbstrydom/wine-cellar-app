@@ -288,11 +288,7 @@ describe('Storage Areas API Integration Tests', () => {
       }
     });
 
-    it('should reject deletion of non-empty area', () => {
-      // This is enforced at the API level
-      // The endpoint returns 409 Conflict if area has bottles
-      expect(true).toBe(true);
-    });
+    it.todo('should reject deletion of non-empty area (returns 409 Conflict)');
   });
 
   describe('POST /api/storage-areas/from-template', () => {

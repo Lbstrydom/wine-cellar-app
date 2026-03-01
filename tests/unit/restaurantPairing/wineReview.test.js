@@ -584,9 +584,9 @@ describe('wineReview', () => {
 
       destroyWineReview();
 
-      // Module state should be cleaned up — further calls should not throw
-      // Re-render would need a fresh call
-      expect(true).toBe(true);
+      // After destroy, container should still exist but root state is cleared
+      // Calling destroy again should not throw (idempotent)
+      expect(() => destroyWineReview()).not.toThrow();
     });
   });
 });

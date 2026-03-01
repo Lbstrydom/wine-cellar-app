@@ -5,6 +5,7 @@
 import { choosePairingWine, drinkBottle } from './api.js';
 import { showWineModalFromList } from './modals.js';
 import { showToast } from './utils.js';
+import { openPairingFeedbackModal } from './manualPairing.js';
 
 let currentSessionId = null;
 
@@ -171,17 +172,6 @@ function showDrinkActionPanel(rec, card) {
   });
 
   card.appendChild(panel);
-}
-
-/**
- * Open the pairing feedback modal and store session/wine context.
- */
-function openPairingFeedbackModal(sessionId, wineId) {
-  const modal = document.getElementById('pairing-feedback-modal');
-  if (!modal) return;
-  modal.style.display = 'flex';
-  modal.dataset.sessionId = sessionId;
-  modal.dataset.wineId = wineId;
 }
 
 /**

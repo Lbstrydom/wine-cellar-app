@@ -11,7 +11,7 @@ let tablesInitialized = false;
 
 /**
  * Initialize palate profile tables if they don't exist.
- * Works with both SQLite and PostgreSQL.
+ * Works with PostgreSQL (Supabase).
  */
 async function ensureTables() {
   if (tablesInitialized) return;

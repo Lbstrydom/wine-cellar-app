@@ -263,6 +263,34 @@ export async function getPairingHistory(cellarId, { limit = 20, offset = 0, feed
 }
 
 /**
+ * Create a manual pairing session (user-initiated, no AI).
+ * Used when user force-pairs a wine with a dish from wine detail or recipe library.
+ *
+ * @param {Object} params
+ * @param {string} params.cellarId - Cellar UUID
+ * @param {number} params.wineId - Chosen wine ID
+ * @param {string} params.dish - Dish description (required)
+ * @param {number} [params.recipeId] - Recipe ID if pairing from recipe library
+ * @returns {Promise<number>} Session ID
+ */
+export async function createManualPairingSession({ cellarId, wineId, dish, recipeId }) {
+  const result = await db.prepare(`
+    INSERT INTO pairing_sessions (
+      cellar_id,
+      dish_description,
+      source,
+      recommendations,
+      chosen_wine_id,
+      chosen_at,
+      recipe_id
+    ) VALUES ($1, $2, 'manual', '[]', $3, CURRENT_TIMESTAMP, $4)
+    RETURNING id
+  `).get(cellarId, dish, wineId, recipeId || null);
+
+  return result.id;
+}
+
+/**
  * Get aggregate statistics for pairing feedback.
  * Used for profile calculation and UI display.
  *

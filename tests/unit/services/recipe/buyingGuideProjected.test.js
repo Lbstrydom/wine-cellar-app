@@ -1,13 +1,24 @@
 /**
  * @fileoverview Tests for virtual inventory projection and caching in buying guide.
  * Phase 3: projected coverage, gap deficit reduction, cache hit/miss.
+ *
+ * Uses vi.hoisted() for stable mock references to prevent --no-isolate
+ * mock leakage (test and module-under-test must share the same mock objects).
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock db before imports
+// --- Stable mock references via vi.hoisted (safe with mock hoisting) ---
+const { mockGet, mockAll, mockRun, mockPrepare } = vi.hoisted(() => {
+  const mockGet = vi.fn();
+  const mockAll = vi.fn();
+  const mockRun = vi.fn();
+  const mockPrepare = vi.fn(() => ({ get: mockGet, all: mockAll, run: mockRun }));
+  return { mockGet, mockAll, mockRun, mockPrepare };
+});
+
 vi.mock('../../../../src/db/index.js', () => ({
-  default: { prepare: vi.fn() }
+  default: { prepare: mockPrepare }
 }));
 
 vi.mock('../../../../src/utils/logger.js', () => ({
@@ -26,7 +37,6 @@ vi.mock('../../../../src/services/recipe/buyingGuideCart.js', () => ({
   getActiveItems: vi.fn()
 }));
 
-import db from '../../../../src/db/index.js';
 import { matchWineToStyle } from '../../../../src/services/pairing/pairingEngine.js';
 import { computeCookingProfile } from '../../../../src/services/recipe/cookingProfile.js';
 import { getActiveItems } from '../../../../src/services/recipe/buyingGuideCart.js';
@@ -62,16 +72,14 @@ function setupStandardScenario({ activeCartItems = [] } = {}) {
 
   getActiveItems.mockResolvedValue(activeCartItems);
 
-  db.prepare.mockImplementation((sql) => ({
+  // Configure stable mockPrepare to handle SQL-based branching
+  mockPrepare.mockImplementation((sql) => ({
     get: vi.fn((...args) => {
-      // Cache lookup: return null (no cache)
       if (sql.includes('buying_guide_cache')) return Promise.resolve(null);
-      // Capacity query
       if (sql.includes('COUNT') && sql.includes('slots')) return Promise.resolve({ count: 20 });
       return Promise.resolve(null);
     }),
     all: vi.fn((...args) => {
-      // Cellar wines: 2 wines, 3 bottles each
       if (sql.includes('wines w')) {
         return Promise.resolve([
           { id: 1, wine_name: 'Cab 1', bottle_count: 3, reduce_priority: 99 },
@@ -106,7 +114,6 @@ describe('Phase 3: Virtual inventory projection', () => {
   });
 
   it('projected coverage increases with virtual inventory', async () => {
-    // Add 4 planned red_full bottles + 2 white_crisp
     setupStandardScenario({
       activeCartItems: [
         { style_id: 'red_full', quantity: 4, status: 'planned' },
@@ -116,8 +123,6 @@ describe('Phase 3: Virtual inventory projection', () => {
 
     const guide = await generateBuyingGuide(CELLAR_ID, { forceRefresh: true });
 
-    // Physical: 6 red_full, target 10 = deficit 4
-    // Virtual: +4 red_full = 10, target 10 = projected deficit 0
     expect(guide.projectedCoveragePct).toBeGreaterThanOrEqual(guide.coveragePct);
     expect(guide.projectedBottleCoveragePct).toBeGreaterThanOrEqual(guide.bottleCoveragePct);
   });
@@ -133,7 +138,6 @@ describe('Phase 3: Virtual inventory projection', () => {
 
     const redFullGap = guide.gaps.find(g => g.style === 'red_full');
     if (redFullGap) {
-      // Physical deficit should be larger than projected deficit
       expect(redFullGap.projectedDeficit).toBeLessThanOrEqual(redFullGap.deficit);
     }
   });
@@ -161,7 +165,6 @@ describe('Phase 3: Virtual inventory projection', () => {
 
     const guide = await generateBuyingGuide(CELLAR_ID, { forceRefresh: true });
 
-    // No virtual contribution, projected = physical
     expect(guide.projectedCoveragePct).toBe(guide.coveragePct);
   });
 
@@ -186,12 +189,12 @@ describe('Phase 3: Server-side caching', () => {
   it('returns cached guide when fresh', async () => {
     const cachedGuide = { coveragePct: 80, cached: true };
 
-    db.prepare.mockImplementation((sql) => ({
+    mockPrepare.mockImplementation((sql) => ({
       get: vi.fn(() => {
         if (sql.includes('buying_guide_cache')) {
           return Promise.resolve({
             cache_data: JSON.stringify(cachedGuide),
-            generated_at: new Date().toISOString() // fresh
+            generated_at: new Date().toISOString()
           });
         }
         return Promise.resolve(null);
@@ -204,7 +207,6 @@ describe('Phase 3: Server-side caching', () => {
 
     expect(guide.coveragePct).toBe(80);
     expect(guide.cached).toBe(true);
-    // computeCookingProfile should NOT have been called
     expect(computeCookingProfile).not.toHaveBeenCalled();
   });
 
@@ -213,12 +215,11 @@ describe('Phase 3: Server-side caching', () => {
 
     const guide = await generateBuyingGuide(CELLAR_ID, { forceRefresh: true });
 
-    // Should have computed fresh
     expect(computeCookingProfile).toHaveBeenCalled();
   });
 
   it('computes fresh when cache is stale (expired)', async () => {
-    const staleDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(); // 2h ago
+    const staleDate = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
 
     computeCookingProfile.mockResolvedValue({
       recipeCount: 0,
@@ -228,7 +229,7 @@ describe('Phase 3: Server-side caching', () => {
       hemisphere: 'southern'
     });
 
-    db.prepare.mockImplementation((sql) => ({
+    mockPrepare.mockImplementation((sql) => ({
       get: vi.fn(() => {
         if (sql.includes('buying_guide_cache')) {
           return Promise.resolve({
@@ -244,19 +245,18 @@ describe('Phase 3: Server-side caching', () => {
 
     const guide = await generateBuyingGuide(CELLAR_ID);
 
-    // Should recompute because cache is stale
     expect(computeCookingProfile).toHaveBeenCalled();
   });
 
   it('invalidateBuyingGuideCache deletes cache row', async () => {
     const runMock = vi.fn(() => Promise.resolve({ changes: 1 }));
-    db.prepare.mockImplementation(() => ({
+    mockPrepare.mockImplementation(() => ({
       run: runMock
     }));
 
     await invalidateBuyingGuideCache(CELLAR_ID);
 
-    expect(db.prepare).toHaveBeenCalledWith(
+    expect(mockPrepare).toHaveBeenCalledWith(
       expect.stringContaining('DELETE FROM buying_guide_cache')
     );
     expect(runMock).toHaveBeenCalledWith(CELLAR_ID);

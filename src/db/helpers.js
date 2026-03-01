@@ -1,6 +1,6 @@
 /**
  * @fileoverview Database helper functions for PostgreSQL.
- * All functions are PostgreSQL-specific (no SQLite fallbacks).
+ * All functions are PostgreSQL-specific.
  * @module db/helpers
  */
 

@@ -22,8 +22,8 @@ services:
       - BRIGHTDATA_API_KEY=${BRIGHTDATA_API_KEY}
       - BRIGHTDATA_SERP_ZONE=${BRIGHTDATA_SERP_ZONE}
       - BRIGHTDATA_WEB_ZONE=${BRIGHTDATA_WEB_ZONE}
-      # Optionally connect to PostgreSQL instead of SQLite:
-      # - DATABASE_URL=${DATABASE_URL}
+      # PostgreSQL connection (required)
+      - DATABASE_URL=${DATABASE_URL}
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/stats"]
       interval: 30s

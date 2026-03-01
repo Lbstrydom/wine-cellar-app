@@ -26,12 +26,14 @@ src/
 │   ├── slots.js           # /api/slots/* endpoints
 │   ├── bottles.js         # /api/bottles/* endpoints
 │   ├── buyingGuideItems.js # /api/buying-guide-items/* endpoints (shopping cart)
-│   ├── pairing.js         # /api/pairing/* endpoints
-│   ├── reduceNow.js       # /api/reduce-now/* endpoints
+│   ├── pairing.js         # /api/pairing/* endpoints (incl. manual pairing sessions)
+│   ├── pendingRatings.js  # /api/pending-ratings/* endpoints (drink-now-rate-later)
+│   ├── reduceNow.js       # /api/reduce-now/* endpoints + evaluateSingleWine() export
 │   └── stats.js           # /api/stats endpoint
 ├── config/
 │   ├── aiModels.js        # AI model registry, task→model mapping, thinking config
-│   └── styleIds.js        # Centralized style bucket IDs & labels (11 styles)
+│   ├── styleIds.js        # Centralized style bucket IDs & labels (11 styles)
+│   └── wineRegions.js     # Country→region mapping (50+ countries, 500+ regions)
 ├── services/
 │   ├── ai/                # Claude/OpenAI/Gemini integration
 │   ├── awards/            # Wine award extraction & matching
@@ -46,9 +48,9 @@ src/
 │   ├── zone/              # Zone management & reconfiguration
 │   └── *.js               # 5 root orchestrators (acquisitionWorkflow, palateProfile, etc.)
 └── db/
-    ├── index.js           # Database abstraction (auto-selects SQLite or PostgreSQL)
-    ├── sqlite.js          # SQLite implementation (better-sqlite3)
-    └── postgres.js        # PostgreSQL implementation (pg)
+    ├── index.js           # Database abstraction (PostgreSQL via Supabase)
+    ├── helpers.js         # PostgreSQL-specific query helpers
+    └── postgres.js        # PostgreSQL implementation (pg) with SQLite-compatible API surface
 ```
 
 ### Frontend Structure
@@ -71,19 +73,28 @@ public/
     │   ├── buyingGuideItems.js # Shopping cart API
     │   ├── settings.js    # User settings API
     │   ├── awards.js      # Award extraction API
-    │   ├── pairing.js     # Food pairing API
+    │   ├── pairing.js     # Food pairing API (incl. manual pairing)
+    │   ├── pendingRatings.js # Pending ratings API (drink-now-rate-later)
     │   ├── restaurantPairing.js # Restaurant pairing API
     │   ├── acquisition.js # Wine acquisition workflow API
     │   ├── palate.js      # Palate profile API
     │   ├── health.js      # Cellar health API
     │   ├── profile.js     # User profile API
     │   └── errors.js      # Error logging API
+    ├── config/            # Frontend configuration data
+    │   └── wineRegions.js # Country→region mapping for dropdowns
     ├── pwa.js             # PWA install prompt, SW registration, update notification
     ├── grid.js            # Cellar/fridge grid rendering
     ├── modals.js          # Modal management
     ├── dragdrop.js        # Drag and drop functionality
     ├── sommelier.js       # Claude pairing UI
+    ├── manualPairing.js   # Manual wine-dish pairing coordinator
+    ├── ratingReminder.js  # Drink-now-rate-later reminder bar
     ├── bottles.js         # Bottle add/edit functionality
+    │   └── bottles/
+    │       ├── form.js    # Bottle form with cascading country/region dropdowns
+    │       ├── modal.js   # Bottle modal management
+    │       └── dropdownHelpers.js # Country/region dropdown population
     ├── utils.js           # Shared utility functions
     ├── cellarAnalysis/    # Cellar analysis & AI recommendations UI
     │   ├── state.js       # Shared analysis state, workspace switching, localStorage persistence
@@ -211,7 +222,7 @@ supabase.auth.onAuthStateChange(async (event, session) => {
 // Use prepared statements with async/await (PostgreSQL returns Promises)
 const wine = await db.prepare('SELECT * FROM wines WHERE id = ?').get(wineId);
 
-// Use STRING_AGG for PostgreSQL (not GROUP_CONCAT like SQLite)
+// Use STRING_AGG for aggregation
 const getWineWithLocations = await db.prepare(`
   SELECT
     w.id,
@@ -224,11 +235,12 @@ const getWineWithLocations = await db.prepare(`
   GROUP BY w.id
 `).get(wineId);
 
-// PostgreSQL syntax differences from SQLite:
-// - Use ILIKE for case-insensitive search (not LIKE)
-// - Use STRING_AGG() instead of GROUP_CONCAT()
-// - Use CURRENT_TIMESTAMP instead of datetime('now')
-// - Use INTERVAL '30 days' instead of '-30 days'
+// PostgreSQL syntax reminders:
+// - Use ILIKE for case-insensitive search
+// - Use STRING_AGG() for aggregation
+// - Use CURRENT_TIMESTAMP for current time
+// - Use INTERVAL '30 days' for date arithmetic
+// - ? placeholders are auto-converted to $1, $2 by postgres.js
 ```
 
 ### PostgreSQL Async Patterns (CRITICAL)
@@ -262,7 +274,7 @@ export function getWineById(id) {
 **Common Symptoms of Missing Async:**
 - API returns `{}` or `[object Promise]`
 - Railway logs show no errors but data is empty
-- Works locally with SQLite but fails with PostgreSQL
+- Route works in tests with mocks but fails with real PostgreSQL
 
 **Checklist When Adding New Routes/Services:**
 1. Is the route handler `async`?
@@ -890,7 +902,7 @@ refactor/modular-structure
 |----------|-------------|----------|
 | `PORT` | Server port (default: 3000) | No |
 | `NODE_ENV` | Environment (production/development) | No |
-| `DATABASE_URL` | PostgreSQL connection string (if set, uses PostgreSQL instead of SQLite) | For cloud deployment |
+| `DATABASE_URL` | PostgreSQL connection string (Supabase) — **required** for all environments | Yes |
 | `SUPABASE_URL` | Supabase project URL (e.g., `https://xxx.supabase.co`) | For multi-user auth |
 | `SUPABASE_ANON_KEY` | Supabase anonymous/public key (frontend) | For multi-user auth |
 | `ANTHROPIC_API_KEY` | Claude API key for sommelier feature | For AI features |
@@ -1098,11 +1110,8 @@ The app uses Cloudflare for DNS with a CNAME record pointing to Railway:
 # Install dependencies
 npm install
 
-# Run locally (uses SQLite by default)
+# Run locally (requires DATABASE_URL in .env pointing to Supabase/PostgreSQL)
 npm run dev
-
-# Run locally with PostgreSQL (set DATABASE_URL in .env)
-DATABASE_URL="your-supabase-url" npm run dev
 ```
 
 ### Cache Busting
@@ -1655,7 +1664,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Validate move/batch plans before execution
 - Track allocated resources in batch suggestion generation
 - Use invariant checks (before/after counts) for data-critical operations
-- Test with PostgreSQL before deploying (not just SQLite locally)
+- Test against PostgreSQL (Supabase) before deploying
 - Bump cache version after frontend changes
 - Add new frontend JS modules to `STATIC_ASSETS` in `public/sw.js` (regression test enforces this)
 - Always use `req.cellarId` in all database queries for user-data tables

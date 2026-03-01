@@ -1,363 +1,350 @@
 /**
- * @fileoverview Integration tests for first-time user atomic setup.
- * Tests the complete transaction flow: profile + cellar + membership + invite updates.
+ * @fileoverview Tests for first-time user atomic setup via requireAuth.
+ * createFirstTimeUser is private — tested through the public requireAuth middleware.
+ * Tests validate: invite gating, transaction atomicity, edge cases.
+ *
+ * Uses vi.hoisted() for stable mock references to prevent --no-isolate leakage.
+ * Provides a real RSA public JWK so crypto.createPublicKey succeeds in the
+ * jwt verification path (jwt.verify itself is mocked).
  */
 
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-
-// Set DATABASE_URL before any imports
+// Set env before imports
 process.env.DATABASE_URL = 'postgresql://mock:mock@localhost/mock';
 process.env.SUPABASE_URL = 'https://mock.supabase.co';
 
-// Mock db with transaction support
+// --- Stable mock references via vi.hoisted ---
+const {
+  mockGet, mockRun, mockAll, mockPrepare,
+  mockTransactionCallback, mockFetchFn,
+  mockJwtDecode, mockJwtVerify
+} = vi.hoisted(() => {
+  const mockGet = vi.fn();
+  const mockRun = vi.fn();
+  const mockAll = vi.fn();
+  const mockPrepare = vi.fn(() => ({ get: mockGet, run: mockRun, all: mockAll }));
+  const mockTransactionCallback = vi.fn();
+  const mockFetchFn = vi.fn();
+  const mockJwtDecode = vi.fn();
+  const mockJwtVerify = vi.fn();
+  return {
+    mockGet, mockRun, mockAll, mockPrepare,
+    mockTransactionCallback, mockFetchFn,
+    mockJwtDecode, mockJwtVerify
+  };
+});
+
 vi.mock('../../../src/db/index.js', () => ({
   default: {
-    prepare: vi.fn()
+    prepare: mockPrepare,
+    transaction: mockTransactionCallback
   }
 }));
 
-// Mock jwt verification
+vi.mock('../../../src/utils/logger.js', () => ({
+  default: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() }
+}));
+
+// Mock jwt - decode returns complete token structure, verify returns user payload
 vi.mock('jsonwebtoken', () => ({
   default: {
-    decode: vi.fn(),
-    verify: vi.fn()
+    decode: mockJwtDecode,
+    verify: mockJwtVerify
   }
 }));
 
-const mockDb = await import('../../../src/db/index.js');
-import db from '../../../src/db/index.js';
+// Mock global fetch for JWKS endpoint
+vi.stubGlobal('fetch', mockFetchFn);
 
-describe('First-Time User Atomic Setup', () => {
-  const mockAuthUser = {
-    sub: 'user-123',
-    email: 'newuser@example.com',
-    name: 'New User',
-    picture: 'https://example.com/avatar.jpg'
+const { requireAuth } = await import('../../../src/middleware/auth.js');
+
+// Valid RSA public key JWK (well-known test key) so crypto.createPublicKey succeeds
+const VALID_RSA_JWK = {
+  kid: 'test-kid',
+  kty: 'RSA',
+  alg: 'RS256',
+  use: 'sig',
+  n: '0vx7agoebGcQSuuPiLJXZptN9nndrQmbXEps2aiAFbWhM78LhWx4cbbfAAtVT86zwu1RK7aPFFxuhDR1L6tSoc_BJECPebWKRXjBZCiFV4n3oknjhMstn64tZ_2W-5JsGY4Hc5n9yBXArwl93lqt7_RN5w6Cf0h4QyQ5v-65YGjQR0_FDW2QvzqY368QQMicAtaSqzs8KJZgnYb9c7d0zgdAZHzu6qMQvRL5hajrn1n91CbOpbISD08qNLyrdkt-bFTWhAI4vMQFh6WeZu0fM4lFd2NcRwr3XPksINHaQ-G_xBniIqbw0Ls1jF44-csFCur-kEgU8awapJzKnqDKgw',
+  e: 'AQAB'
+};
+
+/**
+ * Helper: Create a mock req with a valid Bearer token.
+ */
+function makeReq(headers = {}) {
+  return {
+    headers: { authorization: 'Bearer valid-token', ...headers },
+    user: null
   };
+}
 
-  const validInviteCode = 'invite-abc123';
+function makeRes() {
+  return {
+    status: vi.fn().mockReturnThis(),
+    json: vi.fn().mockReturnValue(undefined)
+  };
+}
 
+/**
+ * Setup JWT mocks for a successful verification.
+ * jwt.decode returns complete token, fetch returns valid JWKS,
+ * jwt.verify returns the user payload.
+ */
+function setupJwtSuccess() {
+  mockJwtDecode.mockReturnValue({
+    header: { kid: 'test-kid' },
+    payload: { sub: 'user-new', email: 'new@example.com' }
+  });
+  mockJwtVerify.mockReturnValue({
+    sub: 'user-new',
+    email: 'new@example.com',
+    name: 'New User'
+  });
+  mockFetchFn.mockResolvedValue({
+    ok: true,
+    json: async () => ({ keys: [VALID_RSA_JWK] })
+  });
+}
+
+describe('First-Time User Atomic Setup (via requireAuth)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-  });
-
-  describe('Happy Path: Complete Setup', () => {
-    it('should create profile, cellar, membership atomically', async () => {
-      const { createFirstTimeUser } = await import('../../../src/middleware/auth.js');
-
-      // Mock transaction flow
-      const operations = [];
-
-      db.prepare.mockImplementation((sql) => {
-        operations.push(sql);
-        return {
-          run: vi.fn().mockImplementation(() => {
-            operations.push('RUN');
-            return Promise.resolve({ changes: 1 });
-          }),
-          get: vi.fn().mockImplementation(() => {
-            if (sql.includes('FOR UPDATE')) {
-              return Promise.resolve({
-                code: validInviteCode,
-                max_uses: 5,
-                use_count: 0,
-                expires_at: new Date(Date.now() + 86400000)  // Tomorrow
-              });
-            } else if (sql.includes('INSERT INTO profiles')) {
-              return Promise.resolve({
-                id: 'user-123',
-                email: 'newuser@example.com',
-                display_name: 'New User'
-              });
-            } else if (sql.includes('INSERT INTO cellars')) {
-              return Promise.resolve({ id: 'cellar-123' });
-            }
-            return Promise.resolve(null);
-          })
-        };
-      });
-
-      // Would need real implementation test
-      // This is a structural test showing what should be verified
-      expect(operations).toBeDefined();
-    });
-
-    it('should validate invite code with FOR UPDATE lock', async () => {
-      // Verify FOR UPDATE is used to prevent race condition
-      const operations = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql.includes('FOR UPDATE')) {
-          operations.push('LOCK_USED');
-        }
-        return {
-          get: vi.fn().mockResolvedValue(null),
-          run: vi.fn()
-        };
-      });
-
-      expect(operations).toBeDefined();
-    });
+    setupJwtSuccess();
   });
 
   describe('Invite Code Validation', () => {
+    it('should return 403 when no invite code and user not found', async () => {
+      // No existing profile → triggers createFirstTimeUser
+      mockGet.mockResolvedValue(null);
+
+      const req = makeReq(); // No x-invite-code header
+      const res = makeRes();
+      const next = vi.fn();
+
+      await requireAuth(req, res, next);
+
+      // createFirstTimeUser returns null when no invite code → 403
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(res.json).toHaveBeenCalledWith({
+        error: expect.stringContaining('invite code')
+      });
+      expect(next).not.toHaveBeenCalled();
+    });
+
     it('should reject expired invite codes', async () => {
-      db.prepare.mockReturnValue({
-        get: vi.fn().mockResolvedValue({
-          code: validInviteCode,
-          max_uses: 5,
-          use_count: 1,
-          expires_at: new Date(Date.now() - 86400000)  // Yesterday (expired)
-        }),
-        run: vi.fn()
+      mockGet.mockResolvedValue(null);
+
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn()
+            .mockResolvedValueOnce({
+              rows: [{
+                code: 'expired-code',
+                max_uses: 5,
+                use_count: 0,
+                expires_at: new Date(Date.now() - 86400000) // Yesterday
+              }]
+            })
+        };
+        return fn(client);
       });
 
-      // Expired invite should fail
-      // (Would be caught in actual transaction)
-      expect(true).toBe(true);
+      const req = makeReq({ 'x-invite-code': 'expired-code' });
+      const res = makeRes();
+      const next = vi.fn();
+
+      await requireAuth(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
     });
 
     it('should reject maxed-out invite codes', async () => {
-      db.prepare.mockReturnValue({
-        get: vi.fn().mockResolvedValue({
-          code: validInviteCode,
-          max_uses: 2,
-          use_count: 2,  // Already at max
-          expires_at: new Date(Date.now() + 86400000)
-        }),
-        run: vi.fn()
+      mockGet.mockResolvedValue(null);
+
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn()
+            .mockResolvedValueOnce({
+              rows: [{
+                code: 'maxed-code',
+                max_uses: 2,
+                use_count: 2,
+                expires_at: new Date(Date.now() + 86400000)
+              }]
+            })
+        };
+        return fn(client);
       });
 
-      // Maxed invite should fail
-      expect(true).toBe(true);
+      const req = makeReq({ 'x-invite-code': 'maxed-code' });
+      const res = makeRes();
+      const next = vi.fn();
+
+      await requireAuth(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
     });
 
-    it('should reject missing invite codes', async () => {
-      db.prepare.mockReturnValue({
-        get: vi.fn().mockResolvedValue(null)  // No invite found
+    it('should reject non-existent invite codes', async () => {
+      mockGet.mockResolvedValue(null);
+
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn().mockResolvedValueOnce({ rows: [] })
+        };
+        return fn(client);
       });
 
-      // Missing invite should fail
-      expect(true).toBe(true);
+      const req = makeReq({ 'x-invite-code': 'fake-code' });
+      const res = makeRes();
+      const next = vi.fn();
+
+      await requireAuth(req, res, next);
+
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('Happy Path: Complete Setup', () => {
+    it('should create profile, cellar, membership atomically and call next', async () => {
+      mockGet.mockResolvedValue(null);
+
+      const profileData = {
+        id: 'user-new', email: 'new@example.com',
+        display_name: 'New User', avatar_url: null,
+        active_cellar_id: null, cellar_quota: 3, bottle_quota: 500, tier: 'free'
+      };
+
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn().mockImplementation(async (sql) => {
+            if (sql.includes('FOR UPDATE')) {
+              return { rows: [{ code: 'good-code', max_uses: 5, use_count: 0, expires_at: new Date(Date.now() + 86400000) }] };
+            }
+            if (sql.includes('INSERT INTO profiles')) {
+              return { rows: [profileData] };
+            }
+            if (sql.includes('INSERT INTO cellars')) {
+              return { rows: [{ id: 'cellar-new' }] };
+            }
+            return { rows: [] };
+          })
+        };
+        return fn(client);
+      });
+
+      const req = makeReq({ 'x-invite-code': 'good-code' });
+      const res = makeRes();
+      const next = vi.fn();
+
+      await requireAuth(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.user).toBeTruthy();
+      expect(req.user.id).toBe('user-new');
+      expect(req.user.active_cellar_id).toBe('cellar-new');
+      expect(res.status).not.toHaveBeenCalled();
+    });
+
+    it('should execute all transaction steps in correct order', async () => {
+      mockGet.mockResolvedValue(null);
+
+      const operationOrder = [];
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn().mockImplementation(async (sql) => {
+            if (sql.includes('FOR UPDATE')) { operationOrder.push('SELECT_LOCK'); return { rows: [{ code: 'x', max_uses: 10, use_count: 0, expires_at: null }] }; }
+            if (sql.includes('INSERT INTO profiles')) { operationOrder.push('INSERT_PROFILE'); return { rows: [{ id: 'u1', email: 'e', display_name: 'd', avatar_url: null, active_cellar_id: null, cellar_quota: 3, bottle_quota: 500, tier: 'free' }] }; }
+            if (sql.includes('INSERT INTO cellars')) { operationOrder.push('INSERT_CELLAR'); return { rows: [{ id: 'c1' }] }; }
+            if (sql.includes('INSERT INTO cellar_memberships')) { operationOrder.push('INSERT_MEMBERSHIP'); return { rows: [] }; }
+            if (sql.includes('UPDATE profiles SET active')) { operationOrder.push('UPDATE_ACTIVE'); return { rows: [] }; }
+            if (sql.includes('UPDATE invites')) { operationOrder.push('UPDATE_INVITE'); return { rows: [] }; }
+            return { rows: [] };
+          })
+        };
+        return fn(client);
+      });
+
+      const req = makeReq({ 'x-invite-code': 'code' });
+      await requireAuth(req, makeRes(), vi.fn());
+
+      expect(operationOrder).toEqual([
+        'SELECT_LOCK',
+        'INSERT_PROFILE',
+        'INSERT_CELLAR',
+        'INSERT_MEMBERSHIP',
+        'UPDATE_ACTIVE',
+        'UPDATE_INVITE'
+      ]);
     });
   });
 
   describe('Transaction Rollback', () => {
-    it('should rollback if profile creation fails', async () => {
-      const rollbackCalls = [];
+    it('should return 403 if profile creation fails inside transaction', async () => {
+      mockGet.mockResolvedValue(null);
 
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'BEGIN') {
-          return { run: vi.fn().mockResolvedValue({}) };
-        }
-        if (sql === 'ROLLBACK') {
-          rollbackCalls.push('ROLLBACK');
-          return { run: vi.fn().mockResolvedValue({}) };
-        }
-        if (sql.includes('FOR UPDATE')) {
-          return {
-            get: vi.fn().mockResolvedValue({
-              code: validInviteCode,
-              max_uses: 5,
-              use_count: 0,
-              expires_at: new Date(Date.now() + 86400000)
-            })
-          };
-        }
-        if (sql.includes('INSERT INTO profiles')) {
-          return {
-            get: vi.fn().mockRejectedValue(new Error('Profile creation failed'))
-          };
-        }
-        return {
-          run: vi.fn(),
-          get: vi.fn()
+      mockTransactionCallback.mockImplementation(async (fn) => {
+        const client = {
+          query: vi.fn().mockImplementation(async (sql) => {
+            if (sql.includes('FOR UPDATE')) {
+              return { rows: [{ code: 'x', max_uses: 10, use_count: 0, expires_at: null }] };
+            }
+            if (sql.includes('INSERT INTO profiles')) {
+              throw new Error('Profile creation failed');
+            }
+            return { rows: [] };
+          })
         };
+        return fn(client);
       });
 
-      // On profile creation error, rollback should be called
-      expect(rollbackCalls).toBeDefined();
-    });
+      const req = makeReq({ 'x-invite-code': 'code' });
+      const res = makeRes();
+      const next = vi.fn();
 
-    it('should rollback if cellar creation fails', async () => {
-      const rollbackCalls = [];
+      await requireAuth(req, res, next);
 
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'ROLLBACK') {
-          rollbackCalls.push('ROLLBACK');
-          return { run: vi.fn().mockResolvedValue({}) };
-        }
-        if (sql.includes('INSERT INTO cellars')) {
-          return {
-            get: vi.fn().mockRejectedValue(new Error('Cellar creation failed'))
-          };
-        }
-        return {
-          run: vi.fn(),
-          get: vi.fn().mockResolvedValue({})
-        };
-      });
-
-      expect(rollbackCalls).toBeDefined();
-    });
-
-    it('should rollback if membership creation fails', async () => {
-      const rollbackCalls = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'ROLLBACK') {
-          rollbackCalls.push('ROLLBACK');
-          return { run: vi.fn().mockResolvedValue({}) };
-        }
-        if (sql.includes('INSERT INTO cellar_memberships')) {
-          return {
-            run: vi.fn().mockRejectedValue(new Error('Membership creation failed'))
-          };
-        }
-        return {
-          run: vi.fn().mockResolvedValue({}),
-          get: vi.fn().mockResolvedValue({})
-        };
-      });
-
-      expect(rollbackCalls).toBeDefined();
+      // createFirstTimeUser catches the error and returns null → 403
+      expect(res.status).toHaveBeenCalledWith(403);
+      expect(next).not.toHaveBeenCalled();
     });
   });
 
-  describe('Repeat Login After Partial Failure', () => {
-    it('should allow retry if first attempt failed (user can signup again)', async () => {
-      // First attempt fails
-      db.prepare.mockReturnValueOnce({
-        run: vi.fn().mockRejectedValue(new Error('DB error')),
-        get: vi.fn()
+  describe('Existing User (not first-time)', () => {
+    it('should call next immediately for existing user with profile', async () => {
+      mockGet.mockResolvedValue({
+        id: 'user-new', email: 'new@example.com',
+        display_name: 'Existing', avatar_url: null,
+        active_cellar_id: 'cellar-1', cellar_quota: 3, bottle_quota: 500, tier: 'free'
       });
+      mockRun.mockResolvedValue({ changes: 1 });
 
-      // Second attempt succeeds
-      db.prepare.mockReturnValueOnce({
-        get: vi.fn().mockResolvedValue({
-          id: 'user-123',
-          email: 'newuser@example.com'
-        }),
-        run: vi.fn()
-      });
+      const req = makeReq();
+      const res = makeRes();
+      const next = vi.fn();
 
-      // User should be able to retry after failure
-      expect(true).toBe(true);
+      await requireAuth(req, res, next);
+
+      expect(next).toHaveBeenCalled();
+      expect(req.user.id).toBe('user-new');
+      expect(mockTransactionCallback).not.toHaveBeenCalled();
     });
 
-    it('should prevent double-signup with same auth user', async () => {
-      // First user creation succeeds
-      db.prepare.mockReturnValue({
-        get: vi.fn().mockImplementation((sql) => {
-          if (sql.includes('SELECT id, email')) {
-            // Second call: user now exists
-            return Promise.resolve({
-              id: 'user-123',
-              email: 'newuser@example.com'
-            });
-          }
-          return Promise.resolve({});
-        }),
-        run: vi.fn()
+    it('should update last_login_at for existing user', async () => {
+      mockGet.mockResolvedValue({
+        id: 'user-new', email: 'e', display_name: 'd',
+        avatar_url: null, active_cellar_id: 'c1', cellar_quota: 3, bottle_quota: 500, tier: 'free'
       });
+      mockRun.mockResolvedValue({ changes: 1 });
 
-      // On second login, profile already exists - should not recreate
-      expect(true).toBe(true);
-    });
-  });
+      await requireAuth(makeReq(), makeRes(), vi.fn());
 
-  describe('Invite Use Count Incrementation', () => {
-    it('should increment use_count in same transaction', async () => {
-      const updateInviteCall = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql.includes('UPDATE invites') && sql.includes('use_count')) {
-          updateInviteCall.push(sql);
-        }
-        return {
-          run: vi.fn().mockResolvedValue({}),
-          get: vi.fn().mockResolvedValue({})
-        };
-      });
-
-      // Verify invite use_count is incremented
-      expect(updateInviteCall).toBeDefined();
-    });
-
-    it('should update used_by and used_at when incrementing', async () => {
-      db.prepare.mockImplementation((sql) => {
-        if (sql.includes('UPDATE invites')) {
-          expect(sql).toContain('used_by');
-          expect(sql).toContain('used_at');
-        }
-        return {
-          run: vi.fn(),
-          get: vi.fn()
-        };
-      });
-
-      expect(true).toBe(true);
-    });
-  });
-
-  describe('Transaction Atomicity', () => {
-    it('should BEGIN before any operations', async () => {
-      const operationOrder = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'BEGIN') {
-          operationOrder.push('BEGIN');
-        }
-        return {
-          run: vi.fn(),
-          get: vi.fn()
-        };
-      });
-
-      // BEGIN should be first
-      expect(operationOrder).toBeDefined();
-    });
-
-    it('should COMMIT only if all operations succeed', async () => {
-      const operations = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'COMMIT') {
-          operations.push('COMMIT');
-        } else if (sql === 'ROLLBACK') {
-          operations.push('ROLLBACK');
-        }
-        return {
-          run: vi.fn().mockResolvedValue({}),
-          get: vi.fn().mockResolvedValue({})
-        };
-      });
-
-      // Should commit on success
-      expect(operations).toBeDefined();
-    });
-
-    it('should maintain order: BEGIN → SELECT → INSERT × 3 → UPDATE × 2 → COMMIT', async () => {
-      const operations = [];
-
-      db.prepare.mockImplementation((sql) => {
-        if (sql === 'BEGIN') operations.push('BEGIN');
-        else if (sql.includes('FOR UPDATE')) operations.push('SELECT_LOCK');
-        else if (sql.includes('INSERT INTO profiles')) operations.push('INSERT_PROFILE');
-        else if (sql.includes('INSERT INTO cellars')) operations.push('INSERT_CELLAR');
-        else if (sql.includes('INSERT INTO cellar_memberships')) operations.push('INSERT_MEMBERSHIP');
-        else if (sql.includes('UPDATE profiles SET active')) operations.push('UPDATE_PROFILE');
-        else if (sql.includes('UPDATE invites')) operations.push('UPDATE_INVITE');
-        else if (sql === 'COMMIT') operations.push('COMMIT');
-
-        return {
-          run: vi.fn().mockResolvedValue({}),
-          get: vi.fn().mockResolvedValue({})
-        };
-      });
-
-      // Operations should follow transaction order
-      expect(operations).toBeDefined();
+      expect(mockPrepare).toHaveBeenCalledWith(expect.stringContaining('last_login_at'));
+      expect(mockRun).toHaveBeenCalled();
     });
   });
 });

@@ -23,6 +23,7 @@ import { asyncHandler } from '../utils/errorResponse.js';
 import { checkWineConsistency } from '../services/shared/consistencyChecker.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
+import { evaluateSingleWine } from './reduceNow.js';
 import { normalizeColour } from '../utils/wineNormalization.js';
 import { findBestZone } from '../services/cellar/cellarPlacement.js';
 import { updateZoneWineCount } from '../services/cellar/cellarAllocation.js';
@@ -475,6 +476,11 @@ router.post('/', validateBody(createWineSchema), asyncHandler(async (req, res) =
     if (finding) warnings = [finding];
   } catch { /* fail-open: never crash after successful write */ }
   res.status(201).json({ id: wineId, message: 'Wine added', warnings });
+
+  // Fire-and-forget: auto-evaluate for reduce-now (non-blocking)
+  evaluateSingleWine(req.cellarId, wineId).catch(err => {
+    logger.warn('ReduceNow', `Auto-evaluate failed for wine ${wineId}: ${err.message}`);
+  });
 }));
 
 /**
@@ -609,6 +615,11 @@ router.put('/:id', validateParams(wineIdSchema), validateBody(updateWineSchema),
   } catch { /* fail-open — zone suggestion is non-critical */ }
 
   res.json({ message: 'Wine updated', warnings, zoneSuggestion });
+
+  // Fire-and-forget: re-evaluate for reduce-now (non-blocking)
+  evaluateSingleWine(req.cellarId, req.params.id).catch(err => {
+    logger.warn('ReduceNow', `Auto-evaluate failed for wine ${req.params.id}: ${err.message}`);
+  });
 }));
 
 /**

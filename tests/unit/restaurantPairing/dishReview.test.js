@@ -353,8 +353,8 @@ describe('dishReview', () => {
 
       destroyDishReview();
 
-      // No errors should occur; module state should be cleared
-      expect(true).toBe(true);
+      // After destroy, calling again should be idempotent (no throw)
+      expect(() => destroyDishReview()).not.toThrow();
     });
   });
 });
