@@ -3,6 +3,10 @@
  * Single API call returns both structured JSON (ratings, entities, drinking windows)
  * and rich prose narrative via Anthropic's web_search + web_fetch tools.
  *
+ * Uses SSE streaming to avoid SDK timeout issues — web search tool execution
+ * can take 2-4 minutes server-side, which exceeds non-streaming timeouts.
+ * Streaming keeps the connection alive as events flow continuously.
+ *
  * Replaces the 4-tier waterfall (SERP AI → Claude Web Search → Gemini → Legacy Scraping).
  * Eliminates BrightData, Gemini, and all scraping dependencies.
  *
@@ -18,8 +22,9 @@ import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 /** Maximum pause_turn continuations before giving up */
 const MAX_PAUSE_CONTINUATIONS = 2;
 
-/** Per-request timeout for wine search API calls (ms) — 2 min 30 s */
-const SEARCH_TIMEOUT_MS = 150_000;
+/** Safety abort timeout (ms) — 5 minutes. Streaming keeps connection alive via SSE
+ *  events, so this only fires if the stream truly stalls (no events at all). */
+const STREAM_ABORT_TIMEOUT_MS = 300_000;
 
 /** System prompt requesting both narrative and structured output */
 const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. For the requested wine, search the web to build a complete profile covering:
@@ -301,8 +306,98 @@ export function extractCitations(content) {
 }
 
 /**
- * Search for wine data using Claude's native web search.
+ * Collect all content blocks from an SSE streaming response.
+ * Reconstructs full content blocks (text, tool_use, web_search_tool_result, server_tool_use)
+ * from streaming events, matching the structure of a non-streaming response.content array.
+ *
+ * @param {AsyncIterable} stream - Anthropic SDK streaming response
+ * @returns {Promise<{content: Array, stopReason: string}>} Reconstructed content blocks + stop reason
+ */
+async function collectStreamContent(stream) {
+  const content = [];
+  let stopReason = null;
+
+  // Track current block being built from deltas
+  let currentBlock = null;
+  let inputJsonBuffer = '';
+
+  for await (const event of stream) {
+    switch (event.type) {
+      case 'content_block_start': {
+        const block = event.content_block;
+        if (block.type === 'text') {
+          currentBlock = { type: 'text', text: '', citations: [] };
+        } else if (block.type === 'tool_use') {
+          currentBlock = { type: 'tool_use', id: block.id, name: block.name, input: {} };
+          inputJsonBuffer = '';
+        } else if (block.type === 'server_tool_use') {
+          currentBlock = { type: 'server_tool_use', id: block.id, name: block.name, input: {} };
+          inputJsonBuffer = '';
+        } else if (block.type === 'web_search_tool_result') {
+          // web_search_tool_result arrives complete in content_block_start
+          content.push(block);
+          currentBlock = null;
+        } else {
+          currentBlock = null;
+        }
+        break;
+      }
+
+      case 'content_block_delta': {
+        const delta = event.delta;
+        if (!currentBlock) break;
+
+        if (delta.type === 'text_delta' && currentBlock.type === 'text') {
+          currentBlock.text += delta.text || '';
+        } else if (delta.type === 'input_json_delta' && (currentBlock.type === 'tool_use' || currentBlock.type === 'server_tool_use')) {
+          inputJsonBuffer += delta.partial_json || '';
+        } else if (delta.type === 'citations_delta' && currentBlock.type === 'text') {
+          if (delta.citation) {
+            currentBlock.citations.push(delta.citation);
+          }
+        }
+        break;
+      }
+
+      case 'content_block_stop': {
+        if (!currentBlock) break;
+
+        if ((currentBlock.type === 'tool_use' || currentBlock.type === 'server_tool_use') && inputJsonBuffer) {
+          try {
+            currentBlock.input = JSON.parse(inputJsonBuffer);
+          } catch { /* partial JSON — best effort */ }
+        }
+
+        // Strip empty citations array to match non-streaming shape
+        if (currentBlock.type === 'text' && currentBlock.citations.length === 0) {
+          delete currentBlock.citations;
+        }
+
+        content.push(currentBlock);
+        currentBlock = null;
+        inputJsonBuffer = '';
+        break;
+      }
+
+      case 'message_delta': {
+        if (event.delta?.stop_reason) {
+          stopReason = event.delta.stop_reason;
+        }
+        break;
+      }
+    }
+  }
+
+  return { content, stopReason };
+}
+
+/**
+ * Search for wine data using Claude's native web search with SSE streaming.
  * Returns both structured ratings JSON and rich prose narrative in a single API call.
+ *
+ * Uses streaming to avoid SDK timeout issues — web search tool execution can take
+ * 2-4 minutes server-side. With streaming, the connection stays alive as SSE events
+ * flow continuously, eliminating the hard timeout that kills non-streaming requests.
  *
  * Response parsing strategy (SERT preamble-filtering pattern):
  * 1. Find last web_search_tool_result block index
@@ -352,7 +447,7 @@ export async function unifiedWineSearch(wine, options = {}) {
     ? '\nUse this profile to verify results match the correct wine. Do NOT add these terms to your web search queries.'
     : '';
 
-  logger.info('UnifiedWineSearch', `Starting search for: ${wineName} ${vintage}`);
+  logger.info('UnifiedWineSearch', `Starting streaming search for: ${wineName} ${vintage}`);
   const startTime = Date.now();
 
   try {
@@ -383,24 +478,40 @@ CRITICAL RULES:
         { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
         SAVE_WINE_PROFILE_TOOL
       ],
-      messages: [{ role: 'user', content: userPrompt }]
+      messages: [{ role: 'user', content: userPrompt }],
+      stream: true
     };
 
-    let message = await anthropic.messages.create(apiParams, { timeout: SEARCH_TIMEOUT_MS });
-    let allContent = [...(message.content || [])];
+    // Safety AbortController — only fires if stream truly stalls (5 min)
+    const abortController = new AbortController();
+    const abortTimer = setTimeout(() => abortController.abort(), STREAM_ABORT_TIMEOUT_MS);
 
-    // Handle pause_turn: server tool loop hit iteration limit — resume conversation
-    let continuations = 0;
-    while (message.stop_reason === 'pause_turn' && continuations < MAX_PAUSE_CONTINUATIONS) {
-      continuations++;
-      logger.info('UnifiedWineSearch', `pause_turn after ${Date.now() - startTime}ms (${continuations}/${MAX_PAUSE_CONTINUATIONS}), resuming…`);
-      apiParams.messages = [
-        ...apiParams.messages,
-        { role: 'assistant', content: message.content },
-        { role: 'user', content: 'Continue and call the save_wine_profile tool with all data found.' }
-      ];
-      message = await anthropic.messages.create(apiParams, { timeout: SEARCH_TIMEOUT_MS });
-      allContent.push(...(message.content || []));
+    let allContent;
+    let lastStopReason;
+
+    try {
+      const stream = anthropic.messages.stream(apiParams, { signal: abortController.signal });
+      const result = await collectStreamContent(stream);
+      allContent = [...result.content];
+      lastStopReason = result.stopReason;
+
+      // Handle pause_turn: server tool loop hit iteration limit — resume with continuation
+      let continuations = 0;
+      while (lastStopReason === 'pause_turn' && continuations < MAX_PAUSE_CONTINUATIONS) {
+        continuations++;
+        logger.info('UnifiedWineSearch', `pause_turn after ${Date.now() - startTime}ms (${continuations}/${MAX_PAUSE_CONTINUATIONS}), resuming stream…`);
+        apiParams.messages = [
+          ...apiParams.messages,
+          { role: 'assistant', content: allContent },
+          { role: 'user', content: 'Continue and call the save_wine_profile tool with all data found.' }
+        ];
+        const contStream = anthropic.messages.stream(apiParams, { signal: abortController.signal });
+        const contResult = await collectStreamContent(contStream);
+        allContent.push(...contResult.content);
+        lastStopReason = contResult.stopReason;
+      }
+    } finally {
+      clearTimeout(abortTimer);
     }
 
     const duration = Date.now() - startTime;
@@ -419,7 +530,7 @@ CRITICAL RULES:
       // Strategy 2: Fall back to text extraction with repair (SERT preamble-filtered)
       const narrative = extractNarrative(content);
       if (!narrative) {
-        const stopReason = message.stop_reason || 'unknown';
+        const stopReason = lastStopReason || 'unknown';
         const blockTypes = content.map(b => b.type).join(', ') || 'empty';
         logger.warn('UnifiedWineSearch', `No text or tool_use in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
         if (includeErrors) {
@@ -474,14 +585,16 @@ CRITICAL RULES:
     return extracted;
   } catch (error) {
     const duration = Date.now() - startTime;
+    const errMsg = String(error?.message || '').toLowerCase();
+    const isAbort = error?.name === 'AbortError' || errMsg.includes('abort');
+    const isTimeout = isAbort || errMsg.includes('timeout') || errMsg.includes('timed out') || errMsg.includes('etimedout');
+
     logger.error('UnifiedWineSearch', `Search failed for "${wineName}" after ${duration}ms: ${error.message}`);
     if (includeErrors) {
-      const message = String(error?.message || '').toLowerCase();
-      const isTimeout = message.includes('timeout') || message.includes('timed out') || message.includes('etimedout');
       return buildSearchError(
         isTimeout ? 'timeout' : 'api_error',
         isTimeout
-          ? 'Wine search timed out. Please try again.'
+          ? 'Wine search timed out. Please try again.\nTry adding more details (producer, vintage, region) to improve search accuracy.'
           : 'Wine search failed due to an upstream API error. Please try again.',
         {
           wineName,

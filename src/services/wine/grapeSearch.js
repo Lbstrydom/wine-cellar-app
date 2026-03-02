@@ -2,6 +2,10 @@
  * @fileoverview Web search for grape varieties using Claude Web Search.
  * Lightweight search focused purely on discovering grape/variety info for wines.
  * Used by the "Identify" grape flow when pattern matching fails.
+ *
+ * Uses SSE streaming to avoid SDK timeout issues — web search tool execution
+ * can take 1-3 minutes server-side.
+ *
  * @module services/wine/grapeSearch
  */
 
@@ -9,11 +13,12 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 
-/** Beta header required for web search tools */
-const WEB_TOOLS_BETA = 'code-execution-web-tools-2026-02-09';
+/** Safety abort timeout (ms) — 3 minutes for grape search (lighter than full wine search) */
+const STREAM_ABORT_TIMEOUT_MS = 180_000;
 
 /**
  * Search for grape varieties of a single wine using Claude Web Search.
+ * Uses streaming to avoid timeout issues with web search tool execution.
  * @param {Object} wine - Wine object from DB
  * @param {string} wine.wine_name - Wine name
  * @param {number|string} [wine.vintage] - Vintage year
@@ -40,10 +45,13 @@ export async function searchGrapeVarieties(wine) {
   logger.info('GrapeSearch', `Searching grapes for: ${wineDesc}`);
   const startTime = Date.now();
 
+  const abortController = new AbortController();
+  const abortTimer = setTimeout(() => abortController.abort(), STREAM_ABORT_TIMEOUT_MS);
+
   try {
     const modelId = getModelForTask('webSearch');
 
-    const message = await anthropic.messages.create({
+    const stream = anthropic.messages.stream({
       model: modelId,
       max_tokens: 8192,
       tools: [
@@ -62,21 +70,22 @@ Rules:
 - Return the full grape variety names (e.g. "Cabernet Sauvignon" not "Cab Sauv")
 - Empty array if grape varieties cannot be determined
 - Do NOT guess — only return grapes confirmed by a source`
-      }]
-    }, {
-      headers: { 'anthropic-beta': WEB_TOOLS_BETA }
-    });
+      }],
+      stream: true
+    }, { signal: abortController.signal });
+
+    // Collect text from streaming response
+    let responseText = '';
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta?.type === 'text_delta') {
+        responseText += event.delta.text || '';
+      }
+    }
 
     const duration = Date.now() - startTime;
 
-    // Extract text from response — skip tool_use and web_search_tool_result blocks
-    // (matches the pattern used in claudeWebSearch.js which works reliably)
-    const textBlock = message.content?.find(b => b.type === 'text');
-    const responseText = textBlock?.text || '';
-
     if (!responseText) {
-      const blockTypes = (message.content || []).map(b => b.type).join(', ');
-      logger.warn('GrapeSearch', `No text in response after ${duration}ms (blocks: ${blockTypes}, stop: ${message.stop_reason})`);
+      logger.warn('GrapeSearch', `No text in response after ${duration}ms`);
       return [];
     }
 
@@ -100,6 +109,8 @@ Rules:
     const duration = Date.now() - startTime;
     logger.error('GrapeSearch', `Search failed for ${wineDesc} after ${duration}ms: ${error.message}`);
     return [];
+  } finally {
+    clearTimeout(abortTimer);
   }
 }
 
