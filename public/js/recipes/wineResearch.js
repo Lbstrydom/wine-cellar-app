@@ -18,7 +18,7 @@ let _triggerEl = null;
 
 /**
  * Open the wine research modal for a cart item.
- * Fetches enrichment data and renders results.
+ * Shows a preview of search terms first, then fetches enrichment data on confirmation.
  * @param {Object} item - Cart item with wine_name, producer, vintage, etc.
  */
 export async function openWineResearchModal(item) {
@@ -26,15 +26,6 @@ export async function openWineResearchModal(item) {
   if (_overlayEl) closeModal();
 
   _triggerEl = document.activeElement;
-
-  // Build wine payload (only include truthy optional fields)
-  const wine = { wine_name: item.wine_name };
-  if (item.vintage)  wine.vintage  = item.vintage;
-  if (item.producer) wine.producer = item.producer;
-  if (item.colour)   wine.colour   = item.colour;
-  if (item.grapes)   wine.grapes   = item.grapes;
-  if (item.region)   wine.region   = item.region;
-  if (item.country)  wine.country  = item.country;
 
   // Create modal DOM
   const overlay = document.createElement('div');
@@ -52,19 +43,11 @@ export async function openWineResearchModal(item) {
       <h2>${escapeHtml(item.wine_name)}${vintageText}</h2>
       <p class="wine-research-subtitle">${producerText}Research before buying</p>
       <div class="wine-research-body">
-        <div class="wine-research-loading">
-          <div class="wine-research-loading-icon">🔍</div>
-          <p>Searching critic reviews and competition results...</p>
-          <div class="progress-container">
-            <div class="progress-bar-wrapper">
-              <div class="progress-bar wine-research-progress"></div>
-            </div>
-            <span class="progress-text">This may take 15–60 seconds</span>
-          </div>
-        </div>
+        ${renderSearchPreview(item)}
       </div>
       <div class="modal-actions">
-        <button class="btn btn-secondary btn-small wine-research-close-btn" type="button">Close</button>
+        <button class="btn btn-primary btn-small wine-research-search-btn" type="button">🔍 Search</button>
+        <button class="btn btn-secondary btn-small wine-research-close-btn" type="button">Cancel</button>
       </div>
     </div>
   `;
@@ -80,8 +63,104 @@ export async function openWineResearchModal(item) {
   overlay.addEventListener('click', handleBackdropClick);
   document.addEventListener('keydown', handleKeyDown);
 
-  // Initial focus
-  closeBtn.focus();
+  // Wire search button
+  const searchBtn = overlay.querySelector('.wine-research-search-btn');
+  searchBtn.addEventListener('click', () => executeSearch(item));
+
+  // Focus first editable field
+  const firstInput = overlay.querySelector('.search-preview-input');
+  if (firstInput) firstInput.focus();
+  else searchBtn.focus();
+}
+
+/**
+ * Render the search term preview form.
+ * @param {Object} item - Cart item data
+ * @returns {string} HTML for the preview form
+ */
+function renderSearchPreview(item) {
+  const fields = [
+    { key: 'wine_name', label: 'Wine Name', value: item.wine_name || '', required: true },
+    { key: 'producer',  label: 'Producer',  value: item.producer || '' },
+    { key: 'vintage',   label: 'Vintage',   value: item.vintage || '' },
+    { key: 'country',   label: 'Country',   value: item.country || '' },
+    { key: 'colour',    label: 'Colour',    value: item.colour || '' },
+    { key: 'region',    label: 'Region',    value: item.region || '' },
+    { key: 'grapes',    label: 'Grapes',    value: item.grapes || '' }
+  ];
+
+  let html = '<div class="search-preview">';
+  html += '<p class="search-preview-hint">Review the search terms below. Edit if needed, then click Search.</p>';
+  html += '<div class="search-preview-fields">';
+
+  for (const f of fields) {
+    const val = escapeHtml(String(f.value));
+    const req = f.required ? ' <span class="search-preview-required">*</span>' : '';
+    html += `
+      <div class="search-preview-field">
+        <label class="search-preview-label" for="sp-${f.key}">${f.label}${req}</label>
+        <input class="search-preview-input" id="sp-${f.key}" data-key="${f.key}"
+               type="text" value="${val}" ${f.required ? 'required' : ''} />
+      </div>
+    `;
+  }
+
+  html += '</div></div>';
+  return html;
+}
+
+/**
+ * Read edited search terms from preview form and build wine payload.
+ * @returns {Object} Wine payload
+ */
+function readSearchTerms() {
+  const wine = {};
+  if (!_overlayEl) return wine;
+  _overlayEl.querySelectorAll('.search-preview-input').forEach(input => {
+    const key = input.dataset.key;
+    const val = input.value.trim();
+    if (val) wine[key] = val;
+  });
+  return wine;
+}
+
+/**
+ * Execute the search: replace preview with loading spinner, then call API.
+ * @param {Object} _item - Original cart item (used as fallback context)
+ */
+async function executeSearch(_item) {
+  if (!_overlayEl) return;
+
+  const wine = readSearchTerms();
+  if (!wine.wine_name) {
+    const nameInput = _overlayEl.querySelector('#sp-wine_name');
+    if (nameInput) { nameInput.focus(); nameInput.classList.add('input-error'); }
+    return;
+  }
+
+  // Replace preview with loading state
+  const body = _overlayEl.querySelector('.wine-research-body');
+  if (body) {
+    body.innerHTML = `
+      <div class="wine-research-loading">
+        <div class="wine-research-loading-icon">🔍</div>
+        <p>Searching critic reviews and competition results...</p>
+        <div class="progress-container">
+          <div class="progress-bar-wrapper">
+            <div class="progress-bar wine-research-progress"></div>
+          </div>
+          <span class="progress-text">This may take 15–60 seconds</span>
+        </div>
+      </div>
+    `;
+  }
+
+  // Update modal actions to just Close
+  const actions = _overlayEl.querySelector('.modal-actions');
+  if (actions) {
+    actions.innerHTML = '<button class="btn btn-secondary btn-small wine-research-close-btn" type="button">Close</button>';
+    actions.querySelector('.wine-research-close-btn').addEventListener('click', closeModal);
+  }
 
   // Fetch enrichment data
   try {
@@ -90,20 +169,20 @@ export async function openWineResearchModal(item) {
     // Stale response guard — modal may have been closed during fetch
     if (!_overlayEl) return;
 
-    const body = _overlayEl.querySelector('.wine-research-body');
-    if (!body) return;
+    const bodyEl = _overlayEl.querySelector('.wine-research-body');
+    if (!bodyEl) return;
 
     // Check for error field (can be set even with HTTP 200)
     if (data.error && (!data.ratings || !data.ratings.ratings?.length)) {
-      renderError(body, data.error);
+      renderError(bodyEl, data.error);
       return;
     }
 
-    renderResults(body, data);
+    renderResults(bodyEl, data);
   } catch (err) {
     if (!_overlayEl) return;
-    const body = _overlayEl.querySelector('.wine-research-body');
-    if (body) renderError(body, err.message || 'Search failed');
+    const bodyEl = _overlayEl.querySelector('.wine-research-body');
+    if (bodyEl) renderError(bodyEl, err.message || 'Search failed');
   }
 }
 

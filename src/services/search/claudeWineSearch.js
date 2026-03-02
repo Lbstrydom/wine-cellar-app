@@ -18,8 +18,8 @@ import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 /** Maximum pause_turn continuations before giving up */
 const MAX_PAUSE_CONTINUATIONS = 2;
 
-/** Per-request timeout for wine search API calls (ms) */
-const SEARCH_TIMEOUT_MS = 90_000;
+/** Per-request timeout for wine search API calls (ms) — 2 min 30 s */
+const SEARCH_TIMEOUT_MS = 150_000;
 
 /** System prompt requesting both narrative and structured output */
 const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. For the requested wine, search the web to build a complete profile covering:

@@ -115,6 +115,15 @@ function getOverlay() {
   return document.querySelector('.wine-research-overlay');
 }
 
+/**
+ * Click the search button and flush microtask queue to let async executeSearch complete.
+ */
+async function clickSearchAndWait() {
+  const searchBtn = getOverlay().querySelector('.wine-research-search-btn');
+  searchBtn.click();
+  await new Promise(r => setTimeout(r, 0));
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe('wineResearch modal', () => {
@@ -131,7 +140,6 @@ describe('wineResearch modal', () => {
 
   describe('modal lifecycle', () => {
     it('builds modal with correct wine name and vintage in title', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const overlay = getOverlay();
@@ -142,7 +150,6 @@ describe('wineResearch modal', () => {
     });
 
     it('shows producer in subtitle', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const subtitle = getOverlay().querySelector('.wine-research-subtitle');
@@ -151,7 +158,6 @@ describe('wineResearch modal', () => {
     });
 
     it('close button removes overlay from DOM', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       expect(getOverlay()).toBeTruthy();
@@ -159,8 +165,7 @@ describe('wineResearch modal', () => {
       expect(getOverlay()).toBeNull();
     });
 
-    it('bottom close button removes overlay', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
+    it('bottom close/cancel button removes overlay', async () => {
       await openWineResearchModal(CART_ITEM);
 
       getOverlay().querySelector('.wine-research-close-btn').click();
@@ -168,17 +173,14 @@ describe('wineResearch modal', () => {
     });
 
     it('backdrop click closes modal', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const overlay = getOverlay();
-      // Click on the overlay itself, not the inner modal
       overlay.dispatchEvent(new MouseEvent('click', { bubbles: true }));
       expect(getOverlay()).toBeNull();
     });
 
     it('click inside modal does not close', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const modal = getOverlay().querySelector('.wine-research-modal');
@@ -187,7 +189,6 @@ describe('wineResearch modal', () => {
     });
 
     it('Escape key closes modal', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       expect(getOverlay()).toBeTruthy();
@@ -196,7 +197,6 @@ describe('wineResearch modal', () => {
     });
 
     it('double-open guard: only one overlay at a time', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
       await openWineResearchModal({ ...CART_ITEM, wine_name: 'Second Wine' });
 
@@ -213,7 +213,6 @@ describe('wineResearch modal', () => {
       document.body.appendChild(triggerBtn);
       triggerBtn.focus();
 
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       getOverlay().querySelector('.wine-research-close').click();
@@ -221,14 +220,54 @@ describe('wineResearch modal', () => {
     });
   });
 
+  describe('search preview', () => {
+    it('shows editable fields with item data pre-filled', async () => {
+      await openWineResearchModal(CART_ITEM);
+
+      const overlay = getOverlay();
+      expect(overlay.querySelector('#sp-wine_name').value).toBe('Kanonkop Pinotage');
+      expect(overlay.querySelector('#sp-producer').value).toBe('Kanonkop');
+      expect(overlay.querySelector('#sp-vintage').value).toBe('2019');
+      expect(overlay.querySelector('#sp-country').value).toBe('South Africa');
+      expect(overlay.querySelector('#sp-colour').value).toBe('red');
+      expect(overlay.querySelector('#sp-region').value).toBe('Stellenbosch');
+      expect(overlay.querySelector('#sp-grapes').value).toBe('Pinotage');
+    });
+
+    it('shows hint text and Search button', async () => {
+      await openWineResearchModal(CART_ITEM);
+
+      const overlay = getOverlay();
+      expect(overlay.querySelector('.search-preview-hint')).toBeTruthy();
+      expect(overlay.querySelector('.wine-research-search-btn')).toBeTruthy();
+      expect(overlay.querySelector('.wine-research-search-btn').textContent).toContain('Search');
+    });
+
+    it('does not call enrichWine until Search button is clicked', async () => {
+      await openWineResearchModal(CART_ITEM);
+
+      expect(mockEnrichWine).not.toHaveBeenCalled();
+    });
+
+    it('shows empty fields for missing optional data', async () => {
+      await openWineResearchModal({ ...CART_ITEM, producer: '', region: null, grapes: undefined });
+
+      const overlay = getOverlay();
+      expect(overlay.querySelector('#sp-producer').value).toBe('');
+      expect(overlay.querySelector('#sp-region').value).toBe('');
+      expect(overlay.querySelector('#sp-grapes').value).toBe('');
+    });
+  });
+
   describe('payload construction', () => {
-    it('includes wine_name and all truthy optional fields', async () => {
+    it('includes wine_name and all truthy fields from preview form', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       expect(mockEnrichWine).toHaveBeenCalledWith({
         wine_name: 'Kanonkop Pinotage',
-        vintage: 2019,
+        vintage: '2019',
         producer: 'Kanonkop',
         colour: 'red',
         grapes: 'Pinotage',
@@ -237,9 +276,10 @@ describe('wineResearch modal', () => {
       });
     });
 
-    it('omits falsy optional fields from payload', async () => {
+    it('omits empty fields from payload', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal({ ...CART_ITEM, vintage: null, producer: '', region: undefined });
+      await clickSearchAndWait();
 
       const payload = mockEnrichWine.mock.calls[0][0];
       expect(payload.wine_name).toBe('Kanonkop Pinotage');
@@ -247,12 +287,27 @@ describe('wineResearch modal', () => {
       expect(payload).not.toHaveProperty('producer');
       expect(payload).not.toHaveProperty('region');
     });
+
+    it('sends edited field values when user modifies inputs', async () => {
+      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
+      await openWineResearchModal(CART_ITEM);
+
+      // Simulate user editing the producer field
+      const producerInput = getOverlay().querySelector('#sp-producer');
+      producerInput.value = 'Edited Producer';
+
+      await clickSearchAndWait();
+
+      const payload = mockEnrichWine.mock.calls[0][0];
+      expect(payload.producer).toBe('Edited Producer');
+    });
   });
 
   describe('results rendering', () => {
     it('renders individual rating items with correct score types', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const items = getOverlay().querySelectorAll('.rating-item');
       expect(items.length).toBe(3);
@@ -271,8 +326,7 @@ describe('wineResearch modal', () => {
 
     it('shows lens icons for different source types', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
-      await openWineResearchModal(CART_ITEM);
-
+      await openWineResearchModal(CART_ITEM);      await clickSearchAndWait();
       const items = getOverlay().querySelectorAll('.rating-item');
       expect(items[0].querySelector('.rating-source').textContent).toContain('📝'); // critics
       expect(items[2].querySelector('.rating-source').textContent).toContain('🏆'); // competition
@@ -281,6 +335,7 @@ describe('wineResearch modal', () => {
     it('shows vintage-match warning for non-exact matches', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const items = getOverlay().querySelectorAll('.rating-item');
       // Third item has vintage_match: 'inferred'
@@ -293,6 +348,7 @@ describe('wineResearch modal', () => {
     it('renders drinking window with years', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const window = getOverlay().querySelector('.wine-research-window-years');
       expect(window).toBeTruthy();
@@ -303,6 +359,7 @@ describe('wineResearch modal', () => {
     it('renders food pairing chips', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const chips = getOverlay().querySelectorAll('.wine-research-pairing-chip');
       expect(chips.length).toBe(3);
@@ -314,6 +371,7 @@ describe('wineResearch modal', () => {
     it('renders narrative via renderWineProfile DOM API', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       expect(renderWineProfile).toHaveBeenCalled();
       const [container, narrative] = renderWineProfile.mock.calls[0];
@@ -324,6 +382,7 @@ describe('wineResearch modal', () => {
     it('renders sources footer with count and duration', async () => {
       mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const footer = getOverlay().querySelector('.wine-research-sources-footer');
       expect(footer.textContent).toContain('5 sources');
@@ -335,6 +394,7 @@ describe('wineResearch modal', () => {
     it('renders error state when enrichWine throws', async () => {
       mockEnrichWine.mockRejectedValue(new Error('Network failure'));
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const error = getOverlay().querySelector('.wine-research-error');
       expect(error).toBeTruthy();
@@ -344,6 +404,7 @@ describe('wineResearch modal', () => {
     it('renders error state when data.error is set with HTTP 200', async () => {
       mockEnrichWine.mockResolvedValue({ ratings: null, drinkingWindows: null, error: 'Claude API timeout' });
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const error = getOverlay().querySelector('.wine-research-error');
       expect(error).toBeTruthy();
@@ -357,6 +418,7 @@ describe('wineResearch modal', () => {
         error: null
       });
       await openWineResearchModal(CART_ITEM);
+      await clickSearchAndWait();
 
       const error = getOverlay().querySelector('.wine-research-error');
       expect(error).toBeTruthy();
@@ -366,11 +428,14 @@ describe('wineResearch modal', () => {
 
   describe('stale response guard', () => {
     it('ignores response if modal was closed during fetch', async () => {
-      // Make enrichWine return a promise that we control
       let resolve;
       mockEnrichWine.mockReturnValue(new Promise(r => { resolve = r; }));
 
-      const promise = openWineResearchModal(CART_ITEM);
+      await openWineResearchModal(CART_ITEM);
+
+      // Click search to start the fetch
+      getOverlay().querySelector('.wine-research-search-btn').click();
+      await new Promise(r => setTimeout(r, 0));
 
       // Close modal before response arrives
       getOverlay().querySelector('.wine-research-close').click();
@@ -378,7 +443,7 @@ describe('wineResearch modal', () => {
 
       // Now resolve the fetch
       resolve(ENRICH_RESPONSE);
-      await promise;
+      await new Promise(r => setTimeout(r, 0));
 
       // No overlay should be created or modified
       expect(getOverlay()).toBeNull();
@@ -387,7 +452,6 @@ describe('wineResearch modal', () => {
 
   describe('accessibility', () => {
     it('modal has role="dialog" and aria-modal', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const overlay = getOverlay();
@@ -396,7 +460,6 @@ describe('wineResearch modal', () => {
     });
 
     it('close button has aria-label', async () => {
-      mockEnrichWine.mockResolvedValue(ENRICH_RESPONSE);
       await openWineResearchModal(CART_ITEM);
 
       const closeBtn = getOverlay().querySelector('.wine-research-close');

@@ -137,8 +137,8 @@ describe('unifiedWineSearch() — API call shape', () => {
     // No beta header — 20260209 tools are GA
     expect(options.headers).toBeUndefined();
 
-    // Per-request timeout
-    expect(options.timeout).toBe(90_000);
+    // Per-request timeout (2 min 30 s)
+    expect(options.timeout).toBe(150_000);
 
     // Model from aiModels
     expect(params.model).toBe('claude-sonnet-4-6');
