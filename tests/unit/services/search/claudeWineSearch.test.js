@@ -201,17 +201,20 @@ describe('unifiedWineSearch() — API call shape', () => {
     vi.clearAllMocks();
   });
 
-  it('calls anthropic.messages.stream with web_search only and stream:true', async () => {
+  it('calls anthropic.messages.stream with basic web_search and stream:true', async () => {
     mockStream.mockReturnValue(makeTextResponse(JSON.stringify({ ratings: [] })));
 
     await unifiedWineSearch(mockWine);
 
     expect(mockStream).toHaveBeenCalledOnce();
-    const [params] = mockStream.mock.calls[0];
+    const [params, opts] = mockStream.mock.calls[0];
 
-    // Only web_search — no custom tools (save_wine_profile removed to avoid code_execution loop)
+    // Basic web_search_20250305 — no beta header, no code_execution server tool
     expect(params.tools).toHaveLength(1);
-    expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
+    expect(params.tools[0]).toEqual({ type: 'web_search_20250305' });
+
+    // No beta header (code-execution-web-tools header caused infinite loops)
+    expect(opts?.headers?.['anthropic-beta']).toBeUndefined();
 
     // Streaming enabled
     expect(params.stream).toBe(true);

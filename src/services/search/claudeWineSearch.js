@@ -22,9 +22,9 @@ import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 /** Maximum pause_turn continuations before giving up */
 const MAX_PAUSE_CONTINUATIONS = 2;
 
-/** Safety abort timeout (ms) — 5 minutes. Streaming keeps connection alive via SSE
- *  events, so this only fires if the stream truly stalls (no events at all). */
-const STREAM_ABORT_TIMEOUT_MS = 300_000;
+/** Safety abort timeout (ms) — 3 minutes. SERT reference completes searches in ~2 min;
+ *  3 min provides headroom while catching genuine stalls much faster than the old 5 min. */
+const STREAM_ABORT_TIMEOUT_MS = 180_000;
 
 /** System prompt requesting both narrative and structured JSON output.
  *  Intentionally simple to match SERT reference — no custom tools, just web_search.
@@ -45,16 +45,16 @@ Include inline citations for all factual claims.
 After your narrative, output a single JSON object (no markdown code fences) with this structure:
 {"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}`;
 
-/* save_wine_profile tool REMOVED.
+/* Architecture note:
  *
- * Root cause of 5-minute timeout: the beta header `code-execution-web-tools-2026-02-09`
- * enables a `code_execution` server tool. When a custom tool (save_wine_profile) was
- * present, Claude entered a code_execution loop to structure search results into the
- * tool schema — 22+ iterations consuming all time until the 300s abort.
+ * Previous iterations used web_search_20260209 (dynamic filtering) with the beta header
+ * `code-execution-web-tools-2026-02-09`. That header enables a `code_execution` server
+ * tool that Claude uses autonomously. Our complex prompt (with JSON schema) triggered
+ * code_execution in a loop — 22+ iterations consuming all time → 300s abort.
  *
- * SERT reference adapter uses the same beta header with ONLY web_search (no custom tool)
- * and completes in ~2 minutes. We now match that architecture: web_search only,
- * structured JSON returned in text and parsed with extractJsonWithRepair().
+ * Fix: switched to web_search_20250305 (basic) which needs no beta header.
+ * No code_execution, no stalls. Structured JSON returned in text, parsed with
+ * extractJsonWithRepair(). SERT reference completes in ~2 min with similar approach.
  */
 
 /**
@@ -418,10 +418,12 @@ CRITICAL RULES:
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       tools: [
-        // Only web_search — no custom tools. Custom tools (save_wine_profile) triggered
-        // the code_execution server tool loop that caused 5-minute timeouts.
-        // SERT reference uses web_search only and completes in ~2 minutes.
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
+        // Basic web_search — no beta header required.
+        // web_search_20260209 (dynamic) requires the code-execution-web-tools beta header,
+        // which enables `code_execution` server tool. Our complex prompt with JSON schema
+        // triggers Claude to use code_execution in a loop (22+ iterations, 5 min timeout).
+        // Basic web_search_20250305 avoids this entirely — no code_execution, no stalls.
+        { type: 'web_search_20250305' }
       ],
       messages: [{ role: 'user', content: userPrompt }],
       stream: true
@@ -434,12 +436,11 @@ CRITICAL RULES:
       abortController.abort();
     }, STREAM_ABORT_TIMEOUT_MS);
 
-    // Beta header required for web_search_20260209 (dynamic filtering).
-    // Note: this header also enables code_execution server tool, but without custom
-    // tools in the tools array, code_execution usage is minimal and fast.
+    // No beta header needed for basic web_search_20250305.
+    // The old code-execution-web-tools-2026-02-09 header enabled a `code_execution`
+    // server tool that caused infinite loops (22+ iterations → 5 min timeout).
     const streamOpts = {
-      signal: abortController.signal,
-      headers: { 'anthropic-beta': 'code-execution-web-tools-2026-02-09' }
+      signal: abortController.signal
     };
 
     let allContent;
