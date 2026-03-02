@@ -138,6 +138,26 @@ function renderProductView(wine, gapsData) {
   ].filter(Boolean);
   document.getElementById('product-meta').textContent = parts.join(' · ');
 
+  // Prefill confirmation fields (editable by user)
+  const nameInput = document.getElementById('confirm-wine-name');
+  const producerInput = document.getElementById('confirm-producer');
+  const vintageInput = document.getElementById('confirm-vintage');
+  const regionInput = document.getElementById('confirm-region');
+  const countryInput = document.getElementById('confirm-country');
+  const vintageHint = document.getElementById('confirm-vintage-hint');
+
+  nameInput.value = wine.wine_name || '';
+  producerInput.value = wine.producer || '';
+  vintageInput.value = wine.vintage != null ? String(wine.vintage) : '';
+  regionInput.value = wine.region || '';
+  countryInput.value = wine.country || '';
+
+  const toggleVintageHint = () => {
+    vintageHint.classList.toggle('hidden', !!vintageInput.value.trim());
+  };
+  toggleVintageHint();
+  vintageInput.oninput = toggleVintageHint;
+
   const gaps = gapsData?.gaps?.slice(0, 3) || [];
   document.getElementById('gaps-mini').innerHTML = gaps.length
     ? gaps.map(renderGapMini).join('')
@@ -218,12 +238,32 @@ async function handleAddToPlan() {
   feedback.className = 'feedback hidden';
 
   try {
+    const confirmedWine = getConfirmedWine();
+
+    if (!confirmedWine.wine_name) {
+      throw new Error('Wine name is required');
+    }
+
+    const hasVintage = confirmedWine.vintage != null;
+    if (!hasVintage) {
+      const proceed = window.confirm(
+        'Vintage is missing. Search quality can be lower without a vintage. Continue anyway?'
+      );
+      if (!proceed) {
+        btn.disabled = false;
+        btn.textContent = '+ Add to Plan';
+        return;
+      }
+    }
+
     // Infer style (best-effort — failure is non-fatal)
     let styleId = null;
     try {
       const styleResp = await inferStyle({
-        wine_name: detectedWine.wine_name,
-        producer: detectedWine.producer || undefined
+        wine_name: confirmedWine.wine_name,
+        producer: confirmedWine.producer || undefined,
+        region: confirmedWine.region || undefined,
+        country: confirmedWine.country || undefined
       }, currentAuth);
       styleId = styleResp?.data?.styleId || null;
     } catch (_) {
@@ -231,10 +271,12 @@ async function handleAddToPlan() {
     }
 
     await addToPlan({
-      wine_name: detectedWine.wine_name,
-      producer:  detectedWine.producer || null,
-      vintage:   detectedWine.vintage  || null,
-      price:     detectedWine.price    || null,
+      wine_name: confirmedWine.wine_name,
+      producer:  confirmedWine.producer || null,
+      vintage:   confirmedWine.vintage,
+      region:    confirmedWine.region || null,
+      country:   confirmedWine.country || null,
+      price:     detectedWine.price || null,
       currency:  detectedWine.currency || 'ZAR',
       vendor_url: detectedWine.vendor_url,
       style_id:  styleId
@@ -245,7 +287,7 @@ async function handleAddToPlan() {
 
     btn.textContent = '✓ Added to Plan';
     btn.classList.add('btn-success');
-    feedback.textContent = `"${detectedWine.wine_name}" added to your buying plan.`;
+    feedback.textContent = `"${confirmedWine.wine_name}" added to your buying plan.`;
     feedback.className = 'feedback feedback-success';
 
   } catch (err) {
@@ -254,6 +296,35 @@ async function handleAddToPlan() {
     feedback.textContent = `Error: ${err.message}`;
     feedback.className = 'feedback feedback-error';
   }
+}
+
+/**
+ * Read and normalize user-confirmed wine details from popup inputs.
+ * @returns {{ wine_name: string, producer: string|null, vintage: number|null, region: string|null, country: string|null }}
+ */
+function getConfirmedWine() {
+  const wineName = document.getElementById('confirm-wine-name')?.value?.trim() || '';
+  const producer = document.getElementById('confirm-producer')?.value?.trim() || null;
+  const region = document.getElementById('confirm-region')?.value?.trim() || null;
+  const country = document.getElementById('confirm-country')?.value?.trim() || null;
+  const vintageRaw = document.getElementById('confirm-vintage')?.value?.trim() || '';
+
+  let vintage = null;
+  if (vintageRaw && !/^NV$/i.test(vintageRaw)) {
+    const parsed = parseInt(vintageRaw, 10);
+    if (!Number.isInteger(parsed) || parsed < 1900 || parsed > 2100) {
+      throw new Error('Vintage must be a year between 1900 and 2100, or NV');
+    }
+    vintage = parsed;
+  }
+
+  return {
+    wine_name: wineName,
+    producer,
+    vintage,
+    region,
+    country
+  };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

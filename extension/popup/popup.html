@@ -40,6 +40,35 @@
     <div id="product-name" class="product-name"></div>
     <div id="product-meta" class="product-meta"></div>
 
+    <div class="confirm-card" aria-label="Confirm wine details">
+      <div class="confirm-title">Confirm details before adding</div>
+      <div class="confirm-grid">
+        <label class="confirm-field">
+          <span>Name</span>
+          <input id="confirm-wine-name" type="text" autocomplete="off" />
+        </label>
+        <label class="confirm-field">
+          <span>Producer</span>
+          <input id="confirm-producer" type="text" autocomplete="off" />
+        </label>
+        <label class="confirm-field">
+          <span>Vintage</span>
+          <input id="confirm-vintage" type="text" inputmode="numeric" placeholder="e.g. 2023 or NV" autocomplete="off" />
+        </label>
+        <label class="confirm-field">
+          <span>Region</span>
+          <input id="confirm-region" type="text" autocomplete="off" />
+        </label>
+        <label class="confirm-field">
+          <span>Country</span>
+          <input id="confirm-country" type="text" autocomplete="off" />
+        </label>
+      </div>
+      <p id="confirm-vintage-hint" class="confirm-hint hidden">
+        Vintage is missing. Search quality is better when vintage is set.
+      </p>
+    </div>
+
     <button id="add-to-plan-btn" class="btn btn-primary btn-full">
       + Add to Plan
     </button>

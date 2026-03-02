@@ -28,6 +28,56 @@
   }
 
   /**
+   * Try to extract vintage from explicit page signals (selectors/labels),
+   * not only title/name text.
+   * @returns {number|null}
+   */
+  function findVintageFromPageSignals() {
+    const selectorCandidates = [
+      '[itemprop="releaseDate"]',
+      '[itemprop="productionDate"]',
+      '[data-testid*="vintage"]',
+      '[class*="vintage"]',
+      '[id*="vintage"]',
+      '[name*="vintage"]'
+    ];
+
+    for (const selector of selectorCandidates) {
+      const node = document.querySelector(selector);
+      if (!node) continue;
+
+      const nodeText = [
+        node.textContent,
+        node.getAttribute?.('content'),
+        node.getAttribute?.('value'),
+        node.getAttribute?.('aria-label'),
+        node.getAttribute?.('title')
+      ].filter(Boolean).join(' ');
+
+      const vintage = parseVintage(nodeText);
+      if (vintage) return vintage;
+    }
+
+    // Common spec tables: "Vintage: 2023" / "Year: 2023"
+    const labelledNodes = document.querySelectorAll('dt, th, .label, .spec-label, .product-attribute__name');
+    for (const labelNode of labelledNodes) {
+      const label = (labelNode.textContent || '').trim();
+      if (!/\b(vintage|year|harvest)\b/i.test(label)) continue;
+
+      // try sibling value first
+      const siblingText = [
+        labelNode.nextElementSibling?.textContent,
+        labelNode.parentElement?.querySelector('dd, td, .value, .spec-value, .product-attribute__value')?.textContent
+      ].filter(Boolean).join(' ');
+
+      const vintage = parseVintage(siblingText || label);
+      if (vintage) return vintage;
+    }
+
+    return null;
+  }
+
+  /**
    * Parse price and currency from a string like "R 450.00" or "€12.50".
    * @param {string} text
    * @returns {{ price: number, currency: string }|null}
@@ -108,7 +158,7 @@
           const name = item.name;
           if (!name || !isLikelyWine(name, item.description || '')) continue;
 
-          const vintage = parseVintage(name) || parseVintage(item.description || '');
+          const vintage = parseVintage(name) || parseVintage(item.description || '') || findVintageFromPageSignals();
           const offers = Array.isArray(item.offers) ? item.offers[0] : item.offers;
           const price = offers?.price != null ? parseFloat(String(offers.price).replace(',', '.')) : null;
           const currency = offers?.priceCurrency || 'ZAR';
@@ -148,7 +198,7 @@
 
     // 2. Vintage — prefer ?year= URL param (most reliable on Vivino).
     const urlYear = new URLSearchParams(window.location.search).get('year');
-    const vintage = parseVintage(urlYear) || parseVintage(rawName);
+    const vintage = parseVintage(urlYear) || parseVintage(rawName) || findVintageFromPageSignals();
 
     // 3. Producer — Vivino links the winery, e.g. href contains "/wineries/".
     const producerEl =
@@ -181,7 +231,7 @@
     return {
       wine_name: name,
       producer: null,
-      vintage: parseVintage(name),
+      vintage: parseVintage(name) || findVintageFromPageSignals(),
       ...(priceData || {}),
       vendor_url: window.location.href,
       confidence: 'medium'
@@ -199,7 +249,7 @@
     return {
       wine_name: name,
       producer: null,
-      vintage: parseVintage(name),
+      vintage: parseVintage(name) || findVintageFromPageSignals(),
       ...(priceData || {}),
       vendor_url: window.location.href,
       confidence: 'medium'
@@ -216,7 +266,7 @@
     return {
       wine_name: name,
       producer: null,
-      vintage: parseVintage(name),
+      vintage: parseVintage(name) || findVintageFromPageSignals(),
       ...(priceData || {}),
       vendor_url: window.location.href,
       confidence: 'medium'
@@ -258,7 +308,7 @@
     return {
       wine_name: title.trim(),
       producer: null,
-      vintage: parseVintage(title) || parseVintage(description),
+      vintage: parseVintage(title) || parseVintage(description) || findVintageFromPageSignals(),
       ...(priceData || {}),
       vendor_url: window.location.href,
       confidence: 'low'
@@ -278,7 +328,7 @@
     return {
       wine_name: name,
       producer: null,
-      vintage: parseVintage(name) || parseVintage(title),
+      vintage: parseVintage(name) || parseVintage(title) || findVintageFromPageSignals(),
       ...(priceData || {}),
       vendor_url: window.location.href,
       confidence: 'low'

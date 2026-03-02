@@ -266,6 +266,33 @@ describe('extractWineFromPage — generic heuristic', () => {
     expect(result.confidence).toBe('low');
   });
 
+  it('extracts vintage from dedicated vintage field when not in title', () => {
+    document.body.innerHTML = `
+      <h1>Markovitis Alkemi Rosé Wine</h1>
+      <div class="product-spec">
+        <span class="label">Vintage</span>
+        <span class="value">2023</span>
+      </div>
+      <div class="price">R 320.00</div>
+    `;
+
+    const result = WE.extractWineFromPage();
+    expect(result).not.toBeNull();
+    expect(result.wine_name).toBe('Markovitis Alkemi Rosé Wine');
+    expect(result.vintage).toBe(2023);
+  });
+
+  it('extracts vintage from explicit vintage selectors', () => {
+    document.body.innerHTML = `
+      <h1>Cloudy Bay Sauvignon Blanc</h1>
+      <div class="vintage-value">2022</div>
+    `;
+
+    const result = WE.extractWineFromPage();
+    expect(result).not.toBeNull();
+    expect(result.vintage).toBe(2022);
+  });
+
   it('returns null when h1 contains no wine signals', () => {
     document.body.innerHTML = '<h1>Blue Denim Jeans</h1>';
     document.title = 'Fashion Store';
