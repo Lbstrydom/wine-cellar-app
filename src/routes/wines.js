@@ -124,8 +124,7 @@ router.post('/check-duplicate', validateBody(duplicateCheckSchema), asyncHandler
   });
 
   res.json({
-    data: result,
-    search_available: !!process.env.BRIGHTDATA_API_KEY
+    data: result
   });
 }));
 

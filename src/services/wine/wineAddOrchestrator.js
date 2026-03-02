@@ -7,7 +7,6 @@ import crypto from 'crypto';
 import db from '../../db/index.js';
 import FEATURE_FLAGS from '../../config/featureFlags.js';
 import { WineFingerprint, findAliases } from './wineFingerprint.js';
-import { searchVivinoWines } from '../scraping/vivinoSearch.js';
 import { lookupWineSearchCache, storeWineSearchCache } from '../search/searchCache.js';
 import logger from '../../utils/logger.js';
 
@@ -18,12 +17,6 @@ const AUTO_SELECT_CONFIG = {
   maxSecondScore: 0.7,
   minMargin: 0.15,
   minEvidenceCount: 2
-};
-
-const BUDGET_CONFIG = {
-  maxCostCentsPerRequest: 2,
-  earlyStopConfidence: 0.92,
-  earlyStopMinSources: 1
 };
 
 function normalizeInput(value) {
@@ -214,50 +207,8 @@ export async function evaluateWineAdd({ cellarId, input, forceRefresh = false })
 
   const duplicates = await findDuplicateWines(cellarId, fingerprint);
 
-  let matches = [];
-  let stopReason = 'no_external_search';
-
-  const searchAvailable = !!process.env.BRIGHTDATA_API_KEY;
-
-  if (FEATURE_FLAGS.WINE_ADD_ORCHESTRATOR_ENABLED && searchAvailable) {
-    const searchResults = await searchVivinoWines({
-      query: input.wine_name,
-      producer: input.producer,
-      vintage: input.vintage,
-      country: input.country,
-      colour: input.colour
-    });
-
-    matches = (searchResults.matches || []).map(match => {
-      const confidence = scoreMatch(match, input);
-      return {
-        source: 'vivino',
-        external_id: match.vivinoId ? String(match.vivinoId) : null,
-        external_url: match.vivinoUrl,
-        name: match.name,
-        vintage: match.vintage,
-        rating: match.rating,
-        rating_count: match.ratingCount,
-        winery: match.winery,
-        region: match.region,
-        country: match.country,
-        grape_variety: match.grapeVariety,
-        confidence,
-        evidence: {
-          confidence_score: confidence.score,
-          reasons: confidence.reasons
-        }
-      };
-    }).sort((a, b) => b.confidence.score - a.confidence.score);
-
-    if (matches.length > 0 && matches[0].confidence.score >= BUDGET_CONFIG.earlyStopConfidence) {
-      stopReason = 'high_confidence';
-    } else if (matches.length === 0) {
-      stopReason = 'no_matches';
-    } else {
-      stopReason = 'matches_found';
-    }
-  }
+  const matches = [];
+  const stopReason = 'no_external_search';
 
   const autoSelect = shouldAutoSelect(matches);
   const response = {

@@ -8,9 +8,9 @@
 import { Router } from 'express';
 import db from '../db/index.js';
 import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config/unifiedSources.js';
-import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity } from '../services/ratings/ratings.js';
+import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity, countSaveableRatings } from '../services/ratings/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
-import { threeTierWaterfall } from '../services/search/threeTierWaterfall.js';
+import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateParams } from '../middleware/validate.js';
@@ -34,10 +34,12 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
 
   const identityTokens = buildIdentityTokensFromWine(wine);
 
-  // Run 3-tier waterfall (shared logic — no DB operations)
-  const { result, usedMethod } = await threeTierWaterfall(wine, identityTokens, {
-    endpoint: 'sync'
-  });
+  // Run unified Claude Web Search (single API call replacing 3-tier waterfall)
+  const result = await unifiedWineSearch(wine);
+  if (!result) {
+    return res.status(503).json({ error: 'Wine search unavailable or returned no results' });
+  }
+  const usedMethod = result._metadata?.method || 'unified_claude_search';
 
   // ═══════════════════════════════════════════════════════════════════════════
   // GRAPE PERSISTENCE: Save discovered grape varieties if wine has none
@@ -102,6 +104,18 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
     } else {
       logger.info('Ratings', `Skipping duplicate ${rating.source} rating`);
     }
+  }
+
+  // Pre-validate: ensure at least one rating has a known source ID and valid score.
+  // Prevents wiping existing ratings when Claude returns display names instead of registry IDs.
+  const saveableCount = countSaveableRatings(uniqueRatings);
+  if (saveableCount === 0) {
+    logger.warn('Ratings', `All ${uniqueRatings.length} ratings have unknown source IDs — keeping existing ratings`);
+    return res.json({
+      message: `Found ${uniqueRatings.length} ratings but all had unknown source IDs, existing ratings preserved`,
+      ratings_kept: existingRatings.length,
+      method: usedMethod
+    });
   }
 
   // Delete existing auto-fetched ratings (keep user overrides)
@@ -180,7 +194,7 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const preference = parseInt(prefSetting?.value || '40');
   const aggregates = calculateWineRatings(ratings, wine, preference);
 
-  const tastingNotes = result.tasting_notes || null;
+  const tastingNotes = result._narrative || null;
 
   await db.prepare(`
     UPDATE wines SET

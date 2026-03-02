@@ -3,13 +3,12 @@
  * @module bottles/form
  */
 
-import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement, getWineSearchStatus, checkWineDuplicate } from '../api.js';
+import { createWine, updateWine, addBottles, removeBottle, getSuggestedPlacement, checkWineDuplicate } from '../api.js';
 import { showToast } from '../utils.js';
 import { refreshData } from '../app.js';
 import { bottleState } from './state.js';
 import { closeBottleModal } from './modal.js';
 import { showSlotPickerModal } from './slotPicker.js';
-import { showWineConfirmation } from './wineConfirmation.js';
 import { showWineDisambiguation } from './disambiguationModal.js';
 import { populateCountryDropdown, populateRegionDropdown } from './dropdownHelpers.js';
 import { loadWineRegions } from '../config/wineRegions.js';
@@ -173,21 +172,6 @@ async function handleBottleFormSubmit(e) {
           return;
         }
 
-        // Fallback to legacy confirmation if search is enabled and disambiguation not available
-        const shouldConfirm = await shouldShowConfirmation();
-        if (shouldConfirm) {
-          showWineConfirmation(
-            wineData,
-            async (confirmedWine) => {
-              await saveWineWithConfirmation(wineData, confirmedWine, quantity);
-            },
-            async () => {
-              await saveWineWithoutConfirmation(wineData, quantity);
-            }
-          );
-          return;
-        }
-
         const result = await createWine(wineData);
         wineId = result.id;
       }
@@ -214,21 +198,6 @@ async function handleBottleFormSubmit(e) {
 }
 
 /**
- * Check if wine confirmation should be shown.
- * Returns true if Bright Data is configured.
- * @returns {Promise<boolean>}
- */
-async function shouldShowConfirmation() {
-  try {
-    // Check if BRIGHTDATA_API_KEY is configured by checking feature availability
-    const status = await getWineSearchStatus();
-    return status.available === true;
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Fetch duplicate and external match data.
  * @param {Object} formData - Wine form data
  * @returns {Promise<Object|null>}
@@ -239,55 +208,6 @@ async function getDisambiguationData(formData) {
     return response?.data || null;
   } catch {
     return null;
-  }
-}
-
-/**
- * Save wine with confirmed Vivino data.
- * @param {Object} formData - Original form data
- * @param {Object} confirmedWine - Confirmed wine from Vivino (includes quantity)
- * @param {number} [fallbackQuantity] - Fallback quantity if not in confirmedWine
- */
-async function saveWineWithConfirmation(formData, confirmedWine, fallbackQuantity = 1) {
-  try {
-    // Use quantity from confirmation modal, fall back to passed quantity
-    const quantity = confirmedWine.quantity || fallbackQuantity;
-
-    // Merge confirmed Vivino data with form data
-    const wineData = {
-      ...formData,
-      // Use confirmed name if different and seems more complete
-      wine_name: confirmedWine.name || formData.wine_name,
-      // Use confirmed vintage if available
-      vintage: confirmedWine.vintage || formData.vintage,
-      // Use confirmed country if we didn't have one
-      country: formData.country || confirmedWine.country,
-      // Use confirmed grape variety as style if we didn't have one
-      style: formData.style || confirmedWine.grapeVariety,
-      // Persist grape variety data
-      grapes: confirmedWine.grapeVariety || null,
-      // Use confirmed rating
-      vivino_rating: confirmedWine.rating || formData.vivino_rating,
-      // Add Vivino reference (ensure vivinoId is string - API may return number)
-      vivino_id: confirmedWine.vivinoId ? String(confirmedWine.vivinoId) : null,
-      vivino_url: confirmedWine.vivinoUrl,
-      vivino_confirmed: true
-    };
-
-    const result = await createWine(wineData);
-    const wineId = result.id;
-
-    // Add bottles if we have a location (slot or 'smart')
-    if (bottleState.editingLocation && quantity > 0) {
-      await addBottlesToSlots(wineId, quantity);
-    }
-
-    closeBottleModal();
-    await refreshData();
-    showToast(`Added ${quantity}x ${wineData.wine_name} (verified)`);
-
-  } catch (err) {
-    showToast('Error: ' + err.message);
   }
 }
 
@@ -437,20 +357,6 @@ export async function submitParsedWine(wineData, quantity) {
           onSkip: async (selectedQty) => {
             await saveWineWithoutConfirmation(wineData, selectedQty);
           }
-        }
-      );
-      return;
-    }
-
-    const shouldConfirm = await shouldShowConfirmation();
-    if (shouldConfirm) {
-      showWineConfirmation(
-        wineData,
-        async (confirmedWine) => {
-          await saveWineWithConfirmation(wineData, confirmedWine, quantity);
-        },
-        async () => {
-          await saveWineWithoutConfirmation(wineData, quantity);
         }
       );
       return;

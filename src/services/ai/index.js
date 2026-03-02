@@ -11,4 +11,4 @@
 
 export { getSommelierRecommendation, continueSommelierChat } from '../pairing/sommelier.js';
 export { parseWineFromText, parseWineFromImage } from '../wine/wineParsing.js';
-export { fetchWineRatings, saveExtractedWindows } from '../ratings/ratingExtraction.js';
+export { saveExtractedWindows } from '../ratings/ratingExtraction.js';

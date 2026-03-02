@@ -142,19 +142,6 @@ export async function deleteRating(wineId, ratingId) {
   return handleResponse(res, 'Failed to delete rating');
 }
 
-/**
- * Refresh ratings for a wine with backoff.
- * @param {number} id - Wine ID
- * @returns {Promise<Object>}
- */
-export async function refreshWineRatings(id) {
-  const res = await fetch(`${API_BASE}/api/wines/${id}/refresh-ratings`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' }
-  });
-  return handleResponse(res, 'Failed to refresh ratings');
-}
-
 // ============================================
 // Drinking Windows API
 // ============================================

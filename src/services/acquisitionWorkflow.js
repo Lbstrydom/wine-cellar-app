@@ -4,7 +4,8 @@
  * @module services/acquisitionWorkflow
  */
 
-import { parseWineFromImage, parseWineFromText, fetchWineRatings, saveExtractedWindows } from './ai/index.js';
+import { parseWineFromImage, parseWineFromText, saveExtractedWindows } from './ai/index.js';
+import { unifiedWineSearch } from './search/claudeWineSearch.js';
 import { findBestZone, findAvailableSlot } from './cellar/cellarPlacement.js';
 import { categoriseWine, getFridgeStatus } from './cellar/fridgeStocking.js';
 import db from '../db/index.js';
@@ -138,8 +139,8 @@ export async function enrichWineData(wine) {
   };
 
   try {
-    // Fetch ratings from web
-    const ratingsResult = await fetchWineRatings(wine);
+    // Fetch ratings via unified Claude Web Search
+    const ratingsResult = await unifiedWineSearch(wine) || {};
     enrichment.ratings = ratingsResult;
 
     // Extract and save drinking windows if wine has ID

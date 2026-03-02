@@ -11,7 +11,7 @@
     "test:run": "vitest run",
     "test:unit": "vitest run tests/unit --no-isolate",
     "test:benchmark": "vitest run tests/benchmark",
-    "test:benchmark:live": "vitest run tests/integration/searchBenchmark.live.test.js",
+    "test:benchmark:live": "vitest run tests/benchmark/unifiedSearchBenchmark.test.js",
     "test:benchmark:validate": "node tests/benchmark/validateSchema.js",
     "test:benchmark:record": "node tests/benchmark/recordFixtures.js",
     "test:benchmark:staleness": "node tests/benchmark/checkStaleness.js",

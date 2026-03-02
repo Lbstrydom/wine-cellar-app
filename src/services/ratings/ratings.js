@@ -305,6 +305,20 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
 }
 
 /**
+ * Count how many ratings would be saved by saveRatings (sources known + scores valid).
+ * Use this BEFORE deleting existing ratings to verify the new set is non-empty.
+ * @param {Object[]} ratings - Ratings array to validate
+ * @returns {number}
+ */
+export function countSaveableRatings(ratings) {
+  if (!ratings || !Array.isArray(ratings)) return 0;
+  return ratings.filter(r =>
+    !!(RATING_SOURCES[r.source]) &&
+    r.raw_score && r.raw_score !== 'null' && r.raw_score !== ''
+  ).length;
+}
+
+/**
  * Get relevance weight for a source given a wine.
  * @param {string} sourceId - Source ID
  * @param {Object} wine - Wine object with country and style

@@ -450,6 +450,7 @@ Test wines across obscurity levels:
 | 5.5 Add competitions | ✅ | `michelangelo`, `san_francisco`, `texsom`, `sakura` added; `REGION_SOURCE_PRIORITY` updated |
 | 5.6 Benchmark test | ✅ | `tests/benchmark/unifiedSearchBenchmark.test.js` — schema + quality assertions |
 | 5.7 Verification | ✅ | 2881 unit tests pass; 36 benchmark tests pass |
+| 5.x Post-audit consistency fixes | ✅ | `package.json` `test:benchmark:live` now points to `tests/benchmark/unifiedSearchBenchmark.test.js`; `CLAUDE.md` tool name corrected to `save_wine_profile` |
 
 ---
 

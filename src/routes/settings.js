@@ -19,8 +19,6 @@ const router = Router();
  * @type {Object.<string, function(string, string): Promise<{success: boolean, message: string}>>}
  */
 const CREDENTIAL_TESTERS = {
-  vivino: testVivinoCredentials,
-  decanter: testDecanterCredentials,
   paprika: testPaprikaCredentials,
   mealie: testMealieCredentials,
 };
@@ -198,96 +196,6 @@ router.post('/credentials/:source/test', validateParams(sourceParamSchema), asyn
     res.status(500).json({ error: error.message });
   }
 }));
-
-/**
- * Test Vivino credentials.
- * @param {string} username
- * @param {string} password
- * @returns {Promise<{success: boolean, message: string}>}
- */
-async function testVivinoCredentials(username, password) {
-  try {
-    // Vivino uses a session-based login
-    const response = await fetch('https://www.vivino.com/api/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: JSON.stringify({ email: username, password })
-    });
-
-    if (response.ok) {
-      const data = await response.json();
-      if (data.user || data.success) {
-        return { success: true, message: 'Vivino login successful' };
-      }
-    }
-
-    // Try alternate endpoint
-    const altResponse = await fetch('https://www.vivino.com/users/sign_in', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: new URLSearchParams({
-        'user[email]': username,
-        'user[password]': password
-      }),
-      redirect: 'manual'
-    });
-
-    // A redirect usually means successful login
-    if (altResponse.status === 302 || altResponse.status === 303) {
-      return { success: true, message: 'Vivino login successful' };
-    }
-
-    return { success: false, message: 'Invalid credentials or login blocked' };
-
-  } catch (error) {
-    return { success: false, message: `Connection error: ${error.message}` };
-  }
-}
-
-/**
- * Test Decanter credentials.
- * @param {string} username
- * @param {string} password
- * @returns {Promise<{success: boolean, message: string}>}
- */
-async function testDecanterCredentials(username, password) {
-  try {
-    // Decanter login endpoint
-    const response = await fetch('https://www.decanter.com/wp-login.php', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      body: new URLSearchParams({
-        'log': username,
-        'pwd': password,
-        'wp-submit': 'Log In',
-        'redirect_to': 'https://www.decanter.com/'
-      }),
-      redirect: 'manual'
-    });
-
-    // Redirect to dashboard = success
-    if (response.status === 302) {
-      const location = response.headers.get('location');
-      if (location && !location.includes('wp-login.php')) {
-        return { success: true, message: 'Decanter login successful' };
-      }
-    }
-
-    return { success: false, message: 'Invalid credentials' };
-
-  } catch (error) {
-    return { success: false, message: `Connection error: ${error.message}` };
-  }
-}
 
 /**
  * Test Paprika credentials via the sync API.

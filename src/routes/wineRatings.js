@@ -9,7 +9,6 @@ import { Router } from 'express';
 import db from '../db/index.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { wineIdSchema, personalRatingSchema } from '../schemas/wine.js';
-import { searchVivinoWines } from '../services/scraping/vivinoSearch.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { calculateNextRetry, extractVivinoId } from './wines.js';
 
@@ -129,94 +128,6 @@ router.post('/:id/set-vivino-url', validateParams(wineIdSchema), asyncHandler(as
   res.json({ message: 'Vivino URL saved', vivino_id: vivinoId });
 }));
 
-/**
- * Refresh ratings with backoff.
- * @route POST /api/wines/:id/refresh-ratings
- */
-router.post('/:id/refresh-ratings', validateParams(wineIdSchema), asyncHandler(async (req, res) => {
-  const { id } = req.params;
-  const wine = await db.prepare(`
-    SELECT id, wine_name, producer, vintage, country, region, ratings_attempt_count, ratings_next_retry_at
-    FROM wines
-    WHERE cellar_id = $1 AND id = $2
-  `).get(req.cellarId, id);
-
-  if (!wine) {
-    return res.status(404).json({ error: 'Wine not found' });
-  }
-
-  if (wine.ratings_next_retry_at && new Date(wine.ratings_next_retry_at) > new Date()) {
-    return res.status(409).json({
-      error: 'Retry backoff active',
-      next_retry_at: wine.ratings_next_retry_at
-    });
-  }
-
-  const RETRY_MAX_ATTEMPTS = 5;
-  const attemptCount = (wine.ratings_attempt_count || 0) + 1;
-  if (attemptCount > RETRY_MAX_ATTEMPTS) {
-    return res.status(409).json({ error: 'Max retry attempts reached' });
-  }
-
-  const searchResults = await searchVivinoWines({
-    query: wine.wine_name,
-    producer: wine.producer,
-    vintage: wine.vintage,
-    country: wine.country
-  });
-
-  const topMatch = searchResults.matches?.[0] || null;
-  let ratingsStatus = 'attempted_failed';
-  let nextRetryAt = calculateNextRetry(attemptCount).toISOString();
-
-  if (topMatch?.rating) {
-    await db.prepare(`
-      INSERT INTO wine_source_ratings
-        (wine_id, source, rating_value, rating_scale, review_count, source_url, extraction_method)
-      VALUES ($1, $2, $3, $4, $5, $6, $7)
-      ON CONFLICT (wine_id, source) DO UPDATE SET
-        previous_rating_value = wine_source_ratings.rating_value,
-        rating_value = EXCLUDED.rating_value,
-        rating_scale = EXCLUDED.rating_scale,
-        review_count = EXCLUDED.review_count,
-        source_url = EXCLUDED.source_url,
-        extraction_method = EXCLUDED.extraction_method,
-        captured_at = CURRENT_TIMESTAMP
-    `).run(
-      id,
-      'vivino',
-      topMatch.rating,
-      '5',
-      topMatch.ratingCount || null,
-      topMatch.vivinoUrl || null,
-      'structured'
-    );
-
-    ratingsStatus = 'complete';
-    nextRetryAt = null;
-  }
-
-  await db.prepare(`
-    UPDATE wines
-    SET ratings_status = $1,
-        ratings_last_attempt_at = CURRENT_TIMESTAMP,
-        ratings_attempt_count = $2,
-        ratings_next_retry_at = $3
-    WHERE cellar_id = $4 AND id = $5
-  `).run(
-    ratingsStatus,
-    attemptCount,
-    nextRetryAt,
-    req.cellarId,
-    id
-  );
-
-  res.json({
-    message: ratingsStatus === 'complete' ? 'Ratings refreshed' : 'Ratings refresh failed',
-    ratings_status: ratingsStatus,
-    next_retry_at: nextRetryAt
-  });
-}));
 
 /**
  * Update personal rating for a wine.

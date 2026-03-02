@@ -8,11 +8,52 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractStreamText } from '../ai/claudeResponseUtils.js';
 import logger from '../../utils/logger.js';
-import { fetchPageContent } from '../search/searchProviders.js';
+import { extractWithReadability } from '../scraping/readabilityExtractor.js';
 import { buildExtractionPrompt, parseAwardsResponse } from './awardParser.js';
 
 const MAX_TOKENS_TEXT = 32000;
 const MAX_TOKENS_CHUNK = 32000;
+
+/**
+ * Fetch an awards page using standard HTTP (no BrightData proxy).
+ * If the page returns 403/429, returns failure and the caller skips gracefully.
+ * @param {string} url - Page URL
+ * @param {number} [maxLength=15000] - Max content length to return
+ * @returns {Promise<{success: boolean, content: string, error: string|null}>}
+ */
+async function fetchAwardPage(url, maxLength = 15000) {
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'User-Agent': 'Mozilla/5.0 (compatible; WineCellarBot/1.0)'
+      },
+      signal: AbortSignal.timeout(15000)
+    });
+
+    if (!response.ok) {
+      return { success: false, content: '', error: `HTTP ${response.status}` };
+    }
+
+    const html = await response.text();
+    const readable = extractWithReadability(html, url);
+    const text = readable?.text ||
+      html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+          .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+    if (text.length < 100) {
+      return { success: false, content: '', error: 'Content too short' };
+    }
+
+    return { success: true, content: text.substring(0, maxLength), error: null };
+  } catch (error) {
+    return { success: false, content: '', error: error.message };
+  }
+}
 
 /**
  * Extract awards from webpage content using Claude.
@@ -28,7 +69,7 @@ export async function extractFromWebpage(url, competitionId, year) {
 
   logger.info('Awards', `Fetching webpage: ${url}`);
 
-  const fetched = await fetchPageContent(url, 15000);
+  const fetched = await fetchAwardPage(url, 15000);
 
   if (!fetched.success || fetched.content.length < 100) {
     throw new Error(`Failed to fetch page: ${fetched.error || 'Empty content'}`);

@@ -21,35 +21,16 @@ export const updateSettingSchema = z.object({
 
 /**
  * Source param for credentials.
- * Accepts any lowercase alphanumeric source ID (data-driven, not hardcoded).
+ * Allowlisted to known active integrations only.
  */
 export const sourceParamSchema = z.object({
-  source: z.string().min(1).max(50).regex(/^[a-z][a-z0-9_]*$/, 'Invalid source ID format')
+  source: z.enum(['paprika', 'mealie'])
 });
 
 /**
  * Known credential sources for UI rendering and test-connection dispatching.
- * Backend accepts any source_id string; this list drives the Settings UI.
  */
 export const KNOWN_CREDENTIAL_SOURCES = [
-  {
-    id: 'vivino',
-    label: 'Vivino',
-    note: 'Vivino blocks server-side API access. Ratings are found via search snippets instead.',
-    fields: [
-      { name: 'username', type: 'email', placeholder: 'Email' },
-      { name: 'password', type: 'password', placeholder: 'Password' }
-    ]
-  },
-  {
-    id: 'decanter',
-    label: 'Decanter',
-    note: 'Decanter credentials enable access to full review pages with scores and drinking windows.',
-    fields: [
-      { name: 'username', type: 'email', placeholder: 'Email' },
-      { name: 'password', type: 'password', placeholder: 'Password' }
-    ]
-  },
   {
     id: 'paprika',
     label: 'Paprika',

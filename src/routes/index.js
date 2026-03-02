@@ -35,7 +35,6 @@ import storageAreasRoutes from './storageAreas.js';
 import profileRoutes from './profile.js';
 import awardsRoutes from './awards.js';
 import backupRoutes from './backup.js';
-import wineSearchRoutes from './wineSearch.js';
 import acquisitionRoutes from './acquisition.js';
 import palateProfileRoutes from './palateProfile.js';
 import cellarHealthRoutes from './cellarHealth.js';
@@ -108,7 +107,6 @@ router.use('/cellar', requireAuth, requireCellarContext, cellarReconfigurationRo
 router.use('/cellar', requireAuth, requireCellarContext, cellarZoneLayoutRoutes);    // /cellar/zone-metadata, /cellar/zone-layout, /cellar/zone-chat, etc.
 router.use('/awards', requireAuth, requireCellarContext, awardsRoutes);    // /awards/sources, /awards/import/*, /awards/wine/:id, etc.
 router.use('/backup', requireAuth, requireCellarContext, backupRoutes);    // /backup/export/json, /backup/export/csv, /backup/import
-router.use('/wine-search', requireAuth, requireCellarContext, wineSearchRoutes);  // /wine-search (POST), /wine-search/vivino/:id (GET)
 router.use('/search', requireAuth, requireCellarContext, searchRoutes);  // /search/metrics
 router.use('/acquisition', requireAuth, requireCellarContext, acquisitionRoutes);  // /acquisition/workflow, /acquisition/save, etc.
 router.use('/palate', requireAuth, requireCellarContext, palateProfileRoutes);    // /palate/feedback, /palate/profile, /palate/recommendations

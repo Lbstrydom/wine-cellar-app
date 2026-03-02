@@ -5,8 +5,15 @@
  */
 
 import { saveExtractedWindows } from '../services/ai/index.js';
-import { calculateWineRatings, saveRatings, buildIdentityTokensFromWine } from '../services/ratings/ratings.js';
-import { threeTierWaterfall } from '../services/search/threeTierWaterfall.js';
+import {
+  calculateWineRatings,
+  saveRatings,
+  countSaveableRatings,
+  buildIdentityTokensFromWine,
+  validateRatingsWithIdentity
+} from '../services/ratings/ratings.js';
+import { filterRatingsByVintageSensitivity } from '../config/vintageSensitivity.js';
+import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import db from '../db/index.js';
 import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
@@ -66,18 +73,25 @@ async function handleBatchFetch(payload, context) {
 
       logger.info('BatchFetchJob', `Fetching: ${wine.wine_name} ${wine.vintage || 'NV'}`);
 
-      // Use 3-tier waterfall instead of Tier 3 only
+      // Use unified Claude Web Search (single API call)
       const identityTokens = buildIdentityTokensFromWine(wine);
-      const { result: fetchResult, usedMethod } = await threeTierWaterfall(wine, identityTokens, {
-        endpoint: 'batch'
-      });
-      const ratings = fetchResult.ratings || [];
+      const fetchResult = await unifiedWineSearch(wine);
+      const usedMethod = fetchResult?._metadata?.method || 'unified_claude_search';
+      const rawRatings = fetchResult?.ratings || [];
 
-      // Save ratings
-      if (ratings.length > 0) {
+      // Identity validation + vintage sensitivity filter (mirrors unifiedRatingFetchJob)
+      const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+      const ratings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
+
+      if (rawRatings.length > ratings.length) {
+        logger.info('BatchFetchJob', `Filtered ${rawRatings.length - ratings.length} ratings by identity/vintage for ${wine.wine_name}`);
+      }
+
+      // Save ratings — only delete existing if new ratings have saveable sources
+      if (ratings.length > 0 && countSaveableRatings(ratings) > 0) {
         await db.prepare('DELETE FROM wine_ratings WHERE wine_id = ? AND is_user_override = FALSE').run(wineId);
         for (const rating of ratings) {
-          await saveRatings(wineId, wine.vintage, [rating]);
+          await saveRatings(wineId, wine.vintage, [rating], wine.cellar_id);
         }
         await saveExtractedWindows(wineId, ratings);
       }
@@ -111,7 +125,7 @@ async function handleBatchFetch(payload, context) {
         aggregates.purchase_score,
         aggregates.purchase_stars,
         aggregates.confidence_level,
-        fetchResult.tasting_notes || null,
+        fetchResult?._narrative || null,
         wineId
       );
 

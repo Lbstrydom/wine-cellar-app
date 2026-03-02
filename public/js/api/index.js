@@ -63,9 +63,6 @@ export {
   getServingTemperature,
   getTastingNotes,
   reportTastingNotes,
-  searchVivinoWines,
-  getVivinoWineDetails,
-  getWineSearchStatus,
   getSearchMetrics
 } from './wines.js';
 
@@ -82,7 +79,7 @@ export {
   getIdentityDiagnostics,
   addManualRating,
   deleteRating,
-  refreshWineRatings,
+
   getDrinkingWindows,
   saveDrinkingWindow,
   deleteDrinkingWindow,

@@ -11,24 +11,14 @@ import FEATURE_FLAGS from './featureFlags.js';
  * Service definitions with required and fallback env vars.
  */
 const SERVICES = {
-  wineSearch: {
-    name: 'Wine Search Integration',
-    featureFlag: 'WINE_ADD_ORCHESTRATOR_ENABLED',
-    primary: ['BRIGHTDATA_API_KEY'],
-    optional: ['BRIGHTDATA_SERP_ZONE', 'BRIGHTDATA_WEB_ZONE']
-  },
   sommelier: {
-    name: 'AI Sommelier & Awards',
+    name: 'AI Sommelier, Ratings & Awards',
     primary: ['ANTHROPIC_API_KEY']
   },
   zoneAdvisor: {
     name: 'Zone Reconfiguration Advisor',
     primary: ['OPENAI_API_KEY'],
     featureFlag: 'OPENAI_REVIEW_ZONE_RECONFIG'
-  },
-  ratings: {
-    name: 'External Ratings',
-    primary: ['BRIGHTDATA_API_KEY']
   }
 };
 

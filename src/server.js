@@ -13,7 +13,7 @@ import { fileURLToPath } from 'url';
 import routes from './routes/index.js';
 import restaurantPairingRoutes from './routes/restaurantPairing.js';
 import jobQueue from './services/shared/jobQueue.js';
-import handleRatingFetch from './jobs/ratingFetchJob.js';
+import handleRatingFetch from './jobs/unifiedRatingFetchJob.js';
 import handleBatchFetch from './jobs/batchFetchJob.js';
 import { purgeExpiredCache } from './services/shared/cacheService.js';
 import { generalRateLimiter } from './middleware/rateLimiter.js';

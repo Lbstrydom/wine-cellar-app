@@ -1442,7 +1442,7 @@ Rating fetches use a single `unifiedWineSearch()` call (`src/services/search/cla
 **`unifiedWineSearch(wine)`** (`src/services/search/claudeWineSearch.js`):
 - Uses Anthropic's `web_search_20260209` and `web_fetch_20260209` tools
 - Returns ratings, grape varieties, and prose narrative in a single response
-- `save_wine_ratings` tool definition produces deterministic JSON via `tool_use` block
+- `save_wine_profile` tool definition produces deterministic JSON via `tool_use` block
 - Falls back to text extraction with `extractJsonWithRepair()` if no tool_use block
 - Requires beta header: `anthropic-beta: code-execution-web-tools-2026-02-09`
 - Requires `ANTHROPIC_API_KEY` only — no BrightData or Gemini keys needed
