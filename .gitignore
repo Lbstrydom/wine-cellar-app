@@ -1,4 +1,5 @@
 node_modules/
+tmp/
 
 # Legacy SQLite database files (PostgreSQL/Supabase is production)
 data/cellar.db
