@@ -37,8 +37,8 @@ function showRatingBar(needsRating, alreadyRated) {
   container.innerHTML = `
     <div class="rating-bar-collapsed">
       <span class="rating-bar-text">🍷 You have ${total} wine${total > 1 ? 's' : ''} to rate from recent tastings</span>
-      <button class="btn btn-sm btn-primary" id="rating-bar-expand">Review</button>
-      <button class="btn btn-sm btn-secondary" id="rating-bar-dismiss">Dismiss</button>
+      <button class="btn btn-small btn-primary" id="rating-bar-expand">Review</button>
+      <button class="btn btn-small btn-secondary" id="rating-bar-dismiss">Dismiss</button>
     </div>
     <div class="rating-bar-expanded" id="rating-bar-expanded" style="display:none;"></div>
   `;
@@ -89,8 +89,8 @@ function renderExpandedCards(needsRating, alreadyRated) {
   }
 
   html += `
-    <div class="rating-bar-footer">
-      <button class="btn btn-sm btn-secondary" id="rating-bar-dismiss-all">Dismiss All Remaining</button>
+    <div class="dismiss-all-bar">
+      <button class="btn btn-small btn-secondary" id="rating-bar-dismiss-all">Dismiss All Remaining</button>
     </div>
   `;
 
@@ -134,11 +134,11 @@ function renderRatingCard(item, hasExistingRating) {
         <div class="rating-card-info">
           <strong>${escapeHtml(item.wine_name)} ${item.vintage || 'NV'}</strong>
           ${colourBadge}
-          <span class="text-muted">consumed ${dateStr}</span>
+          <span class="rating-card-meta">consumed ${dateStr}</span>
         </div>
-        <div class="rating-card-status">
+        <div class="rating-card-existing">
           ✓ Rated ${item.existing_rating}/5
-          <button class="btn btn-xs btn-secondary rating-card-confirm" data-id="${item.id}">OK</button>
+          <button class="btn btn-small btn-secondary rating-card-confirm" data-id="${item.id}">OK</button>
         </div>
       </div>
     `;
@@ -149,7 +149,7 @@ function renderRatingCard(item, hasExistingRating) {
       <div class="rating-card-info">
         <strong>${escapeHtml(item.wine_name)} ${item.vintage || 'NV'}</strong>
         ${colourBadge}
-        <span class="text-muted">consumed ${dateStr} from ${item.location_code || '?'}</span>
+        <span class="rating-card-meta">consumed ${dateStr} from ${item.location_code || '?'}</span>
       </div>
       <div class="rating-card-controls">
         <label>
@@ -164,8 +164,8 @@ function renderRatingCard(item, hasExistingRating) {
           </select>
         </label>
         <input type="text" class="rating-card-notes" placeholder="Quick note (optional)" maxlength="500" />
-        <button class="btn btn-xs btn-primary rating-card-save" data-id="${item.id}">Save</button>
-        <button class="btn btn-xs btn-secondary rating-card-skip" data-id="${item.id}">Skip</button>
+        <button class="btn btn-small btn-primary rating-card-save" data-id="${item.id}">Save</button>
+        <button class="btn btn-small btn-secondary rating-card-skip" data-id="${item.id}">Skip</button>
       </div>
     </div>
   `;

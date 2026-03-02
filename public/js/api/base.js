@@ -87,6 +87,26 @@ export function clearAuthState() {
   localStorage.removeItem(INVITE_CODE_KEY);
 }
 
+let _refreshAuth = null;
+
+/**
+ * Register a callback that refreshes the Supabase session and updates the stored token.
+ * Called from app.js after the supabase client is created to avoid circular deps.
+ * @param {Function} fn - Async function that calls supabase.auth.getSession() and stores fresh token
+ */
+export function registerAuthRefresher(fn) {
+  _refreshAuth = fn;
+}
+
+/**
+ * Ensure the stored access token is fresh before making API calls.
+ * Call this before long-lived background operations (e.g. sync) that may fire
+ * after the original JWT has expired.
+ */
+export async function ensureFreshToken() {
+  if (_refreshAuth) await _refreshAuth();
+}
+
 const baseFetch = window.fetch.bind(window);
 
 /**

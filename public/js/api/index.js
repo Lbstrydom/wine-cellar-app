@@ -17,6 +17,8 @@ export {
   getInviteCode,
   setInviteCode,
   clearAuthState,
+  registerAuthRefresher,
+  ensureFreshToken,
   apiFetch,
   fetch,
   handleResponse,

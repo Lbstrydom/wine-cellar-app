@@ -17,6 +17,7 @@ import {
   setInviteCode,
   clearAuthState,
   setAuthErrorHandler,
+  registerAuthRefresher,
   updateWine,
   batchFetchRatings,
   getRatingsJobStatus
@@ -629,6 +630,13 @@ async function initAuth() {
 
   try {
     const supabase = await getSupabaseClient();
+
+    // Register auth refresher so background operations (sync, etc.) can
+    // obtain a fresh token without importing supabase directly.
+    registerAuthRefresher(async () => {
+      const { data } = await supabase.auth.getSession();
+      if (data?.session) setAccessToken(data.session.access_token);
+    });
 
     // Diagnostic: Log OAuth callback type for debugging
     const hasHashToken = window.location.hash && window.location.hash.includes('access_token');

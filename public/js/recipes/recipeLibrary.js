@@ -5,6 +5,7 @@
 
 import { listRecipes, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, triggerRecipeSync } from '../api/recipes.js';
 import { getCredentials } from '../api/settings.js';
+import { ensureFreshToken } from '../api/base.js';
 import { showToast, escapeHtml } from '../utils.js';
 import { recipeState, persistState } from './state.js';
 import { toggleMenuRecipe, isInMenu } from './menuState.js';
@@ -378,6 +379,7 @@ async function loadSyncBanners(bannerEl) {
       btn.textContent = 'Syncing...';
       _syncInProgress[prov] = true;
       try {
+        await ensureFreshToken();
         const result = await triggerRecipeSync(prov);
         if (result.error) {
           showToast('Sync failed: ' + result.error);
@@ -420,6 +422,7 @@ async function autoSyncIfStale(provider, bannerEl) {
   _syncInProgress[provider] = true;
 
   try {
+    await ensureFreshToken();
     const result = await triggerRecipeSync(provider);
     if (result.error) {
       sessionStorage.setItem(failKey, Date.now().toString());
