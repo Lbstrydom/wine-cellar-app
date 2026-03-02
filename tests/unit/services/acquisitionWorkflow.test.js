@@ -97,6 +97,22 @@ describe('enrichWineData()', () => {
     expect(result.ratings).toEqual({});
   });
 
+  it('surfaces structured search error userMessage when provided', async () => {
+    mockIsAvailable.mockReturnValue(true);
+    mockUnifiedSearch.mockResolvedValue({
+      _error: {
+        code: 'timeout',
+        userMessage: 'Wine search timed out. Please try again.'
+      }
+    });
+
+    const result = await enrichWineData(testWine);
+
+    expect(result.error).toBe('Wine search timed out. Please try again.');
+    expect(result.ratings).toEqual({});
+    expect(result.drinkingWindows).toBeNull();
+  });
+
   it('does not set error when search returns valid data with empty ratings', async () => {
     mockIsAvailable.mockReturnValue(true);
     mockUnifiedSearch.mockResolvedValue({

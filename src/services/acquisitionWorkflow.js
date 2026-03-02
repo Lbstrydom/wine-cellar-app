@@ -140,15 +140,20 @@ export async function enrichWineData(wine) {
 
   try {
     // Fetch ratings via unified Claude Web Search
-    const ratingsResult = await unifiedWineSearch(wine);
+    const ratingsResult = await unifiedWineSearch(wine, { includeErrors: true });
 
-    if (!ratingsResult) {
-      // Search returned null — API key missing, API error, or empty response.
-      // Surface a user-visible error instead of silently showing "No ratings found".
+    if (!ratingsResult || ratingsResult._error) {
+      // Search failed — surface a user-visible error instead of silently showing
+      // "No ratings found".
       enrichment.ratings = {};
-      enrichment.error = isUnifiedWineSearchAvailable()
+      const searchError = ratingsResult?._error;
+      enrichment.error = searchError?.userMessage || (isUnifiedWineSearchAvailable()
         ? 'Wine search returned no results — the search may have timed out or the API returned an empty response. Try again.'
-        : 'Wine search unavailable — ANTHROPIC_API_KEY is not configured.';
+        : 'Wine search unavailable — ANTHROPIC_API_KEY is not configured.');
+
+      if (searchError?.code) {
+        logger.warn('AcquisitionWorkflow', `Wine research enrichment failed (${searchError.code})`);
+      }
       return enrichment;
     }
 

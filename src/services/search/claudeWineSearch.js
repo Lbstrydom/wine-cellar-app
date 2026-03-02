@@ -125,6 +125,23 @@ export function isUnifiedWineSearchAvailable() {
 }
 
 /**
+ * Build a structured error payload for callers that opt in to detailed errors.
+ * @param {string} code - Stable error code for programmatic handling.
+ * @param {string} userMessage - Safe user-facing message.
+ * @param {Object} [details] - Internal diagnostics.
+ * @returns {{_error: {code: string, userMessage: string, details: Object}}}
+ */
+function buildSearchError(code, userMessage, details = {}) {
+  return {
+    _error: {
+      code,
+      userMessage,
+      details
+    }
+  };
+}
+
+/**
  * Format a source with its score type for prompt injection.
  * @param {Object} source - Source config from unifiedSources.js
  * @returns {string} e.g. "Tim Atkin (points/100)" or "Veritas Awards (medal)"
@@ -292,11 +309,22 @@ export function extractCitations(content) {
  * 5. Fallback: extractJsonWithRepair() on prose if no tool_use block
  *
  * @param {Object} wine - Wine object with name, vintage, producer, country, colour, etc.
- * @returns {Promise<Object|null>} Structured wine data with ratings and narrative, or null on failure
+ * @param {Object} [options] - Optional behavior flags.
+ * @param {boolean} [options.includeErrors=false] - Return structured _error object instead of null.
+ * @returns {Promise<Object|null>} Structured wine data (or _error when includeErrors=true), or null on failure
  */
-export async function unifiedWineSearch(wine) {
+export async function unifiedWineSearch(wine, options = {}) {
+  const { includeErrors = false } = options;
+
   if (!anthropic) {
     logger.warn('UnifiedWineSearch', 'ANTHROPIC_API_KEY not configured');
+    if (includeErrors) {
+      return buildSearchError(
+        'missing_api_key',
+        'Wine search is unavailable because the Anthropic API key is not configured.',
+        { dependency: 'ANTHROPIC_API_KEY' }
+      );
+    }
     return null;
   }
 
@@ -377,6 +405,13 @@ CRITICAL RULES:
         const stopReason = message.stop_reason || 'unknown';
         const blockTypes = content.map(b => b.type).join(', ') || 'empty';
         logger.warn('UnifiedWineSearch', `No text or tool_use in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
+        if (includeErrors) {
+          return buildSearchError(
+            'empty_response',
+            'Wine search returned an empty response. Please try again.',
+            { wineName, duration, stopReason, blockTypes }
+          );
+        }
         return null;
       }
 
@@ -385,6 +420,13 @@ CRITICAL RULES:
         extracted = extractJsonWithRepair(narrative);
       } catch (parseErr) {
         logger.error('UnifiedWineSearch', `JSON extraction failed: ${parseErr.message}`);
+        if (includeErrors) {
+          return buildSearchError(
+            'parse_failure',
+            'Wine search returned data, but it could not be parsed. Please try again.',
+            { wineName, duration, message: parseErr.message }
+          );
+        }
         return null;
       }
     }
@@ -416,6 +458,23 @@ CRITICAL RULES:
   } catch (error) {
     const duration = Date.now() - startTime;
     logger.error('UnifiedWineSearch', `Search failed for "${wineName}" after ${duration}ms: ${error.message}`);
+    if (includeErrors) {
+      const message = String(error?.message || '').toLowerCase();
+      const isTimeout = message.includes('timeout') || message.includes('timed out') || message.includes('etimedout');
+      return buildSearchError(
+        isTimeout ? 'timeout' : 'api_error',
+        isTimeout
+          ? 'Wine search timed out. Please try again.'
+          : 'Wine search failed due to an upstream API error. Please try again.',
+        {
+          wineName,
+          duration,
+          status: error?.status,
+          type: error?.type,
+          message: error?.message
+        }
+      );
+    }
     return null;
   }
 }

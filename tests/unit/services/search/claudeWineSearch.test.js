@@ -451,6 +451,33 @@ describe('unifiedWineSearch() — error handling', () => {
     const result = await unifiedWineSearch(mockWine);
     expect(result).toBeNull();
   });
+
+  it('returns structured timeout error when includeErrors=true and API times out', async () => {
+    mockCreate.mockRejectedValue(new Error('Request timed out after 60s'));
+
+    const result = await unifiedWineSearch(mockWine, { includeErrors: true });
+
+    expect(result).toBeTruthy();
+    expect(result._error).toBeTruthy();
+    expect(result._error.code).toBe('timeout');
+    expect(result._error.userMessage).toContain('timed out');
+  });
+
+  it('returns structured empty_response error when includeErrors=true and no narrative/tool_use', async () => {
+    mockCreate.mockResolvedValue({
+      stop_reason: 'end_turn',
+      content: [
+        { type: 'web_search_tool_result', content: [] }
+      ]
+    });
+
+    const result = await unifiedWineSearch(mockWine, { includeErrors: true });
+
+    expect(result).toBeTruthy();
+    expect(result._error).toBeTruthy();
+    expect(result._error.code).toBe('empty_response');
+    expect(result._error.userMessage).toContain('empty response');
+  });
 });
 
 // ---------------------------------------------------------------------------
