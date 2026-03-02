@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 1 March 2026
+## 2 March 2026
 
 ---
 
@@ -9,7 +9,18 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 1 Mar 2026**:
+**Recent Enhancements** ✨ **NEW - 2 Mar 2026**:
+- **Wine Search Pipeline Simplification — Phase 4 (Prose Narrative Rendering) — COMPLETE** ✅:
+  - **Backend** (`src/routes/ratings.js`): `GET /api/wines/:id/ratings` now includes a `narrative` field sourced from `wines.tasting_notes` (the AI prose written by the unified search job). No schema change required.
+  - **Frontend** (`public/js/wineProfile.js` — new module): XSS-safe collapsible "Wine Profile" section rendered entirely via DOM creation (`document.createElement` + `textContent`). Handles `## headings`, `**bold**`, `*italic*`, `- bullet lists`, plain paragraphs. No `innerHTML` with untrusted LLM output at any point.
+  - **Modal wiring** (`public/js/modals.js`): `renderWineProfile()` called after ratings load (both initial load and retry path). Profile container reset on each modal open.
+  - **HTML** (`public/index.html`): `#wine-profile-container` placed between Tasting & Service card and ratings panel. Hidden by default; shown only when narrative is present.
+  - **Service Worker** (`public/sw.js`): `/js/wineProfile.js` added to `STATIC_ASSETS`; cache bumped `v180` → `v181`.
+  - **CSS** (`public/css/components.css`): `.wine-profile-section`, `.wine-profile-toggle`, `.wine-profile-body`, `.wine-profile-heading`, `.wine-profile-para`, `.wine-profile-list` added; dark-theme variables used throughout.
+  - **Validation status**: `npm run test:unit` passes at **2881 tests across 117 files** (including `swStaticAssets` regression test confirming new module in SW cache list).
+  - Plan document: `docs/win-ser-plan.md` (Phase 4 now marked complete).
+
+**Previous Enhancements** (1 Mar 2026):
 - **Drink-Now-Rate-Later Reminder System — COMPLETE** ✅:
   - New `pending_ratings` table (migration 060) tracks consumed wines awaiting user rating, linked to `consumption_log` events.
   - `GET /api/pending-ratings` returns unresolved ratings (separates `needsRating` vs `alreadyRated`). `PUT /api/pending-ratings/:id/resolve` saves rating to both `consumption_log` and `wines.personal_rating`. `PUT /api/pending-ratings/dismiss-all` for batch dismiss.

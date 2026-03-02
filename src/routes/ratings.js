@@ -73,6 +73,7 @@ router.get('/:wineId/ratings', validateParams(ratingWineIdSchema), validateQuery
     wine_id: wineId,
     wine_name: wine.wine_name,
     vintage: wine.vintage,
+    narrative: wine.tasting_notes || null,
     ...aggregates,
     ratings: ratings.map(r => ({
       ...r,
@@ -284,7 +285,8 @@ router.post('/:wineId/ratings/fetch-async', validateParams(ratingWineIdSchema), 
 
   const jobId = await jobQueue.enqueue('rating_fetch', {
     wineId: parseInt(wineId),
-    forceRefresh
+    forceRefresh,
+    cellarId: req.cellarId
   }, { priority: 3 });
 
   res.status(202).json({
@@ -398,69 +400,6 @@ router.post('/cache/purge', asyncHandler(async (req, res) => {
   res.json({
     message: 'Cache purged',
     purged: result
-  });
-}));
-
-// =============================================================================
-// EXPERIMENTAL: GEMINI HYBRID SEARCH
-// =============================================================================
-
-/**
- * Test hybrid search using Gemini + Claude.
- * @route POST /api/wines/:wineId/ratings/hybrid-search
- */
-router.post('/:wineId/ratings/hybrid-search', validateParams(ratingWineIdSchema), asyncHandler(async (req, res) => {
-  const wineId = req.validated?.params?.wineId ?? parseInt(req.params.wineId, 10);
-
-  // Get wine details
-  const wine = await db.prepare(`
-    SELECT id, wine_name, vintage, colour, grapes, producer, region, country
-    FROM wines WHERE cellar_id = $1 AND id = $2
-  `).get(req.cellarId, wineId);
-
-  if (!wine) {
-    return res.status(404).json({ error: 'Wine not found' });
-  }
-
-  // Import hybrid search
-  const { hybridWineSearch, isGeminiSearchAvailable } = await import('../services/search/geminiSearch.js');
-
-  if (!isGeminiSearchAvailable()) {
-    return res.status(503).json({
-      error: 'Gemini search not configured',
-      message: 'Set GEMINI_API_KEY environment variable to enable hybrid search'
-    });
-  }
-
-  logger.info('HybridSearch', `Starting hybrid search for wine ${wineId}: ${wine.wine_name}`);
-
-  const results = await hybridWineSearch(wine);
-
-  if (!results) {
-    return res.json({
-      success: false,
-      message: 'No results found',
-      wine_name: wine.wine_name,
-      vintage: wine.vintage
-    });
-  }
-
-  // Return results for review before saving
-  res.json({
-    success: true,
-    wine_id: wine.id,
-    wine_name: wine.wine_name,
-    vintage: wine.vintage,
-    results: {
-      ratings: results.ratings || [],
-      tasting_notes: results.tasting_notes || null,
-      drinking_window: results.drinking_window || null,
-      food_pairings: results.food_pairings || [],
-      style_summary: results.style_summary || null
-    },
-    metadata: results._metadata,
-    sources: results._sources,
-    raw_content_preview: (results._raw_content || '').substring(0, 500) + '...'
   });
 }));
 

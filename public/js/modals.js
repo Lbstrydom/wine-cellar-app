@@ -10,6 +10,7 @@ import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
 import { renderTastingServiceCard } from './tastingService.js';
 import { handleManualPairFromWine } from './manualPairing.js';
+import { renderWineProfile } from './wineProfile.js';
 
 let currentSlot = null;
 let pendingQuantityWine = null; // { wineId, wineName }
@@ -90,12 +91,20 @@ export async function showWineModal(slot) {
     tastingNotesField.style.display = 'none';
   }
 
-  // Load and display ratings
+  // Load and display ratings (and prose narrative)
   const ratingsContainer = document.getElementById('modal-ratings-container');
   if (ratingsContainer && slot.wine_id) {
+    // Reset profile section while loading
+    const profileContainer = document.getElementById('wine-profile-container');
+    if (profileContainer) {
+      profileContainer.innerHTML = '';
+      profileContainer.style.display = 'none';
+    }
     ratingsContainer.innerHTML = '<div class="ratings-loading"><div class="skeleton skeleton-text" style="width:80%"></div><div class="skeleton skeleton-text" style="width:60%"></div><div class="skeleton skeleton-text" style="width:70%"></div></div>';
     try {
       const ratingsData = await getWineRatings(slot.wine_id);
+      const profileContainer = document.getElementById('wine-profile-container');
+      renderWineProfile(profileContainer, ratingsData.narrative);
       ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
       initRatingsPanel(slot.wine_id);
     } catch (_err) {
@@ -110,6 +119,7 @@ export async function showWineModal(slot) {
         ratingsContainer.innerHTML = '<div class="ratings-loading"><div class="skeleton skeleton-text" style="width:80%"></div><div class="skeleton skeleton-text" style="width:60%"></div><div class="skeleton skeleton-text" style="width:70%"></div></div>';
         try {
           const ratingsData = await getWineRatings(slot.wine_id);
+          renderWineProfile(document.getElementById('wine-profile-container'), ratingsData.narrative);
           ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
           initRatingsPanel(slot.wine_id);
         } catch (retryErr) {

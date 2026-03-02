@@ -3,7 +3,7 @@
  * Implements caching strategies for offline functionality.
  */
 
-const CACHE_VERSION = 'v179';
+const CACHE_VERSION = 'v181';
 const STATIC_CACHE = `wine-cellar-static-${CACHE_VERSION}`;
 const DYNAMIC_CACHE = `wine-cellar-dynamic-${CACHE_VERSION}`;
 const API_CACHE = `wine-cellar-api-${CACHE_VERSION}`;
@@ -42,7 +42,6 @@ const STATIC_ASSETS = [
   '/js/bottles/imageParsing.js',
   '/js/bottles/slotPicker.js',
   '/js/bottles/disambiguationModal.js',
-  '/js/bottles/wineConfirmation.js',
   '/js/bottles/dropdownHelpers.js',
   '/js/config/wineRegions.js',
   '/js/grapeData.js',
@@ -82,6 +81,7 @@ const STATIC_ASSETS = [
   '/js/onboarding.js',
   '/js/storageBuilder.js',
   '/js/tastingService.js',
+  '/js/wineProfile.js',
   '/js/recommendations.js',
   '/js/errorBoundary.js',
   '/js/eventManager.js',

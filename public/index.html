@@ -792,46 +792,6 @@
         No encryption key configured. Add CREDENTIAL_ENCRYPTION_KEY to your .env file for persistent storage.
       </div>
 
-      <!-- Vivino -->
-      <div class="credential-form" data-source="vivino">
-        <div class="credential-header">
-          <span class="credential-source">Vivino</span>
-          <span class="credential-status" id="vivino-status">Not configured</span>
-        </div>
-        <div class="credential-note">
-          Note: Vivino blocks server-side API access. Ratings are found via search snippets instead.
-        </div>
-        <div class="credential-inputs">
-          <input type="email" id="vivino-username" placeholder="Email" autocomplete="off" />
-          <input type="password" id="vivino-password" placeholder="Password" autocomplete="off" />
-        </div>
-        <div class="credential-actions">
-          <button class="btn btn-small btn-secondary cred-save-btn" id="vivino-save-btn">Save</button>
-          <button class="btn btn-small btn-secondary cred-test-btn" id="vivino-test-btn" style="display: none;">Test</button>
-          <button class="btn btn-small btn-danger cred-delete-btn" id="vivino-delete-btn" style="display: none;">Remove</button>
-        </div>
-      </div>
-
-      <!-- Decanter -->
-      <div class="credential-form" data-source="decanter">
-        <div class="credential-header">
-          <span class="credential-source">Decanter</span>
-          <span class="credential-status" id="decanter-status">Not configured</span>
-        </div>
-        <div class="credential-note">
-          Decanter credentials enable access to full review pages with scores and drinking windows.
-        </div>
-        <div class="credential-inputs">
-          <input type="email" id="decanter-username" placeholder="Email" autocomplete="off" />
-          <input type="password" id="decanter-password" placeholder="Password" autocomplete="off" />
-        </div>
-        <div class="credential-actions">
-          <button class="btn btn-small btn-secondary cred-save-btn" id="decanter-save-btn">Save</button>
-          <button class="btn btn-small btn-secondary cred-test-btn" id="decanter-test-btn" style="display: none;">Test</button>
-          <button class="btn btn-small btn-danger cred-delete-btn" id="decanter-delete-btn" style="display: none;">Remove</button>
-        </div>
-      </div>
-
       <!-- Paprika (Recipe Sync) -->
       <div class="credential-form" data-source="paprika">
         <div class="credential-header">
@@ -1136,6 +1096,9 @@
         </div>
       </div>
       
+      <!-- Wine Profile: AI-generated prose narrative (collapsible) -->
+      <div id="wine-profile-container" style="display:none;"></div>
+
       <div id="modal-ratings-container"></div>
 
       <!-- Legacy Drinking Window Section (hidden, used as fallback) -->

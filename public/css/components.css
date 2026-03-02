@@ -13088,3 +13088,82 @@ body.move-guide-active #view-grid {
 .recipe-manual-pair-btn:hover {
   background: var(--bg-hover, rgba(212,168,67,0.15));
 }
+
+/* ===== Wine Profile Section (prose narrative from unified search) ===== */
+.wine-profile-section {
+  margin: 0.75rem 0;
+  border: 1px solid var(--border-color, rgba(212,168,67,0.2));
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.wine-profile-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.6rem 0.9rem;
+  background: var(--bg-card, rgba(255,255,255,0.04));
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-primary, #e8dcc8);
+  letter-spacing: 0.04em;
+  text-align: left;
+}
+
+.wine-profile-toggle:hover {
+  background: var(--bg-hover, rgba(212,168,67,0.1));
+}
+
+.wine-profile-chevron {
+  font-size: 0.65rem;
+  color: var(--text-muted, #999);
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.wine-profile-body {
+  padding: 0.75rem 0.9rem 0.9rem;
+  background: var(--bg-secondary, rgba(0,0,0,0.15));
+}
+
+.wine-profile-heading {
+  font-family: var(--font-serif, 'Cormorant Garamond', serif);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-gold, #d4a843);
+  margin: 0.9rem 0 0.3rem;
+  padding-bottom: 0.2rem;
+  border-bottom: 1px solid var(--border-color, rgba(212,168,67,0.15));
+}
+
+.wine-profile-heading:first-child {
+  margin-top: 0;
+}
+
+.wine-profile-para {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-secondary, #c8b99a);
+  margin: 0.4rem 0;
+}
+
+.wine-profile-list {
+  font-size: 0.82rem;
+  line-height: 1.6;
+  color: var(--text-secondary, #c8b99a);
+  margin: 0.4rem 0 0.4rem 1.2rem;
+  padding: 0;
+}
+
+.wine-profile-list li {
+  margin: 0.15rem 0;
+}
+
+.wine-profile-section hr {
+  border: none;
+  border-top: 1px solid var(--border-color, rgba(212,168,67,0.15));
+  margin: 0.6rem 0;
+}
