@@ -10,6 +10,15 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 2 Mar 2026**:
+- **Wine Search Pipeline Simplification — Phase 5 (Cleanup & Docs) — COMPLETE** ✅:
+  - **Dependencies** (`package.json`): Removed `puppeteer` (was unused after scraping services deleted in Phase 1). `npm install` clean.
+  - **Dead task removal** (`src/config/aiModels.js`): Removed unused `ratingExtraction`, `wineClassification`, `simpleValidation` task entries (these services were deleted). `aiModels.test.js` updated in lockstep.
+  - **Competition registry** (`src/config/unifiedSources.js`): Added 4 missing competitions: `michelangelo` (SA), `san_francisco` (US — SF Chronicle), `texsom` (US — TEXSOM IWA), `sakura` (Japan — Women's Wine Awards). `REGION_SOURCE_PRIORITY` updated for `South Africa` and `USA` entries.
+  - **Benchmark framework** (`tests/benchmark/unifiedSearchBenchmark.test.js`): New fixture-based benchmark for unified Claude search — schema validation (always runs), plus REPLAY quality assertions when fixtures present (rating count ≥2 for 80%, citation count ≥3 for 60%, prose narrative for 70%, latency p50 < 20s / p95 < 35s, identity gate pass rate).
+  - **CLAUDE.md**: Updated `ai/` and `search/` service directory comments, removed `BRIGHTDATA_*` and `GEMINI_API_KEY` from env var tables, removed dead aiModels task rows, rewrote Search Pipeline Patterns section to describe unified Claude Web Search.
+  - **Validation status**: `npm run test:unit` passes at **2881 tests across 117 files**; `npm run test:benchmark` passes at **36 tests across 3 files** (12 skipped — no live fixtures).
+  - Plan document: `docs/win-ser-plan.md` (Phase 5 now marked complete).
+
 - **Wine Search Pipeline Simplification — Phase 4 (Prose Narrative Rendering) — COMPLETE** ✅:
   - **Backend** (`src/routes/ratings.js`): `GET /api/wines/:id/ratings` now includes a `narrative` field sourced from `wines.tasting_notes` (the AI prose written by the unified search job). No schema change required.
   - **Frontend** (`public/js/wineProfile.js` — new module): XSS-safe collapsible "Wine Profile" section rendered entirely via DOM creation (`document.createElement` + `textContent`). Handles `## headings`, `**bold**`, `*italic*`, `- bullet lists`, plain paragraphs. No `innerHTML` with untrusted LLM output at any point.

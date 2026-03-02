@@ -362,6 +362,36 @@ export const SOURCES = {
     }
   },
 
+  michelangelo: {
+    name: 'Michelangelo International Wine & Spirits Awards',
+    short_name: 'Michelangelo',
+    lens: LENS.COMPETITION,
+    credibility: 0.85,
+    scope: 'national',
+    home_regions: ['South Africa'],
+    domain: 'michelangelo.co.za',
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'medal',
+    score_format: /Double Gold|Gold|Silver|Bronze/i,
+    query_template: '{wine} {vintage} Michelangelo award',
+    examples: ['Double Gold', 'Gold', 'Silver', 'Bronze'],
+    normalise: (raw) => {
+      const lower = raw.toLowerCase();
+      if (lower.includes('double gold')) return 96;
+      if (lower.includes('gold')) return 92;
+      if (lower.includes('silver')) return 86;
+      if (lower.includes('bronze')) return 80;
+      return null;
+    },
+    medal_bands: {
+      double_gold: { min: 95, max: 100, label: 'Double Gold' },
+      gold: { min: 90, max: 94, label: 'Gold' },
+      silver: { min: 85, max: 89, label: 'Silver' },
+      bronze: { min: 80, max: 84, label: 'Bronze' }
+    }
+  },
+
   // ===========================================================================
   // COMPETITIONS - Varietal
   // ===========================================================================
@@ -445,6 +475,104 @@ export const SOURCES = {
     },
     medal_bands: {
       grand_gold: { min: 95, max: 100, label: 'Grand Gold' },
+      gold: { min: 90, max: 94, label: 'Gold' },
+      silver: { min: 85, max: 89, label: 'Silver' },
+      bronze: { min: 80, max: 84, label: 'Bronze' }
+    }
+  },
+
+  // ===========================================================================
+  // COMPETITIONS - USA
+  // ===========================================================================
+  san_francisco: {
+    name: 'San Francisco Chronicle Wine Competition',
+    short_name: 'SF Chronicle',
+    lens: LENS.COMPETITION,
+    credibility: 0.80,
+    scope: 'national',
+    home_regions: ['USA'],
+    domain: 'sfchronicle.com',
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'medal',
+    score_format: /Best of Class|Gold|Silver|Bronze/i,
+    query_template: '{wine} {vintage} San Francisco Chronicle Wine Competition',
+    examples: ['Best of Class', 'Gold', 'Silver', 'Bronze'],
+    normalise: (raw) => {
+      const lower = raw.toLowerCase();
+      if (lower.includes('best of class')) return 96;
+      if (lower.includes('gold')) return 92;
+      if (lower.includes('silver')) return 86;
+      if (lower.includes('bronze')) return 80;
+      return null;
+    },
+    medal_bands: {
+      best_of_class: { min: 95, max: 100, label: 'Best of Class' },
+      gold: { min: 90, max: 94, label: 'Gold' },
+      silver: { min: 85, max: 89, label: 'Silver' },
+      bronze: { min: 80, max: 84, label: 'Bronze' }
+    }
+  },
+
+  texsom: {
+    name: 'TEXSOM International Wine Awards',
+    short_name: 'TEXSOM',
+    lens: LENS.COMPETITION,
+    credibility: 0.80,
+    scope: 'national',
+    home_regions: ['USA'],
+    domain: 'texsom.com',
+    language: 'en',
+    grape_affinity: null,
+    score_type: 'medal',
+    score_format: /Best of Show|Double Gold|Gold|Silver|Bronze/i,
+    query_template: '{wine} {vintage} TEXSOM International Wine Awards',
+    examples: ['Best of Show', 'Double Gold', 'Gold', 'Silver', 'Bronze'],
+    normalise: (raw) => {
+      const lower = raw.toLowerCase();
+      if (lower.includes('best of show')) return 98;
+      if (lower.includes('double gold')) return 95;
+      if (lower.includes('gold')) return 92;
+      if (lower.includes('silver')) return 86;
+      if (lower.includes('bronze')) return 80;
+      return null;
+    },
+    medal_bands: {
+      best_of_show: { min: 97, max: 100, label: 'Best of Show' },
+      double_gold: { min: 94, max: 96, label: 'Double Gold' },
+      gold: { min: 90, max: 93, label: 'Gold' },
+      silver: { min: 85, max: 89, label: 'Silver' },
+      bronze: { min: 80, max: 84, label: 'Bronze' }
+    }
+  },
+
+  // ===========================================================================
+  // COMPETITIONS - Japan
+  // ===========================================================================
+  sakura: {
+    name: 'Sakura Japan Women\'s Wine Awards',
+    short_name: 'Sakura',
+    lens: LENS.COMPETITION,
+    credibility: 0.80,
+    scope: 'global',
+    home_regions: ['Japan'],
+    domain: 'sakura-award.com',
+    language: 'ja',
+    grape_affinity: null,
+    score_type: 'medal',
+    score_format: /Platinum|Gold|Silver|Bronze/i,
+    query_template: '{wine} {vintage} Sakura Japan Women\'s Wine Award',
+    examples: ['Platinum', 'Gold', 'Silver', 'Bronze'],
+    normalise: (raw) => {
+      const lower = raw.toLowerCase();
+      if (lower.includes('platinum')) return 96;
+      if (lower.includes('gold')) return 92;
+      if (lower.includes('silver')) return 86;
+      if (lower.includes('bronze')) return 80;
+      return null;
+    },
+    medal_bands: {
+      platinum: { min: 95, max: 100, label: 'Platinum' },
       gold: { min: 90, max: 94, label: 'Gold' },
       silver: { min: 85, max: 89, label: 'Silver' },
       bronze: { min: 80, max: 84, label: 'Bronze' }
@@ -1354,8 +1482,8 @@ export const REGION_SOURCE_PRIORITY = {
   'Argentina': ['descorchados', 'tim_atkin', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
   'Italy': ['gambero_rosso', 'vinous', 'doctor_wine', 'bibenda', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
   'France': ['guide_hachette', 'rvf', 'bettane_desseauve', 'jancis_robinson', 'wine_advocate', 'decanter', 'vivino', 'bbr', 'wine_searcher'],
-  'South Africa': ['wine_co_za', 'platters', 'tim_atkin', 'veritas', 'old_mutual', 'decanter', 'vivino', 'wine_searcher'],
-  'USA': ['wine_spectator', 'wine_enthusiast', 'vinous', 'wine_advocate', 'james_suckling', 'decanter', 'vivino', 'wine_searcher'],
+  'South Africa': ['wine_co_za', 'platters', 'tim_atkin', 'veritas', 'old_mutual', 'michelangelo', 'decanter', 'vivino', 'wine_searcher'],
+  'USA': ['wine_spectator', 'wine_enthusiast', 'vinous', 'wine_advocate', 'james_suckling', 'san_francisco', 'texsom', 'decanter', 'vivino', 'wine_searcher'],
   'Germany': ['falstaff', 'weinwisser', 'vinum', 'jancis_robinson', 'decanter', 'vivino', 'wine_searcher'],
   'Austria': ['falstaff', 'vinum', 'decanter', 'vivino', 'wine_searcher'],
   'Portugal': ['revista_vinhos', 'jancis_robinson', 'tim_atkin', 'decanter', 'vivino', 'wine_searcher'],

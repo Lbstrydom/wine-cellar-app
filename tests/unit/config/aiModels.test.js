@@ -81,7 +81,7 @@ describe('aiModels', () => {
         'menuParsing', 'restaurantPairing',
         'cellarAnalysis', 'zoneCapacityAdvice', 'zoneReconfigurationPlan',
         'webSearch', 'awardExtraction', 'pairingAudit',
-        'wineClassification', 'simpleValidation'
+        'signalAudit'
       ];
       for (const task of expectedTasks) {
         expect(TASK_MODELS[task], `Missing task: ${task}`).toBeDefined();
@@ -138,7 +138,7 @@ describe('aiModels', () => {
     it('should return mapped model for known tasks', () => {
       expect(getModelForTask('menuParsing')).toBe('claude-sonnet-4-6');
       expect(getModelForTask('cellarAnalysis')).toBe('claude-sonnet-4-6');
-      expect(getModelForTask('wineClassification')).toBe('claude-haiku-4-5-20251001');
+      expect(getModelForTask('signalAudit')).toBe('claude-haiku-4-5-20251001');
     });
 
     it('should default to Sonnet for unknown tasks', () => {
@@ -249,7 +249,7 @@ describe('aiModels', () => {
     it('should return null for tasks without thinking', () => {
       expect(getThinkingConfig('sommelier')).toBeNull();
       expect(getThinkingConfig('menuParsing')).toBeNull();
-      expect(getThinkingConfig('wineClassification')).toBeNull();
+      expect(getThinkingConfig('signalAudit')).toBeNull();
       expect(getThinkingConfig('ratings')).toBeNull();
     });
 

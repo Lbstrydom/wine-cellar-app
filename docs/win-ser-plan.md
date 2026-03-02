@@ -381,7 +381,7 @@ All four steps implemented and verified.
 
 ---
 
-## Phase 5: Cleanup and Documentation
+## Phase 5: Cleanup and Documentation ✅ COMPLETE
 
 ### 5.1 Remove environment variables from Railway
 
@@ -438,6 +438,18 @@ Test wines across obscurity levels:
 - `npm run test:all` passes
 - CLAUDE.md accurately reflects new architecture
 - Railway environment clean
+
+### Implementation Notes
+
+| Step | Status | Notes |
+|------|--------|-------|
+| 5.1 Railway env vars | Manual | `GEMINI_API_KEY`, `BRIGHTDATA_*` to remove from Railway dashboard |
+| 5.2 Remove puppeteer | ✅ | Removed from `package.json`; `npm install` clean |
+| 5.3 Update CLAUDE.md | ✅ | 5 edits: `ai/` comment, `search/` comment, env var tables, aiModels task row, Search Pipeline section rewrite |
+| 5.4 Remove dead aiModels tasks | ✅ | `ratingExtraction`, `wineClassification`, `simpleValidation` removed; tests updated |
+| 5.5 Add competitions | ✅ | `michelangelo`, `san_francisco`, `texsom`, `sakura` added; `REGION_SOURCE_PRIORITY` updated |
+| 5.6 Benchmark test | ✅ | `tests/benchmark/unifiedSearchBenchmark.test.js` — schema + quality assertions |
+| 5.7 Verification | ✅ | 2881 unit tests pass; 36 benchmark tests pass |
 
 ---
 
