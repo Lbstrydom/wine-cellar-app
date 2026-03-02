@@ -15,8 +15,11 @@ import logger from '../../utils/logger.js';
 import { getSourcesForCountry } from '../../config/unifiedSources.js';
 import { extractJsonWithRepair } from '../shared/jsonUtils.js';
 
-/** Beta header required for web search tools */
-const WEB_TOOLS_BETA = 'code-execution-web-tools-2026-02-09';
+/** Maximum pause_turn continuations before giving up */
+const MAX_PAUSE_CONTINUATIONS = 2;
+
+/** Per-request timeout for wine search API calls (ms) */
+const SEARCH_TIMEOUT_MS = 90_000;
 
 /** System prompt requesting both narrative and structured output */
 const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. For the requested wine, search the web to build a complete profile covering:
@@ -355,18 +358,7 @@ export async function unifiedWineSearch(wine, options = {}) {
   try {
     const modelId = getModelForTask('webSearch');
 
-    const message = await anthropic.messages.create({
-      model: modelId,
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      tools: [
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
-        { type: 'web_fetch_20260209', name: 'web_fetch' },
-        SAVE_WINE_PROFILE_TOOL
-      ],
-      messages: [{
-        role: 'user',
-        content: `Research this wine comprehensively: ${producer ? producer + ' ' : ''}${wineName} ${vintage}${countryHint}${profileLine}${profileInstruction}
+    const userPrompt = `Research this wine comprehensively: ${producer ? producer + ' ' : ''}${wineName} ${vintage}${countryHint}${profileLine}${profileInstruction}
 
 Search for information from these priority sources:
 ${sourceInjection}
@@ -380,14 +372,39 @@ CRITICAL RULES:
 - raw_score_numeric must be a number or null
 - source_url must be a real URL from your search results
 - grape_varieties: extract grape/variety names (e.g. ["Cabernet Sauvignon", "Merlot"])
-- awards: list competition medals with year and category`
-      }]
-    }, {
-      headers: { 'anthropic-beta': WEB_TOOLS_BETA }
-    });
+- awards: list competition medals with year and category`;
+
+    const apiParams = {
+      model: modelId,
+      max_tokens: 16000,
+      system: SYSTEM_PROMPT,
+      tools: [
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 3 },
+        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
+        SAVE_WINE_PROFILE_TOOL
+      ],
+      messages: [{ role: 'user', content: userPrompt }]
+    };
+
+    let message = await anthropic.messages.create(apiParams, { timeout: SEARCH_TIMEOUT_MS });
+    let allContent = [...(message.content || [])];
+
+    // Handle pause_turn: server tool loop hit iteration limit — resume conversation
+    let continuations = 0;
+    while (message.stop_reason === 'pause_turn' && continuations < MAX_PAUSE_CONTINUATIONS) {
+      continuations++;
+      logger.info('UnifiedWineSearch', `pause_turn after ${Date.now() - startTime}ms (${continuations}/${MAX_PAUSE_CONTINUATIONS}), resuming…`);
+      apiParams.messages = [
+        ...apiParams.messages,
+        { role: 'assistant', content: message.content },
+        { role: 'user', content: 'Continue and call the save_wine_profile tool with all data found.' }
+      ];
+      message = await anthropic.messages.create(apiParams, { timeout: SEARCH_TIMEOUT_MS });
+      allContent.push(...(message.content || []));
+    }
 
     const duration = Date.now() - startTime;
-    const content = message.content || [];
+    const content = allContent;
 
     // Strategy 1: Extract from save_wine_profile tool_use block (deterministic JSON)
     const toolUseBlock = content.find(

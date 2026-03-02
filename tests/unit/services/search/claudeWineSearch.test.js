@@ -120,7 +120,7 @@ describe('unifiedWineSearch() — API call shape', () => {
     vi.clearAllMocks();
   });
 
-  it('calls anthropic.messages.create with correct tools and beta header', async () => {
+  it('calls anthropic.messages.create with correct tools, timeout, and no beta header', async () => {
     mockCreate.mockResolvedValue(makeToolUseResponse());
 
     await unifiedWineSearch(mockWine);
@@ -130,12 +130,15 @@ describe('unifiedWineSearch() — API call shape', () => {
 
     // Three tools: web_search, web_fetch, save_wine_profile
     expect(params.tools).toHaveLength(3);
-    expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
-    expect(params.tools[1]).toEqual({ type: 'web_fetch_20260209', name: 'web_fetch' });
+    expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 3 });
+    expect(params.tools[1]).toEqual({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 });
     expect(params.tools[2].name).toBe('save_wine_profile');
 
-    // Beta header
-    expect(options.headers['anthropic-beta']).toBe('code-execution-web-tools-2026-02-09');
+    // No beta header — 20260209 tools are GA
+    expect(options.headers).toBeUndefined();
+
+    // Per-request timeout
+    expect(options.timeout).toBe(90_000);
 
     // Model from aiModels
     expect(params.model).toBe('claude-sonnet-4-6');
@@ -477,6 +480,78 @@ describe('unifiedWineSearch() — error handling', () => {
     expect(result._error).toBeTruthy();
     expect(result._error.code).toBe('empty_response');
     expect(result._error.userMessage).toContain('empty response');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// pause_turn continuation
+// ---------------------------------------------------------------------------
+
+describe('unifiedWineSearch() — pause_turn continuation', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('resumes conversation when stop_reason is pause_turn', async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'pause_turn',
+        content: [
+          { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://first.com', title: 'First' }] },
+          { type: 'text', text: 'Partial research...' }
+        ]
+      })
+      .mockResolvedValueOnce(makeToolUseResponse({ ratings: [{ source: 'Tim Atkin', raw_score: '94' }] }));
+
+    const result = await unifiedWineSearch(mockWine);
+
+    expect(mockCreate).toHaveBeenCalledTimes(2);
+    expect(result.ratings).toHaveLength(1);
+    expect(result.ratings[0].source).toBe('Tim Atkin');
+
+    // Continuation message should include assistant turn + user continuation prompt
+    const secondCallParams = mockCreate.mock.calls[1][0];
+    expect(secondCallParams.messages).toHaveLength(3); // user + assistant + user
+    expect(secondCallParams.messages[1].role).toBe('assistant');
+    expect(secondCallParams.messages[2].role).toBe('user');
+    expect(secondCallParams.messages[2].content).toContain('Continue');
+  });
+
+  it('accumulates sources from all pause_turn iterations', async () => {
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'pause_turn',
+        content: [
+          { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://first.com', title: 'First' }] }
+        ]
+      })
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [
+          { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://second.com', title: 'Second' }] },
+          { type: 'tool_use', name: 'save_wine_profile', input: { ratings: [] } }
+        ]
+      });
+
+    const result = await unifiedWineSearch(mockWine);
+
+    expect(result._sources).toHaveLength(2);
+    expect(result._sources[0].url).toBe('https://first.com');
+    expect(result._sources[1].url).toBe('https://second.com');
+  });
+
+  it('stops retrying after MAX_PAUSE_CONTINUATIONS (2)', async () => {
+    // All 3 calls return pause_turn (1 initial + 2 continuations = 3 total)
+    mockCreate
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'part 1' }] })
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'part 2' }] })
+      .mockResolvedValueOnce({ stop_reason: 'pause_turn', content: [{ type: 'text', text: 'part 3' }] });
+
+    const result = await unifiedWineSearch(mockWine);
+
+    expect(mockCreate).toHaveBeenCalledTimes(3);
+    // Result should be null since no tool_use or extractable JSON
+    expect(result).toBeNull();
   });
 });
 
