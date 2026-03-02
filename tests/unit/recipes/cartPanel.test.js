@@ -473,6 +473,25 @@ describe('status action buttons', () => {
     await vi.waitFor(() => expect(showToast).toHaveBeenCalled());
     expect(showToast.mock.calls[0][1]).toBe('error');
   });
+
+  it('does not call transitionStatus when research button is clicked', async () => {
+    getCartState.mockReturnValue({
+      items: [{ id: 10, wine_name: 'Sauvignon Blanc', status: 'planned', quantity: 1, style_id: 'white_crisp', converted_wine_id: null }],
+      summary: { counts: {}, totals: {} }, loading: false
+    });
+    const container = makeContainer();
+    renderCartPanel(container);
+
+    const researchBtn = container.querySelector('.cart-research-btn[data-id="10"]');
+    expect(researchBtn).not.toBeNull();
+    // Research button should NOT have the cart-action-btn class
+    expect(researchBtn.classList.contains('cart-action-btn')).toBe(false);
+    researchBtn.click();
+
+    // Give any async handlers time to run
+    await new Promise(r => setTimeout(r, 10));
+    expect(transitionStatus).not.toHaveBeenCalled();
+  });
 });
 
 // ── Delete button ─────────────────────────────────────────────────────────────

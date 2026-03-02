@@ -5,7 +5,7 @@
  */
 
 import { parseWineFromImage, parseWineFromText, saveExtractedWindows } from './ai/index.js';
-import { unifiedWineSearch } from './search/claudeWineSearch.js';
+import { unifiedWineSearch, isUnifiedWineSearchAvailable } from './search/claudeWineSearch.js';
 import { findBestZone, findAvailableSlot } from './cellar/cellarPlacement.js';
 import { categoriseWine, getFridgeStatus } from './cellar/fridgeStocking.js';
 import db from '../db/index.js';
@@ -140,7 +140,18 @@ export async function enrichWineData(wine) {
 
   try {
     // Fetch ratings via unified Claude Web Search
-    const ratingsResult = await unifiedWineSearch(wine) || {};
+    const ratingsResult = await unifiedWineSearch(wine);
+
+    if (!ratingsResult) {
+      // Search returned null — API key missing, API error, or empty response.
+      // Surface a user-visible error instead of silently showing "No ratings found".
+      enrichment.ratings = {};
+      enrichment.error = isUnifiedWineSearchAvailable()
+        ? 'Wine search returned no results — the search may have timed out or the API returned an empty response. Try again.'
+        : 'Wine search unavailable — ANTHROPIC_API_KEY is not configured.';
+      return enrichment;
+    }
+
     enrichment.ratings = ratingsResult;
 
     // Extract and save drinking windows if wine has ID

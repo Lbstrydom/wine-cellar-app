@@ -12267,7 +12267,8 @@ body.move-guide-active #view-grid {
 }
 
 .cart-action-btn,
-.cart-delete-btn {
+.cart-delete-btn,
+.cart-research-btn {
   padding: 0.15rem 0.3rem;
   font-size: 0.75rem;
   background: none;

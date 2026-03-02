@@ -297,7 +297,7 @@ function renderCartItem(item) {
       </div>
       <div class="cart-item-actions">
         ${(item.status === 'planned' || item.status === 'ordered') && !isConverted
-          ? `<button class="cart-action-btn cart-research-btn" data-id="${item.id}" type="button" aria-label="Search ratings for ${escapeHtml(item.wine_name)}" title="Search ratings before buying">&#x1F50D;</button>`
+          ? `<button class="cart-research-btn" data-id="${item.id}" type="button" aria-label="Search ratings for ${escapeHtml(item.wine_name)}" title="Search ratings before buying">&#x1F50D;</button>`
           : ''}
         ${actionBtns}
         ${!isConverted ? `<button class="cart-delete-btn" data-id="${item.id}" type="button" title="Delete this item from your buying plan">&#x1F5D1;</button>` : ''}
@@ -393,11 +393,12 @@ function wireCartEvents(container) {
     });
   }
 
-  // Status transition buttons
+  // Status transition buttons (skip research buttons that share the class for styling)
   container.querySelectorAll('.cart-action-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       const id = parseInt(btn.dataset.id, 10);
       const action = btn.dataset.action;
+      if (!action) return; // Research/non-status buttons have no data-action
       try {
         if (action === 'arrived') {
           await handleArriveAction(id, container);

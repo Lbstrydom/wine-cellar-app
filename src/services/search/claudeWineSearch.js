@@ -375,7 +375,8 @@ CRITICAL RULES:
       const narrative = extractNarrative(content);
       if (!narrative) {
         const stopReason = message.stop_reason || 'unknown';
-        logger.warn('UnifiedWineSearch', `No text or tool_use in response after ${duration}ms (stop_reason: ${stopReason})`);
+        const blockTypes = content.map(b => b.type).join(', ') || 'empty';
+        logger.warn('UnifiedWineSearch', `No text or tool_use in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
         return null;
       }
 
@@ -414,7 +415,7 @@ CRITICAL RULES:
     return extracted;
   } catch (error) {
     const duration = Date.now() - startTime;
-    logger.error('UnifiedWineSearch', `Search failed after ${duration}ms: ${error.message}`);
+    logger.error('UnifiedWineSearch', `Search failed for "${wineName}" after ${duration}ms: ${error.message}`);
     return null;
   }
 }
