@@ -1,7 +1,7 @@
 /**
  * @fileoverview Unit tests for the unified Claude Wine Search service.
- * Tests the single-call architecture: prompt construction, tool_use extraction,
- * preamble filtering, text fallback, source URL collection, and citation extraction.
+ * Tests the single-call architecture: prompt construction, JSON text extraction,
+ * preamble filtering, source URL collection, and citation extraction.
  *
  * The search uses SSE streaming — mocks simulate the stream event protocol.
  */
@@ -141,31 +141,30 @@ function makeStreamFromContent(contentBlocks, stopReason = 'end_turn') {
   };
 }
 
-const makeToolUseResponse = (input = {}, stopReason = 'tool_use') => makeStreamFromContent([
-  {
-    type: 'web_search_tool_result',
-    content: [{ type: 'web_search_result', url: 'https://timatkin.com/review', title: 'Tim Atkin' }]
-  },
-  {
-    type: 'text',
-    text: 'Here is the research narrative for this wine.'
-  },
-  {
-    type: 'tool_use',
-    name: 'save_wine_profile',
-    input: {
-      ratings: [],
-      tasting_notes: null,
-      drinking_window: null,
-      food_pairings: [],
-      style_summary: '',
-      grape_varieties: [],
-      producer_info: null,
-      awards: [],
-      ...input
+/** Build a stream response with narrative text + embedded JSON (new architecture — no tool_use). */
+const makeJsonTextResponse = (data = {}, stopReason = 'end_turn') => {
+  const merged = {
+    ratings: [],
+    tasting_notes: null,
+    drinking_window: null,
+    food_pairings: [],
+    style_summary: '',
+    grape_varieties: [],
+    producer_info: null,
+    awards: [],
+    ...data
+  };
+  return makeStreamFromContent([
+    {
+      type: 'web_search_tool_result',
+      content: [{ type: 'web_search_result', url: 'https://timatkin.com/review', title: 'Tim Atkin' }]
+    },
+    {
+      type: 'text',
+      text: `Here is the research narrative for this wine.\n\n${JSON.stringify(merged)}`
     }
-  }
-], stopReason);
+  ], stopReason);
+};
 
 const makeTextResponse = (text) => makeStreamFromContent([
   {
@@ -202,19 +201,17 @@ describe('unifiedWineSearch() — API call shape', () => {
     vi.clearAllMocks();
   });
 
-  it('calls anthropic.messages.stream with correct tools and stream:true', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+  it('calls anthropic.messages.stream with web_search only and stream:true', async () => {
+    mockStream.mockReturnValue(makeTextResponse(JSON.stringify({ ratings: [] })));
 
     await unifiedWineSearch(mockWine);
 
     expect(mockStream).toHaveBeenCalledOnce();
     const [params] = mockStream.mock.calls[0];
 
-    // Two tools: web_search (max 5) + save_wine_profile.
-    // web_fetch removed — fetching full pages added 3-4 min per request.
-    expect(params.tools).toHaveLength(2);
+    // Only web_search — no custom tools (save_wine_profile removed to avoid code_execution loop)
+    expect(params.tools).toHaveLength(1);
     expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
-    expect(params.tools[1].name).toBe('save_wine_profile');
 
     // Streaming enabled
     expect(params.stream).toBe(true);
@@ -225,7 +222,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('includes producer, wine name, vintage, and country in prompt', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch(mockWine);
 
@@ -238,7 +235,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('includes country-specific local sources in prompt', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch(mockWine);
 
@@ -249,7 +246,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('includes global competition and critic sources in prompt', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch(mockWine);
 
@@ -259,7 +256,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('always includes community sources (Vivino, CellarTracker) in prompt', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch(mockWine);
 
@@ -269,7 +266,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('uses default sources when no country provided', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({ ...mockWine, country: '' });
 
@@ -280,7 +277,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('handles NV vintage correctly', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({ ...mockWine, vintage: '' });
 
@@ -289,7 +286,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('handles null vintage as NV', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({ ...mockWine, vintage: null });
 
@@ -308,7 +305,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('includes wine profile line when style/grapes/region are present', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({
       ...mockWine,
@@ -326,7 +323,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('includes style/grapes/region in CRITICAL RULES section', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({
       ...mockWine,
@@ -342,7 +339,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('omits profile line when wine has no style/grapes/region', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch(mockWine);
 
@@ -352,7 +349,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('sanitizes profile fields — strips control characters', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({
       ...mockWine,
@@ -367,7 +364,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('truncates profile fields at 100 characters', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     await unifiedWineSearch({
       ...mockWine,
@@ -383,16 +380,16 @@ describe('unifiedWineSearch() — profile context injection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Structured output (tool_use path)
+// Structured output (JSON embedded in text — primary path)
 // ---------------------------------------------------------------------------
 
-describe('unifiedWineSearch() — tool_use extraction (primary path)', () => {
+describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('extracts ratings from save_wine_profile tool_use block', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse({
+  it('extracts ratings from JSON embedded in text response', async () => {
+    mockStream.mockReturnValue(makeJsonTextResponse({
       ratings: [{
         source: 'Tim Atkin SA',
         source_lens: 'critics',
@@ -419,8 +416,8 @@ describe('unifiedWineSearch() — tool_use extraction (primary path)', () => {
     expect(result.grape_varieties).toEqual(['Pinotage']);
   });
 
-  it('extracts producer_info and awards from tool_use block', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse({
+  it('extracts producer_info and awards from JSON in text', async () => {
+    mockStream.mockReturnValue(makeJsonTextResponse({
       ratings: [],
       producer_info: { name: 'Kanonkop', region: 'Stellenbosch', country: 'South Africa', description: 'Iconic estate' },
       awards: [{ competition: 'Veritas Awards', year: 2020, award: 'Gold', category: 'Red Wine' }]
@@ -434,7 +431,7 @@ describe('unifiedWineSearch() — tool_use extraction (primary path)', () => {
   });
 
   it('includes narrative from text blocks after last search result', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -443,15 +440,15 @@ describe('unifiedWineSearch() — tool_use extraction (primary path)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Text fallback path
+// Text-only response handling
 // ---------------------------------------------------------------------------
 
-describe('unifiedWineSearch() — text fallback (no tool_use)', () => {
+describe('unifiedWineSearch() — plain text with embedded JSON', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('falls back to JSON extraction from text when no tool_use block', async () => {
+  it('extracts JSON from text response without narrative preamble', async () => {
     mockStream.mockReturnValue(makeTextResponse(
       JSON.stringify({
         ratings: [{
@@ -479,7 +476,7 @@ describe('unifiedWineSearch() — text fallback (no tool_use)', () => {
     expect(result.ratings[0].raw_score_numeric).toBe(4.2);
   });
 
-  it('returns null when text has no JSON and no tool_use', async () => {
+  it('returns null when text has no extractable JSON', async () => {
     mockStream.mockReturnValue(makeStreamFromContent([
       {
         type: 'web_search_tool_result',
@@ -547,7 +544,7 @@ describe('unifiedWineSearch() — error handling', () => {
     expect(result._error.userMessage).toContain('timed out');
   });
 
-  it('returns structured empty_response error when includeErrors=true and no narrative/tool_use', async () => {
+  it('returns structured empty_response error when includeErrors=true and no narrative', async () => {
     mockStream.mockReturnValue(makeStreamFromContent([
       { type: 'web_search_tool_result', content: [] }
     ], 'end_turn'));
@@ -585,7 +582,7 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
         { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://first.com', title: 'First' }] },
         { type: 'text', text: 'Partial research...' }
       ], 'pause_turn'))
-      .mockReturnValueOnce(makeToolUseResponse({ ratings: [{ source: 'Tim Atkin', raw_score: '94' }] }));
+      .mockReturnValueOnce(makeJsonTextResponse({ ratings: [{ source: 'Tim Atkin', raw_score: '94' }] }));
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -599,6 +596,7 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
     expect(secondCallParams.messages[1].role).toBe('assistant');
     expect(secondCallParams.messages[2].role).toBe('user');
     expect(secondCallParams.messages[2].content).toContain('Continue');
+    expect(secondCallParams.messages[2].content).toContain('JSON');
   });
 
   it('accumulates sources from all pause_turn iterations', async () => {
@@ -608,8 +606,8 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
       ], 'pause_turn'))
       .mockReturnValueOnce(makeStreamFromContent([
         { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://second.com', title: 'Second' }] },
-        { type: 'tool_use', name: 'save_wine_profile', input: { ratings: [] } }
-      ], 'tool_use'));
+        { type: 'text', text: `Narrative\n${JSON.stringify({ ratings: [] })}` }
+      ], 'end_turn'));
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -643,7 +641,7 @@ describe('unifiedWineSearch() — metadata and sources', () => {
   });
 
   it('attaches _metadata with method, model, and duration', async () => {
-    mockStream.mockReturnValue(makeToolUseResponse());
+    mockStream.mockReturnValue(makeJsonTextResponse());
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -670,11 +668,10 @@ describe('unifiedWineSearch() — metadata and sources', () => {
         ]
       },
       {
-        type: 'tool_use',
-        name: 'save_wine_profile',
-        input: { ratings: [] }
+        type: 'text',
+        text: `Research narrative.\n${JSON.stringify({ ratings: [] })}`
       }
-    ], 'tool_use'));
+    ], 'end_turn'));
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -698,13 +695,12 @@ describe('unifiedWineSearch() — metadata and sources', () => {
       },
       {
         type: 'text',
-        text: 'Also reviewed by Platter.',
+        text: `Also reviewed by Platter.\n${JSON.stringify({ ratings: [] })}`,
         citations: [
           { url: 'https://platters.co.za/wine' }
         ]
-      },
-      { type: 'tool_use', name: 'save_wine_profile', input: { ratings: [] } }
-    ], 'tool_use'));
+      }
+    ], 'end_turn'));
 
     const result = await unifiedWineSearch(mockWine);
 

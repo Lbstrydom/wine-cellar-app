@@ -26,102 +26,36 @@ const MAX_PAUSE_CONTINUATIONS = 2;
  *  events, so this only fires if the stream truly stalls (no events at all). */
 const STREAM_ABORT_TIMEOUT_MS = 300_000;
 
-/** System prompt requesting both narrative and structured output */
-const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. For the requested wine, search the web to build a complete profile covering:
+/** System prompt requesting both narrative and structured JSON output.
+ *  Intentionally simple to match SERT reference — no custom tools, just web_search.
+ *  Claude returns prose + JSON block at the end which we parse with extractJsonWithRepair(). */
+const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. Search the web to build a complete profile for the requested wine.
 
-1. **Producer**: Background, estate history, winemaking philosophy, regional reputation
-2. **Terroir**: Climate, soil, appellation characteristics
-3. **Grape varieties**: Blend composition, varietal characteristics
-4. **Winemaking**: Viticulture, fermentation, maturation methods
-5. **Tasting Notes**: Appearance, nose, palate, structure, finish
-6. **Food Pairings**: Recommended dishes and cuisines
-7. **Critical Reception**: Ratings and reviews with exact scores from critics, competitions, and community
-8. **Drinking Window**: Current drinkability, peak window, aging potential
-9. **Awards**: Competition medals with year and category
+Cover these areas in your narrative:
+1. Producer background and regional reputation
+2. Grape varieties and blend composition
+3. Tasting notes (nose, palate, structure, finish)
+4. Critical reception — exact scores from critics, competitions, and community sites
+5. Drinking window and aging potential
+6. Food pairings
+7. Awards and competition medals
 
-Include inline citations for all factual claims. After your narrative, call the save_wine_profile tool with all structured data extracted. Never include markdown code fences in your output.`;
+Include inline citations for all factual claims.
 
-/** Tool definition for structured JSON output via tool_use */
-const SAVE_WINE_PROFILE_TOOL = {
-  name: 'save_wine_profile',
-  description: 'Save the complete wine profile as structured JSON, including all ratings, tasting notes, drinking window, and wine metadata found during research.',
-  input_schema: {
-    type: 'object',
-    properties: {
-      ratings: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            source: { type: 'string' },
-            source_lens: { type: 'string', enum: ['competition', 'critics', 'community'] },
-            score_type: { type: 'string', enum: ['points', 'stars', 'medal'] },
-            raw_score: { type: 'string' },
-            raw_score_numeric: { type: ['number', 'null'] },
-            reviewer_name: { type: 'string' },
-            tasting_notes: { type: 'string' },
-            vintage_match: { type: 'string', enum: ['exact', 'inferred', 'non_vintage'] },
-            confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
-            source_url: { type: 'string' },
-            competition_year: { type: ['integer', 'null'] },
-            rating_count: { type: ['integer', 'null'] }
-          },
-          required: ['source', 'raw_score']
-        }
-      },
-      tasting_notes: {
-        type: ['object', 'null'],
-        properties: {
-          nose: { type: 'array', items: { type: 'string' } },
-          palate: { type: 'array', items: { type: 'string' } },
-          structure: {
-            type: 'object',
-            properties: {
-              body: { type: 'string' },
-              tannins: { type: 'string' },
-              acidity: { type: 'string' }
-            }
-          },
-          finish: { type: 'string' }
-        }
-      },
-      drinking_window: {
-        type: ['object', 'null'],
-        properties: {
-          drink_from: { type: ['integer', 'null'] },
-          drink_by: { type: ['integer', 'null'] },
-          peak: { type: ['integer', 'null'] },
-          recommendation: { type: 'string' }
-        }
-      },
-      food_pairings: { type: 'array', items: { type: 'string' } },
-      style_summary: { type: 'string' },
-      grape_varieties: { type: 'array', items: { type: 'string' } },
-      producer_info: {
-        type: ['object', 'null'],
-        properties: {
-          name: { type: 'string' },
-          region: { type: 'string' },
-          country: { type: 'string' },
-          description: { type: 'string' }
-        }
-      },
-      awards: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            competition: { type: 'string' },
-            year: { type: ['integer', 'null'] },
-            award: { type: 'string' },
-            category: { type: 'string' }
-          }
-        }
-      }
-    },
-    required: ['ratings']
-  }
-};
+After your narrative, output a single JSON object (no markdown code fences) with this structure:
+{"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}`;
+
+/* save_wine_profile tool REMOVED.
+ *
+ * Root cause of 5-minute timeout: the beta header `code-execution-web-tools-2026-02-09`
+ * enables a `code_execution` server tool. When a custom tool (save_wine_profile) was
+ * present, Claude entered a code_execution loop to structure search results into the
+ * tool schema — 22+ iterations consuming all time until the 300s abort.
+ *
+ * SERT reference adapter uses the same beta header with ONLY web_search (no custom tool)
+ * and completes in ~2 minutes. We now match that architecture: web_search only,
+ * structured JSON returned in text and parsed with extractJsonWithRepair().
+ */
 
 /**
  * Check if unified wine search is available.
@@ -307,7 +241,7 @@ export function extractCitations(content) {
 
 /**
  * Collect all content blocks from an SSE streaming response.
- * Reconstructs full content blocks (text, tool_use, web_search_tool_result, server_tool_use)
+ * Reconstructs full content blocks (text, web_search_tool_result, server_tool_use)
  * from streaming events, matching the structure of a non-streaming response.content array.
  *
  * @param {AsyncIterable} stream - Anthropic SDK streaming response
@@ -321,33 +255,15 @@ async function collectStreamContent(stream) {
   let currentBlock = null;
   let inputJsonBuffer = '';
 
-  // ── Instrumentation: track every event so we can diagnose hangs ──
   const t0 = Date.now();
   let eventCount = 0;
-  let firstEventMs = null;
-  const blockTypeCounts = {};
-  let lastLogMs = t0;
-  const LOG_INTERVAL_MS = 30_000; // progress heartbeat every 30 s
 
   for await (const event of stream) {
     eventCount++;
-    if (!firstEventMs) {
-      firstEventMs = Date.now() - t0;
-      logger.info('StreamDiag', `First SSE event after ${firstEventMs}ms — type: ${event.type}`);
-    }
-
-    // Periodic heartbeat so we can see the stream is alive
-    const now = Date.now();
-    if (now - lastLogMs >= LOG_INTERVAL_MS) {
-      logger.info('StreamDiag', `Heartbeat: ${eventCount} events in ${now - t0}ms, blocks so far: ${JSON.stringify(blockTypeCounts)}`);
-      lastLogMs = now;
-    }
 
     switch (event.type) {
       case 'content_block_start': {
         const block = event.content_block;
-        blockTypeCounts[block.type] = (blockTypeCounts[block.type] || 0) + 1;
-        logger.info('StreamDiag', `Block #${content.length} start: ${block.type}${block.name ? ` (${block.name})` : ''} at ${now - t0}ms`);
 
         if (block.type === 'text') {
           currentBlock = { type: 'text', text: '', citations: [] };
@@ -355,16 +271,15 @@ async function collectStreamContent(stream) {
           currentBlock = { type: 'tool_use', id: block.id, name: block.name, input: {} };
           inputJsonBuffer = '';
         } else if (block.type === 'server_tool_use') {
+          // server_tool_use blocks (web_search, code_execution) are server-managed
           currentBlock = { type: 'server_tool_use', id: block.id, name: block.name, input: {} };
           inputJsonBuffer = '';
         } else if (block.type === 'web_search_tool_result') {
           // web_search_tool_result arrives complete in content_block_start
-          const resultCount = Array.isArray(block.content) ? block.content.length : 0;
-          logger.info('StreamDiag', `web_search_tool_result: ${resultCount} results at ${now - t0}ms`);
           content.push(block);
           currentBlock = null;
         } else {
-          logger.info('StreamDiag', `Unknown block type: ${block.type} at ${now - t0}ms`);
+          // code_execution_tool_result and other server blocks — skip
           currentBlock = null;
         }
         break;
@@ -400,39 +315,22 @@ async function collectStreamContent(stream) {
           delete currentBlock.citations;
         }
 
-        // Log block completion with size info
-        const blockInfo = currentBlock.type === 'text'
-          ? `${currentBlock.text.length} chars`
-          : currentBlock.type === 'tool_use'
-            ? `tool: ${currentBlock.name}`
-            : currentBlock.type === 'server_tool_use'
-              ? `server_tool: ${currentBlock.name}, query: ${currentBlock.input?.query || '?'}`
-              : currentBlock.type;
-        logger.info('StreamDiag', `Block #${content.length} complete: ${currentBlock.type} (${blockInfo}) at ${Date.now() - t0}ms`);
-
         content.push(currentBlock);
         currentBlock = null;
         inputJsonBuffer = '';
         break;
       }
 
-      case 'message_start': {
-        logger.info('StreamDiag', `message_start at ${now - t0}ms — model: ${event.message?.model || '?'}`);
-        break;
-      }
-
       case 'message_delta': {
         if (event.delta?.stop_reason) {
           stopReason = event.delta.stop_reason;
-          logger.info('StreamDiag', `message_delta stop_reason: ${stopReason} at ${Date.now() - t0}ms`);
         }
         break;
       }
     }
   }
 
-  const totalMs = Date.now() - t0;
-  logger.info('StreamDiag', `Stream complete: ${eventCount} events, ${content.length} blocks, stop=${stopReason}, first_event=${firstEventMs}ms, total=${totalMs}ms, blocks=${JSON.stringify(blockTypeCounts)}`);
+  logger.info('UnifiedWineSearch', `Stream collected ${content.length} blocks (${eventCount} events) in ${Date.now() - t0}ms, stop=${stopReason}`);
 
   return { content, stopReason };
 }
@@ -448,9 +346,8 @@ async function collectStreamContent(stream) {
  * Response parsing strategy (SERT preamble-filtering pattern):
  * 1. Find last web_search_tool_result block index
  * 2. Collect text blocks AFTER that index → prose narrative
- * 3. Extract tool_use block (save_wine_profile) → structured JSON
+ * 3. Extract embedded JSON from narrative via extractJsonWithRepair() → structured data
  * 4. Extract source URLs from all web_search_tool_result blocks → citation list
- * 5. Fallback: extractJsonWithRepair() on prose if no tool_use block
  *
  * @param {Object} wine - Wine object with name, vintage, producer, country, colour, etc.
  * @param {Object} [options] - Optional behavior flags.
@@ -504,7 +401,7 @@ export async function unifiedWineSearch(wine, options = {}) {
 Search for information from these priority sources:
 ${sourceInjection}
 
-After your research narrative, call the save_wine_profile tool with all structured data.
+After your narrative, output the JSON object with all structured data found.
 
 CRITICAL RULES:
 - Only ${vintage} vintage ratings (not other vintages)
@@ -513,17 +410,18 @@ CRITICAL RULES:
 - raw_score_numeric must be a number or null
 - source_url must be a real URL from your search results
 - grape_varieties: extract grape/variety names (e.g. ["Cabernet Sauvignon", "Merlot"])
-- awards: list competition medals with year and category`;
+- awards: list competition medals with year and category
+- No markdown code fences around the JSON`;
 
     const apiParams = {
       model: modelId,
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       tools: [
-        // web_fetch removed: fetching full pages added 3-4 min per request.
-        // web_search snippets are sufficient; SERT reference uses web_search only.
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
-        SAVE_WINE_PROFILE_TOOL
+        // Only web_search — no custom tools. Custom tools (save_wine_profile) triggered
+        // the code_execution server tool loop that caused 5-minute timeouts.
+        // SERT reference uses web_search only and completes in ~2 minutes.
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 }
       ],
       messages: [{ role: 'user', content: userPrompt }],
       stream: true
@@ -532,19 +430,17 @@ CRITICAL RULES:
     // Safety AbortController — only fires if stream truly stalls (5 min)
     const abortController = new AbortController();
     const abortTimer = setTimeout(() => {
-      logger.warn('StreamDiag', `Abort fired after ${STREAM_ABORT_TIMEOUT_MS}ms — stream did not complete in time`);
+      logger.warn('UnifiedWineSearch', `Abort fired after ${STREAM_ABORT_TIMEOUT_MS}ms — stream did not complete in time`);
       abortController.abort();
     }, STREAM_ABORT_TIMEOUT_MS);
 
     // Beta header required for web_search_20260209 (dynamic filtering).
-    // SERT reference explicitly sets this; without it the API may degrade.
+    // Note: this header also enables code_execution server tool, but without custom
+    // tools in the tools array, code_execution usage is minimal and fast.
     const streamOpts = {
       signal: abortController.signal,
       headers: { 'anthropic-beta': 'code-execution-web-tools-2026-02-09' }
     };
-
-    const toolNames = apiParams.tools.map(t => `${t.name || t.type}${t.max_uses ? `(max:${t.max_uses})` : ''}`).join(', ');
-    logger.info('StreamDiag', `API call: model=${modelId}, tools=[${toolNames}], beta=${streamOpts.headers['anthropic-beta']}, max_tokens=${apiParams.max_tokens}`);
 
     let allContent;
     let lastStopReason;
@@ -563,7 +459,7 @@ CRITICAL RULES:
         apiParams.messages = [
           ...apiParams.messages,
           { role: 'assistant', content: allContent },
-          { role: 'user', content: 'Continue and call the save_wine_profile tool with all data found.' }
+          { role: 'user', content: 'Continue your research and include the JSON object with all structured data found.' }
         ];
         const contStream = anthropic.messages.stream(apiParams, streamOpts);
         const contResult = await collectStreamContent(contStream);
@@ -577,50 +473,38 @@ CRITICAL RULES:
     const duration = Date.now() - startTime;
     const content = allContent;
 
-    // Strategy 1: Extract from save_wine_profile tool_use block (deterministic JSON)
-    const toolUseBlock = content.find(
-      b => b.type === 'tool_use' && b.name === 'save_wine_profile'
-    );
-
-    let extracted;
-    if (toolUseBlock?.input) {
-      extracted = toolUseBlock.input;
-      logger.info('UnifiedWineSearch', `Got structured tool_use response in ${duration}ms`);
-    } else {
-      // Strategy 2: Fall back to text extraction with repair (SERT preamble-filtered)
-      const narrative = extractNarrative(content);
-      if (!narrative) {
-        const stopReason = lastStopReason || 'unknown';
-        const blockTypes = content.map(b => b.type).join(', ') || 'empty';
-        logger.warn('UnifiedWineSearch', `No text or tool_use in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
-        if (includeErrors) {
-          return buildSearchError(
-            'empty_response',
-            'Wine search returned an empty response. Please try again.',
-            { wineName, duration, stopReason, blockTypes }
-          );
-        }
-        return null;
+    // Extract prose narrative (preamble-filtered: text blocks after last search result)
+    const narrative = extractNarrative(content);
+    if (!narrative) {
+      const stopReason = lastStopReason || 'unknown';
+      const blockTypes = content.map(b => b.type).join(', ') || 'empty';
+      logger.warn('UnifiedWineSearch', `No text in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
+      if (includeErrors) {
+        return buildSearchError(
+          'empty_response',
+          'Wine search returned an empty response. Please try again.',
+          { wineName, duration, stopReason, blockTypes }
+        );
       }
-
-      logger.info('UnifiedWineSearch', `Falling back to text extraction in ${duration}ms, ${narrative.length} chars`);
-      try {
-        extracted = extractJsonWithRepair(narrative);
-      } catch (parseErr) {
-        logger.error('UnifiedWineSearch', `JSON extraction failed: ${parseErr.message}`);
-        if (includeErrors) {
-          return buildSearchError(
-            'parse_failure',
-            'Wine search returned data, but it could not be parsed. Please try again.',
-            { wineName, duration, message: parseErr.message }
-          );
-        }
-        return null;
-      }
+      return null;
     }
 
-    // Extract prose narrative (always — even when tool_use is present, narrative is valuable)
-    const narrative = extractNarrative(content);
+    // Extract structured JSON from narrative text (Claude embeds it after prose)
+    let extracted;
+    try {
+      extracted = extractJsonWithRepair(narrative);
+      logger.info('UnifiedWineSearch', `Extracted JSON from text in ${duration}ms, ${narrative.length} chars`);
+    } catch (parseErr) {
+      logger.error('UnifiedWineSearch', `JSON extraction failed: ${parseErr.message}`);
+      if (includeErrors) {
+        return buildSearchError(
+          'parse_failure',
+          'Wine search returned data, but it could not be parsed. Please try again.',
+          { wineName, duration, message: parseErr.message }
+        );
+      }
+      return null;
+    }
 
     // Collect source URLs for provenance
     const sourceUrls = extractSourceUrls(content);
