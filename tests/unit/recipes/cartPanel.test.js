@@ -22,6 +22,10 @@ vi.mock('../../../public/js/recipes/cartState.js', () => ({
   convertToCellar: vi.fn()
 }));
 
+vi.mock('../../../public/js/recipes/wineResearch.js', () => ({
+  openWineResearchModal: vi.fn()
+}));
+
 vi.mock('../../../public/js/utils.js', () => ({
   escapeHtml: (str) => {
     if (str == null) return '';

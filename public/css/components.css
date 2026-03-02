@@ -13170,3 +13170,139 @@ body.move-guide-active #view-grid {
   border-top: 1px solid var(--border-color, rgba(212,168,67,0.15));
   margin: 0.6rem 0;
 }
+
+/* ===== Wine Research Modal (Search Before Buying) ===== */
+
+.wine-research-modal {
+  max-height: 85vh;
+  overflow-y: auto;
+}
+
+.wine-research-subtitle {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: -0.5rem 0 1rem;
+}
+
+/* Loading state */
+.wine-research-loading {
+  text-align: center;
+  padding: 2rem 1rem;
+}
+
+.wine-research-loading-icon {
+  font-size: 2rem;
+  margin-bottom: 0.75rem;
+  animation: wine-research-pulse 2s ease-in-out infinite;
+}
+
+@keyframes wine-research-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.wine-research-loading p {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  margin: 0 0 1rem;
+}
+
+/* Indeterminate progress bar override */
+.wine-research-progress {
+  animation: wine-research-fill 45s ease-out forwards;
+  transition: none;
+}
+
+@keyframes wine-research-fill {
+  0%   { width: 0%; }
+  30%  { width: 40%; }
+  60%  { width: 65%; }
+  90%  { width: 83%; }
+  100% { width: 85%; }
+}
+
+/* Results container */
+.wine-research-results {
+  color: var(--text, #e8e8e8);
+}
+
+.wine-research-section {
+  margin-bottom: 1.25rem;
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.wine-research-section:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.wine-research-section-title {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: 0 0 0.6rem;
+}
+
+/* Drinking window */
+.wine-research-window {
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+.wine-research-window-years {
+  font-weight: 600;
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+/* Food pairings chips */
+.wine-research-pairings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.wine-research-pairing-chip {
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 0.2rem 0.6rem;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+/* Style summary */
+.wine-research-style {
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+/* Error / empty state */
+.wine-research-error {
+  text-align: center;
+  padding: 1.5rem;
+  color: var(--text-muted);
+}
+
+.wine-research-error p {
+  margin: 0 0 0.5rem;
+}
+
+.wine-research-no-data {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  font-style: italic;
+}
+
+/* Sources footer */
+.wine-research-sources-footer {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-align: right;
+  margin-top: 0.75rem;
+}

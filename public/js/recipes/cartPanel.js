@@ -17,6 +17,7 @@ import {
   arriveItem,
   convertToCellar
 } from './cartState.js';
+import { openWineResearchModal } from './wineResearch.js';
 
 /** Status display config: label, badge class, available actions */
 const STATUS_CONFIG = {
@@ -295,6 +296,9 @@ function renderCartItem(item) {
         ${placementHtml}
       </div>
       <div class="cart-item-actions">
+        ${(item.status === 'planned' || item.status === 'ordered') && !isConverted
+          ? `<button class="cart-action-btn cart-research-btn" data-id="${item.id}" type="button" aria-label="Search ratings for ${escapeHtml(item.wine_name)}" title="Search ratings before buying">&#x1F50D;</button>`
+          : ''}
         ${actionBtns}
         ${!isConverted ? `<button class="cart-delete-btn" data-id="${item.id}" type="button" title="Delete this item from your buying plan">&#x1F5D1;</button>` : ''}
       </div>
@@ -406,6 +410,16 @@ function wireCartEvents(container) {
       } catch (err) {
         showToast('Status change failed: ' + err.message, 'error');
       }
+    });
+  });
+
+  // Research (search before buying) buttons
+  container.querySelectorAll('.cart-research-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = parseInt(btn.dataset.id, 10);
+      const { items } = getCartState();
+      const item = items.find(i => i.id === id);
+      if (item) openWineResearchModal(item);
     });
   });
 
