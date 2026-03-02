@@ -30,7 +30,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
   <script src="/js/theme-init.js"></script>
-  <link rel="stylesheet" href="/css/styles.css?v=20260302a">
+  <link rel="stylesheet" href="/css/styles.css?v=20260302b">
 </head>
 <body>
   <header>
@@ -1056,38 +1056,43 @@
   </main>
 
   <!-- Wine Detail Modal -->
-  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-wine-name">
+  <div class="modal-overlay" id="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="modal-wine-name" aria-describedby="modal-wine-style">
     <div class="modal" id="wine-modal">
       <button class="modal-close-x" id="btn-modal-close-x" type="button" aria-label="Close">×</button>
       <h2 id="modal-wine-name">Wine Name</h2>
       <div class="modal-subtitle" id="modal-wine-style">Style - Vintage</div>
-      <div class="modal-field">
-        <span class="modal-label">Location</span>
-        <span id="modal-location">-</span>
-      </div>
-      <div class="modal-field">
-        <span class="modal-label">Rating</span>
-        <span id="modal-rating">-</span>
-      </div>
-      <div class="modal-field">
-        <span class="modal-label">Price</span>
-        <span id="modal-price">-</span>
-      </div>
+      <dl class="modal-meta-row">
+        <div class="modal-meta-item">
+          <dt class="modal-label">Location</dt>
+          <dd id="modal-location">-</dd>
+        </div>
+        <div class="modal-meta-item">
+          <dt class="modal-label">Rating</dt>
+          <dd id="modal-rating">-</dd>
+        </div>
+        <div class="modal-meta-item">
+          <dt class="modal-label">Price</dt>
+          <dd id="modal-price">-</dd>
+        </div>
+      </dl>
       <div class="modal-field" id="modal-reduce-field" style="display: none;">
         <span class="modal-label">Drink Soon Reason</span>
         <span id="modal-reduce-reason">-</span>
       </div>
+      <!-- Ratings panel (promoted above tasting card for earlier research CTA) -->
+      <div id="modal-ratings-container" role="region" aria-label="Wine research and ratings" aria-live="polite"></div>
+
       <!-- Tasting & Service Card (consolidated) -->
-      <div id="tasting-service-container">
+      <div id="tasting-service-container" role="region" aria-label="Tasting and service information">
         <div class="tasting-service-loading">Loading tasting information...</div>
       </div>
-      
+
       <!-- Legacy tasting notes (hidden, used as fallback) -->
       <div class="modal-field" id="modal-tasting-notes-field" style="display: none;">
         <span class="modal-label">Tasting Notes</span>
         <p id="modal-tasting-notes" class="tasting-notes-text">-</p>
       </div>
-      
+
       <!-- Legacy serving temp (hidden, used as fallback) -->
       <div class="modal-field serving-temp-field" id="legacy-serving-temp-field" style="display: none;">
         <span class="modal-label">Serving Temperature</span>
@@ -1095,11 +1100,9 @@
           <span class="no-data">Loading...</span>
         </div>
       </div>
-      
+
       <!-- Wine Profile: AI-generated prose narrative (collapsible) -->
       <div id="wine-profile-container" style="display:none;"></div>
-
-      <div id="modal-ratings-container"></div>
 
       <!-- Legacy Drinking Window Section (hidden, used as fallback) -->
       <div class="drinking-window-section" id="drinking-window-section" style="display: none;">
@@ -1139,14 +1142,18 @@
         <textarea id="modal-personal-notes" placeholder="My tasting notes..." rows="2"></textarea>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-danger" id="btn-drink">Drink This</button>
-        <button class="btn btn-warning" id="btn-open-bottle">Mark Open</button>
-        <button class="btn btn-secondary" id="btn-pair-wine">Pair with Dish</button>
-        <button class="btn btn-secondary" id="btn-add-another">+ Add Another</button>
-        <button class="btn btn-secondary" id="btn-edit-wine">Edit</button>
-        <button class="btn btn-secondary" id="btn-close">Close</button>
+        <div class="modal-actions-primary">
+          <button class="btn btn-danger" id="btn-drink" aria-label="Drink this bottle — removes one from your cellar">Drink This</button>
+          <button class="btn btn-warning" id="btn-open-bottle" aria-pressed="false">Mark Open</button>
+          <button class="btn btn-secondary" id="btn-pair-wine">Pair with Dish</button>
+        </div>
+        <div class="modal-actions-util">
+          <button class="btn btn-text" id="btn-add-another">+ Add Another</button>
+          <button class="btn btn-text" id="btn-edit-wine">Edit</button>
+          <button class="btn btn-secondary btn-small" id="btn-close">Close</button>
+        </div>
       </div>
-      <div id="manual-pair-panel" class="manual-pair-panel" style="display:none;">
+      <div id="manual-pair-panel" class="manual-pair-panel" style="display:none;" aria-hidden="true">
         <label for="manual-pair-dish">What dish are you pairing with?</label>
         <input type="text" id="manual-pair-dish" placeholder="e.g. Grilled lamb chops..." />
         <div class="manual-pair-actions">

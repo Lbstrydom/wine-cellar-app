@@ -105,16 +105,19 @@ export function renderRatingsPanel(ratingsData) {
   if (!ratingsData || ratingsData.confidence_level === 'unrated') {
     return `
       <div class="ratings-panel unrated">
-        <p>No ratings available</p>
-        <div id="ratings-progress" class="progress-container" style="display: none;">
-          <div class="progress-bar-wrapper">
-            <div id="ratings-progress-bar" class="progress-bar"></div>
+        <div class="research-cta">
+          <p class="research-cta-title">No ratings yet</p>
+          <p class="research-cta-desc">Fetch critic scores, tasting notes, drinking windows &amp; more</p>
+          <div id="ratings-progress" class="progress-container" role="status" aria-live="polite" aria-atomic="true" style="display: none;">
+            <div class="progress-bar-wrapper">
+              <div id="ratings-progress-bar" class="progress-bar"></div>
+            </div>
+            <span id="ratings-progress-text" class="progress-text">Starting...</span>
           </div>
-          <span id="ratings-progress-text" class="progress-text">Starting...</span>
+          <button class="btn btn-accent" id="fetch-ratings-btn" aria-label="Research this wine: fetch ratings, tasting notes and drinking windows">
+            Research Wine
+          </button>
         </div>
-        <button class="btn btn-secondary btn-small" id="fetch-ratings-btn">
-          Search for Ratings
-        </button>
       </div>
     `;
   }
@@ -159,11 +162,11 @@ export function renderRatingsPanel(ratingsData) {
         </div>
       </div>
       <div class="ratings-detail-toggle">
-        <button class="btn btn-text" id="toggle-ratings-detail">
+        <button class="btn btn-text" id="toggle-ratings-detail" aria-expanded="false" aria-controls="ratings-detail-panel">
           Show Details ▼
         </button>
       </div>
-      <div class="ratings-detail" style="display: none;">
+      <div class="ratings-detail" id="ratings-detail-panel" style="display: none;">
   `;
 
   // Individual ratings
@@ -232,7 +235,7 @@ export function renderRatingsPanel(ratingsData) {
   }
 
   html += `
-      <div id="ratings-progress" class="progress-container" style="display: none;">
+      <div id="ratings-progress" class="progress-container" role="status" aria-live="polite" aria-atomic="true" style="display: none;">
         <div class="progress-bar-wrapper">
           <div id="ratings-progress-bar" class="progress-bar"></div>
         </div>
@@ -240,7 +243,7 @@ export function renderRatingsPanel(ratingsData) {
       </div>
       <div class="ratings-actions">
         <button class="btn btn-secondary btn-small" id="refresh-ratings-btn">
-          Refresh
+          Update Research
         </button>
         <button class="btn btn-secondary btn-small" id="add-rating-btn">
           + Add Manual
@@ -291,9 +294,11 @@ export function initRatingsPanel(wineId) {
       if (detail.style.display === 'none') {
         detail.style.display = 'block';
         toggleBtn.textContent = 'Hide Details ▲';
+        toggleBtn.setAttribute('aria-expanded', 'true');
       } else {
         detail.style.display = 'none';
         toggleBtn.textContent = 'Show Details ▼';
+        toggleBtn.setAttribute('aria-expanded', 'false');
       }
     });
   }
@@ -358,6 +363,7 @@ async function handleDeleteRating(wineId, ratingId) {
 async function handleFetchRatings(wineId, useAsync = true) {
   const fetchBtn = document.getElementById('fetch-ratings-btn');
   const refreshBtn = document.getElementById('refresh-ratings-btn');
+  const isInitialResearch = !!fetchBtn;
   const btn = fetchBtn || refreshBtn;
   const progressContainer = document.getElementById('ratings-progress');
   const progressBar = document.getElementById('ratings-progress-bar');
@@ -365,12 +371,14 @@ async function handleFetchRatings(wineId, useAsync = true) {
 
   if (btn) {
     btn.disabled = true;
-    btn.textContent = 'Fetching...';
+    btn.setAttribute('aria-busy', 'true');
+    btn.textContent = isInitialResearch ? 'Researching...' : 'Updating...';
   }
 
   // Show progress bar if async and progress elements exist
   if (useAsync && progressContainer) {
     progressContainer.style.display = 'block';
+    progressContainer.setAttribute('aria-busy', 'true');
     if (progressBar) progressBar.style.width = '0%';
     if (progressText) progressText.textContent = 'Queuing job...';
   }
@@ -397,14 +405,14 @@ async function handleFetchRatings(wineId, useAsync = true) {
 
       // Show result
       if (result && result.ratingsFound !== undefined) {
-        showToast(`Found ${result.ratingsFound} ratings`);
+        showToast(`Research complete — found ${result.ratingsFound} ratings`);
       } else {
-        showToast('Ratings updated');
+        showToast('Research complete');
       }
     } else {
       // Fallback to synchronous fetch
       const result = await fetchWineRatingsFromApi(wineId);
-      showToast(result.message || 'Ratings updated');
+      showToast(result.message || 'Research complete');
     }
 
     // Refresh the ratings display AND wine details (for tasting notes)
@@ -450,10 +458,12 @@ async function handleFetchRatings(wineId, useAsync = true) {
   } finally {
     if (btn) {
       btn.disabled = false;
-      btn.textContent = fetchBtn ? 'Search for Ratings' : 'Refresh';
+      btn.removeAttribute('aria-busy');
+      btn.textContent = isInitialResearch ? 'Research Wine' : 'Update Research';
     }
     if (progressContainer) {
       progressContainer.style.display = 'none';
+      progressContainer.removeAttribute('aria-busy');
     }
   }
 }
@@ -751,37 +761,4 @@ function hideManualRatingForm() {
     form.remove();
   }
   _currentManualRatingWineId = null;
-}
-
-/**
- * Update tasting notes display in the modal from layout state.
- * This is a fallback - the primary update now happens directly in handleFetchRatings.
- * @param {number} wineId - Wine ID
- */
-function _updateTastingNotesDisplay(wineId) {
-  if (!state.layout) return;
-
-  // Find the wine's slot in the layout
-  const allSlots = getAllSlotsFromLayout(state.layout);
-
-  // Try both number and string comparison for type safety
-  let slot = allSlots.find(s => s.wine_id === wineId);
-  if (!slot) {
-    slot = allSlots.find(s => String(s.wine_id) === String(wineId));
-  }
-
-  if (!slot) return;
-
-  // Update the tasting notes field in the modal
-  const tastingNotesField = document.getElementById('modal-tasting-notes-field');
-  const tastingNotesText = document.getElementById('modal-tasting-notes');
-
-  if (tastingNotesField && tastingNotesText) {
-    if (slot.tasting_notes) {
-      tastingNotesField.style.display = 'block';
-      tastingNotesText.textContent = slot.tasting_notes;
-    } else {
-      tastingNotesField.style.display = 'none';
-    }
-  }
 }

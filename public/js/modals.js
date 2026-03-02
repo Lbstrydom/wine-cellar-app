@@ -308,9 +308,11 @@ function updateOpenBottleButton(isOpen) {
   if (isOpen) {
     btn.textContent = 'Mark Sealed';
     btn.classList.add('is-open');
+    btn.setAttribute('aria-pressed', 'true');
   } else {
     btn.textContent = 'Mark Open';
     btn.classList.remove('is-open');
+    btn.setAttribute('aria-pressed', 'false');
   }
 }
 
@@ -528,8 +530,10 @@ export function initModals() {
   document.getElementById('btn-pair-wine')?.addEventListener('click', () => {
     const panel = document.getElementById('manual-pair-panel');
     if (!panel) return;
-    panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
-    document.getElementById('manual-pair-dish')?.focus();
+    const isHidden = panel.style.display === 'none';
+    panel.style.display = isHidden ? 'block' : 'none';
+    panel.setAttribute('aria-hidden', isHidden ? 'false' : 'true');
+    if (isHidden) document.getElementById('manual-pair-dish')?.focus();
   });
   document.getElementById('manual-pair-confirm')?.addEventListener('click', () => {
     if (!currentSlot?.wine_id) return;
@@ -537,7 +541,10 @@ export function initModals() {
   });
   document.getElementById('manual-pair-cancel')?.addEventListener('click', () => {
     const panel = document.getElementById('manual-pair-panel');
-    if (panel) panel.style.display = 'none';
+    if (panel) {
+      panel.style.display = 'none';
+      panel.setAttribute('aria-hidden', 'true');
+    }
   });
 
   // Add quantity modal handlers

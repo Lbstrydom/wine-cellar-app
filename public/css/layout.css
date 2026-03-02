@@ -499,6 +499,21 @@ header .search-trigger {
     min-width: 80px;
   }
 
+  /* Wine modal compact meta row: allow wrapping on narrow screens */
+  .modal-meta-row {
+    flex-wrap: wrap;
+  }
+
+  .modal-meta-item {
+    min-width: 80px;
+  }
+
+  /* Wine modal action split: primary buttons fill width */
+  #wine-modal .modal-actions-primary .btn {
+    flex: 1 1 auto;
+    min-width: 80px;
+  }
+
   /* Merged from duplicate 768px block */
   .pairing-filters {
     flex-direction: column;
