@@ -140,6 +140,55 @@ async function getSupabaseClient() {
       });
     }
 
+    const getTokenProjectRef = (token) => {
+      if (!token || typeof token !== 'string') return null;
+      const parts = token.split('.');
+      if (parts.length < 2) return null;
+      try {
+        const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+        const padding = (4 - (base64.length % 4)) % 4;
+        const padded = base64 + '='.repeat(padding);
+        const payload = JSON.parse(atob(padded));
+        const issuer = payload?.iss;
+        const match = typeof issuer === 'string' && issuer.match(/^https:\/\/([^.]+)\.supabase\.co/i);
+        return match?.[1] || null;
+      } catch (_err) {
+        return null;
+      }
+    };
+
+    const getStoredSessionToken = () => {
+      const raw = localStorage.getItem('wine-cellar-auth');
+      if (!raw) return null;
+
+      try {
+        const parsed = JSON.parse(raw);
+        if (typeof parsed === 'string') {
+          const nested = JSON.parse(parsed);
+          return nested?.access_token || nested?.currentSession?.access_token || null;
+        }
+        return parsed?.access_token || parsed?.currentSession?.access_token || null;
+      } catch (_err) {
+        return null;
+      }
+    };
+
+    const configuredProjectRef = data.supabase_url?.match(/https:\/\/([^.]+)/)?.[1] || null;
+    const storedSessionToken = getStoredSessionToken();
+    const storedProjectRef = getTokenProjectRef(storedSessionToken);
+
+    if (storedProjectRef && configuredProjectRef && storedProjectRef !== configuredProjectRef) {
+      console.warn('[Auth] Clearing stale Supabase session from different project:', {
+        storedProjectRef,
+        configuredProjectRef
+      });
+      localStorage.removeItem('wine-cellar-auth');
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('active_cellar_id');
+    } else if (DEBUG && storedProjectRef) {
+      console.log('[Auth] Stored session project ref matches:', storedProjectRef);
+    }
+
     // Configure Supabase client with session persistence for "Remember Me" functionality
     // Session persists across browser sessions; refresh tokens auto-renew access tokens
     // Session length (refresh token expiry) is configured in Supabase Dashboard → Auth → Settings
@@ -668,6 +717,14 @@ async function initAuth() {
 
     const { data, error } = await supabase.auth.getSession();
     if (DEBUG) console.log('[Auth] getSession result:', { hasSession: !!data?.session, error: error?.message });
+
+    if (error && String(error.message || '').includes('403')) {
+      localStorage.removeItem('wine-cellar-auth');
+      clearAuthState();
+      toggleAuthScreen(true);
+      setAuthError('Session was rejected by Supabase. Please sign in again.');
+      return;
+    }
 
     if (error) throw error;
 
