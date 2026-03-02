@@ -149,7 +149,7 @@ async function executeSearch(_item) {
           <div class="progress-bar-wrapper">
             <div class="progress-bar wine-research-progress"></div>
           </div>
-          <span class="progress-text">This may take 15–60 seconds</span>
+          <span class="progress-text">This may take 30 seconds – 2 minutes</span>
         </div>
       </div>
     `;

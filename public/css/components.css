@@ -13263,18 +13263,19 @@ body.move-guide-active #view-grid {
   margin: 0 0 1rem;
 }
 
-/* Indeterminate progress bar override */
+/* Indeterminate progress bar override — matches 150 s search timeout */
 .wine-research-progress {
-  animation: wine-research-fill 45s ease-out forwards;
+  animation: wine-research-fill 150s ease-out forwards;
   transition: none;
 }
 
 @keyframes wine-research-fill {
   0%   { width: 0%; }
-  30%  { width: 40%; }
-  60%  { width: 65%; }
-  90%  { width: 83%; }
-  100% { width: 85%; }
+  10%  { width: 20%; }  /* ~15 s — fast initial feedback */
+  25%  { width: 45%; }  /* ~37 s */
+  50%  { width: 65%; }  /* ~75 s */
+  75%  { width: 78%; }  /* ~112 s */
+  100% { width: 90%; }  /* 150 s — never quite reaches 100% */
 }
 
 /* Results container */
