@@ -1,6 +1,6 @@
 /**
- * @fileoverview 3-Tier Waterfall fetch route for wine ratings.
- * Uses the shared threeTierWaterfall module for tier resolution,
+ * @fileoverview Unified wine search fetch route for ratings.
+ * Uses unifiedWineSearch (claudeWineSearch.js) for search,
  * then handles route-specific DB persistence with cellar scoping.
  * @module routes/ratingsTier
  */

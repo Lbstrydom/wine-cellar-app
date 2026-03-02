@@ -41,7 +41,7 @@ src/
 │   ├── pairing/           # Food pairing engine & restaurant pairing
 │   ├── ratings/           # Rating extraction & normalization
 │   ├── recipe/            # Buying guide, shopping cart, style inference
-│   ├── scraping/          # Web scraping & document fetching
+│   ├── scraping/          # Document handling & readability extraction (awards support)
 │   ├── search/            # Unified Claude Web Search pipeline
 │   ├── shared/            # Cross-domain utilities (cache, circuit breaker, JSON utils, etc.)
 │   ├── wine/              # Wine identity, parsing, drinking windows

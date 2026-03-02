@@ -10,6 +10,14 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 2 Mar 2026**:
+- **Wine Search Pipeline Simplification — Post-Completion Audit & Documentation Sync** ✅:
+  - Full codebase audit of all 5 phases against `docs/win-ser-plan.md` — verified all claims correct (files created/deleted, imports rewired, frontend cleanup, narrative rendering, dependency removal).
+  - **AGENTS.md**: Replaced stale "Waterfall Strategy" section (4-tier pipeline, BrightData, Gemini) with "Unified Claude Web Search" description. Removed `BRIGHTDATA_*` and `GEMINI_API_KEY` from env var tables. Removed dead `ratingExtraction`/`wineClassification`/`simpleValidation` task entries from aiModels table. Updated `search/` and `ai/` directory comments.
+  - **CLAUDE.md**: Updated `scraping/` directory comment to reflect gutted state (awards support only).
+  - **Stale code comments**: Fixed `ratingsTier.js` fileoverview (was "3-Tier Waterfall"), `ai/index.js` fileoverview (was "rating search and extraction").
+  - **Orphan cleanup**: Deleted `test-search.js` (manual dev script referencing deleted `searchProviders.js`).
+  - Plan document archived: `docs/win-ser-plan.md` → `docs/archive/win-ser-plan.md`.
+
 - **Wine Search Pipeline Simplification — Phase 5 (Cleanup & Docs) — COMPLETE** ✅:
   - **Dependencies** (`package.json`): Removed `puppeteer` (was unused after scraping services deleted in Phase 1). `npm install` clean.
   - **Dead task removal** (`src/config/aiModels.js`): Removed unused `ratingExtraction`, `wineClassification`, `simpleValidation` task entries (these services were deleted). `aiModels.test.js` updated in lockstep.
