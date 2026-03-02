@@ -5,6 +5,7 @@
  */
 
 import anthropic from '../ai/claudeClient.js';
+import { getRelevantPairingHistory } from './pairingSession.js';
 import { stringAgg } from '../../db/helpers.js';
 import { getModelForTask, getMaxTokens } from '../../config/aiModels.js';
 import { sanitizeDishDescription, sanitizeWineList, sanitizeChatMessage } from '../shared/inputSanitizer.js';
@@ -110,7 +111,25 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
   const sanitizedDish = sanitizeDishDescription(dish);
   const sanitizedWines = sanitizeWineList(wines);
 
-  const { systemPrompt, userPrompt } = buildSommelierPrompts(sanitizedDish, sourceDesc, colourDesc, sanitizedWines, prioritySection);
+  // Fetch past pairing feedback to personalise recommendations
+  let historyBlock = '';
+  try {
+    const history = await getRelevantPairingHistory(cellarId, 5);
+    if (history.length > 0) {
+      historyBlock = '\n\nPAST PAIRING EXPERIENCES:\n';
+      for (const h of history) {
+        const verdict = h.pairing_fit_rating >= 4 ? 'GREAT' : h.pairing_fit_rating <= 2 ? 'POOR' : 'OK';
+        const reasons = h.failure_reasons?.length ? ` — issues: ${h.failure_reasons.join(', ')}` : '';
+        historyBlock += `- ${h.wine_name} ${h.vintage || 'NV'} with "${h.dish_description}": ${verdict} (${h.pairing_fit_rating}/5)${reasons}${h.would_pair_again === false ? ' — would NOT pair again' : ''}\n`;
+      }
+      historyBlock += 'Use this to avoid repeating poor pairings and favor proven styles.\n';
+    }
+  } catch (err) {
+    logger.warn('Sommelier', `Failed to fetch pairing history: ${err.message}`);
+  }
+
+  const { systemPrompt, userPrompt: baseUserPrompt } = buildSommelierPrompts(sanitizedDish, sourceDesc, colourDesc, sanitizedWines, prioritySection);
+  const userPrompt = baseUserPrompt + historyBlock;
 
   // Get model for task (allows environment override)
   const modelId = getModelForTask('sommelier');

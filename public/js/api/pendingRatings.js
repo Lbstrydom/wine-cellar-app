@@ -23,13 +23,14 @@ export async function getPendingRatings() {
  * @param {string} status - 'rated' or 'dismissed'
  * @param {number} [rating] - Rating value (1-5), required when status='rated'
  * @param {string} [notes] - Optional notes
- * @returns {Promise<{success: boolean}>}
+ * @param {Object} [pairingFeedback] - Optional pairing feedback (pairingFitRating, wouldPairAgain, etc.)
+ * @returns {Promise<{success: boolean, pairingFeedbackError?: string}>}
  */
-export async function resolvePendingRating(id, status, rating, notes) {
+export async function resolvePendingRating(id, status, rating, notes, pairingFeedback) {
   const res = await fetch(`${API_BASE}/api/pending-ratings/${id}/resolve`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status, rating, notes })
+    body: JSON.stringify({ status, rating, notes, pairingFeedback })
   });
   return handleResponse(res, 'Failed to resolve pending rating');
 }

@@ -8,6 +8,9 @@
 import { getPendingRatings, resolvePendingRating, dismissAllPendingRatings } from './api/pendingRatings.js';
 import { showToast, escapeHtml } from './utils.js';
 
+/** @type {Map<string, Object>} Pending item data keyed by string ID */
+const _pendingItems = new Map();
+
 /**
  * Check for pending ratings and show reminder bar if any exist.
  * Called once during startAuthenticatedApp() after loadInitialData().
@@ -60,6 +63,7 @@ function showRatingBar(needsRating, alreadyRated) {
     try {
       await dismissAllPendingRatings();
       container.style.display = 'none';
+      _pendingItems.clear();
       showToast('Reminders dismissed');
     } catch {
       showToast('Failed to dismiss reminders');
@@ -69,12 +73,22 @@ function showRatingBar(needsRating, alreadyRated) {
 
 /**
  * Render expanded view with individual rating cards.
+ * Populates _pendingItems map for card event handlers.
  * @param {Object[]} needsRating - Items needing a rating
  * @param {Object[]} alreadyRated - Items with existing rating
  */
 function renderExpandedCards(needsRating, alreadyRated) {
   const expanded = document.getElementById('rating-bar-expanded');
   if (!expanded) return;
+
+  // Rebuild the item map for this render pass
+  _pendingItems.clear();
+  for (const item of needsRating) {
+    _pendingItems.set(String(item.id), item);
+  }
+  for (const item of alreadyRated) {
+    _pendingItems.set(String(item.id), item);
+  }
 
   let html = '';
 
@@ -106,6 +120,7 @@ function renderExpandedCards(needsRating, alreadyRated) {
       await dismissAllPendingRatings();
       const container = document.getElementById('rating-reminder-bar');
       if (container) container.style.display = 'none';
+      _pendingItems.clear();
       showToast('All reminders dismissed');
     } catch {
       showToast('Failed to dismiss reminders');
@@ -144,6 +159,43 @@ function renderRatingCard(item, hasExistingRating) {
     `;
   }
 
+  const previousRatingHint = item.previous_rating
+    ? `<div class="rating-card-previous">Previously rated ${item.previous_rating}/5</div>`
+    : '';
+
+  let pairingSection = '';
+  if (item.pairing_session_id && item.pairing_dish) {
+    if (item.pairing_already_rated) {
+      pairingSection = `<div class="rating-card-pairing-done">🍽 Paired with ${escapeHtml(item.pairing_dish)} — feedback recorded</div>`;
+    } else {
+      pairingSection = `
+        <div class="rating-card-pairing">
+          <button type="button" class="rating-card-pairing-toggle">
+            🍽 Paired with: <strong>${escapeHtml(item.pairing_dish)}</strong>
+            <span class="pairing-expand-hint">Rate pairing ▸</span>
+          </button>
+          <div class="rating-card-pairing-controls" style="display:none">
+            <label>Pairing fit:
+              <select class="pairing-fit-select">
+                <option value="">—</option>
+                <option value="5">5 Perfect</option>
+                <option value="4">4 Very Good</option>
+                <option value="3">3 Good</option>
+                <option value="2">2 Okay</option>
+                <option value="1">1 Poor</option>
+              </select>
+            </label>
+            <span class="pairing-pair-again">
+              Pair again?
+              <label><input type="radio" name="pair-again-${item.id}" value="true"> Yes</label>
+              <label><input type="radio" name="pair-again-${item.id}" value="false"> No</label>
+            </span>
+          </div>
+        </div>
+      `;
+    }
+  }
+
   return `
     <div class="rating-card" data-id="${item.id}" data-wine-id="${item.wine_id}">
       <div class="rating-card-info">
@@ -151,6 +203,7 @@ function renderRatingCard(item, hasExistingRating) {
         ${colourBadge}
         <span class="rating-card-meta">consumed ${dateStr} from ${item.location_code || '?'}</span>
       </div>
+      ${previousRatingHint}
       <div class="rating-card-controls">
         <label>
           Rating:
@@ -167,6 +220,7 @@ function renderRatingCard(item, hasExistingRating) {
         <button class="btn btn-small btn-primary rating-card-save" data-id="${item.id}">Save</button>
         <button class="btn btn-small btn-secondary rating-card-skip" data-id="${item.id}">Skip</button>
       </div>
+      ${pairingSection}
     </div>
   `;
 }
@@ -177,6 +231,7 @@ function renderRatingCard(item, hasExistingRating) {
  */
 function wireRatingCard(card) {
   const id = card.dataset.id;
+  const item = _pendingItems.get(id);
 
   // "OK" button for already-rated items → dismiss
   const confirmBtn = card.querySelector('.rating-card-confirm');
@@ -192,6 +247,24 @@ function wireRatingCard(card) {
     return;
   }
 
+  // Pre-select rating dropdown if a previous wine-level rating exists
+  if (item?.previous_rating) {
+    const select = card.querySelector('.rating-card-select');
+    if (select) select.value = String(Math.round(item.previous_rating));
+  }
+
+  // Pairing toggle
+  const pairingToggle = card.querySelector('.rating-card-pairing-toggle');
+  if (pairingToggle) {
+    pairingToggle.addEventListener('click', () => {
+      const controls = card.querySelector('.rating-card-pairing-controls');
+      const hint = card.querySelector('.pairing-expand-hint');
+      const isHidden = controls.style.display === 'none';
+      controls.style.display = isHidden ? 'flex' : 'none';
+      hint.textContent = isHidden ? '▾' : 'Rate pairing ▸';
+    });
+  }
+
   // Save rating
   const saveBtn = card.querySelector('.rating-card-save');
   if (saveBtn) {
@@ -205,11 +278,28 @@ function wireRatingCard(card) {
         return;
       }
 
+      // Collect pairing feedback if controls are present and a fit rating is selected
+      let pairingFeedback;
+      const pairingFitSelect = card.querySelector('.pairing-fit-select');
+      if (pairingFitSelect?.value) {
+        const wouldPairAgainEl = card.querySelector(`input[name="pair-again-${id}"]:checked`);
+        pairingFeedback = {
+          pairingFitRating: parseInt(pairingFitSelect.value, 10),
+          wouldPairAgain: wouldPairAgainEl ? wouldPairAgainEl.value === 'true' : null
+        };
+      }
+
       try {
         saveBtn.disabled = true;
         saveBtn.textContent = '...';
-        await resolvePendingRating(id, 'rated', rating, notesInput?.value || undefined);
-        showToast(`Rated ${rating}/5 — saved!`);
+        const result = await resolvePendingRating(id, 'rated', rating, notesInput?.value || undefined, pairingFeedback);
+        if (result.pairingFeedbackError) {
+          showToast(`Rated ${rating}/5 — pairing feedback could not be saved`, 4000);
+        } else if (pairingFeedback) {
+          showToast(`Rated ${rating}/5 + pairing feedback saved!`);
+        } else {
+          showToast(`Rated ${rating}/5 — saved!`);
+        }
         removeCard(card);
       } catch {
         saveBtn.disabled = false;

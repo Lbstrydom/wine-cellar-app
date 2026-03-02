@@ -291,6 +291,30 @@ export async function createManualPairingSession({ cellarId, wineId, dish, recip
 }
 
 /**
+ * Get recent pairing feedback history for sommelier context.
+ * Returns sessions with feedback, ordered by most recent, for prompt injection.
+ *
+ * @param {string} cellarId - Cellar UUID
+ * @param {number} [limit=5] - Max results
+ * @returns {Promise<Object[]>} Recent pairing history with parsed failure_reasons
+ */
+export async function getRelevantPairingHistory(cellarId, limit = 5) {
+  const rows = await db.prepare(`
+    SELECT ps.dish_description, ps.pairing_fit_rating, ps.would_pair_again,
+           ps.failure_reasons, w.wine_name, w.vintage, w.colour, w.style
+    FROM pairing_sessions ps
+    LEFT JOIN wines w ON ps.chosen_wine_id = w.id
+    WHERE ps.cellar_id = $1 AND ps.pairing_fit_rating IS NOT NULL
+    ORDER BY ps.feedback_at DESC LIMIT $2
+  `).all(cellarId, limit);
+
+  return rows.map(r => ({
+    ...r,
+    failure_reasons: r.failure_reasons ? JSON.parse(r.failure_reasons) : null
+  }));
+}
+
+/**
  * Get aggregate statistics for pairing feedback.
  * Used for profile calculation and UI display.
  *

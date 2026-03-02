@@ -13114,6 +13114,72 @@ body.move-guide-active #view-grid {
   border-top: 1px solid var(--border, #333);
 }
 
+/* Previous rating hint */
+.rating-card-previous {
+  font-size: 0.8rem;
+  color: var(--accent, #d4a843);
+  margin-bottom: 0.3rem;
+}
+
+/* Pairing feedback inline (collapsed by default) */
+.rating-card-pairing {
+  width: 100%;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border, #333);
+}
+.rating-card-pairing-toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted, #999);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  text-align: left;
+}
+.rating-card-pairing-toggle:hover { color: var(--text, #eee); }
+.rating-card-pairing-toggle strong { color: var(--text, #eee); }
+.pairing-expand-hint {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--accent, #d4a843);
+}
+.rating-card-pairing-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  margin-top: 0.4rem;
+  padding: 0.4rem 0;
+}
+.rating-card-pairing-controls select {
+  padding: 0.3rem 0.5rem;
+  border-radius: 4px;
+  background: var(--bg-card, #1e1e2e);
+  color: var(--text, #eee);
+  border: 1px solid var(--border, #333);
+}
+.pairing-pair-again {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.85rem;
+  color: var(--text-muted, #999);
+}
+.pairing-pair-again label { cursor: pointer; }
+.rating-card-pairing-done {
+  font-size: 0.8rem;
+  color: var(--text-muted, #999);
+  font-style: italic;
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px dashed var(--border, #333);
+}
+
 /* ===== Manual Pair Panel (inside wine detail modal) ===== */
 .manual-pair-panel {
   padding: 0.75rem;

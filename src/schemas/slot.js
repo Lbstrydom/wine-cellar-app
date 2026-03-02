@@ -82,5 +82,6 @@ export const drinkBottleSchema = z.object({
     z.number().min(0).max(5),
     z.null()
   ]).optional().nullable(),
-  notes: z.string().max(2000).optional().nullable()
+  notes: z.string().max(2000).optional().nullable(),
+  pairing_session_id: z.number().int().positive().optional().nullable()
 });

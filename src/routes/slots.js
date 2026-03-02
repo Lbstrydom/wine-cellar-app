@@ -15,6 +15,7 @@ import {
   locationParamSchema
 } from '../schemas/slot.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
+import { findRecentSessionForWine, linkConsumption } from '../services/pairing/pairingSession.js';
 import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
@@ -155,7 +156,7 @@ router.post('/direct-swap', validateBody(directSwapSchema), asyncHandler(async (
  */
 router.post('/:location/drink', validateParams(locationParamSchema), validateBody(drinkBottleSchema), asyncHandler(async (req, res) => {
   const { location } = req.params;
-  const { occasion, pairing_dish, rating, notes } = req.body;
+  const { occasion, pairing_dish, rating, notes, pairing_session_id } = req.body;
 
   const slot = await db.prepare('SELECT wine_id FROM slots WHERE cellar_id = $1 AND location_code = $2').get(req.cellarId, location);
   if (!slot?.wine_id) {
@@ -172,7 +173,7 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
     const logResult = await client.query(
       `INSERT INTO consumption_log (wine_id, slot_location, cellar_id, occasion, pairing_dish, rating, notes)
        VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-      [wineId, location, req.cellarId, occasion || null, pairing_dish || null, rating || null, notes || null]
+      [wineId, location, req.cellarId, occasion || null, pairing_dish || null, rating ?? null, notes || null]
     );
     consumptionLogId = logResult.rows[0].id;
 
@@ -200,9 +201,29 @@ router.post('/:location/drink', validateParams(locationParamSchema), validateBod
   invalidateBuyingGuideCache(req.cellarId).catch(() => {});
   await incrementBottleChangeCount(req.cellarId);
 
+  // Link consumption to pairing session (best-effort, non-blocking)
+  let pairingSessionId = pairing_session_id || null;
+  if (!pairingSessionId) {
+    // Heuristic fallback: find recent unlinked session for this wine
+    try {
+      const recentSession = await findRecentSessionForWine(wineId, req.cellarId, 48);
+      if (recentSession) pairingSessionId = recentSession.id;
+    } catch (err) {
+      logger.warn('PairingLink', `Heuristic lookup failed: ${err.message}`);
+    }
+  }
+  if (pairingSessionId) {
+    try {
+      await linkConsumption(pairingSessionId, consumptionLogId, req.cellarId);
+    } catch (err) {
+      logger.warn('PairingLink', `linkConsumption failed: ${err.message}`);
+      // Don't null out pairingSessionId — still pass to pending rating for UI context
+    }
+  }
+
   // Create pending rating if user didn't rate on the spot (fire-and-forget)
   if (!rating && consumptionLogId) {
-    createPendingRating(req.cellarId, consumptionLogId, wineId, location).catch(err => {
+    createPendingRating(req.cellarId, consumptionLogId, wineId, location, pairingSessionId).catch(err => {
       logger.warn('PendingRating', `Failed to create: ${err.message}`);
     });
   }
@@ -408,15 +429,16 @@ async function getRowCompactionSuggestions(location, cellarId) {
  * @param {number} consumptionLogId - ID from consumption_log
  * @param {number} wineId - Wine ID
  * @param {string} locationCode - Slot location code
+ * @param {number|null} [pairingSessionId] - Optional pairing session ID to link
  */
-async function createPendingRating(cellarId, consumptionLogId, wineId, locationCode) {
+async function createPendingRating(cellarId, consumptionLogId, wineId, locationCode, pairingSessionId = null) {
   const wine = await db.prepare(
     'SELECT wine_name, vintage, colour, style FROM wines WHERE id = $1 AND cellar_id = $2'
   ).get(wineId, cellarId);
   if (!wine) return;
 
   await db.prepare(`
-    INSERT INTO pending_ratings (cellar_id, consumption_log_id, wine_id, wine_name, vintage, colour, style, location_code)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-  `).run(cellarId, consumptionLogId, wineId, wine.wine_name, wine.vintage, wine.colour, wine.style, locationCode);
+    INSERT INTO pending_ratings (cellar_id, consumption_log_id, wine_id, wine_name, vintage, colour, style, location_code, pairing_session_id)
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+  `).run(cellarId, consumptionLogId, wineId, wine.wine_name, wine.vintage, wine.colour, wine.style, locationCode, pairingSessionId);
 }

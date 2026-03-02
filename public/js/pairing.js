@@ -153,7 +153,7 @@ function showDrinkActionPanel(rec, card) {
     try {
       btn.disabled = true;
       btn.textContent = 'Recording...';
-      await drinkBottle(location);
+      await drinkBottle(location, { pairing_session_id: currentSessionId });
       btn.textContent = 'Consumed ✓';
       btn.classList.add('consumed');
       showToast(`Bottle from ${location} marked as consumed`);
