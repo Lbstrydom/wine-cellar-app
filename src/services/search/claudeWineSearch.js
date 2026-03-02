@@ -321,10 +321,34 @@ async function collectStreamContent(stream) {
   let currentBlock = null;
   let inputJsonBuffer = '';
 
+  // ── Instrumentation: track every event so we can diagnose hangs ──
+  const t0 = Date.now();
+  let eventCount = 0;
+  let firstEventMs = null;
+  const blockTypeCounts = {};
+  let lastLogMs = t0;
+  const LOG_INTERVAL_MS = 30_000; // progress heartbeat every 30 s
+
   for await (const event of stream) {
+    eventCount++;
+    if (!firstEventMs) {
+      firstEventMs = Date.now() - t0;
+      logger.info('StreamDiag', `First SSE event after ${firstEventMs}ms — type: ${event.type}`);
+    }
+
+    // Periodic heartbeat so we can see the stream is alive
+    const now = Date.now();
+    if (now - lastLogMs >= LOG_INTERVAL_MS) {
+      logger.info('StreamDiag', `Heartbeat: ${eventCount} events in ${now - t0}ms, blocks so far: ${JSON.stringify(blockTypeCounts)}`);
+      lastLogMs = now;
+    }
+
     switch (event.type) {
       case 'content_block_start': {
         const block = event.content_block;
+        blockTypeCounts[block.type] = (blockTypeCounts[block.type] || 0) + 1;
+        logger.info('StreamDiag', `Block #${content.length} start: ${block.type}${block.name ? ` (${block.name})` : ''} at ${now - t0}ms`);
+
         if (block.type === 'text') {
           currentBlock = { type: 'text', text: '', citations: [] };
         } else if (block.type === 'tool_use') {
@@ -335,9 +359,12 @@ async function collectStreamContent(stream) {
           inputJsonBuffer = '';
         } else if (block.type === 'web_search_tool_result') {
           // web_search_tool_result arrives complete in content_block_start
+          const resultCount = Array.isArray(block.content) ? block.content.length : 0;
+          logger.info('StreamDiag', `web_search_tool_result: ${resultCount} results at ${now - t0}ms`);
           content.push(block);
           currentBlock = null;
         } else {
+          logger.info('StreamDiag', `Unknown block type: ${block.type} at ${now - t0}ms`);
           currentBlock = null;
         }
         break;
@@ -373,20 +400,39 @@ async function collectStreamContent(stream) {
           delete currentBlock.citations;
         }
 
+        // Log block completion with size info
+        const blockInfo = currentBlock.type === 'text'
+          ? `${currentBlock.text.length} chars`
+          : currentBlock.type === 'tool_use'
+            ? `tool: ${currentBlock.name}`
+            : currentBlock.type === 'server_tool_use'
+              ? `server_tool: ${currentBlock.name}, query: ${currentBlock.input?.query || '?'}`
+              : currentBlock.type;
+        logger.info('StreamDiag', `Block #${content.length} complete: ${currentBlock.type} (${blockInfo}) at ${Date.now() - t0}ms`);
+
         content.push(currentBlock);
         currentBlock = null;
         inputJsonBuffer = '';
         break;
       }
 
+      case 'message_start': {
+        logger.info('StreamDiag', `message_start at ${now - t0}ms — model: ${event.message?.model || '?'}`);
+        break;
+      }
+
       case 'message_delta': {
         if (event.delta?.stop_reason) {
           stopReason = event.delta.stop_reason;
+          logger.info('StreamDiag', `message_delta stop_reason: ${stopReason} at ${Date.now() - t0}ms`);
         }
         break;
       }
     }
   }
+
+  const totalMs = Date.now() - t0;
+  logger.info('StreamDiag', `Stream complete: ${eventCount} events, ${content.length} blocks, stop=${stopReason}, first_event=${firstEventMs}ms, total=${totalMs}ms, blocks=${JSON.stringify(blockTypeCounts)}`);
 
   return { content, stopReason };
 }
@@ -485,7 +531,10 @@ CRITICAL RULES:
 
     // Safety AbortController — only fires if stream truly stalls (5 min)
     const abortController = new AbortController();
-    const abortTimer = setTimeout(() => abortController.abort(), STREAM_ABORT_TIMEOUT_MS);
+    const abortTimer = setTimeout(() => {
+      logger.warn('StreamDiag', `Abort fired after ${STREAM_ABORT_TIMEOUT_MS}ms — stream did not complete in time`);
+      abortController.abort();
+    }, STREAM_ABORT_TIMEOUT_MS);
 
     // Beta header required for web_search_20260209 (dynamic filtering).
     // SERT reference explicitly sets this; without it the API may degrade.
@@ -493,6 +542,9 @@ CRITICAL RULES:
       signal: abortController.signal,
       headers: { 'anthropic-beta': 'code-execution-web-tools-2026-02-09' }
     };
+
+    const toolNames = apiParams.tools.map(t => `${t.name || t.type}${t.max_uses ? `(max:${t.max_uses})` : ''}`).join(', ');
+    logger.info('StreamDiag', `API call: model=${modelId}, tools=[${toolNames}], beta=${streamOpts.headers['anthropic-beta']}, max_tokens=${apiParams.max_tokens}`);
 
     let allContent;
     let lastStopReason;
