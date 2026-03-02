@@ -210,11 +210,11 @@ describe('unifiedWineSearch() — API call shape', () => {
     expect(mockStream).toHaveBeenCalledOnce();
     const [params] = mockStream.mock.calls[0];
 
-    // Three tools: web_search, web_fetch, save_wine_profile
-    expect(params.tools).toHaveLength(3);
-    expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 3 });
-    expect(params.tools[1]).toEqual({ type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 });
-    expect(params.tools[2].name).toBe('save_wine_profile');
+    // Two tools: web_search (max 5) + save_wine_profile.
+    // web_fetch removed — fetching full pages added 3-4 min per request.
+    expect(params.tools).toHaveLength(2);
+    expect(params.tools[0]).toEqual({ type: 'web_search_20260209', name: 'web_search', max_uses: 5 });
+    expect(params.tools[1].name).toBe('save_wine_profile');
 
     // Streaming enabled
     expect(params.stream).toBe(true);

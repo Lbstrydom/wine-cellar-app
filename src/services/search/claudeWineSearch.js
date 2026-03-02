@@ -474,8 +474,9 @@ CRITICAL RULES:
       max_tokens: 16000,
       system: SYSTEM_PROMPT,
       tools: [
-        { type: 'web_search_20260209', name: 'web_search', max_uses: 3 },
-        { type: 'web_fetch_20260209', name: 'web_fetch', max_uses: 3 },
+        // web_fetch removed: fetching full pages added 3-4 min per request.
+        // web_search snippets are sufficient; SERT reference uses web_search only.
+        { type: 'web_search_20260209', name: 'web_search', max_uses: 5 },
         SAVE_WINE_PROFILE_TOOL
       ],
       messages: [{ role: 'user', content: userPrompt }],
@@ -486,11 +487,18 @@ CRITICAL RULES:
     const abortController = new AbortController();
     const abortTimer = setTimeout(() => abortController.abort(), STREAM_ABORT_TIMEOUT_MS);
 
+    // Beta header required for web_search_20260209 (dynamic filtering).
+    // SERT reference explicitly sets this; without it the API may degrade.
+    const streamOpts = {
+      signal: abortController.signal,
+      headers: { 'anthropic-beta': 'code-execution-web-tools-2026-02-09' }
+    };
+
     let allContent;
     let lastStopReason;
 
     try {
-      const stream = anthropic.messages.stream(apiParams, { signal: abortController.signal });
+      const stream = anthropic.messages.stream(apiParams, streamOpts);
       const result = await collectStreamContent(stream);
       allContent = [...result.content];
       lastStopReason = result.stopReason;
@@ -505,7 +513,7 @@ CRITICAL RULES:
           { role: 'assistant', content: allContent },
           { role: 'user', content: 'Continue and call the save_wine_profile tool with all data found.' }
         ];
-        const contStream = anthropic.messages.stream(apiParams, { signal: abortController.signal });
+        const contStream = anthropic.messages.stream(apiParams, streamOpts);
         const contResult = await collectStreamContent(contStream);
         allContent.push(...contResult.content);
         lastStopReason = contResult.stopReason;
