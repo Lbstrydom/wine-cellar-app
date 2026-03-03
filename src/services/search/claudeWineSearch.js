@@ -125,7 +125,8 @@ function buildSourceInjection(country) {
   if (!country) {
     return [
       'Competitions: Decanter World Wine Awards (medal), IWC (medal), IWSC (medal), Concours Mondial (medal)',
-      'Critics: Wine Spectator (points/100), Wine Enthusiast (points/100), James Suckling (points/100), Tim Atkin (points/100)',
+      'Critics: Wine Advocate / Robert Parker (points/100), Jancis Robinson (points/20), Wine Spectator (points/100), Wine Enthusiast (points/100), Decanter Magazine (points/100)',
+      'Aggregators (check for critic scores): Wine-Searcher',
       'Community: Vivino (stars/5), CellarTracker (points/100)'
     ].join('\n');
   }
@@ -135,12 +136,12 @@ function buildSourceInjection(country) {
   // Local = sources with explicit home_regions that include this country
   const localCompetitions = sources
     .filter(s => s.home_regions?.length > 0 && s.home_regions.includes(country) && s.lens === 'competition')
-    .slice(0, 4)
+    .slice(0, 5)
     .map(formatSourceLabel);
 
   const localCritics = sources
     .filter(s => s.home_regions?.length > 0 && s.home_regions.includes(country) && (s.lens === 'critic' || s.lens === 'panel_guide'))
-    .slice(0, 4)
+    .slice(0, 5)
     .map(formatSourceLabel);
 
   // Global = sources with empty home_regions (available everywhere)
@@ -149,10 +150,17 @@ function buildSourceInjection(country) {
     .slice(0, 4)
     .map(s => formatSourceLabel(s));
 
+  // Increased from 3 → 5 so Wine Spectator / Wine Enthusiast aren't dropped
   const globalCritics = sources
     .filter(s => (s.home_regions?.length ?? 1) === 0 && (s.lens === 'critic' || s.lens === 'panel_guide') && s.credibility >= 0.7)
-    .slice(0, 3)
+    .slice(0, 5)
     .map(s => formatSourceLabel(s));
+
+  // Aggregators (Wine-Searcher surfaces scores from 30+ paywalled critics)
+  const globalAggregators = sources
+    .filter(s => (s.home_regions?.length ?? 1) === 0 && s.lens === 'aggregator' && s.credibility >= 0.8)
+    .slice(0, 2)
+    .map(s => s.name);
 
   const lines = [];
 
@@ -170,8 +178,14 @@ function buildSourceInjection(country) {
 
   const intlCritics = globalCritics.length > 0
     ? globalCritics.join(', ')
-    : 'Wine Spectator (points/100), Wine Enthusiast (points/100), James Suckling (points/100)';
+    : 'Wine Spectator (points/100), Wine Enthusiast (points/100), Wine Advocate (points/100), Jancis Robinson (points/20), Decanter Magazine (points/100)';
   lines.push(`International critics: ${intlCritics}`);
+
+  // Wine-Searcher aggregates 30+ critics; always include it — it surfaces paywalled scores
+  const aggregatorNote = globalAggregators.length > 0
+    ? globalAggregators.join(', ')
+    : 'Wine-Searcher';
+  lines.push(`Aggregators (check for critic scores): ${aggregatorNote}`);
 
   lines.push('Community: Vivino (stars/5), CellarTracker (points/100)');
 
