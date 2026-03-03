@@ -369,7 +369,7 @@ async function searchPhase(wine, params) {
       // web_search_20260209 (dynamic) requires the code-execution-web-tools beta header,
       // which enables `code_execution` server tool. The two-phase architecture avoids
       // this entirely — Phase 1 has no JSON schema, so code_execution won't trigger.
-      { type: 'web_search_20250305' }
+      { type: 'web_search_20250305', name: 'web_search' }
     ],
     messages: [{ role: 'user', content: userPrompt }],
     stream: true

@@ -238,7 +238,7 @@ describe('unifiedWineSearch() — Phase 1 API call shape', () => {
 
     // Basic web_search_20250305 — no beta header, no code_execution server tool
     expect(params.tools).toHaveLength(1);
-    expect(params.tools[0]).toEqual({ type: 'web_search_20250305' });
+    expect(params.tools[0]).toEqual({ type: 'web_search_20250305', name: 'web_search' });
 
     // No beta header (code-execution-web-tools header caused infinite loops)
     expect(opts?.headers?.['anthropic-beta']).toBeUndefined();
