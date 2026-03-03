@@ -129,6 +129,17 @@ export async function rematchAwardsSource(sourceId) {
 }
 
 /**
+ * Re-run matching across all imported award sources.
+ * @returns {Promise<Object>}
+ */
+export async function matchAllAwardSources() {
+  const res = await fetch(`${API_BASE}/api/awards/match-all`, {
+    method: 'POST'
+  });
+  return handleResponse(res, 'Failed to match all awards');
+}
+
+/**
  * Link an award to a wine.
  * @param {number} awardId - Award ID
  * @param {number} wineId - Wine ID

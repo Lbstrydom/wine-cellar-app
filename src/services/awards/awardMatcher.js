@@ -6,6 +6,25 @@
 
 import db, { awardsDb } from '../../db/index.js';
 import { normalizeWineName, calculateSimilarity } from './awardStringUtils.js';
+import anthropic from '../ai/claudeClient.js';
+import { getModelForTask } from '../../config/aiModels.js';
+import { extractText } from '../ai/claudeResponseUtils.js';
+import { extractJsonFromText } from '../shared/auditUtils.js';
+
+const AI_MATCH_SYSTEM_PROMPT = `You match wine award entries to wines in a cellar.
+
+Return JSON only with this exact shape:
+{
+  "matchedWineId": number | null,
+  "confidence": "high" | "medium" | "low",
+  "reason": "short explanation"
+}
+
+Rules:
+- Prefer precision over recall.
+- If producer/wine/vintage evidence is weak or ambiguous, return matchedWineId: null.
+- Only return a matchedWineId that appears in provided candidates.
+- Keep reason under 160 characters.`;
 
 /**
  * Check if producer names match.
@@ -36,11 +55,17 @@ function producerMatches(awardProducer, cellarWineName) {
  * @param {Object} award - Award entry
  * @returns {Promise<Object[]>} Array of potential matches with scores
  */
-export async function findMatches(award) {
-  const wines = await db.prepare(`
-    SELECT id, wine_name, vintage, country, region
-    FROM wines
-  `).all();
+export async function findMatches(award, cellarId = null) {
+  const wines = cellarId
+    ? await db.prepare(`
+      SELECT id, wine_name, vintage, country, region
+      FROM wines
+      WHERE cellar_id = ?
+    `).all(cellarId)
+    : await db.prepare(`
+      SELECT id, wine_name, vintage, country, region
+      FROM wines
+    `).all();
 
   const matches = [];
   const awardNorm = normalizeWineName(award.wine_name);
@@ -89,11 +114,76 @@ export async function findMatches(award) {
 }
 
 /**
+ * Ask AI to verify the best candidate for a potentially ambiguous award match.
+ * Returns null when AI is unavailable or declines to choose.
+ * @param {Object} award - Award row
+ * @param {Array} candidates - Candidate matches from findMatches()
+ * @returns {Promise<{matchedWineId: number|null, confidence: string, reason: string}|null>}
+ */
+async function aiVerifyAwardMatch(award, candidates) {
+  if (!anthropic || !Array.isArray(candidates) || candidates.length === 0) {
+    return null;
+  }
+
+  const modelId = getModelForTask('parsing');
+  const prompt = [
+    `Award:`,
+    `- producer: ${award.producer || 'unknown'}`,
+    `- wine_name: ${award.wine_name || 'unknown'}`,
+    `- vintage: ${award.vintage || 'unknown'}`,
+    `- normalized: ${award.wine_name_normalized || 'unknown'}`,
+    '',
+    'Candidates:',
+    ...candidates.map((candidate, index) => {
+      const wine = candidate.wine || {};
+      return `${index + 1}. id=${wine.id}; name=${wine.wine_name}; vintage=${wine.vintage || 'NV'}; country=${wine.country || 'unknown'}; region=${wine.region || 'unknown'}; score=${candidate.score}`;
+    }),
+    '',
+    'Pick only if strongly supported; otherwise return matchedWineId as null.'
+  ].join('\n');
+
+  try {
+    const response = await anthropic.messages.create({
+      model: modelId,
+      max_tokens: 900,
+      system: AI_MATCH_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const text = extractText(response);
+    const parsed = extractJsonFromText(text);
+
+    const matchedWineId = Number.isInteger(parsed?.matchedWineId)
+      ? parsed.matchedWineId
+      : null;
+    const confidence = ['high', 'medium', 'low'].includes(parsed?.confidence)
+      ? parsed.confidence
+      : 'low';
+    const reason = typeof parsed?.reason === 'string' ? parsed.reason.slice(0, 160) : '';
+
+    if (matchedWineId === null) {
+      return { matchedWineId: null, confidence, reason };
+    }
+
+    const candidateWineIds = new Set(candidates.map(c => c.wine?.id).filter(Boolean));
+    if (!candidateWineIds.has(matchedWineId)) {
+      return { matchedWineId: null, confidence: 'low', reason: 'AI proposed wine outside candidate set' };
+    }
+
+    return { matchedWineId, confidence, reason };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Auto-match imported awards to cellar wines.
  * @param {string} sourceId - Award source ID
  * @returns {Promise<Object>} Match results
  */
-export async function autoMatchAwards(sourceId) {
+export async function autoMatchAwards(sourceId, options = {}) {
+  const { cellarId = null, aiVerify = false } = options;
+
   const unmatched = await awardsDb.prepare(`
     SELECT id, producer, wine_name, wine_name_normalized, vintage
     FROM competition_awards
@@ -103,9 +193,13 @@ export async function autoMatchAwards(sourceId) {
   let exactMatches = 0;
   let fuzzyMatches = 0;
   let noMatches = 0;
+  let aiVerifiedMatches = 0;
+  let aiReviewed = 0;
+
+  const aiCandidates = [];
 
   for (const award of unmatched) {
-    const matches = await findMatches(award);
+    const matches = await findMatches(award, cellarId);
 
     if (matches.length === 0) {
       noMatches++;
@@ -130,12 +224,48 @@ export async function autoMatchAwards(sourceId) {
         WHERE id = ?
       `).run(null, 'fuzzy', best.score, award.id);
       fuzzyMatches++;
+      if (aiVerify) {
+        aiCandidates.push({ award, matches });
+      }
     } else {
       noMatches++;
+      if (aiVerify) {
+        aiCandidates.push({ award, matches });
+      }
     }
   }
 
-  return { exactMatches, fuzzyMatches, noMatches, total: unmatched.length };
+  if (aiVerify && aiCandidates.length > 0) {
+    for (const item of aiCandidates) {
+      aiReviewed++;
+      const verdict = await aiVerifyAwardMatch(item.award, item.matches);
+      if (!verdict?.matchedWineId) continue;
+      if (verdict.confidence !== 'high') continue;
+
+      await awardsDb.prepare(`
+        UPDATE competition_awards
+        SET matched_wine_id = ?, match_type = ?, match_confidence = ?
+        WHERE id = ?
+      `).run(verdict.matchedWineId, 'ai_verified', 0.95, item.award.id);
+
+      aiVerifiedMatches++;
+      if (fuzzyMatches > 0) {
+        fuzzyMatches--;
+      } else if (noMatches > 0) {
+        noMatches--;
+      }
+    }
+  }
+
+  return {
+    exactMatches,
+    fuzzyMatches,
+    noMatches,
+    aiVerifiedMatches,
+    aiReviewed,
+    aiEnabled: aiVerify && Boolean(anthropic),
+    total: unmatched.length
+  };
 }
 
 /**

@@ -424,8 +424,8 @@ function calculateLensIndex(ratings, wine) {
   const weighted = ratings.map(r => {
     const source = RATING_SOURCES[r.source];
     const relevance = getRelevance(r.source, wine);
-    // For unknown sources (manual entries), use a reasonable default credibility
-    const credibility = source?.credibility || 0.65;
+    // r.source_credibility allows caller to pass per-award credibility (e.g. local awards DB)
+    const credibility = r.source_credibility || source?.credibility || 0.65;
     // Confidence factor influences weight: high=1.0, medium=0.8, low=0.5
     const confFactor = r.match_confidence === 'high' ? 1.0 : r.match_confidence === 'medium' ? 0.8 : 0.5;
     let effectiveWeight = credibility * relevance * confFactor;
@@ -562,19 +562,71 @@ function mapToDisplayLens(sourceLens) {
   return sourceLens;
 }
 
+/** Medal point bands used when converting local (uploaded) awards to rating rows. */
+const LOCAL_MEDAL_BANDS = {
+  grand_gold:       { min: 95, max: 100, mid: 97 },
+  double_gold:      { min: 93, max: 97,  mid: 95 },
+  gold:             { min: 90, max: 94,  mid: 92 },
+  highly_commended: { min: 83, max: 87,  mid: 85 },
+  silver:           { min: 85, max: 89,  mid: 87 },
+  bronze:           { min: 80, max: 84,  mid: 82 },
+  commended:        { min: 78, max: 82,  mid: 80 },
+  platinum:         { min: 95, max: 100, mid: 97 },
+  trophy:           { min: 95, max: 100, mid: 97 },
+};
+
+/**
+ * Convert local (uploaded) award records into synthetic rating rows suitable
+ * for calculateLensIndex().  Awards must already be linked (matched_wine_id set).
+ * @param {Array} localAwards - Rows returned by getWineAwards()
+ * @param {Object} wine - Wine object (used for vintage_match)
+ * @returns {Array} Synthetic rating rows (competition lens)
+ */
+export function localAwardsToRatings(localAwards, wine) {
+  if (!localAwards || localAwards.length === 0) return [];
+
+  return localAwards.map(award => {
+    const medalKey = (award.award_normalized || award.award || '')
+      .toLowerCase().trim().replaceAll(/[\s-]+/g, '_');
+    const band = LOCAL_MEDAL_BANDS[medalKey] || LOCAL_MEDAL_BANDS.bronze;
+
+    const awardVintage = award.vintage ? Number.parseInt(award.vintage, 10) : null;
+    const vintageMatch = (!awardVintage || awardVintage === wine.vintage) ? 'exact' : 'approximate';
+
+    return {
+      source: `award_local_${(award.competition_name || 'unknown').toLowerCase().replaceAll(/\s+/g, '_')}`,
+      source_lens: 'competition',
+      source_credibility: award.credibility || 0.85,
+      match_confidence: 'high',   // user-linked = definitive
+      vintage_match: vintageMatch,
+      normalized_min: band.min,
+      normalized_max: band.max,
+      normalized_mid: band.mid,
+      raw_score: award.award,
+      source_url: null,
+      is_user_override: false,
+      is_local_award: true,
+    };
+  });
+}
+
 /**
  * Calculate all indices and purchase score for a wine.
- * @param {Array} ratings - All ratings for the wine
+ * @param {Array} ratings - All ratings for the wine (from wine_ratings table)
  * @param {Object} wine - Wine object
  * @param {number} preferenceSlider - User preference (-100 to +100)
+ * @param {Array} [localAwards] - Optional local award rows from getWineAwards()
  * @returns {Object} Aggregated rating data
  */
-export function calculateWineRatings(ratings, wine, preferenceSlider = 40) {
+export function calculateWineRatings(ratings, wine, preferenceSlider = 40, localAwards = []) {
+  // Merge web-fetched ratings with synthetic rows from the local awards DB
+  const allRatings = [...ratings, ...localAwardsToRatings(localAwards, wine)];
+
   // Group by display lens (maps panel_guide and critic to "critics")
   const byLens = {
-    competition: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'competition'),
-    critics: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'critics'),
-    community: ratings.filter(r => mapToDisplayLens(r.source_lens) === 'community')
+    competition: allRatings.filter(r => mapToDisplayLens(r.source_lens) === 'competition'),
+    critics: allRatings.filter(r => mapToDisplayLens(r.source_lens) === 'critics'),
+    community: allRatings.filter(r => mapToDisplayLens(r.source_lens) === 'community')
   };
 
   // Calculate lens indices

@@ -66,8 +66,8 @@ router.get('/:wineId/ratings', validateParams(ratingWineIdSchema), validateQuery
   const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'rating_preference');
   const preference = parseInt(prefSetting?.value || '40');
 
-  // Calculate aggregates
-  const aggregates = calculateWineRatings(ratings, wine, preference);
+  // Calculate aggregates — include local awards so they contribute to competition_index
+  const aggregates = calculateWineRatings(ratings, wine, preference, localAwards);
 
   // Safely parse JSONB fields (PostgreSQL returns objects; SQLite compat may return strings)
   const parseJsonb = (field) => {

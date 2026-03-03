@@ -6522,6 +6522,17 @@ body.slot-picker-mode .slot.zone-highlighted {
 }
 
 /* Batch Actions for Award Sources */
+.awards-sources-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.5rem;
+}
+
+.awards-sources-header .settings-subsection-title {
+  margin-bottom: 0;
+}
+
 .awards-batch-actions {
   display: flex;
   align-items: center;

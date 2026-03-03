@@ -214,6 +214,7 @@ router.get('/', validateQuery(paginationSchema), asyncHandler(async (req, res) =
     '  w.wine_name,',
     '  w.vintage,',
     '  w.vivino_rating,',
+    '  w.purchase_stars,',
     '  w.price_eur,',
     '  w.producer,',
     '  w.country,',
@@ -227,8 +228,8 @@ router.get('/', validateQuery(paginationSchema), asyncHandler(async (req, res) =
     'FROM wines w',
     'LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = $1',
     'WHERE w.cellar_id = $1',
-    'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.price_eur,',
-    '         w.producer, w.country, w.region, w.grapes, w.drink_from, w.drink_until, w.zone_id',
+    'GROUP BY w.id, w.style, w.colour, w.wine_name, w.vintage, w.vivino_rating, w.purchase_stars,',
+    '         w.price_eur, w.producer, w.country, w.region, w.grapes, w.drink_from, w.drink_until, w.zone_id',
     'ORDER BY w.colour, w.style, w.wine_name',
     'LIMIT $2 OFFSET $3'
   ].join('\n');

@@ -22,6 +22,7 @@ import {
   validateRatingsWithIdentity
 } from '../services/ratings/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
+import { getWineAwards } from '../services/awards/index.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 
@@ -197,13 +198,21 @@ async function handleRatingFetch(payload, context) {
 
   await updateProgress(90, 'Calculating aggregates');
 
-  // Calculate aggregates over all ratings for this wine
+  // Calculate aggregates over all ratings for this wine, including local awards
   const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
   const prefSetting = await db.prepare(
     "SELECT value FROM user_settings WHERE cellar_id = ? AND key = 'rating_preference'"
   ).get(wine.cellar_id);
   const preference = Number.parseInt(prefSetting?.value || '40', 10);
-  const aggregates = calculateWineRatings(allRatings, wine, preference);
+
+  let localAwards = [];
+  try {
+    localAwards = await getWineAwards(wineId);
+  } catch {
+    // awardsDb may not exist in all environments — degrade gracefully
+  }
+
+  const aggregates = calculateWineRatings(allRatings, wine, preference, localAwards);
 
   // Store prose narrative + structured extraction (COALESCE preserves existing if null)
   const narrativeText = result._narrative || null;

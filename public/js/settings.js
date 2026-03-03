@@ -20,6 +20,7 @@ import {
   importAwardsFromText,
   deleteAwardsSource,
   rematchAwardsSource,
+  matchAllAwardSources,
   fetchLayoutLite,
   createStorageArea,
   updateStorageAreaLayout
@@ -1010,6 +1011,9 @@ async function initAwardsSection() {
   // Import button
   document.getElementById('import-awards-btn')?.addEventListener('click', handleImportAwards);
 
+  // Match all sources button
+  document.getElementById('awards-match-all-btn')?.addEventListener('click', handleMatchAllAwards);
+
   // Set default year to current year
   const yearInput = document.getElementById('awards-year');
   if (yearInput && !yearInput.value) {
@@ -1075,6 +1079,34 @@ function updatePdfFilesList() {
       `;
     }).join('')}
   `;
+}
+
+/**
+ * Handle "Match All Sources" button.
+ */
+async function handleMatchAllAwards() {
+  const btn = document.getElementById('awards-match-all-btn');
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Matching...';
+
+  try {
+    const result = await matchAllAwardSources();
+    const { sourcesProcessed = 0, exactMatches = 0, fuzzyMatches = 0, aiVerifiedMatches = 0 } = result;
+    if (sourcesProcessed === 0) {
+      showToast('No award sources imported yet');
+    } else {
+      const aiPart = aiVerifiedMatches > 0 ? `, ${aiVerifiedMatches} AI-verified` : '';
+      showToast(`Matched ${exactMatches} exactly, ${fuzzyMatches} fuzzy${aiPart} across ${sourcesProcessed} source${sourcesProcessed === 1 ? '' : 's'}`);
+    }
+    await loadAwardsSources();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Match All Sources';
+  }
 }
 
 /**

@@ -148,6 +148,7 @@ export {
   importAwardsFromText,
   deleteAwardsSource,
   rematchAwardsSource,
+  matchAllAwardSources,
   linkAwardToWine,
   getWineAwards
 } from './awards.js';

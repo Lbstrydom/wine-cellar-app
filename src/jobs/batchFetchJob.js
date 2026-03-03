@@ -12,6 +12,7 @@ import {
   buildIdentityTokensFromWine,
   validateRatingsWithIdentity
 } from '../services/ratings/ratings.js';
+import { getWineAwards } from '../services/awards/index.js';
 import { filterRatingsByVintageSensitivity } from '../config/vintageSensitivity.js';
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import db from '../db/index.js';
@@ -100,7 +101,15 @@ async function handleBatchFetch(payload, context) {
       const allRatings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = ?').all(wineId);
       const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = ? AND key = 'rating_preference'").get(wine.cellar_id);
       const preference = Number.parseInt(prefSetting?.value || '40', 10);
-      const aggregates = calculateWineRatings(allRatings, wine, preference);
+
+      let localAwards = [];
+      try {
+        localAwards = await getWineAwards(wineId);
+      } catch {
+        // awardsDb may not exist in all environments — degrade gracefully
+      }
+
+      const aggregates = calculateWineRatings(allRatings, wine, preference, localAwards);
 
       // Safe: nowFunc() is a helper that returns CURRENT_TIMESTAMP SQL function
       const currentTime = nowFunc();

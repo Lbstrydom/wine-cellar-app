@@ -218,11 +218,50 @@ router.post('/import/text', validateBody(importTextSchema), asyncHandler(async (
  */
 router.post('/sources/:sourceId/match', validateParams(sourceIdSchema), asyncHandler(async (req, res) => {
   const { sourceId } = req.params;
-  const result = await awardsService.autoMatchAwards(sourceId);
+  const result = await awardsService.autoMatchAwards(sourceId, { cellarId: req.cellarId });
 
   res.json({
     message: 'Matching completed',
     ...result
+  });
+}));
+
+/**
+ * POST /awards/match-all
+ * Re-run auto-matching across all imported sources.
+ */
+router.post('/match-all', asyncHandler(async (_req, res) => {
+  const sources = await awardsService.getAwardSources();
+
+  let totalExact = 0;
+  let totalFuzzy = 0;
+  let totalNoMatch = 0;
+  let totalAiVerified = 0;
+  let totalAiReviewed = 0;
+
+  for (const source of sources) {
+    const result = await awardsService.autoMatchAwards(source.id, {
+      cellarId: _req.cellarId,
+      aiVerify: true
+    });
+    totalExact += result.exactMatches || 0;
+    totalFuzzy += result.fuzzyMatches || 0;
+    totalNoMatch += result.noMatches || 0;
+    totalAiVerified += result.aiVerifiedMatches || 0;
+    totalAiReviewed += result.aiReviewed || 0;
+  }
+
+  logger.info('Awards', `Match-all completed: ${totalExact} exact, ${totalFuzzy} fuzzy, ${totalAiVerified} ai-verified across ${sources.length} sources`);
+
+  res.json({
+    message: 'Matching completed',
+    sourcesProcessed: sources.length,
+    exactMatches: totalExact,
+    fuzzyMatches: totalFuzzy,
+    noMatches: totalNoMatch,
+    aiVerifiedMatches: totalAiVerified,
+    aiReviewed: totalAiReviewed,
+    aiEnabled: Boolean(process.env.ANTHROPIC_API_KEY)
   });
 }));
 
@@ -294,7 +333,7 @@ router.get('/:awardId/matches', validateParams(awardIdSchema), asyncHandler(asyn
     return res.status(404).json({ error: 'Award not found' });
   }
 
-  const matches = await awardsService.findMatches(award);
+  const matches = await awardsService.findMatches(award, req.cellarId);
   res.json({ data: matches });
 }));
 

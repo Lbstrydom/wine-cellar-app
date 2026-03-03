@@ -34,6 +34,10 @@ vi.mock('../../../src/services/ratings/ratings.js', () => ({
   }))
 }));
 
+vi.mock('../../../src/services/awards/index.js', () => ({
+  getWineAwards: vi.fn().mockResolvedValue([])
+}));
+
 vi.mock('../../../src/config/vintageSensitivity.js', () => ({
   filterRatingsByVintageSensitivity: vi.fn().mockImplementation((_wine, ratings) => ratings),
   getVintageSensitivity: vi.fn().mockReturnValue('vintage')
@@ -55,7 +59,8 @@ vi.mock('../../../src/db/index.js', () => ({
 
 import handleBatchFetch from '../../../src/jobs/batchFetchJob.js';
 import { unifiedWineSearch } from '../../../src/services/search/claudeWineSearch.js';
-import { saveRatings, validateRatingsWithIdentity, countSaveableRatings } from '../../../src/services/ratings/ratings.js';
+import { saveRatings, validateRatingsWithIdentity, countSaveableRatings, calculateWineRatings } from '../../../src/services/ratings/ratings.js';
+import { getWineAwards } from '../../../src/services/awards/index.js';
 import { filterRatingsByVintageSensitivity } from '../../../src/config/vintageSensitivity.js';
 import db from '../../../src/db/index.js';
 
@@ -180,6 +185,20 @@ describe('handleBatchFetch() — batch rating fetch job', () => {
       MOCK_WINE.vintage,
       expect.any(Array),
       MOCK_WINE.cellar_id
+    );
+  });
+
+  it('loads local awards and passes them into calculateWineRatings', async () => {
+    getWineAwards.mockResolvedValueOnce([{ id: 1, award: 'Gold', competition_name: 'Chardonnay du Monde', credibility: 0.9 }]);
+
+    await handleBatchFetch({ wineIds: [42], options: {} }, context);
+
+    expect(getWineAwards).toHaveBeenCalledWith(42);
+    expect(calculateWineRatings).toHaveBeenCalledWith(
+      expect.any(Array),
+      MOCK_WINE,
+      40,
+      expect.any(Array)
     );
   });
 

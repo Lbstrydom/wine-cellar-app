@@ -12,6 +12,7 @@ import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, vali
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import { saveExtractedWindows } from '../services/ratings/ratingExtraction.js';
+import { getWineAwards } from '../services/awards/index.js';
 import { persistSearchResults } from '../services/shared/wineUpdateService.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
@@ -209,7 +210,14 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = $1').all(wineId);
   const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'rating_preference');
   const preference = parseInt(prefSetting?.value || '40');
-  const aggregates = calculateWineRatings(ratings, wine, preference);
+
+  let localAwards = [];
+  try {
+    localAwards = await getWineAwards(Number.parseInt(wineId, 10));
+  } catch {
+    // awardsDb may not exist in all environments — degrade gracefully
+  }
+  const aggregates = calculateWineRatings(ratings, wine, preference, localAwards);
 
   const tastingNotes = result._narrative || null;
 

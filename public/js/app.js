@@ -1009,7 +1009,7 @@ function getFilteredWines() {
       case 'vintage-desc':
         return (b.vintage || 0) - (a.vintage || 0);
       case 'rating':
-        return (b.vivino_rating || 0) - (a.vivino_rating || 0);
+        return ((b.purchase_stars ?? b.vivino_rating) || 0) - ((a.purchase_stars ?? a.vivino_rating) || 0);
       case 'price':
         return (a.price_eur || 0) - (b.price_eur || 0);
       case 'count':
@@ -1042,7 +1042,7 @@ function renderWineCard(wine) {
       <div class="wine-details">
         <div class="wine-name">${escapeHtml(wine.wine_name)}</div>
         <div class="wine-meta">${escapeHtml(wine.style || '')} • ${escapeHtml(String(wine.vintage)) || 'NV'}</div>
-        ${wine.vivino_rating ? `<div class="wine-rating">★ ${wine.vivino_rating}</div>` : ''}
+        ${(wine.purchase_stars ?? wine.vivino_rating) ? `<div class="wine-rating">★ ${wine.purchase_stars ?? wine.vivino_rating}</div>` : ''}
         ${isReduceNow ? `<div class="wine-reduce-reason">${escapeHtml(wine.reduce_reason || 'Drink soon')}</div>` : ''}
         <div class="wine-locations">${escapeHtml(wine.locations || '')}</div>
       </div>
@@ -1131,7 +1131,7 @@ function renderWineTable(wines, container) {
         <td class="col-region editable" data-field="region" data-wine-id="${wine.id}">${escapeHtml(wine.region || '')}</td>
         <td class="col-country editable" data-field="country" data-wine-id="${wine.id}">${escapeHtml(wine.country || '')}</td>
         <td class="col-qty">${Number(wine.bottle_count)}</td>
-        <td class="col-rating">${wine.vivino_rating ? `★ ${wine.vivino_rating}` : '-'}</td>
+        <td class="col-rating">${(wine.purchase_stars ?? wine.vivino_rating) ? `★ ${wine.purchase_stars ?? wine.vivino_rating}` : '-'}</td>
         <td class="col-drink-window">${wine.drink_from || wine.drink_until ? `${wine.drink_from || '?'}–${wine.drink_until || '?'}` : '-'}</td>
         <td class="col-location">${escapeHtml(wine.locations || '-')}</td>
         <td class="col-actions">
