@@ -131,13 +131,39 @@ export function getEffectiveZoneColor(zone) {
 
 /**
  * Detect color boundary violations where red and white zones are adjacent.
+ *
+ * The single expected transition at the natural white/red boundary (e.g. the last
+ * white row sitting directly above the first red row) is intentional and must NOT
+ * be flagged. Pass `dynamicRanges` so this boundary can be identified and skipped.
+ * Any additional colour transitions elsewhere in the cellar are genuine violations.
+ *
  * @param {Object} rowToZoneId - Row-to-zone mapping { R1: 'sauvignon_blanc', R8: 'cabernet', ... }
+ * @param {Object} [dynamicRanges] - Optional { whiteRows: number[], redRows: number[] }
  * @returns {Array} Adjacency violation objects
  */
-export function detectColorAdjacencyIssues(rowToZoneId) {
+export function detectColorAdjacencyIssues(rowToZoneId, dynamicRanges = null) {
   const issues = [];
 
+  // Identify the single expected colour split point so it can be skipped.
+  // whites-top: white rows come first  → boundary at max(whiteRows), next row is min(redRows)
+  // reds-top:   red rows come first    → boundary at max(redRows),   next row is min(whiteRows)
+  let naturalBoundaryRow = -1;
+  if (dynamicRanges?.whiteRows?.length && dynamicRanges?.redRows?.length) {
+    const maxWhiteRow = Math.max(...dynamicRanges.whiteRows);
+    const minRedRow   = Math.min(...dynamicRanges.redRows);
+    const maxRedRow   = Math.max(...dynamicRanges.redRows);
+    const minWhiteRow = Math.min(...dynamicRanges.whiteRows);
+    if (minRedRow === maxWhiteRow + 1) {
+      naturalBoundaryRow = maxWhiteRow; // whites-top
+    } else if (minWhiteRow === maxRedRow + 1) {
+      naturalBoundaryRow = maxRedRow;   // reds-top
+    }
+  }
+
   for (let row = 1; row <= 18; row++) {
+    // The single intended colour split is not a violation — skip it.
+    if (row === naturalBoundaryRow) continue;
+
     const currentZoneId = rowToZoneId[`R${row}`];
     const nextZoneId = rowToZoneId[`R${row + 1}`];
 

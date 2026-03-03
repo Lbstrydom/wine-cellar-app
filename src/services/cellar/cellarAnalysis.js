@@ -250,7 +250,7 @@ export async function analyseCellar(wines) {
   // and colour order violations (zones in wrong vertical region)
   if (hasZoneAllocations) {
     const { rowToZoneId } = await getCurrentZoneAllocation(cellarId);
-    const colorAdjacencyIssues = detectColorAdjacencyIssues(rowToZoneId);
+    const colorAdjacencyIssues = detectColorAdjacencyIssues(rowToZoneId, dynamicRanges);
     report.colorAdjacencyIssues = colorAdjacencyIssues;
     report.summary.colorAdjacencyViolations = colorAdjacencyIssues.length;
 

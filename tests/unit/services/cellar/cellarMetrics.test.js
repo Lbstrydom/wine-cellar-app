@@ -253,6 +253,48 @@ describe('detectColorAdjacencyIssues', () => {
     // R1-R2: R2 is empty (no zone), R2-R3: R2 is empty
     expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
   });
+
+  it('suppresses the natural boundary crossing when dynamicRanges provided (whites-top)', () => {
+    // Perfect layout: whites in R1-R10, reds in R11-R19 — R10→R11 is the expected split
+    const rowToZone = { R10: 'sauvignon_blanc', R11: 'cabernet' };
+    const dynamicRanges = {
+      whiteRows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      redRows:   [11, 12, 13, 14, 15, 16, 17, 18, 19]
+    };
+    expect(detectColorAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
+  });
+
+  it('suppresses the natural boundary crossing when dynamicRanges provided (reds-top)', () => {
+    // Reds in R1-R9, whites in R10-R19 — R9→R10 is the expected split
+    const rowToZone = { R9: 'cabernet', R10: 'sauvignon_blanc' };
+    const dynamicRanges = {
+      whiteRows: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
+      redRows:   [1, 2, 3, 4, 5, 6, 7, 8, 9]
+    };
+    expect(detectColorAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
+  });
+
+  it('still flags a stray colour crossing that is not the natural boundary', () => {
+    // White zone embedded inside the red region: R10=white(boundary, ok), R12=white(violation)
+    const rowToZone = { R10: 'sauvignon_blanc', R11: 'cabernet', R12: 'sauvignon_blanc', R13: 'shiraz' };
+    const dynamicRanges = {
+      whiteRows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+      redRows:   [11, 12, 13, 14, 15, 16, 17, 18, 19]
+    };
+    const result = detectColorAdjacencyIssues(rowToZone, dynamicRanges);
+    // R10→R11 suppressed (natural boundary); R11→R12 and R12→R13 are genuine violations
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({ row1: 'R11', color1: 'red', row2: 'R12', color2: 'white' });
+    expect(result[1]).toMatchObject({ row1: 'R12', color1: 'white', row2: 'R13', color2: 'red' });
+  });
+
+  it('falls back to flagging all transitions when dynamicRanges not provided', () => {
+    // Without dynamicRanges the natural boundary is unknown — existing behaviour unchanged
+    const rowToZone = { R10: 'sauvignon_blanc', R11: 'cabernet' };
+    const result = detectColorAdjacencyIssues(rowToZone);
+    expect(result).toHaveLength(1);
+    expect(result[0]).toMatchObject({ row1: 'R10', color1: 'white', row2: 'R11', color2: 'red' });
+  });
 });
 
 // ─── wineViolatesZoneColour ─────────────────────────────
