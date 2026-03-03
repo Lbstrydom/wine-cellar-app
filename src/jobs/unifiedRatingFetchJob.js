@@ -13,6 +13,7 @@
 
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import { saveExtractedWindows } from '../services/ai/index.js';
+import { saveFoodPairings } from '../services/shared/foodPairingsService.js';
 import {
   calculateWineRatings,
   saveRatings,
@@ -205,8 +206,10 @@ async function handleRatingFetch(payload, context) {
   const preference = Number.parseInt(prefSetting?.value || '40', 10);
   const aggregates = calculateWineRatings(allRatings, wine, preference);
 
-  // Store prose narrative in tasting_notes (COALESCE preserves existing if null)
+  // Store prose narrative + structured extraction (COALESCE preserves existing if null)
   const narrativeText = result._narrative || null;
+  const tastingNotesStructured = result.tasting_notes || null;
+  const foodPairings = result.food_pairings || [];
 
   const currentTime = nowFunc();
   const sql = [
@@ -218,6 +221,7 @@ async function handleRatingFetch(payload, context) {
     'purchase_stars = ?,',
     'confidence_level = ?,',
     'tasting_notes = COALESCE(?, tasting_notes),',
+    'tasting_notes_structured = COALESCE(?, tasting_notes_structured),',
     'ratings_updated_at = ' + currentTime,
     'WHERE id = ?'
   ].join(' ');
@@ -230,8 +234,16 @@ async function handleRatingFetch(payload, context) {
     aggregates.purchase_stars,
     aggregates.confidence_level,
     narrativeText,
+    tastingNotesStructured ? JSON.stringify(tastingNotesStructured) : null,
     wineId
   );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FOOD PAIRINGS: Upsert AI-suggested pairings (preserves user ratings)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (foodPairings.length > 0) {
+    await saveFoodPairings(wineId, wine.cellar_id, foodPairings);
+  }
 
   await updateProgress(100, 'Complete');
 
@@ -252,6 +264,8 @@ async function handleRatingFetch(payload, context) {
     purchaseStars: aggregates.purchase_stars,
     confidenceLevel: aggregates.confidence_level,
     tastingNotes: narrativeText ? 'captured' : null,
+    tastingNotesStructured: tastingNotesStructured ? 'captured' : null,
+    foodPairingsCount: foodPairings.length,
     grapesDiscovered: discoveredGrapes.length > 0 ? discoveredGrapes : null,
     grapesEnriched,
     method: usedMethod

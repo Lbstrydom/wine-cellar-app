@@ -18,6 +18,7 @@ import { validateBody } from '../middleware/validate.js';
 import { parseImageSchema, suggestPlacementSchema, enrichSchema, workflowSchema, saveAcquiredSchema } from '../schemas/acquisition.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
+import { saveFoodPairings } from '../services/shared/foodPairingsService.js';
 
 const router = Router();
 
@@ -80,6 +81,16 @@ router.post('/enrich', validateBody(enrichSchema), asyncHandler(async (req, res)
     } catch (err) {
       // Non-fatal: enrichment response is still returned even if grape persistence fails
       logger.warn('Acquisition', `Could not persist grapes for wine ${wine.id}: ${err.message}`);
+    }
+  }
+
+  // Persist food pairings for existing wines (backfill from enrichment)
+  const discoveredPairings = enrichment.ratings?.food_pairings || [];
+  if (wine.id && discoveredPairings.length > 0) {
+    try {
+      await saveFoodPairings(wine.id, req.cellarId, discoveredPairings);
+    } catch (err) {
+      logger.warn('Acquisition', `Could not persist food pairings for wine ${wine.id}: ${err.message}`);
     }
   }
 

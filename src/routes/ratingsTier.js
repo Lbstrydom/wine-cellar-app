@@ -11,6 +11,8 @@ import { SOURCES as RATING_SOURCES, SOURCES as SOURCE_REGISTRY } from '../config
 import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, validateRatingsWithIdentity, countSaveableRatings } from '../services/ratings/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
+import { saveExtractedWindows } from '../services/ratings/ratingExtraction.js';
+import { saveFoodPairings } from '../services/shared/foodPairingsService.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateParams } from '../middleware/validate.js';
@@ -188,6 +190,24 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
 
   logger.info('Ratings', `Inserted ${insertedCount} ratings via ${usedMethod}`);
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // DRINKING WINDOW: Persist top-level window from Phase 2 extraction
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (result.drinking_window) {
+    const windowRatings = [{
+      source: 'unified_search',
+      drinking_window: {
+        drink_from_year: result.drinking_window.drink_from,
+        drink_by_year: result.drinking_window.drink_by,
+        peak_year: result.drinking_window.peak
+      }
+    }];
+    const windowsSaved = await saveExtractedWindows(wineId, windowRatings);
+    if (windowsSaved > 0) {
+      logger.info('Ratings', `Saved ${windowsSaved} drinking window(s) for wine ${wineId}`);
+    }
+  }
+
   // Update aggregates
   const ratings = await db.prepare('SELECT * FROM wine_ratings WHERE wine_id = $1').all(wineId);
   const prefSetting = await db.prepare("SELECT value FROM user_settings WHERE cellar_id = $1 AND key = $2").get(req.cellarId, 'rating_preference');
@@ -195,14 +215,17 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const aggregates = calculateWineRatings(ratings, wine, preference);
 
   const tastingNotes = result._narrative || null;
+  const tastingNotesStructured = result.tasting_notes || null;
+  const foodPairings = result.food_pairings || [];
 
   await db.prepare(`
     UPDATE wines SET
       competition_index = $1, critics_index = $2, community_index = $3,
       purchase_score = $4, purchase_stars = $5, confidence_level = $6,
       tasting_notes = COALESCE($7, tasting_notes),
+      tasting_notes_structured = COALESCE($8, tasting_notes_structured),
       ratings_updated_at = CURRENT_TIMESTAMP
-    WHERE cellar_id = $8 AND id = $9
+    WHERE cellar_id = $9 AND id = $10
   `).run(
     aggregates.competition_index,
     aggregates.critics_index,
@@ -211,14 +234,23 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
     aggregates.purchase_stars,
     aggregates.confidence_level,
     tastingNotes,
+    tastingNotesStructured ? JSON.stringify(tastingNotesStructured) : null,
     req.cellarId,
     wineId
   );
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FOOD PAIRINGS: Upsert AI-suggested pairings (preserves user ratings)
+  // ═══════════════════════════════════════════════════════════════════════════
+  if (foodPairings.length > 0) {
+    await saveFoodPairings(wineId, req.cellarId, foodPairings);
+  }
 
   res.json({
     message: `Found ${insertedCount} ratings (replaced ${existingRatings.length} existing) via ${usedMethod}`,
     search_notes: result.search_notes,
     tasting_notes: tastingNotes,
+    food_pairings_count: foodPairings.length,
     method: usedMethod,
     ...aggregates
   });

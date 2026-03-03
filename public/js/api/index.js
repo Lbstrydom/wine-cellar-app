@@ -249,6 +249,13 @@ export {
   convertToCellar
 } from './buyingGuideItems.js';
 
+// Food pairings (AI-suggested + user-ratable)
+export {
+  getFoodPairings,
+  rateFoodPairing,
+  addFoodPairing
+} from './foodPairings.js';
+
 // Error logging
 export {
   logClientError

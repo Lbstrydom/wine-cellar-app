@@ -11,7 +11,9 @@ import {
   addManualRating,
   deleteRating,
   fetchWine,
-  fetchLayout
+  fetchLayout,
+  getFoodPairings,
+  rateFoodPairing
 } from './api.js';
 import { showToast, escapeHtml, getAllSlotsFromLayout } from './utils.js';
 import { state } from './app.js';
@@ -328,6 +330,12 @@ export function initRatingsPanel(wineId) {
       handleDeleteRating(wineId, ratingId);
     });
   });
+
+  // Load food pairings below the ratings panel
+  const panel = document.querySelector('.ratings-panel-container');
+  if (panel) {
+    loadFoodPairings(panel, wineId);
+  }
 }
 
 /**
@@ -432,7 +440,13 @@ async function handleFetchRatings(wineId, useAsync = true) {
       initRatingsPanel(wineId);
     }
 
-    // 2. Update tasting notes directly in the modal DOM
+    // 2. Refresh food pairings (they are now persisted after research)
+    const pairingsContainer = document.querySelector('.ratings-panel-container');
+    if (pairingsContainer) {
+      await loadFoodPairings(pairingsContainer, wineId);
+    }
+
+    // 3. Update tasting notes directly in the modal DOM
     const tastingNotesField = document.getElementById('modal-tasting-notes-field');
     const tastingNotesText = document.getElementById('modal-tasting-notes');
 
@@ -761,4 +775,129 @@ function hideManualRatingForm() {
     form.remove();
   }
   _currentManualRatingWineId = null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FOOD PAIRINGS — Render + interactive star rating
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Render food pairings section HTML.
+ * Each pairing has 5 star buttons; filled stars reflect user_rating.
+ * @param {Array<{id:number, pairing:string, user_rating:number|null, source:string}>} pairings
+ * @returns {string} HTML string
+ */
+function renderFoodPairingsHtml(pairings) {
+  if (!pairings || pairings.length === 0) return '';
+
+  const rows = pairings.map(p => {
+    const currentRating = p.user_rating || 0;
+    const stars = [1, 2, 3, 4, 5].map(n => {
+      const filled = n <= currentRating;
+      return `<button class="pairing-star${filled ? ' pairing-star--filled' : ''}"
+        data-pairing-id="${p.id}"
+        data-star="${n}"
+        aria-label="${n} star${n !== 1 ? 's' : ''}"
+        title="${n} star${n !== 1 ? 's' : ''}"
+        type="button">★</button>`;
+    }).join('');
+
+    const badge = p.source === 'manual'
+      ? '<span class="pairing-source-badge">manual</span>'
+      : '';
+
+    return `
+      <div class="pairing-row" data-pairing-id="${p.id}">
+        <span class="pairing-name">${escapeHtml(p.pairing)}${badge}</span>
+        <span class="pairing-stars" role="group" aria-label="Rate ${escapeHtml(p.pairing)}">${stars}</span>
+      </div>
+    `;
+  }).join('');
+
+  return `
+    <div class="food-pairings-section" id="food-pairings-section">
+      <h4 class="food-pairings-title">Food Pairings</h4>
+      <div class="food-pairings-list">${rows}</div>
+      <div class="food-pairings-add">
+        <input class="food-pairings-input" id="new-pairing-input"
+               type="text" placeholder="Add pairing (e.g. Lamb rack)" maxlength="120" />
+        <button class="btn btn-secondary btn-small" id="add-pairing-btn" type="button">Add</button>
+      </div>
+    </div>
+  `;
+}
+
+/**
+ * Load and render food pairings into a container, then wire events.
+ * @param {HTMLElement} container - Parent element to insert pairings into
+ * @param {number} wineId
+ */
+export async function loadFoodPairings(container, wineId) {
+  if (!container || !wineId) return;
+
+  try {
+    const { data: pairings } = await getFoodPairings(wineId);
+    const existing = container.querySelector('#food-pairings-section');
+    if (existing) existing.remove();
+
+    const html = renderFoodPairingsHtml(pairings || []);
+    if (!html) return;
+
+    container.insertAdjacentHTML('beforeend', html);
+    wireFoodPairingEvents(container, wineId);
+  } catch (_err) {
+    // Non-fatal — food pairings are optional
+  }
+}
+
+/**
+ * Wire star click + add pairing events inside container.
+ * @param {HTMLElement} container
+ * @param {number} wineId
+ */
+function wireFoodPairingEvents(container, wineId) {
+  // Star rating buttons
+  container.querySelectorAll('.pairing-star').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const pairingId = parseInt(btn.dataset.pairingId, 10);
+      const stars = parseInt(btn.dataset.star, 10);
+      try {
+        await rateFoodPairing(wineId, pairingId, stars);
+        // Re-render optimistically: update filled state in this row
+        const row = container.querySelector(`.pairing-row[data-pairing-id="${pairingId}"]`);
+        if (row) {
+          row.querySelectorAll('.pairing-star').forEach(s => {
+            const n = parseInt(s.dataset.star, 10);
+            s.classList.toggle('pairing-star--filled', n <= stars);
+          });
+        }
+        showToast(`Rated "${btn.closest('.pairing-row')?.querySelector('.pairing-name')?.textContent?.split('\n')[0].trim() || 'pairing'}" ${stars}★`);
+      } catch (err) {
+        showToast('Error saving rating: ' + err.message);
+      }
+    });
+  });
+
+  // Add manual pairing
+  const addBtn = container.querySelector('#add-pairing-btn');
+  const addInput = container.querySelector('#new-pairing-input');
+  if (addBtn && addInput) {
+    const doAdd = async () => {
+      const val = addInput.value.trim();
+      if (!val) return;
+      try {
+        addBtn.disabled = true;
+        await import('./api.js').then(api => api.addFoodPairing(wineId, val));
+        addInput.value = '';
+        // Reload the full section to pick up the new row with its DB id
+        await loadFoodPairings(container, wineId);
+        showToast('Pairing added');
+      } catch (err) {
+        showToast('Error adding pairing: ' + err.message);
+        addBtn.disabled = false;
+      }
+    };
+    addBtn.addEventListener('click', doAdd);
+    addInput.addEventListener('keydown', e => { if (e.key === 'Enter') doAdd(); });
+  }
 }

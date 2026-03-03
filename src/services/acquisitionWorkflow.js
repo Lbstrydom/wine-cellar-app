@@ -5,6 +5,7 @@
  */
 
 import { parseWineFromImage, parseWineFromText, saveExtractedWindows } from './ai/index.js';
+import { saveFoodPairings } from './shared/foodPairingsService.js';
 import { unifiedWineSearch, isUnifiedWineSearchAvailable } from './search/claudeWineSearch.js';
 import { findBestZone, findAvailableSlot } from './cellar/cellarPlacement.js';
 import { categoriseWine, getFridgeStatus } from './cellar/fridgeStocking.js';
@@ -478,6 +479,16 @@ export async function saveAcquiredWine(wineData, options = {}) {
           logger.info('AcquisitionWorkflow', `Persisted grapes from enrichment: ${grapeString}`);
         } catch (grapeErr) {
           logger.warn('AcquisitionWorkflow', `Failed to persist grapes: ${grapeErr.message}`);
+        }
+      }
+
+      // Persist food pairings discovered during enrichment
+      const discoveredPairings = enrichment.ratings?.food_pairings || [];
+      if (discoveredPairings.length > 0) {
+        try {
+          await saveFoodPairings(wineId, cellarId, discoveredPairings);
+        } catch (pairingErr) {
+          logger.warn('AcquisitionWorkflow', `Failed to persist food pairings: ${pairingErr.message}`);
         }
       }
     }).catch(err => {

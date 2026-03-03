@@ -45,6 +45,7 @@ import consistencyRoutes from './consistency.js';
 import recipesRoutes from './recipes.js';
 import buyingGuideItemsRoutes from './buyingGuideItems.js';
 import pendingRatingsRoutes from './pendingRatings.js';
+import foodPairingsRoutes from './foodPairings.js';
 
 const router = Router();
 
@@ -117,5 +118,6 @@ router.use('/consistency', requireAuth, requireCellarContext, consistencyRoutes)
 router.use('/recipes', requireAuth, requireCellarContext, recipesRoutes);          // /recipes, /recipes/import/*, /recipes/sync/*
 router.use('/buying-guide-items', requireAuth, requireCellarContext, buyingGuideItemsRoutes);  // /buying-guide-items CRUD, status, batch
 router.use('/pending-ratings', requireAuth, requireCellarContext, pendingRatingsRoutes);     // /pending-ratings, /pending-ratings/:id/resolve, /pending-ratings/dismiss-all
+router.use('/wines', requireAuth, requireCellarContext, foodPairingsRoutes);                // /wines/:wineId/food-pairings (GET, POST, PATCH)
 
 export default router;
