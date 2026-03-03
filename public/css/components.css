@@ -13519,3 +13519,12 @@ body.move-guide-active #view-grid {
   text-align: right;
   margin-top: 0.75rem;
 }
+
+/* Save to Cellar inline error message */
+.wine-research-save-error {
+  display: inline-block;
+  margin-left: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--danger, #e05252);
+  vertical-align: middle;
+}

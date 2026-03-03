@@ -6,7 +6,7 @@
  * @module recipes/wineResearch
  */
 
-import { enrichWine } from '../api/index.js';
+import { enrichWine, createWine } from '../api/index.js';
 import { escapeHtml } from '../utils.js';
 import { renderWineProfile } from '../wineProfile.js';
 
@@ -179,6 +179,7 @@ async function executeSearch(_item) {
     }
 
     renderResults(bodyEl, data);
+    addSaveToCellarButton(wine, data);
   } catch (err) {
     if (!_overlayEl) return;
     const bodyEl = _overlayEl.querySelector('.wine-research-body');
@@ -394,4 +395,86 @@ function wireResultsEvents(body) {
   // Currently no interactive elements in results beyond the wine profile toggle
   // (which is wired internally by renderWineProfile). Placeholder for future use.
   void body;
+}
+
+/**
+ * Add a "Save to Cellar" button to the modal actions area after results are shown.
+ * Saves the wine with 0 bottles — for future reference or pre-buying planning.
+ * @param {Object} searchTerms - Search terms from readSearchTerms()
+ * @param {Object} enrichData - Enrichment response from enrichWine()
+ */
+function addSaveToCellarButton(searchTerms, enrichData) {
+  if (!_overlayEl) return;
+  const actions = _overlayEl.querySelector('.modal-actions');
+  if (!actions) return;
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'btn btn-primary btn-small wine-research-save-btn';
+  saveBtn.type = 'button';
+  saveBtn.textContent = '🍾 Save to Cellar';
+  saveBtn.addEventListener('click', () => handleSaveToCellar(saveBtn, searchTerms, enrichData));
+
+  // Insert before Close button so it appears to the left
+  const closeBtn = actions.querySelector('.wine-research-close-btn');
+  if (closeBtn) {
+    actions.insertBefore(saveBtn, closeBtn);
+  } else {
+    actions.appendChild(saveBtn);
+  }
+}
+
+/**
+ * Handle Save to Cellar click: build wine payload and call createWine().
+ * Saves with 0 bottles — a reference entry for future purchases.
+ * @param {HTMLButtonElement} btn - The save button element
+ * @param {Object} searchTerms - Search terms (wine_name, producer, vintage, etc.)
+ * @param {Object} enrichData - Enrichment response (ratings with drinking_window, grape_varieties)
+ */
+async function handleSaveToCellar(btn, searchTerms, enrichData) {
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const ratings = enrichData?.ratings || {};
+    const dw = ratings.drinking_window || {};
+
+    // Prefer enriched grape_varieties over user-entered grapes (more accurate)
+    const grapesFromEnrich = Array.isArray(ratings.grape_varieties) && ratings.grape_varieties.length > 0
+      ? ratings.grape_varieties.join(', ')
+      : null;
+
+    const payload = {
+      wine_name: searchTerms.wine_name,
+      producer: searchTerms.producer || null,
+      // vintage: schema accepts '2023' string or number — pass raw, schema transforms
+      vintage: searchTerms.vintage || null,
+      country: searchTerms.country || null,
+      colour: searchTerms.colour || null,
+      region: searchTerms.region || null,
+      grapes: grapesFromEnrich || searchTerms.grapes || null,
+      // Drinking window from enrichment (year integers)
+      drink_from: dw.drink_from ? parseInt(dw.drink_from, 10) : null,
+      drink_peak: dw.peak ? parseInt(dw.peak, 10) : null,
+      drink_until: dw.drink_by ? parseInt(dw.drink_by, 10) : null
+    };
+
+    await createWine(payload);
+
+    btn.textContent = '✓ Saved to Cellar';
+    btn.classList.remove('btn-primary');
+    btn.classList.add('btn-secondary');
+    // Keep disabled — wine is saved, no double-save
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = '🍾 Save to Cellar';
+
+    // Show a brief inline error next to the button
+    const existing = btn.parentNode?.querySelector('.wine-research-save-error');
+    if (existing) existing.remove();
+    const errEl = document.createElement('span');
+    errEl.className = 'wine-research-save-error';
+    errEl.textContent = err.message || 'Save failed';
+    btn.insertAdjacentElement('afterend', errEl);
+    setTimeout(() => errEl.remove(), 5000);
+  }
 }
