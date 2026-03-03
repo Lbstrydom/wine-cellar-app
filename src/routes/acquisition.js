@@ -16,6 +16,8 @@ import {
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody } from '../middleware/validate.js';
 import { parseImageSchema, suggestPlacementSchema, enrichSchema, workflowSchema, saveAcquiredSchema } from '../schemas/acquisition.js';
+import db from '../db/index.js';
+import logger from '../utils/logger.js';
 
 const router = Router();
 
@@ -63,6 +65,24 @@ router.post('/enrich', validateBody(enrichSchema), asyncHandler(async (req, res)
   const { wine } = req.body;
 
   const enrichment = await enrichWineData(wine);
+
+  // If this is an existing wine (wine.id set) and we discovered grape varieties,
+  // persist them to the wines table so they're available for future cellar analysis.
+  // Only backfills — does not overwrite grapes the user has already entered.
+  const discoveredGrapes = enrichment.ratings?.grape_varieties || [];
+  if (wine.id && discoveredGrapes.length > 0 && (!wine.grapes || wine.grapes.trim() === '')) {
+    try {
+      const grapeString = discoveredGrapes.join(', ');
+      await db.prepare(
+        "UPDATE wines SET grapes = $1 WHERE id = $2 AND cellar_id = $3 AND (grapes IS NULL OR grapes = '')"
+      ).run(grapeString, wine.id, req.cellarId);
+      logger.info('Acquisition', `Persisted discovered grapes for wine ${wine.id}: ${grapeString}`);
+    } catch (err) {
+      // Non-fatal: enrichment response is still returned even if grape persistence fails
+      logger.warn('Acquisition', `Could not persist grapes for wine ${wine.id}: ${err.message}`);
+    }
+  }
+
   res.json(enrichment);
 }));
 

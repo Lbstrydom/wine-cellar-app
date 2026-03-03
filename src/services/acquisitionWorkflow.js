@@ -462,9 +462,23 @@ export async function saveAcquiredWine(wineData, options = {}) {
 
   // Start enrichment in background (skippable for cart-to-cellar conversion)
   if (!skipEnrichment) {
-    enrichWineData({ ...wineData, id: wineId }).then(enrichment => {
+    enrichWineData({ ...wineData, id: wineId }).then(async enrichment => {
       if (enrichment.ratings && enrichment.ratings.ratings) {
         logger.info('AcquisitionWorkflow', `Enrichment complete: ${enrichment.ratings.ratings.length} ratings found`);
+      }
+
+      // Persist discovered grape varieties if wine has none yet
+      const discoveredGrapes = enrichment.ratings?.grape_varieties || [];
+      if (discoveredGrapes.length > 0 && (!wineData.grapes || wineData.grapes.trim() === '')) {
+        try {
+          const grapeString = discoveredGrapes.join(', ');
+          await db.prepare(
+            "UPDATE wines SET grapes = $1 WHERE id = $2 AND cellar_id = $3 AND (grapes IS NULL OR grapes = '')"
+          ).run(grapeString, wineId, cellarId);
+          logger.info('AcquisitionWorkflow', `Persisted grapes from enrichment: ${grapeString}`);
+        } catch (grapeErr) {
+          logger.warn('AcquisitionWorkflow', `Failed to persist grapes: ${grapeErr.message}`);
+        }
       }
     }).catch(err => {
       logger.error('AcquisitionWorkflow', `Background enrichment failed: ${err.message}`);
