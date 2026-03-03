@@ -1163,12 +1163,14 @@ function findContiguousBlocks(sortedRows) {
  * @param {string} [colourOrder='whites-top'] - 'whites-top' or 'reds-top'
  * @returns {Array} Swap actions to reposition buffer zones
  */
-function repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, _colourOrder = 'whites-top') {
+function repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, colourOrder = 'whites-top') {
   const actions = [];
 
   // Find the actual colour boundary from current zone assignments
   let maxWhiteRow = 0;
   let maxRedRow = 0;
+  let minRedRow = Infinity;
+  let minWhiteRow = Infinity;
   const rowToZone = new Map();
 
   for (const [zoneId, rows] of zoneRowMap) {
@@ -1176,10 +1178,19 @@ function repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, _colo
     for (const r of rows) {
       rowToZone.set(r, zoneId);
       const rn = rowNum(r);
-      if (color === 'white') maxWhiteRow = Math.max(maxWhiteRow, rn);
-      if (color === 'red') maxRedRow = Math.max(maxRedRow, rn);
+      if (color === 'white') {
+        maxWhiteRow = Math.max(maxWhiteRow, rn);
+        minWhiteRow = Math.min(minWhiteRow, rn);
+      }
+      if (color === 'red') {
+        maxRedRow = Math.max(maxRedRow, rn);
+        minRedRow = Math.min(minRedRow, rn);
+      }
     }
   }
+
+  // No colour boundary means no repositioning target
+  if (maxWhiteRow === 0 || maxRedRow === 0) return actions;
 
   for (const zone of zones) {
     const zoneDef = getZoneById(zone.id);
@@ -1191,16 +1202,18 @@ function repositionBufferZones(zoneRowMap, zones, utilization, neverMerge, _colo
 
     const bufferColor = getZoneColor(zone.id);
 
+    // For whites-top: white_buffer → last white row (maxWhiteRow), red_buffer → first red row (minRedRow)
+    // For reds-top:   red_buffer  → last red row  (maxRedRow),  white_buffer → first white row (minWhiteRow)
     let targetBoundaryRow;
     if (bufferColor === 'white') {
-      targetBoundaryRow = maxWhiteRow;
+      targetBoundaryRow = (colourOrder === 'reds-top') ? minWhiteRow : maxWhiteRow;
     } else if (bufferColor === 'red') {
-      targetBoundaryRow = maxRedRow;
+      targetBoundaryRow = (colourOrder === 'reds-top') ? maxRedRow : minRedRow;
     } else {
       continue;
     }
 
-    if (targetBoundaryRow === 0) continue;
+    if (!targetBoundaryRow || !Number.isFinite(targetBoundaryRow)) continue;
 
     const targetRowId = `R${targetBoundaryRow}`;
     if (bufferRows.includes(targetRowId)) continue; // Already in position

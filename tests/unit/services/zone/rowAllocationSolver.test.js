@@ -1503,21 +1503,22 @@ describe('rowAllocationSolver', () => {
       expect(bufferGives).toBeDefined();
     });
 
-    it('swaps red_buffer from R8 to last red row when buffer has few bottles', () => {
-      // Red Buffer at R8 (1 bottle), other reds at R9-R12
+    it('repositions red_buffer to first red row (boundary) in whites-top layout', () => {
+      // Red buffer at R12 (far end), reds at R8-R11, whites at R1-R7.
+      // Should move to R8 (minRedRow = first red row = adjacent to white section).
       const zones = [
         makeZone('sauvignon_blanc', ['R1', 'R2'], 12),
         makeZone('white_buffer', ['R7'], 2),
-        makeZone('red_buffer', ['R8'], 1),
-        makeZone('cabernet', ['R9', 'R10'], 15),
-        makeZone('shiraz', ['R11', 'R12'], 14)
+        makeZone('cabernet', ['R8', 'R9'], 15),
+        makeZone('shiraz', ['R10', 'R11'], 14),
+        makeZone('red_buffer', ['R12'], 1)
       ];
       const utilization = {
         sauvignon_blanc: makeUtil(12, 2),
         white_buffer: makeUtil(2, 1),
-        red_buffer: makeUtil(1, 1),
         cabernet: makeUtil(15, 2),
-        shiraz: makeUtil(14, 2)
+        shiraz: makeUtil(14, 2),
+        red_buffer: makeUtil(1, 1)
       };
 
       const result = solveRowAllocation({
@@ -1526,9 +1527,9 @@ describe('rowAllocationSolver', () => {
         stabilityBias: 'low'
       });
 
-      // Red buffer should be repositioned to R12 (last red row)
+      // Red buffer should be repositioned to R8 (first red row = colour boundary)
       const bufferReceives = result.actions.find(a =>
-        a.toZoneId === 'red_buffer' && a.rowNumber === 12
+        a.toZoneId === 'red_buffer' && a.rowNumber === 8
       );
       expect(bufferReceives).toBeDefined();
     });
