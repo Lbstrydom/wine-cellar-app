@@ -1,11 +1,15 @@
 /**
- * @fileoverview Unified Claude Wine Search.
- * Single API call returns both structured JSON (ratings, entities, drinking windows)
- * and rich prose narrative via Anthropic's web_search + web_fetch tools.
+ * @fileoverview Unified Claude Wine Search — Phase 1 (Search) + Orchestrator.
  *
- * Uses SSE streaming to avoid SDK timeout issues — web search tool execution
- * can take 2-4 minutes server-side, which exceeds non-streaming timeouts.
- * Streaming keeps the connection alive as events flow continuously.
+ * Phase 1 (Search): Simple research prompt + web_search tool → prose narrative.
+ * Phase 2 (Extract): Delegated to wineDataExtractor.js (Haiku → structured JSON).
+ *
+ * This "Search First, Process Later" pattern matches the SERT reference adapter
+ * (docs/sert/) and avoids the code_execution loops caused by embedding a JSON
+ * schema in the search prompt.
+ *
+ * Uses SSE streaming for Phase 1 to avoid SDK timeout issues — web search tool
+ * execution can take 2-4 minutes server-side.
  *
  * Replaces the 4-tier waterfall (SERP AI → Claude Web Search → Gemini → Legacy Scraping).
  * Eliminates BrightData, Gemini, and all scraping dependencies.
@@ -17,7 +21,7 @@ import anthropic from '../ai/claudeClient.js';
 import { getModelForTask } from '../../config/aiModels.js';
 import logger from '../../utils/logger.js';
 import { getSourcesForCountry } from '../../config/unifiedSources.js';
-import { extractJsonWithRepair } from '../shared/jsonUtils.js';
+import { extractWineData, normalizeExtraction } from './wineDataExtractor.js';
 
 /** Maximum pause_turn continuations before giving up */
 const MAX_PAUSE_CONTINUATIONS = 2;
@@ -26,12 +30,14 @@ const MAX_PAUSE_CONTINUATIONS = 2;
  *  3 min provides headroom while catching genuine stalls much faster than the old 5 min. */
 const STREAM_ABORT_TIMEOUT_MS = 180_000;
 
-/** System prompt requesting both narrative and structured JSON output.
- *  Intentionally simple to match SERT reference — no custom tools, just web_search.
- *  Claude returns prose + JSON block at the end which we parse with extractJsonWithRepair(). */
-const SYSTEM_PROMPT = `You are a comprehensive wine research assistant. Search the web to build a complete profile for the requested wine.
+/**
+ * Phase 1 system prompt — simple research guidance, NO JSON schema.
+ * Matches SERT's simplicity with explicit detail-retention instruction
+ * to prevent loss of exact scores, reviewer names, and technical details.
+ */
+const SEARCH_SYSTEM_PROMPT = `You are a comprehensive wine research assistant. Search the web to build a complete profile for the requested wine.
 
-Cover these areas in your narrative:
+Cover these areas:
 1. Producer background and regional reputation
 2. Grape varieties and blend composition
 3. Tasting notes (nose, palate, structure, finish)
@@ -40,21 +46,27 @@ Cover these areas in your narrative:
 6. Food pairings
 7. Awards and competition medals
 
-Include inline citations for all factual claims.
+IMPORTANT: Report ALL exact numeric scores, reviewer names, competition years, and technical details verbatim. Do NOT summarize or approximate scores. For example write "Tim Atkin: 94/100" not "scored well with Tim Atkin".
 
-After your narrative, output a single JSON object (no markdown code fences) with this structure:
-{"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}`;
+Provide a well-structured answer with clear sections.
+Always cite your sources inline with URLs where available.`;
 
 /* Architecture note:
  *
- * Previous iterations used web_search_20260209 (dynamic filtering) with the beta header
- * `code-execution-web-tools-2026-02-09`. That header enables a `code_execution` server
- * tool that Claude uses autonomously. Our complex prompt (with JSON schema) triggered
- * code_execution in a loop — 22+ iterations consuming all time → 300s abort.
+ * Previous iterations used a single prompt with both research instructions AND a JSON
+ * schema. When paired with web_search_20260209 (dynamic filtering) and the beta header
+ * `code-execution-web-tools-2026-02-09`, the JSON schema triggered Claude's
+ * `code_execution` server tool in a loop — 22+ iterations consuming all time → 300s abort.
  *
- * Fix: switched to web_search_20250305 (basic) which needs no beta header.
- * No code_execution, no stalls. Structured JSON returned in text, parsed with
- * extractJsonWithRepair(). SERT reference completes in ~2 min with similar approach.
+ * The SERT reference (docs/sert/) proves the correct pattern: simple research prompt
+ * (no JSON schema) → narrative → extract data in a second call. This two-phase pipeline
+ * avoids code_execution entirely and is more robust.
+ *
+ * Phase 1: Sonnet + web_search_20250305 (basic, no beta header) → narrative
+ * Phase 2: Haiku + messages.create (no tools) → structured JSON from narrative
+ *
+ * Future: Phase 1 can upgrade to web_search_20260209 once the simple prompt is proven
+ * stable — the lack of JSON schema means code_execution won't be triggered.
  */
 
 /**
@@ -336,18 +348,89 @@ async function collectStreamContent(stream) {
 }
 
 /**
- * Search for wine data using Claude's native web search with SSE streaming.
- * Returns both structured ratings JSON and rich prose narrative in a single API call.
+ * Phase 1: Search the web for wine data using Claude's native web search.
+ * Returns prose narrative, source URLs, and citations.
  *
- * Uses streaming to avoid SDK timeout issues — web search tool execution can take
- * 2-4 minutes server-side. With streaming, the connection stays alive as SSE events
- * flow continuously, eliminating the hard timeout that kills non-streaming requests.
+ * @param {Object} wine - Wine object
+ * @param {Object} params - Prepared prompt params (userPrompt, modelId)
+ * @returns {Promise<{narrative: string, sourceUrls: Array, citations: string[], allContent: Array, duration: number, modelId: string}>}
+ * @throws {Error} On API or streaming failure
+ */
+async function searchPhase(wine, params) {
+  const { userPrompt, modelId } = params;
+  const startTime = Date.now();
+
+  const apiParams = {
+    model: modelId,
+    max_tokens: 16000,
+    system: SEARCH_SYSTEM_PROMPT,
+    tools: [
+      // Basic web_search — no beta header required.
+      // web_search_20260209 (dynamic) requires the code-execution-web-tools beta header,
+      // which enables `code_execution` server tool. The two-phase architecture avoids
+      // this entirely — Phase 1 has no JSON schema, so code_execution won't trigger.
+      { type: 'web_search_20250305' }
+    ],
+    messages: [{ role: 'user', content: userPrompt }],
+    stream: true
+  };
+
+  // Safety AbortController — only fires if stream truly stalls
+  const abortController = new AbortController();
+  const abortTimer = setTimeout(() => {
+    logger.warn('UnifiedWineSearch', `Abort fired after ${STREAM_ABORT_TIMEOUT_MS}ms — stream did not complete in time`);
+    abortController.abort();
+  }, STREAM_ABORT_TIMEOUT_MS);
+
+  const streamOpts = {
+    signal: abortController.signal
+  };
+
+  let allContent;
+  let lastStopReason;
+
+  try {
+    const stream = anthropic.messages.stream(apiParams, streamOpts);
+    const result = await collectStreamContent(stream);
+    allContent = [...result.content];
+    lastStopReason = result.stopReason;
+
+    // Handle pause_turn: server tool loop hit iteration limit — resume with continuation
+    let continuations = 0;
+    while (lastStopReason === 'pause_turn' && continuations < MAX_PAUSE_CONTINUATIONS) {
+      continuations++;
+      logger.info('UnifiedWineSearch', `pause_turn after ${Date.now() - startTime}ms (${continuations}/${MAX_PAUSE_CONTINUATIONS}), resuming stream…`);
+      apiParams.messages = [
+        ...apiParams.messages,
+        { role: 'assistant', content: allContent },
+        { role: 'user', content: 'Continue your research.' }
+      ];
+      const contStream = anthropic.messages.stream(apiParams, streamOpts);
+      const contResult = await collectStreamContent(contStream);
+      allContent.push(...contResult.content);
+      lastStopReason = contResult.stopReason;
+    }
+  } finally {
+    clearTimeout(abortTimer);
+  }
+
+  const duration = Date.now() - startTime;
+
+  // Extract prose narrative (preamble-filtered: text blocks after last search result)
+  const narrative = extractNarrative(allContent);
+  const sourceUrls = extractSourceUrls(allContent);
+  const citations = extractCitations(allContent);
+
+  return { narrative, sourceUrls, citations, allContent, duration, modelId, lastStopReason };
+}
+
+/**
+ * Search for wine data using a two-phase pipeline.
  *
- * Response parsing strategy (SERT preamble-filtering pattern):
- * 1. Find last web_search_tool_result block index
- * 2. Collect text blocks AFTER that index → prose narrative
- * 3. Extract embedded JSON from narrative via extractJsonWithRepair() → structured data
- * 4. Extract source URLs from all web_search_tool_result blocks → citation list
+ * Phase 1 (Search): Simple research prompt + web_search → prose narrative + citations.
+ * Phase 2 (Extract): Narrative → Haiku → structured JSON (ratings, entities, etc.).
+ *
+ * Returns the same shape as the previous single-phase architecture — no consumer changes needed.
  *
  * @param {Object} wine - Wine object with name, vintage, producer, country, colour, etc.
  * @param {Object} [options] - Optional behavior flags.
@@ -390,146 +473,83 @@ export async function unifiedWineSearch(wine, options = {}) {
     ? '\nUse this profile to verify results match the correct wine. Do NOT add these terms to your web search queries.'
     : '';
 
-  logger.info('UnifiedWineSearch', `Starting streaming search for: ${wineName} ${vintage}`);
-  const startTime = Date.now();
+  logger.info('UnifiedWineSearch', `Starting two-phase search for: ${wineName} ${vintage}`);
+  const totalStartTime = Date.now();
 
   try {
-    const modelId = getModelForTask('webSearch');
+    const searchModelId = getModelForTask('webSearch');
 
     const userPrompt = `Research this wine comprehensively: ${producer ? producer + ' ' : ''}${wineName} ${vintage}${countryHint}${profileLine}${profileInstruction}
 
 Search for information from these priority sources:
 ${sourceInjection}
 
-After your narrative, output the JSON object with all structured data found.
-
 CRITICAL RULES:
 - Only ${vintage} vintage ratings (not other vintages)
-- Wine colour: ${colour}${style ? `\n- Style: ${style}` : ''}${grapes ? `\n- Grapes: ${grapes}` : ''}${region ? `\n- Region: ${region}` : ''}
-- Empty array/null for missing data
-- raw_score_numeric must be a number or null
-- source_url must be a real URL from your search results
-- grape_varieties: extract grape/variety names (e.g. ["Cabernet Sauvignon", "Merlot"])
-- awards: list competition medals with year and category
-- No markdown code fences around the JSON`;
+- Wine colour: ${colour}${style ? `\n- Style: ${style}` : ''}${grapes ? `\n- Grapes: ${grapes}` : ''}${region ? `\n- Region: ${region}` : ''}`;
 
-    const apiParams = {
-      model: modelId,
-      max_tokens: 16000,
-      system: SYSTEM_PROMPT,
-      tools: [
-        // Basic web_search — no beta header required.
-        // web_search_20260209 (dynamic) requires the code-execution-web-tools beta header,
-        // which enables `code_execution` server tool. Our complex prompt with JSON schema
-        // triggers Claude to use code_execution in a loop (22+ iterations, 5 min timeout).
-        // Basic web_search_20250305 avoids this entirely — no code_execution, no stalls.
-        { type: 'web_search_20250305' }
-      ],
-      messages: [{ role: 'user', content: userPrompt }],
-      stream: true
-    };
+    // ── Phase 1: Search ─────────────────────────────────────────────
+    const searchResult = await searchPhase(wine, { userPrompt, modelId: searchModelId });
 
-    // Safety AbortController — only fires if stream truly stalls (5 min)
-    const abortController = new AbortController();
-    const abortTimer = setTimeout(() => {
-      logger.warn('UnifiedWineSearch', `Abort fired after ${STREAM_ABORT_TIMEOUT_MS}ms — stream did not complete in time`);
-      abortController.abort();
-    }, STREAM_ABORT_TIMEOUT_MS);
-
-    // No beta header needed for basic web_search_20250305.
-    // The old code-execution-web-tools-2026-02-09 header enabled a `code_execution`
-    // server tool that caused infinite loops (22+ iterations → 5 min timeout).
-    const streamOpts = {
-      signal: abortController.signal
-    };
-
-    let allContent;
-    let lastStopReason;
-
-    try {
-      const stream = anthropic.messages.stream(apiParams, streamOpts);
-      const result = await collectStreamContent(stream);
-      allContent = [...result.content];
-      lastStopReason = result.stopReason;
-
-      // Handle pause_turn: server tool loop hit iteration limit — resume with continuation
-      let continuations = 0;
-      while (lastStopReason === 'pause_turn' && continuations < MAX_PAUSE_CONTINUATIONS) {
-        continuations++;
-        logger.info('UnifiedWineSearch', `pause_turn after ${Date.now() - startTime}ms (${continuations}/${MAX_PAUSE_CONTINUATIONS}), resuming stream…`);
-        apiParams.messages = [
-          ...apiParams.messages,
-          { role: 'assistant', content: allContent },
-          { role: 'user', content: 'Continue your research and include the JSON object with all structured data found.' }
-        ];
-        const contStream = anthropic.messages.stream(apiParams, streamOpts);
-        const contResult = await collectStreamContent(contStream);
-        allContent.push(...contResult.content);
-        lastStopReason = contResult.stopReason;
-      }
-    } finally {
-      clearTimeout(abortTimer);
-    }
-
-    const duration = Date.now() - startTime;
-    const content = allContent;
-
-    // Extract prose narrative (preamble-filtered: text blocks after last search result)
-    const narrative = extractNarrative(content);
-    if (!narrative) {
-      const stopReason = lastStopReason || 'unknown';
-      const blockTypes = content.map(b => b.type).join(', ') || 'empty';
-      logger.warn('UnifiedWineSearch', `No text in response for "${wineName}" after ${duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
+    if (!searchResult.narrative) {
+      const stopReason = searchResult.lastStopReason || 'unknown';
+      const blockTypes = searchResult.allContent.map(b => b.type).join(', ') || 'empty';
+      logger.warn('UnifiedWineSearch', `No text in response for "${wineName}" after ${searchResult.duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
       if (includeErrors) {
         return buildSearchError(
           'empty_response',
           'Wine search returned an empty response. Please try again.',
-          { wineName, duration, stopReason, blockTypes }
+          { wineName, duration: searchResult.duration, stopReason, blockTypes }
         );
       }
       return null;
     }
 
-    // Extract structured JSON from narrative text (Claude embeds it after prose)
+    // ── Phase 2: Extract ────────────────────────────────────────────
     let extracted;
+    let extractionDuration = 0;
+    let extractionModelId = null;
+    let extractionFailed = false;
+
     try {
-      extracted = extractJsonWithRepair(narrative);
-      logger.info('UnifiedWineSearch', `Extracted JSON from text in ${duration}ms, ${narrative.length} chars`);
-    } catch (parseErr) {
-      logger.error('UnifiedWineSearch', `JSON extraction failed: ${parseErr.message}`);
-      if (includeErrors) {
-        return buildSearchError(
-          'parse_failure',
-          'Wine search returned data, but it could not be parsed. Please try again.',
-          { wineName, duration, message: parseErr.message }
-        );
-      }
-      return null;
+      const extractResult = await extractWineData(searchResult.narrative, searchResult.sourceUrls, wine);
+      extracted = normalizeExtraction(extractResult.extracted);
+      extractionDuration = extractResult.duration;
+      extractionModelId = extractResult.modelId;
+      logger.info('UnifiedWineSearch', `Phase 2 extracted ${extracted.ratings.length} ratings in ${extractionDuration}ms`);
+    } catch (extractErr) {
+      // Graceful degradation: Phase 2 failed, but Phase 1 narrative is still valuable
+      extractionFailed = true;
+      extractionModelId = getModelForTask('wineExtraction');
+      logger.warn('UnifiedWineSearch', `Phase 2 extraction failed for "${wineName}": ${extractErr.message}`, { error: extractErr });
+      extracted = normalizeExtraction({});
     }
 
-    // Collect source URLs for provenance
-    const sourceUrls = extractSourceUrls(content);
+    const totalDuration = Date.now() - totalStartTime;
 
-    // Collect inline citations for frequency scoring by callers
-    const citations = extractCitations(content);
-
+    // ── Merge and return ────────────────────────────────────────────
     extracted._metadata = {
       method: 'unified_claude_search',
-      model: modelId,
-      sources_count: sourceUrls.length,
-      citation_count: citations.length,
-      duration_ms: duration,
+      pipeline_version: 2,
+      model: searchModelId,
+      extraction_model: extractionModelId,
+      sources_count: searchResult.sourceUrls.length,
+      citation_count: searchResult.citations.length,
+      search_duration_ms: searchResult.duration,
+      extraction_duration_ms: extractionDuration,
+      duration_ms: totalDuration,
+      extraction_failed: extractionFailed,
       extracted_at: new Date().toISOString()
     };
-    extracted._sources = sourceUrls;
-    extracted._citations = citations;
-    extracted._narrative = narrative;
+    extracted._sources = searchResult.sourceUrls;
+    extracted._citations = searchResult.citations;
+    extracted._narrative = searchResult.narrative;
 
-    logger.info('UnifiedWineSearch', `Extracted ${extracted.ratings?.length || 0} ratings from ${sourceUrls.length} sources in ${duration}ms`);
+    logger.info('UnifiedWineSearch', `Extracted ${extracted.ratings.length} ratings from ${searchResult.sourceUrls.length} sources in ${totalDuration}ms (search: ${searchResult.duration}ms, extract: ${extractionDuration}ms)`);
 
     return extracted;
   } catch (error) {
-    const duration = Date.now() - startTime;
+    const duration = Date.now() - totalStartTime;
     const errMsg = String(error?.message || '').toLowerCase();
     const isAbort = error?.name === 'AbortError' || errMsg.includes('abort');
     const isTimeout = isAbort || errMsg.includes('timeout') || errMsg.includes('timed out') || errMsg.includes('etimedout');

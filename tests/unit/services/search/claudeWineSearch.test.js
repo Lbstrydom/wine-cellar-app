@@ -1,21 +1,48 @@
 /**
  * @fileoverview Unit tests for the unified Claude Wine Search service.
- * Tests the single-call architecture: prompt construction, JSON text extraction,
- * preamble filtering, source URL collection, and citation extraction.
+ * Tests Phase 1 (search → narrative) and the orchestrator that wires Phase 1 + Phase 2.
  *
- * The search uses SSE streaming — mocks simulate the stream event protocol.
+ * Phase 1 uses SSE streaming — mocks simulate the stream event protocol.
+ * Phase 2 (wineDataExtractor.js) is mocked at the module boundary — its internal
+ * tests live in wineDataExtractor.test.js.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const { mockStream } = vi.hoisted(() => ({ mockStream: vi.fn() }));
+const { mockStream } = vi.hoisted(() => ({
+  mockStream: vi.fn()
+}));
+
+const { mockExtractWineData, mockNormalizeExtraction } = vi.hoisted(() => ({
+  mockExtractWineData: vi.fn(),
+  mockNormalizeExtraction: vi.fn((parsed) => ({
+    ratings: Array.isArray(parsed.ratings) ? parsed.ratings : [],
+    grape_varieties: Array.isArray(parsed.grape_varieties) ? parsed.grape_varieties : [],
+    food_pairings: Array.isArray(parsed.food_pairings) ? parsed.food_pairings : [],
+    awards: Array.isArray(parsed.awards) ? parsed.awards : [],
+    tasting_notes: parsed.tasting_notes && typeof parsed.tasting_notes === 'object' && !Array.isArray(parsed.tasting_notes)
+      ? parsed.tasting_notes : null,
+    drinking_window: parsed.drinking_window && typeof parsed.drinking_window === 'object' && !Array.isArray(parsed.drinking_window)
+      ? parsed.drinking_window : null,
+    producer_info: parsed.producer_info && typeof parsed.producer_info === 'object' && !Array.isArray(parsed.producer_info)
+      ? parsed.producer_info : null,
+    style_summary: typeof parsed.style_summary === 'string' ? parsed.style_summary : ''
+  }))
+}));
 
 vi.mock('../../../../src/services/ai/claudeClient.js', () => ({
   default: { messages: { stream: mockStream } }
 }));
 
+vi.mock('../../../../src/services/search/wineDataExtractor.js', () => ({
+  extractWineData: mockExtractWineData,
+  normalizeExtraction: mockNormalizeExtraction
+}));
+
 vi.mock('../../../../src/config/aiModels.js', () => ({
-  getModelForTask: vi.fn(() => 'claude-sonnet-4-6')
+  getModelForTask: vi.fn((task) =>
+    task === 'wineExtraction' ? 'claude-haiku-4-5-20251001' : 'claude-sonnet-4-6'
+  )
 }));
 
 vi.mock('../../../../src/utils/logger.js', () => ({
@@ -50,14 +77,15 @@ import {
   extractCitations
 } from '../../../../src/services/search/claudeWineSearch.js';
 import { getModelForTask } from '../../../../src/config/aiModels.js';
+import logger from '../../../../src/utils/logger.js';
 
 // ---------------------------------------------------------------------------
-// Helpers — convert content blocks to SSE stream events
+// Helpers — Phase 1 stream event simulation
 // ---------------------------------------------------------------------------
 
 /**
  * Create a mock async iterable that yields SSE events for the given content blocks.
- * Simulates the Anthropic SDK's messages.stream() return value.
+ * Simulates the Anthropic SDK's messages.stream() return value (Phase 1).
  */
 function makeStreamFromContent(contentBlocks, stopReason = 'end_turn') {
   const events = [];
@@ -98,7 +126,6 @@ function makeStreamFromContent(contentBlocks, stopReason = 'end_turn') {
         index: i,
         content_block: { type: 'tool_use', id: block.id || `tu_${i}`, name: block.name }
       });
-      // Emit input JSON as a single delta
       events.push({
         type: 'content_block_delta',
         index: i,
@@ -141,8 +168,19 @@ function makeStreamFromContent(contentBlocks, stopReason = 'end_turn') {
   };
 }
 
-/** Build a stream response with narrative text + embedded JSON (new architecture — no tool_use). */
-const makeJsonTextResponse = (data = {}, stopReason = 'end_turn') => {
+/** Build a Phase 1 narrative stream (search results + prose narrative). */
+function makeNarrativeStream(narrative = 'Here is the research narrative for this wine.', stopReason = 'end_turn') {
+  return makeStreamFromContent([
+    {
+      type: 'web_search_tool_result',
+      content: [{ type: 'web_search_result', url: 'https://timatkin.com/review', title: 'Tim Atkin' }]
+    },
+    { type: 'text', text: narrative }
+  ], stopReason);
+}
+
+/** Default Phase 2 extraction result (returned by mocked extractWineData). */
+function makeExtractResult(data = {}) {
   const merged = {
     ratings: [],
     tasting_notes: null,
@@ -154,25 +192,14 @@ const makeJsonTextResponse = (data = {}, stopReason = 'end_turn') => {
     awards: [],
     ...data
   };
-  return makeStreamFromContent([
-    {
-      type: 'web_search_tool_result',
-      content: [{ type: 'web_search_result', url: 'https://timatkin.com/review', title: 'Tim Atkin' }]
-    },
-    {
-      type: 'text',
-      text: `Here is the research narrative for this wine.\n\n${JSON.stringify(merged)}`
-    }
-  ], stopReason);
-};
+  return { extracted: merged, duration: 50, modelId: 'claude-haiku-4-5-20251001' };
+}
 
-const makeTextResponse = (text) => makeStreamFromContent([
-  {
-    type: 'web_search_tool_result',
-    content: [{ type: 'web_search_result', url: 'https://vivino.com/wine', title: 'Vivino' }]
-  },
-  { type: 'text', text }
-], 'end_turn');
+/** Shorthand: set up default Phase 1 stream + Phase 2 extraction for happy path. */
+function setupHappyPath(extractionData = {}, narrative = 'Here is the research narrative for this wine.') {
+  mockStream.mockReturnValue(makeNarrativeStream(narrative));
+  mockExtractWineData.mockResolvedValue(makeExtractResult(extractionData));
+}
 
 const mockWine = {
   wine_name: 'Kanonkop Pinotage',
@@ -193,16 +220,16 @@ describe('isUnifiedWineSearchAvailable()', () => {
 });
 
 // ---------------------------------------------------------------------------
-// API call shape
+// Phase 1: API call shape
 // ---------------------------------------------------------------------------
 
-describe('unifiedWineSearch() — API call shape', () => {
+describe('unifiedWineSearch() — Phase 1 API call shape', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('calls anthropic.messages.stream with basic web_search and stream:true', async () => {
-    mockStream.mockReturnValue(makeTextResponse(JSON.stringify({ ratings: [] })));
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -224,8 +251,21 @@ describe('unifiedWineSearch() — API call shape', () => {
     expect(getModelForTask).toHaveBeenCalledWith('webSearch');
   });
 
+  it('Phase 1 system prompt has NO JSON schema', async () => {
+    setupHappyPath();
+
+    await unifiedWineSearch(mockWine);
+
+    const systemPrompt = mockStream.mock.calls[0][0].system;
+    expect(systemPrompt).not.toContain('"ratings"');
+    expect(systemPrompt).not.toContain('"source_lens"');
+    expect(systemPrompt).not.toContain('raw_score_numeric');
+    expect(systemPrompt).toContain('comprehensive wine research assistant');
+    expect(systemPrompt).toContain('Report ALL exact numeric scores');
+  });
+
   it('includes producer, wine name, vintage, and country in prompt', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -238,7 +278,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('includes country-specific local sources in prompt', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -249,7 +289,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('includes global competition and critic sources in prompt', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -259,7 +299,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('always includes community sources (Vivino, CellarTracker) in prompt', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -269,7 +309,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('uses default sources when no country provided', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({ ...mockWine, country: '' });
 
@@ -280,7 +320,7 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('handles NV vintage correctly', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({ ...mockWine, vintage: '' });
 
@@ -289,12 +329,24 @@ describe('unifiedWineSearch() — API call shape', () => {
   });
 
   it('handles null vintage as NV', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({ ...mockWine, vintage: null });
 
     const prompt = mockStream.mock.calls[0][0].messages[0].content;
     expect(prompt).toContain('NV');
+  });
+
+  it('user prompt has no JSON-related instructions (moved to Phase 2)', async () => {
+    setupHappyPath();
+
+    await unifiedWineSearch(mockWine);
+
+    const prompt = mockStream.mock.calls[0][0].messages[0].content;
+    expect(prompt).not.toContain('output the JSON');
+    expect(prompt).not.toContain('No markdown code fences');
+    expect(prompt).not.toContain('raw_score_numeric');
+    expect(prompt).not.toContain('source_url must be');
   });
 });
 
@@ -308,7 +360,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('includes wine profile line when style/grapes/region are present', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({
       ...mockWine,
@@ -326,7 +378,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('includes style/grapes/region in CRITICAL RULES section', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({
       ...mockWine,
@@ -342,7 +394,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('omits profile line when wine has no style/grapes/region', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch(mockWine);
 
@@ -352,7 +404,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('sanitizes profile fields — strips control characters', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({
       ...mockWine,
@@ -367,7 +419,7 @@ describe('unifiedWineSearch() — profile context injection', () => {
   });
 
   it('truncates profile fields at 100 characters', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+    setupHappyPath();
 
     await unifiedWineSearch({
       ...mockWine,
@@ -383,16 +435,62 @@ describe('unifiedWineSearch() — profile context injection', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Structured output (JSON embedded in text — primary path)
+// Two-phase orchestration — Phase 2 delegation
 // ---------------------------------------------------------------------------
 
-describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
+describe('unifiedWineSearch() — Phase 2 delegation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('extracts ratings from JSON embedded in text response', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse({
+  it('calls extractWineData with narrative, sourceUrls, and wine', async () => {
+    const narrative = 'Tim Atkin scored 94/100.';
+    mockStream.mockReturnValue(makeNarrativeStream(narrative));
+    mockExtractWineData.mockResolvedValue(makeExtractResult());
+
+    await unifiedWineSearch(mockWine);
+
+    expect(mockExtractWineData).toHaveBeenCalledOnce();
+    const [narr, urls, wine] = mockExtractWineData.mock.calls[0];
+    expect(narr).toBe(narrative);
+    expect(urls).toHaveLength(1);
+    expect(urls[0].url).toBe('https://timatkin.com/review');
+    expect(wine).toBe(mockWine);
+  });
+
+  it('calls normalizeExtraction on the extracted data', async () => {
+    setupHappyPath({ ratings: [{ source: 'Vivino' }] });
+
+    await unifiedWineSearch(mockWine);
+
+    expect(mockNormalizeExtraction).toHaveBeenCalledOnce();
+    const [parsed] = mockNormalizeExtraction.mock.calls[0];
+    expect(parsed.ratings).toHaveLength(1);
+    expect(parsed.ratings[0].source).toBe('Vivino');
+  });
+
+  it('does not call extractWineData when narrative is empty', async () => {
+    mockStream.mockReturnValue(makeStreamFromContent([
+      { type: 'web_search_tool_result', content: [] }
+    ], 'end_turn'));
+
+    await unifiedWineSearch(mockWine);
+
+    expect(mockExtractWineData).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-phase integration — happy path
+// ---------------------------------------------------------------------------
+
+describe('unifiedWineSearch() — two-phase integration', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('returns extracted ratings from Phase 2', async () => {
+    setupHappyPath({
       ratings: [{
         source: 'Tim Atkin SA',
         source_lens: 'critics',
@@ -408,7 +506,7 @@ describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
         rating_count: null
       }],
       grape_varieties: ['Pinotage']
-    }));
+    });
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -419,12 +517,12 @@ describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
     expect(result.grape_varieties).toEqual(['Pinotage']);
   });
 
-  it('extracts producer_info and awards from JSON in text', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse({
+  it('returns producer_info and awards from Phase 2', async () => {
+    setupHappyPath({
       ratings: [],
       producer_info: { name: 'Kanonkop', region: 'Stellenbosch', country: 'South Africa', description: 'Iconic estate' },
       awards: [{ competition: 'Veritas Awards', year: 2020, award: 'Gold', category: 'Red Wine' }]
-    }));
+    });
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -433,8 +531,8 @@ describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
     expect(result.awards[0].competition).toBe('Veritas Awards');
   });
 
-  it('includes narrative from text blocks after last search result', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+  it('includes narrative from Phase 1', async () => {
+    setupHappyPath();
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -443,53 +541,58 @@ describe('unifiedWineSearch() — JSON text extraction (primary path)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Text-only response handling
+// Phase 2 graceful degradation
 // ---------------------------------------------------------------------------
 
-describe('unifiedWineSearch() — plain text with embedded JSON', () => {
+describe('unifiedWineSearch() — Phase 2 graceful degradation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('extracts JSON from text response without narrative preamble', async () => {
-    mockStream.mockReturnValue(makeTextResponse(
-      JSON.stringify({
-        ratings: [{
-          source: 'Vivino',
-          source_lens: 'community',
-          score_type: 'stars',
-          raw_score: '4.2',
-          raw_score_numeric: 4.2,
-          vintage_match: 'exact',
-          confidence: 'medium',
-          source_url: 'https://vivino.com/wine'
-        }],
-        tasting_notes: null,
-        drinking_window: null,
-        food_pairings: [],
-        style_summary: ''
-      })
-    ));
+  it('returns empty structured data when Phase 2 fails', async () => {
+    mockStream.mockReturnValue(makeNarrativeStream());
+    mockExtractWineData.mockRejectedValue(new Error('Haiku API error'));
 
     const result = await unifiedWineSearch(mockWine);
 
     expect(result).not.toBeNull();
-    expect(result.ratings).toHaveLength(1);
-    expect(result.ratings[0].source).toBe('Vivino');
-    expect(result.ratings[0].raw_score_numeric).toBe(4.2);
+    expect(result.ratings).toEqual([]);
+    expect(result.grape_varieties).toEqual([]);
+    expect(result.awards).toEqual([]);
+    expect(result.food_pairings).toEqual([]);
+    expect(result.tasting_notes).toBeNull();
+    expect(result.drinking_window).toBeNull();
+    expect(result.producer_info).toBeNull();
+    expect(result.style_summary).toBe('');
+    expect(result._narrative).toContain('research narrative');
+    expect(result._metadata.extraction_failed).toBe(true);
   });
 
-  it('returns null when text has no extractable JSON', async () => {
-    mockStream.mockReturnValue(makeStreamFromContent([
-      {
-        type: 'web_search_tool_result',
-        content: []
-      },
-      { type: 'text', text: 'I could not find any ratings for this wine.' }
-    ], 'end_turn'));
+  it('logs warning when Phase 2 fails', async () => {
+    mockStream.mockReturnValue(makeNarrativeStream());
+    mockExtractWineData.mockRejectedValue(new Error('Haiku API error'));
+
+    await unifiedWineSearch(mockWine);
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      'UnifiedWineSearch',
+      expect.stringContaining('Phase 2 extraction failed'),
+      expect.objectContaining({ error: expect.any(Error) })
+    );
+  });
+
+  it('still includes metadata and sources when Phase 2 fails', async () => {
+    mockStream.mockReturnValue(makeNarrativeStream());
+    mockExtractWineData.mockRejectedValue(new Error('Haiku API error'));
 
     const result = await unifiedWineSearch(mockWine);
-    expect(result).toBeNull();
+
+    expect(result._metadata.method).toBe('unified_claude_search');
+    expect(result._metadata.pipeline_version).toBe(2);
+    expect(result._metadata.extraction_failed).toBe(true);
+    expect(result._metadata.extraction_model).toBe('claude-haiku-4-5-20251001');
+    expect(result._sources).toBeDefined();
+    expect(result._citations).toBeDefined();
   });
 });
 
@@ -502,21 +605,21 @@ describe('unifiedWineSearch() — error handling', () => {
     vi.clearAllMocks();
   });
 
-  it('returns null on API error', async () => {
+  it('returns null on Phase 1 API error', async () => {
     mockStream.mockImplementation(() => { throw new Error('API rate limited'); });
 
     const result = await unifiedWineSearch(mockWine);
     expect(result).toBeNull();
   });
 
-  it('returns null when response has no content blocks', async () => {
+  it('returns null when Phase 1 response has no content blocks', async () => {
     mockStream.mockReturnValue(makeStreamFromContent([], 'end_turn'));
 
     const result = await unifiedWineSearch(mockWine);
     expect(result).toBeNull();
   });
 
-  it('returns null when response content is only search result blocks (no text)', async () => {
+  it('returns null when Phase 1 response content is only search result blocks (no text)', async () => {
     mockStream.mockReturnValue(makeStreamFromContent([
       { type: 'web_search_tool_result', content: [] }
     ], 'end_turn'));
@@ -585,7 +688,10 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
         { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://first.com', title: 'First' }] },
         { type: 'text', text: 'Partial research...' }
       ], 'pause_turn'))
-      .mockReturnValueOnce(makeJsonTextResponse({ ratings: [{ source: 'Tim Atkin', raw_score: '94' }] }));
+      .mockReturnValueOnce(makeNarrativeStream('Complete research with Tim Atkin: 94/100.'));
+    mockExtractWineData.mockResolvedValue(makeExtractResult({
+      ratings: [{ source: 'Tim Atkin', raw_score: '94' }]
+    }));
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -599,7 +705,8 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
     expect(secondCallParams.messages[1].role).toBe('assistant');
     expect(secondCallParams.messages[2].role).toBe('user');
     expect(secondCallParams.messages[2].content).toContain('Continue');
-    expect(secondCallParams.messages[2].content).toContain('JSON');
+    // No JSON instruction in continuation (moved to Phase 2)
+    expect(secondCallParams.messages[2].content).not.toContain('JSON');
   });
 
   it('accumulates sources from all pause_turn iterations', async () => {
@@ -609,8 +716,9 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
       ], 'pause_turn'))
       .mockReturnValueOnce(makeStreamFromContent([
         { type: 'web_search_tool_result', content: [{ type: 'web_search_result', url: 'https://second.com', title: 'Second' }] },
-        { type: 'text', text: `Narrative\n${JSON.stringify({ ratings: [] })}` }
+        { type: 'text', text: 'Research narrative.' }
       ], 'end_turn'));
+    mockExtractWineData.mockResolvedValue(makeExtractResult());
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -625,12 +733,13 @@ describe('unifiedWineSearch() — pause_turn continuation', () => {
       .mockReturnValueOnce(makeStreamFromContent([{ type: 'text', text: 'part 1' }], 'pause_turn'))
       .mockReturnValueOnce(makeStreamFromContent([{ type: 'text', text: 'part 2' }], 'pause_turn'))
       .mockReturnValueOnce(makeStreamFromContent([{ type: 'text', text: 'part 3' }], 'pause_turn'));
+    mockExtractWineData.mockResolvedValue(makeExtractResult());
 
     const result = await unifiedWineSearch(mockWine);
 
     expect(mockStream).toHaveBeenCalledTimes(3);
-    // Result should be null since no tool_use or extractable JSON
-    expect(result).toBeNull();
+    // With two-phase, we still get a result (degraded extraction from sparse narrative)
+    expect(result).not.toBeNull();
   });
 });
 
@@ -643,15 +752,20 @@ describe('unifiedWineSearch() — metadata and sources', () => {
     vi.clearAllMocks();
   });
 
-  it('attaches _metadata with method, model, and duration', async () => {
-    mockStream.mockReturnValue(makeJsonTextResponse());
+  it('attaches _metadata with method, pipeline_version, model, and duration', async () => {
+    setupHappyPath();
 
     const result = await unifiedWineSearch(mockWine);
 
     expect(result._metadata).toBeDefined();
     expect(result._metadata.method).toBe('unified_claude_search');
+    expect(result._metadata.pipeline_version).toBe(2);
     expect(result._metadata.model).toBe('claude-sonnet-4-6');
+    expect(result._metadata.extraction_model).toBe('claude-haiku-4-5-20251001');
     expect(result._metadata.duration_ms).toBeGreaterThanOrEqual(0);
+    expect(result._metadata.search_duration_ms).toBeGreaterThanOrEqual(0);
+    expect(result._metadata.extraction_duration_ms).toBeGreaterThanOrEqual(0);
+    expect(result._metadata.extraction_failed).toBe(false);
     expect(result._metadata.extracted_at).toBeDefined();
   });
 
@@ -672,9 +786,10 @@ describe('unifiedWineSearch() — metadata and sources', () => {
       },
       {
         type: 'text',
-        text: `Research narrative.\n${JSON.stringify({ ratings: [] })}`
+        text: 'Research narrative about the wine.'
       }
     ], 'end_turn'));
+    mockExtractWineData.mockResolvedValue(makeExtractResult());
 
     const result = await unifiedWineSearch(mockWine);
 
@@ -698,12 +813,13 @@ describe('unifiedWineSearch() — metadata and sources', () => {
       },
       {
         type: 'text',
-        text: `Also reviewed by Platter.\n${JSON.stringify({ ratings: [] })}`,
+        text: 'Also reviewed by Platter.',
         citations: [
           { url: 'https://platters.co.za/wine' }
         ]
       }
     ], 'end_turn'));
+    mockExtractWineData.mockResolvedValue(makeExtractResult());
 
     const result = await unifiedWineSearch(mockWine);
 

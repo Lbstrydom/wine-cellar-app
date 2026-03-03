@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 2 March 2026
+## 3 March 2026
 
 ---
 
@@ -9,7 +9,25 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 2 Mar 2026**:
+**Recent Enhancements** ✨ **NEW - 3 Mar 2026**:
+- **Search Pipeline: Two-Phase SERT Refactor + File Split — COMPLETE** ✅:
+  - **Root cause resolved**: Single-prompt architecture (JSON schema + web search) triggered Claude's `code_execution` server tool causing 22+ iteration loops that hit the 300s timeout. Temporary fix (downgrade to `web_search_20250305`) was in place.
+  - **Architecture**: Replaced with clean two-phase "Search First, Process Later" pipeline matching SERT reference (`docs/sert/`):
+    - **Phase 1** (`claudeWineSearch.js`): Sonnet + `web_search_20250305` → SSE streaming → prose narrative (no JSON schema in prompt, avoids `code_execution` loops)
+    - **Phase 2** (`wineDataExtractor.js`): Haiku (`wineExtraction` task) + `messages.create()` → structured JSON via assistant prefill `{` + JSON schema prompt
+  - **New file**: `src/services/search/wineDataExtractor.js` (125 lines) — Phase 2 extraction module with `extractWineData()`, `normalizeExtraction()`, `EXTRACTION_SYSTEM_PROMPT`, `MAX_NARRATIVE_CHARS`
+  - **`claudeWineSearch.js`** reduced from 678 → 580 lines (Phase 2 code moved out, imports wineDataExtractor)
+  - **`aiModels.js`**: Added `wineExtraction: 'claude-haiku-4-5-20251001'` task mapping
+  - **Metadata stability**: `_metadata.method` stays `'unified_claude_search'` (4 consumers unchanged); `pipeline_version: 2` added
+  - **Graceful degradation**: Phase 2 failure preserves Phase 1 narrative with `extraction_failed: true`
+  - **SOURCE REFERENCE block**: Citation numbers mapped to real URLs for Haiku's `source_url` resolution
+  - **Type safety**: `normalizeExtraction()` guarantees `ratings[]`, `grape_varieties[]`, `awards[]` are always arrays; `tasting_notes`, `drinking_window`, `producer_info` are objects or null
+  - **Tests**: `wineDataExtractor.test.js` (25 tests), `claudeWineSearch.test.js` updated (52 tests, mocks at module boundary)
+  - **Performance**: Phase 1 ~60-120s (unchanged), Phase 2 ~2-4s (+$0.002/search), reliability major increase
+  - **Validation**: `npm run test:unit` → 2970 passed (77 search tests, no regressions)
+  - **Docs**: CLAUDE.md, AGENTS.md, STATUS.md all updated with two-phase architecture
+
+**Previous Enhancements** (2 Mar 2026):
 - **Wine Search Pipeline Simplification — Post-Completion Audit & Documentation Sync** ✅:
   - Full codebase audit of all 5 phases against `docs/win-ser-plan.md` — verified all claims correct (files created/deleted, imports rewired, frontend cleanup, narrative rendering, dependency removal).
   - **AGENTS.md**: Replaced stale "Waterfall Strategy" section (4-tier pipeline, BrightData, Gemini) with "Unified Claude Web Search" description. Removed `BRIGHTDATA_*` and `GEMINI_API_KEY` from env var tables. Removed dead `ratingExtraction`/`wineClassification`/`simpleValidation` task entries from aiModels table. Updated `search/` and `ai/` directory comments.

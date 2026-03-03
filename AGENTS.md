@@ -788,7 +788,7 @@ The project uses **Vitest** for testing with self-contained integration tests th
 
 | Command | What it does | Server needed? |
 |---------|--------------|----------------|
-| `npm run test:unit` | Runs 2123 unit tests (~3s) | ❌ No |
+| `npm run test:unit` | Runs ~2970 unit tests (~3s) | ❌ No |
 | `npm run test:integration` | Runs 21 integration tests (~3s) | ✅ Auto-managed |
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
@@ -1159,6 +1159,7 @@ All model selection is centralized in `src/config/aiModels.js`. Tasks map to mod
 | `moveAudit` | Opus 4.6 | medium |
 | `pairingAudit` | Opus 4.6 | medium |
 | `webSearch` | Sonnet 4.6 | none |
+| `wineExtraction` | Haiku 4.5 | none |
 | `sommelier`, `parsing`, `ratings` | Sonnet 4.6 | none |
 | `menuParsing`, `tastingExtraction` | Sonnet 4.6 | none |
 | `signalAudit` | Haiku 4.5 | none |
@@ -1437,18 +1438,30 @@ items.sort((a, b) => {
 
 ### Unified Claude Web Search
 
-Rating fetches use a single `unifiedWineSearch()` call (`src/services/search/claudeWineSearch.js`). The old multi-tier waterfall has been replaced by a single Claude API call that uses built-in web search tools.
+Rating fetches use `unifiedWineSearch()` which orchestrates a two-phase pipeline:
 
-**`unifiedWineSearch(wine)`** (`src/services/search/claudeWineSearch.js`):
-- Uses Anthropic's `web_search_20260209` and `web_fetch_20260209` tools
-- Returns ratings, grape varieties, and prose narrative in a single response
-- `save_wine_profile` tool definition produces deterministic JSON via `tool_use` block
-- Falls back to text extraction with `extractJsonWithRepair()` if no tool_use block
-- Requires beta header: `anthropic-beta: code-execution-web-tools-2026-02-09`
+**Phase 1 — Search** (`src/services/search/claudeWineSearch.js`):
+- Sonnet + `web_search_20250305` (basic, no beta header) → SSE streaming
+- Simple research prompt with NO JSON schema (avoids `code_execution` loops)
+- Returns prose narrative + source URLs + citations
+- Handles `pause_turn` continuations (up to 2 retries)
+
+**Phase 2 — Extract** (`src/services/search/wineDataExtractor.js`):
+- Haiku (`wineExtraction` task) + `messages.create()` (non-streaming)
+- JSON schema prompt + assistant prefill `{` → structured extraction
+- `normalizeExtraction()` guarantees type safety (arrays, objects, strings)
+- SOURCE REFERENCE block maps citation numbers to real URLs
+- Graceful degradation: if Phase 2 fails, narrative from Phase 1 is preserved
+
+**Key design decisions**:
+- Two-phase split prevents `code_execution` server tool loops that occurred when JSON schema was in the search prompt
+- Matches the SERT reference pattern: "Search First, Process Later" (`docs/sert/`)
+- `_metadata.method` stays `'unified_claude_search'` for consumer stability; `pipeline_version: 2` signals new architecture
 - Requires `ANTHROPIC_API_KEY` only — no BrightData or Gemini keys needed
 
 **Shared Utilities**:
-- `src/services/shared/jsonUtils.js` — `extractJsonWithRepair()` for robust JSON extraction from LLM responses
+- `src/services/shared/jsonUtils.js` — `extractJsonWithRepair()` for Phase 2 JSON extraction
+- `src/services/ai/claudeResponseUtils.js` — `extractText()` for Phase 2 response parsing
 
 ### Region-Specific Sources
 

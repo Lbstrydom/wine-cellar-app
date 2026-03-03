@@ -73,6 +73,9 @@ export const TASK_MODELS = {
   // Web search with dynamic filtering (Tier 2 replacement for Gemini)
   webSearch: 'claude-sonnet-4-6',
 
+  // Wine data extraction from search narrative (Phase 2 of two-phase pipeline)
+  wineExtraction: 'claude-haiku-4-5-20251001',
+
   // Move auditor uses Opus 4.6 to validate algorithmic move suggestions
   moveAudit: 'claude-opus-4-6',
   pairingAudit: 'claude-opus-4-6',
