@@ -129,7 +129,7 @@ export async function rematchAwardsSource(sourceId) {
 }
 
 /**
- * Re-run matching across all imported award sources.
+ * Re-run deterministic matching across all imported award sources.
  * @returns {Promise<Object>}
  */
 export async function matchAllAwardSources() {
@@ -137,6 +137,18 @@ export async function matchAllAwardSources() {
     method: 'POST'
   });
   return handleResponse(res, 'Failed to match all awards');
+}
+
+/**
+ * Run AI-assisted deep match over the fuzzy/unmatched pool.
+ * Only auto-links high-confidence AI verdicts.
+ * @returns {Promise<Object>}
+ */
+export async function deepMatchAwards() {
+  const res = await fetch(`${API_BASE}/api/awards/deep-match`, {
+    method: 'POST'
+  });
+  return handleResponse(res, 'Failed to run AI deep match');
 }
 
 /**

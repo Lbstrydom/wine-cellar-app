@@ -106,7 +106,7 @@ router.post('/import/webpage', validateBody(importWebpageSchema), asyncHandler(a
   const result = await awardsService.importAwards(sourceId, extracted.awards);
 
   // Auto-match to cellar
-  const matchResult = await awardsService.autoMatchAwards(sourceId);
+  const matchResult = await awardsService.autoMatchAwards(sourceId, { cellarId: req.cellarId });
 
   logger.info('Awards', `Imported ${result.imported} awards, matched ${matchResult.exactMatches} exactly`);
 
@@ -157,7 +157,7 @@ router.post('/import/pdf', upload.single('pdf'), asyncHandler(async (req, res) =
   const result = await awardsService.importAwards(sourceId, extracted.awards);
 
   // Auto-match to cellar
-  const matchResult = await awardsService.autoMatchAwards(sourceId);
+  const matchResult = await awardsService.autoMatchAwards(sourceId, { cellarId: req.cellarId });
 
   logger.info('Awards', `Imported ${result.imported} awards from PDF, matched ${matchResult.exactMatches} exactly`);
 
@@ -197,7 +197,7 @@ router.post('/import/text', validateBody(importTextSchema), asyncHandler(async (
   const result = await awardsService.importAwards(sourceId, extracted.awards);
 
   // Auto-match to cellar
-  const matchResult = await awardsService.autoMatchAwards(sourceId);
+  const matchResult = await awardsService.autoMatchAwards(sourceId, { cellarId: req.cellarId });
 
   logger.info('Awards', `Imported ${result.imported} awards from text, matched ${matchResult.exactMatches} exactly`);
 
@@ -228,9 +228,43 @@ router.post('/sources/:sourceId/match', validateParams(sourceIdSchema), asyncHan
 
 /**
  * POST /awards/match-all
- * Re-run auto-matching across all imported sources.
+ * Re-run deterministic auto-matching across all imported sources.
+ * Does not invoke AI — use POST /awards/deep-match for AI-assisted matching.
  */
-router.post('/match-all', asyncHandler(async (_req, res) => {
+router.post('/match-all', asyncHandler(async (req, res) => {
+  const sources = await awardsService.getAwardSources();
+
+  let totalExact = 0;
+  let totalFuzzy = 0;
+  let totalNoMatch = 0;
+
+  for (const source of sources) {
+    const result = await awardsService.autoMatchAwards(source.id, {
+      cellarId: req.cellarId
+    });
+    totalExact += result.exactMatches || 0;
+    totalFuzzy += result.fuzzyMatches || 0;
+    totalNoMatch += result.noMatches || 0;
+  }
+
+  logger.info('Awards', `Match-all completed: ${totalExact} exact, ${totalFuzzy} fuzzy across ${sources.length} sources`);
+
+  res.json({
+    message: 'Matching completed',
+    sourcesProcessed: sources.length,
+    exactMatches: totalExact,
+    fuzzyMatches: totalFuzzy,
+    noMatches: totalNoMatch
+  });
+}));
+
+/**
+ * POST /awards/deep-match
+ * Opt-in AI-assisted pass over the fuzzy/unmatched pool.
+ * Only invokes AI for high-confidence verdicts; never auto-links low/medium confidence.
+ * Requires ANTHROPIC_API_KEY; gracefully returns zero AI counters when unavailable.
+ */
+router.post('/deep-match', asyncHandler(async (req, res) => {
   const sources = await awardsService.getAwardSources();
 
   let totalExact = 0;
@@ -241,7 +275,7 @@ router.post('/match-all', asyncHandler(async (_req, res) => {
 
   for (const source of sources) {
     const result = await awardsService.autoMatchAwards(source.id, {
-      cellarId: _req.cellarId,
+      cellarId: req.cellarId,
       aiVerify: true
     });
     totalExact += result.exactMatches || 0;
@@ -251,10 +285,10 @@ router.post('/match-all', asyncHandler(async (_req, res) => {
     totalAiReviewed += result.aiReviewed || 0;
   }
 
-  logger.info('Awards', `Match-all completed: ${totalExact} exact, ${totalFuzzy} fuzzy, ${totalAiVerified} ai-verified across ${sources.length} sources`);
+  logger.info('Awards', `Deep-match completed: ${totalExact} exact, ${totalAiVerified} ai-verified across ${sources.length} sources`);
 
   res.json({
-    message: 'Matching completed',
+    message: 'AI deep match completed',
     sourcesProcessed: sources.length,
     exactMatches: totalExact,
     fuzzyMatches: totalFuzzy,

@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 3 March 2026
+## 3 March 2026 (updated)
 
 ---
 
@@ -10,6 +10,17 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 3 Mar 2026**:
+- **Awards: Deterministic/AI Route Split + Unicode Normalisation — COMPLETE** ✅:
+  - **`POST /awards/match-all`** is now a pure deterministic-only pass (no AI), faster and cost-free. Response omits `aiVerifiedMatches`/`aiEnabled` fields.
+  - **New `POST /awards/deep-match`** — opt-in AI-assisted pass over the fuzzy/unmatched pool. Only auto-links high-confidence AI verdicts; gracefully returns zero AI counters when `ANTHROPIC_API_KEY` is absent.
+  - All 3 import routes (`/import/webpage`, `/import/pdf`, `/import/text`) now correctly forward `{ cellarId: req.cellarId }` to `autoMatchAwards()` (was missing before).
+  - **`awardMatcher.js`**: `aiVerifyAwardMatch()` now spreads `getThinkingConfig('parsing')` into the Claude API call, consistent with the shared thinking pattern.
+  - **`awardStringUtils.js`**: `normalizeWineName()` now performs Unicode NFD decomposition before lowercasing — strips combining diacritics so `é`, `ñ`, `ü` etc. match their ASCII equivalents during fuzzy comparison.
+  - **Frontend**: "AI Deep Match" button added to the Settings awards panel. `deepMatchAwards()` API function added to `public/js/api/awards.js` + re-exported from `api/index.js`. `handleDeepMatchAwards()` handler in `settings.js` shows toast with AI review/link counts.
+  - **SW cache**: bumped `v189` → `v190`; CSS cache `v=20260304a` → `v=20260304b`.
+  - **Tests**: New `awards route deep-match` describe block; `match-all` tests updated to assert no AI counters in response and correct `cellarId` scoping. Passing.
+
+
 - **Search Pipeline: Two-Phase SERT Refactor + File Split — COMPLETE** ✅:
   - **Root cause resolved**: Single-prompt architecture (JSON schema + web search) triggered Claude's `code_execution` server tool causing 22+ iteration loops that hit the 300s timeout. Temporary fix (downgrade to `web_search_20250305`) was in place.
   - **Architecture**: Replaced with clean two-phase "Search First, Process Later" pipeline matching SERT reference (`docs/sert/`):

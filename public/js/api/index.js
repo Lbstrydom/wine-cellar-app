@@ -149,6 +149,7 @@ export {
   deleteAwardsSource,
   rematchAwardsSource,
   matchAllAwardSources,
+  deepMatchAwards,
   linkAwardToWine,
   getWineAwards
 } from './awards.js';

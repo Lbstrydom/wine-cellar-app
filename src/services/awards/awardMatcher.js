@@ -7,7 +7,7 @@
 import db, { awardsDb } from '../../db/index.js';
 import { normalizeWineName, calculateSimilarity } from './awardStringUtils.js';
 import anthropic from '../ai/claudeClient.js';
-import { getModelForTask } from '../../config/aiModels.js';
+import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { extractJsonFromText } from '../shared/auditUtils.js';
 
@@ -147,7 +147,8 @@ async function aiVerifyAwardMatch(award, candidates) {
       model: modelId,
       max_tokens: 900,
       system: AI_MATCH_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: prompt }]
+      messages: [{ role: 'user', content: prompt }],
+      ...(getThinkingConfig('parsing') || {})
     });
 
     const text = extractText(response);

@@ -11,8 +11,8 @@
  */
 export function normalizeWineName(name) {
   if (!name) return '';
-  return name
-    .toLowerCase()
+  return name    .normalize('NFD')                        // decompose accented chars (e.g. é → e + \u0301)
+    .replaceAll(/\p{M}/gu, '')               // strip combining diacritics (\u0301, \u0302, …)    .toLowerCase()
     .replaceAll(/['\u2018\u2019]/g, "'")  // Normalize quotes (', ', ')
     .replaceAll(/["\u201C\u201D]/g, '"')  // Normalize quotes (", ", ")
     .replaceAll(/[\u2013\u2014]/g, '-')  // Normalize dashes

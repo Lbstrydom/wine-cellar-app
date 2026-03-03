@@ -21,6 +21,7 @@ import {
   deleteAwardsSource,
   rematchAwardsSource,
   matchAllAwardSources,
+  deepMatchAwards,
   fetchLayoutLite,
   createStorageArea,
   updateStorageAreaLayout
@@ -1014,6 +1015,9 @@ async function initAwardsSection() {
   // Match all sources button
   document.getElementById('awards-match-all-btn')?.addEventListener('click', handleMatchAllAwards);
 
+  // AI Deep Match button
+  document.getElementById('awards-deep-match-btn')?.addEventListener('click', handleDeepMatchAwards);
+
   // Set default year to current year
   const yearInput = document.getElementById('awards-year');
   if (yearInput && !yearInput.value) {
@@ -1106,6 +1110,35 @@ async function handleMatchAllAwards() {
   } finally {
     btn.disabled = false;
     btn.textContent = 'Match All Sources';
+  }
+}
+
+/**
+ * Handle "AI Deep Match" button — opt-in AI pass over fuzzy/unmatched awards.
+ */
+async function handleDeepMatchAwards() {
+  const btn = document.getElementById('awards-deep-match-btn');
+  if (!btn) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Running AI Match...';
+
+  try {
+    const result = await deepMatchAwards();
+    const { sourcesProcessed = 0, aiVerifiedMatches = 0, aiReviewed = 0, aiEnabled = false } = result;
+    if (!aiEnabled) {
+      showToast('AI matching unavailable — check ANTHROPIC_API_KEY');
+    } else if (sourcesProcessed === 0) {
+      showToast('No award sources imported yet');
+    } else {
+      showToast(`AI reviewed ${aiReviewed} award${aiReviewed === 1 ? '' : 's'}, linked ${aiVerifiedMatches} high-confidence match${aiVerifiedMatches === 1 ? '' : 'es'}`);
+    }
+    await loadAwardsSources();
+  } catch (err) {
+    showToast('Error: ' + err.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'AI Deep Match';
   }
 }
 

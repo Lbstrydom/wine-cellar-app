@@ -36,7 +36,7 @@ src/
 │   └── wineRegions.js     # Country→region mapping (50+ countries, 500+ regions)
 ├── services/
 │   ├── ai/                # Claude/OpenAI integration
-│   ├── awards/            # Wine award extraction & matching
+│   ├── awards/            # Wine award extraction & matching (awardMatcher, awardStringUtils)
 │   ├── cellar/            # Cellar analysis, placement, suggestions
 │   ├── pairing/           # Food pairing engine & restaurant pairing
 │   ├── ratings/           # Rating extraction & normalization
@@ -1253,6 +1253,20 @@ All LLM auditors should follow the shared pattern used by move and pairing audit
 - Keep optimization integrity checks strict: if normalized optimized output fails validation, downgrade verdict to `flag` and return original domain output.
 - Keep graceful degradation: timeout/API/schema errors must return `{ skipped: true, reason, latencyMs }` instead of throwing into the main flow.
 - Prefer `toAuditMetadata()` at integration points (`cellarAnalysis`, `restaurantPairing`) instead of duplicating audited/skipped metadata blocks.
+
+### Awards Matching: Deterministic vs AI Endpoints
+
+The awards matching pipeline exposes **two separate routes** — keep them distinct:
+
+| Endpoint | AI? | Cost | When to call |
+|----------|-----|------|--------------|
+| `POST /api/awards/match-all` | ❌ No | Free | After import; routine re-match |
+| `POST /api/awards/deep-match` | ✅ Yes (opt-in) | ~$0.01/run | User-initiated; fuzzy/unmatched pool only |
+
+**Rules:**
+- `match-all` must **never** pass `aiVerify: true` to `autoMatchAwards()`.
+- `deep-match` passes `{ cellarId, aiVerify: true }` and gracefully returns `{ aiEnabled: false }` when `ANTHROPIC_API_KEY` is absent.
+- `awardStringUtils.normalizeWineName()` applies Unicode NFD decomposition before lowercasing — always compare normalized forms to handle accented wine names (é, ñ, ü).
 
 ---
 
