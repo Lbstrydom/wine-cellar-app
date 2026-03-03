@@ -143,7 +143,7 @@ function buildTastingServiceCard(wine, notes, temp, window) {
  * @param {Object} notes - V2 structured notes
  * @returns {string} HTML string
  */
-function buildTastingNotesSection(notes) {
+export function buildTastingNotesSection(notes) {
   const parts = [];
   
   // Nose section

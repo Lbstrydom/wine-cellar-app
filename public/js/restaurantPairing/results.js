@@ -206,7 +206,8 @@ export async function requestRecommendations() {
       id: w.id, name: w.name, colour: w.colour ?? null,
       style: w.style ?? null, vintage: w.vintage ?? null,
       price: w.price ?? null, currency: w.currency ?? null,
-      by_the_glass: w.by_the_glass ?? false
+      by_the_glass: w.by_the_glass ?? false,
+      cellar_wine_id: w.cellar_wine_id ?? null
     })),
     dishes: dishes.map(d => ({
       id: d.id, name: d.name,

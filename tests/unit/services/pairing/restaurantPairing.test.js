@@ -52,6 +52,17 @@ vi.mock('../../../../src/utils/logger.js', () => ({
   default: { info: vi.fn(), debug: vi.fn(), error: vi.fn(), warn: vi.fn() }
 }));
 
+vi.mock('../../../../src/db/index.js', () => ({
+  default: { prepare: vi.fn() },
+  awardsDb: { prepare: vi.fn() }
+}));
+
+const mockBuildWineContext = vi.fn();
+vi.mock('../../../../src/services/wine/wineContextBuilder.js', () => ({
+  buildWineContext: mockBuildWineContext,
+  buildWineContextBatch: vi.fn()
+}));
+
 // ---------------------------------------------------------------------------
 // Imports (after mocks are declared)
 // ---------------------------------------------------------------------------
@@ -64,6 +75,7 @@ const { getModelForTask } = await import('../../../../src/config/aiModels.js');
 const { createTimeoutAbort } = await import('../../../../src/services/shared/fetchUtils.js');
 const { sanitizeChatMessage } = await import('../../../../src/services/shared/inputSanitizer.js');
 const { auditPairingRecommendations } = await import('../../../../src/services/pairing/pairingAuditor.js');
+const { default: db } = await import('../../../../src/db/index.js');
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -925,5 +937,62 @@ describe('deterministic fallback', () => {
     mockCreate.mockRejectedValue(err);
     await continueChat(chatId, 'hi', 'user1', 1).catch(() => {});
     expect(mockCleanup).toHaveBeenCalledOnce();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cellar wine enrichment (Phase 4b)
+// ---------------------------------------------------------------------------
+
+describe('cellar wine enrichment (Phase 4b)', () => {
+  const DB_WINE = { id: 42, wine_name: 'Kanonkop Pinotage', colour: 'red', vintage: 2021, cellar_id: 1 };
+
+  it('calls db.prepare and buildWineContext when cellar_wine_id is present', async () => {
+    const wine = makeWine({ cellar_wine_id: 42 });
+    const fakeContext = { food_pairings: [] };
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue(DB_WINE) });
+    mockBuildWineContext.mockResolvedValue(fakeContext);
+    mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+
+    await getRecommendations(makeParams({ wines: [wine] }), 'user1', 1);
+
+    expect(db.prepare).toHaveBeenCalledWith(expect.stringContaining('cellar_id'));
+    expect(mockBuildWineContext).toHaveBeenCalledWith(DB_WINE, 1, { includePairings: true });
+  });
+
+  it('skips buildWineContext when cellar_wine_id is absent', async () => {
+    const wine = makeWine(); // no cellar_wine_id
+    mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+
+    await getRecommendations(makeParams({ wines: [wine] }), 'user1', 1);
+
+    expect(mockBuildWineContext).not.toHaveBeenCalled();
+  });
+
+  it('includes "Pairs with:" in Claude prompt when _context has food_pairings', async () => {
+    const wine = makeWine({ cellar_wine_id: 42 });
+    const fakeContext = { food_pairings: [{ pairing: 'Grilled Steak', user_rating: 4 }] };
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue(DB_WINE) });
+    mockBuildWineContext.mockResolvedValue(fakeContext);
+    mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+
+    await getRecommendations(makeParams({ wines: [wine] }), 'user1', 1);
+
+    const callArg = mockCreate.mock.calls[0][0];
+    const userMsg = callArg.messages.find(m => m.role === 'user')?.content ?? '';
+    expect(userMsg).toContain('Pairs with:');
+    expect(userMsg).toContain('Grilled Steak');
+  });
+
+  it('is fail-open: resolves normally when buildWineContext throws', async () => {
+    const wine = makeWine({ cellar_wine_id: 42 });
+    db.prepare.mockReturnValue({ get: vi.fn().mockResolvedValue(DB_WINE) });
+    mockBuildWineContext.mockRejectedValue(new Error('Context builder error'));
+    mockCreate.mockResolvedValue(claudeJson(VALID_AI_RESPONSE));
+
+    const result = await getRecommendations(makeParams({ wines: [wine] }), 'user1', 1);
+
+    expect(result).toHaveProperty('pairings');
+    expect(result.pairings).toBeInstanceOf(Array);
   });
 });

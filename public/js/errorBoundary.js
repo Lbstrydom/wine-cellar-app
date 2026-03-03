@@ -12,6 +12,8 @@ import { escapeHtml } from './utils.js';
 export function initErrorBoundary() {
   // Catch unhandled errors
   window.addEventListener('error', (event) => {
+    // event.error is null for resource load errors (img, script) — not actionable
+    if (!event.error) return;
     console.error('Unhandled error:', event.error);
     handleError(event.error, 'Unhandled Error');
     event.preventDefault();

@@ -12,7 +12,7 @@ import { normalizeScore, calculateWineRatings, buildIdentityTokensFromWine, vali
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import { saveExtractedWindows } from '../services/ratings/ratingExtraction.js';
-import { saveFoodPairings } from '../services/shared/foodPairingsService.js';
+import { persistSearchResults } from '../services/shared/wineUpdateService.js';
 import logger from '../utils/logger.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateParams } from '../middleware/validate.js';
@@ -83,10 +83,8 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
 
     return res.json({
       message,
-      search_notes: result.search_notes,
       ratings_kept: existingRatings.length,
       identity_rejected: identityRejectedCount,
-      method: usedMethod,
       grapes_discovered: discoveredGrapes.length > 0 ? discoveredGrapes : undefined
     });
   }
@@ -115,8 +113,7 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
     logger.warn('Ratings', `All ${uniqueRatings.length} ratings have unknown source IDs — keeping existing ratings`);
     return res.json({
       message: `Found ${uniqueRatings.length} ratings but all had unknown source IDs, existing ratings preserved`,
-      ratings_kept: existingRatings.length,
-      method: usedMethod
+      ratings_kept: existingRatings.length
     });
   }
 
@@ -215,43 +212,24 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const aggregates = calculateWineRatings(ratings, wine, preference);
 
   const tastingNotes = result._narrative || null;
-  const tastingNotesStructured = result.tasting_notes || null;
-  const foodPairings = result.food_pairings || [];
-
-  await db.prepare(`
-    UPDATE wines SET
-      competition_index = $1, critics_index = $2, community_index = $3,
-      purchase_score = $4, purchase_stars = $5, confidence_level = $6,
-      tasting_notes = COALESCE($7, tasting_notes),
-      tasting_notes_structured = COALESCE($8, tasting_notes_structured),
-      ratings_updated_at = CURRENT_TIMESTAMP
-    WHERE cellar_id = $9 AND id = $10
-  `).run(
-    aggregates.competition_index,
-    aggregates.critics_index,
-    aggregates.community_index,
-    aggregates.purchase_score,
-    aggregates.purchase_stars,
-    aggregates.confidence_level,
-    tastingNotes,
-    tastingNotesStructured ? JSON.stringify(tastingNotesStructured) : null,
-    req.cellarId,
-    wineId
-  );
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FOOD PAIRINGS: Upsert AI-suggested pairings (preserves user ratings)
+  // PERSIST: Update wines + food pairings via shared helper
+  // Persists aggregates, tasting notes, style_summary, producer_description,
+  // extracted_awards, and food pairings in a single consistent operation.
   // ═══════════════════════════════════════════════════════════════════════════
-  if (foodPairings.length > 0) {
-    await saveFoodPairings(wineId, req.cellarId, foodPairings);
-  }
+  await persistSearchResults(wineId, req.cellarId, wine, aggregates, {
+    narrative: tastingNotes,
+    tastingNotesStructured: result.tasting_notes || null,
+    styleSummary: result.style_summary || null,
+    producerInfo: result.producer_info || null,
+    awards: result.awards || [],
+    foodPairings: result.food_pairings || []
+  });
 
   res.json({
     message: `Found ${insertedCount} ratings (replaced ${existingRatings.length} existing) via ${usedMethod}`,
-    search_notes: result.search_notes,
     tasting_notes: tastingNotes,
-    food_pairings_count: foodPairings.length,
-    method: usedMethod,
     ...aggregates
   });
 }));

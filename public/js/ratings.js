@@ -163,6 +163,14 @@ export function renderRatingsPanel(ratingsData) {
   html += `
         </div>
       </div>
+  `;
+
+  // Style summary from web research (below score, above detail toggle)
+  if (ratingsData.style_summary) {
+    html += `<div class="wine-style-summary">${escapeHtml(ratingsData.style_summary)}</div>`;
+  }
+
+  html += `
       <div class="ratings-detail-toggle">
         <button class="btn btn-text" id="toggle-ratings-detail" aria-expanded="false" aria-controls="ratings-detail-panel">
           Show Details ▼
@@ -236,22 +244,46 @@ export function renderRatingsPanel(ratingsData) {
     `;
   }
 
-  html += `
-      <div id="ratings-progress" class="progress-container" role="status" aria-live="polite" aria-atomic="true" style="display: none;">
-        <div class="progress-bar-wrapper">
-          <div id="ratings-progress-bar" class="progress-bar"></div>
+  // Extracted awards from web research (shown after DB awards for consistent hierarchy)
+  const extractedAwards = Array.isArray(ratingsData.extracted_awards) ? ratingsData.extracted_awards : [];
+  if (extractedAwards.length > 0) {
+    html += `
+      <div class="extracted-awards-section">
+        <h4 class="extracted-awards-title">Awards (Web Research)</h4>
+        <div class="local-awards-list">
+    `;
+    for (const award of extractedAwards) {
+      const awardClass = getAwardClass(award.award);
+      html += `
+        <div class="local-award-item">
+          <span class="local-award-badge ${awardClass}">${escapeHtml(award.award || '')}</span>
+          <span class="local-award-comp">${escapeHtml(award.competition || '')} ${award.year || ''}</span>
+          ${award.category ? `<span class="local-award-category">${escapeHtml(award.category)}</span>` : ''}
         </div>
-        <span id="ratings-progress-text" class="progress-text">Starting...</span>
+      `;
+    }
+    html += `
+        </div>
       </div>
-      <div class="ratings-actions">
-        <button class="btn btn-secondary btn-small" id="refresh-ratings-btn">
-          Update Research
-        </button>
-        <button class="btn btn-secondary btn-small" id="add-rating-btn">
-          + Add Manual
-        </button>
+    `;
+  }
+
+  html += `
+    <div id="ratings-progress" class="progress-container" role="status" aria-live="polite" aria-atomic="true" style="display: none;">
+      <div class="progress-bar-wrapper">
+        <div id="ratings-progress-bar" class="progress-bar"></div>
       </div>
+      <span id="ratings-progress-text" class="progress-text">Starting...</span>
     </div>
+    <div class="ratings-actions">
+      <button class="btn btn-secondary btn-small" id="refresh-ratings-btn">
+        Update Research
+      </button>
+      <button class="btn btn-secondary btn-small" id="add-rating-btn">
+        + Add Manual
+      </button>
+    </div>
+  </div>
   `;
 
   return html;
@@ -804,7 +836,9 @@ function renderFoodPairingsHtml(pairings) {
 
     const badge = p.source === 'manual'
       ? '<span class="pairing-source-badge">manual</span>'
-      : '';
+      : p.source === 'search'
+        ? '<span class="pairing-source-badge pairing-source-badge--ai">AI</span>'
+        : '';
 
     return `
       <div class="pairing-row" data-pairing-id="${p.id}">

@@ -1386,17 +1386,105 @@ function renderWineTable(wines, container) {
   });
 }
 
+/** Top wine-producing countries shown first in the country dropdown */
+const TOP_WINE_COUNTRIES = [
+  'France', 'Italy', 'Spain', 'USA', 'Argentina', 'Australia',
+  'Chile', 'Germany', 'Portugal', 'South Africa', 'New Zealand'
+];
+
 /**
  * Start inline cell editing for a table cell.
  * @param {HTMLElement} cell - The <td> element to make editable
  */
 function startInlineEdit(cell) {
-  if (cell.querySelector('input')) return; // Already editing
+  if (cell.querySelector('input, select')) return; // Already editing
 
   const originalValue = cell.textContent.trim();
   const field = cell.dataset.field;
   const wineId = Number(cell.dataset.wineId);
   const dataType = cell.dataset.type || 'text';
+
+  // Country field: use a proper <select> dropdown with popular countries first
+  if (field === 'country') {
+    const existingCountries = state.wineListData
+      ? state.wineListData.map(w => w.country).filter(Boolean)
+      : [];
+    const allCountries = [...new Set([...getCountries(), ...existingCountries])].sort();
+
+    const select = document.createElement('select');
+    select.className = 'inline-edit-input inline-edit-select';
+
+    // Blank / placeholder option
+    const blankOpt = document.createElement('option');
+    blankOpt.value = '';
+    blankOpt.textContent = '— select country —';
+    select.appendChild(blankOpt);
+
+    // Popular wine countries group
+    const popularGroup = document.createElement('optgroup');
+    popularGroup.label = 'Popular';
+    TOP_WINE_COUNTRIES.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c;
+      opt.textContent = c;
+      if (c === originalValue) opt.selected = true;
+      popularGroup.appendChild(opt);
+    });
+    select.appendChild(popularGroup);
+
+    // All countries group (exclude those already in Popular)
+    const allGroup = document.createElement('optgroup');
+    allGroup.label = 'All Countries';
+    allCountries.forEach(c => {
+      if (!TOP_WINE_COUNTRIES.includes(c)) {
+        const opt = document.createElement('option');
+        opt.value = c;
+        opt.textContent = c;
+        if (c === originalValue) opt.selected = true;
+        allGroup.appendChild(opt);
+      }
+    });
+    select.appendChild(allGroup);
+
+    // If original value isn't in list, add it to All Countries so it can be saved as-is
+    if (originalValue && !allCountries.includes(originalValue) && !TOP_WINE_COUNTRIES.includes(originalValue)) {
+      const customOpt = document.createElement('option');
+      customOpt.value = originalValue;
+      customOpt.textContent = originalValue;
+      customOpt.selected = true;
+      allGroup.appendChild(customOpt);
+    }
+
+    cell.textContent = '';
+    cell.appendChild(select);
+    select.focus();
+
+    let saved = false;
+    const saveSelect = async () => {
+      if (saved) return;
+      saved = true;
+      const newValue = select.value;
+      cell.textContent = newValue;
+      if (newValue !== originalValue) {
+        try {
+          await updateWine(wineId, { country: newValue || null });
+          const wine = state.wineListData?.find(w => w.id === wineId);
+          if (wine) wine.country = newValue || null;
+          showToast('Saved');
+        } catch (err) {
+          cell.textContent = originalValue;
+          showToast(`Error: ${err.message}`);
+        }
+      }
+    };
+
+    select.addEventListener('change', saveSelect);
+    select.addEventListener('blur', saveSelect);
+    select.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { saved = true; cell.textContent = originalValue; }
+    });
+    return;
+  }
 
   const input = document.createElement('input');
   input.type = dataType === 'integer' ? 'number' : 'text';
@@ -1410,18 +1498,6 @@ function startInlineEdit(cell) {
 
   cell.textContent = '';
   cell.appendChild(input);
-
-  // Country field: merge canonical countries with custom ones already in cellar
-  if (field === 'country' && state.wineListData) {
-    const existingCountries = state.wineListData.map(w => w.country).filter(Boolean);
-    const allCountries = [...new Set([...getCountries(), ...existingCountries])].sort();
-    const listId = `country-datalist-${wineId}`;
-    const datalist = document.createElement('datalist');
-    datalist.id = listId;
-    datalist.innerHTML = allCountries.map(c => `<option value="${escapeHtml(c)}">`).join('');
-    cell.appendChild(datalist);
-    input.setAttribute('list', listId);
-  }
 
   // Region field: show regions for the wine's country + custom regions in cellar
   if (field === 'region' && state.wineListData) {

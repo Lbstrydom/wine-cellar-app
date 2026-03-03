@@ -260,12 +260,13 @@ export function mergeWines(newItems) {
 }
 
 /**
- * Add a manually entered wine.
+ * Add a wine to the session.
  * @param {Object} wine - Wine data (name required)
+ * @param {number|null} [wine.cellar_wine_id] - Original cellar DB wine ID if sourced from cellar
  * @returns {Object} Wine with assigned id
  */
 export function addWine(wine) {
-  const entry = { ...wine, id: nextWineId++, confidence: 'high' };
+  const entry = { ...wine, id: nextWineId++, confidence: 'high', cellar_wine_id: wine.cellar_wine_id ?? null };
   state.wines.push(entry);
   state.selections.wines[entry.id] = true;
   save(KEYS.wines, state.wines);

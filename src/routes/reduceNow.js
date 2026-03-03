@@ -408,6 +408,7 @@ router.get('/ai-recommendations', asyncHandler(async (req, res) => {
 
   const recommendations = await generateDrinkRecommendations({
     limit,
+    cellarId: req.cellarId,
     context: Object.keys(context).length > 0 ? context : null
   });
 

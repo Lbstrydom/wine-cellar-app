@@ -38,6 +38,10 @@ vi.mock('../../../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
 
+vi.mock('../../../src/services/shared/wineUpdateService.js', () => ({
+  persistSearchResults: vi.fn().mockResolvedValue(undefined)
+}));
+
 vi.mock('../../../src/utils/errorResponse.js', () => ({
   asyncHandler: vi.fn((fn) => fn)
 }));
@@ -62,6 +66,7 @@ import ratingsTierRouter from '../../../src/routes/ratingsTier.js';
 import { unifiedWineSearch } from '../../../src/services/search/claudeWineSearch.js';
 import { countSaveableRatings, validateRatingsWithIdentity } from '../../../src/services/ratings/ratings.js';
 import db from '../../../src/db/index.js';
+import { persistSearchResults } from '../../../src/services/shared/wineUpdateService.js';
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -131,6 +136,28 @@ describe('POST /:wineId/ratings/fetch — ratingsTier route', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.message).toMatch(/Found \d+ ratings/);
+  });
+
+  it('calls persistSearchResults with extracted data on success', async () => {
+    const app = createApp();
+    await request(app).post('/5/ratings/fetch');
+
+    expect(persistSearchResults).toHaveBeenCalledOnce();
+    const [wineId, cellarId, , , extractionData] = persistSearchResults.mock.calls[0];
+    expect(wineId).toBe(5);
+    expect(cellarId).toBe('cellar-1');
+    expect(extractionData).toHaveProperty('narrative');
+    expect(extractionData).toHaveProperty('foodPairings');
+  });
+
+  it('does not include dead fields (search_notes, food_pairings_count, method) in response', async () => {
+    const app = createApp();
+    const res = await request(app).post('/5/ratings/fetch');
+
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty('search_notes');
+    expect(res.body).not.toHaveProperty('food_pairings_count');
+    expect(res.body).not.toHaveProperty('method');
   });
 
   // ── 2. No-delete-on-empty (zero valid ratings) ────────────────────────────

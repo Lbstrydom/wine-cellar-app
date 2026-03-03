@@ -270,6 +270,11 @@ header .search-trigger {
   gap: 0.75rem;
 }
 
+/* Table mode - block layout so toolbar and table stack vertically */
+.wine-list.table-mode {
+  display: block;
+}
+
 /* Virtual list mode - single column with fixed height for windowing */
 .wine-list.virtual-mode {
   display: block;

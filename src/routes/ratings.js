@@ -69,11 +69,20 @@ router.get('/:wineId/ratings', validateParams(ratingWineIdSchema), validateQuery
   // Calculate aggregates
   const aggregates = calculateWineRatings(ratings, wine, preference);
 
+  // Safely parse JSONB fields (PostgreSQL returns objects; SQLite compat may return strings)
+  const parseJsonb = (field) => {
+    if (!field) return null;
+    if (typeof field === 'object') return field;
+    try { return JSON.parse(field); } catch { return null; }
+  };
+
   res.json({
     wine_id: wineId,
     wine_name: wine.wine_name,
     vintage: wine.vintage,
     narrative: wine.tasting_notes || null,
+    style_summary: wine.style_summary || null,
+    extracted_awards: parseJsonb(wine.extracted_awards) || null,
     ...aggregates,
     ratings: ratings.map(r => ({
       ...r,

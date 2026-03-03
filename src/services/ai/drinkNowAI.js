@@ -10,6 +10,7 @@ import db from '../../db/index.js';
 import { stringAgg, nullsLast } from '../../db/helpers.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from './claudeResponseUtils.js';
+import { buildWineContextBatch } from '../wine/wineContextBuilder.js';
 import logger from '../../utils/logger.js';
 
 const DRINK_NOW_SYSTEM_PROMPT = `You are a sommelier AI helping manage a personal wine cellar. Your task is to recommend wines to drink soon based on:
@@ -50,9 +51,10 @@ Guidelines:
 
 /**
  * Get urgent wines that should be considered for drinking.
+ * @param {string} cellarId - Cellar ID to scope results
  * @returns {Promise<Array>} Wines with urgency information
  */
-async function getUrgentWines() {
+async function getUrgentWines(cellarId) {
   const currentYear = new Date().getFullYear();
   const locationAgg = stringAgg('s.location_code', ',', true);
 
@@ -85,6 +87,7 @@ async function getUrgentWines() {
     'FROM wines w',
     'LEFT JOIN slots s ON s.wine_id = w.id',
     'LEFT JOIN reduce_now rn ON rn.wine_id = w.id',
+    'WHERE w.cellar_id = ?',
     'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.price_eur, w.vivino_rating,',
     '         w.purchase_stars, w.drink_from, w.drink_peak, w.drink_until, w.personal_rating, w.tasting_notes',
     'HAVING COUNT(s.id) > 0',
@@ -99,34 +102,39 @@ async function getUrgentWines() {
     '  ' + nullsLast('w.purchase_stars', 'DESC'),
     'LIMIT 30'
   ].join('\n');
-  return await db.prepare(urgentWinesSql).all(currentYear, currentYear, currentYear, currentYear, currentYear, currentYear, currentYear);
+  // Param positions: 1-4 = currentYear (SELECT CASE), 5 = cellarId (WHERE), 6-8 = currentYear (ORDER BY CASE)
+  return await db.prepare(urgentWinesSql).all(currentYear, currentYear, currentYear, currentYear, cellarId, currentYear, currentYear, currentYear);
 }
 
 /**
- * Get recent consumption history.
+ * Get recent consumption history scoped to a cellar.
+ * Joins consumption_log to wines via wine_id to apply cellar isolation,
+ * since consumption_log has no direct cellar_id column.
  * @param {number} days - Number of days to look back
+ * @param {string} cellarId - Cellar ID to scope results
  * @returns {Promise<Array>} Recent consumption records
  */
-async function getRecentConsumption(days = 30) {
+async function getRecentConsumption(days = 30, cellarId) {
   const cutoffDate = new Date();
   cutoffDate.setDate(cutoffDate.getDate() - days);
 
   try {
     return await db.prepare(`
       SELECT
-        wine_name,
-        vintage,
-        style,
-        colour,
-        consumed_at,
-        occasion,
-        pairing_dish,
-        consumption_rating
-      FROM consumption_log
-      WHERE consumed_at >= ?
-      ORDER BY consumed_at DESC
+        cl.wine_name,
+        cl.vintage,
+        cl.style,
+        cl.colour,
+        cl.consumed_at,
+        cl.occasion,
+        cl.pairing_dish,
+        cl.consumption_rating
+      FROM consumption_log cl
+      JOIN wines w ON w.id = cl.wine_id AND w.cellar_id = ?
+      WHERE cl.consumed_at >= ?
+      ORDER BY cl.consumed_at DESC
       LIMIT 20
-    `).all(cutoffDate.toISOString());
+    `).all(cellarId, cutoffDate.toISOString());
   } catch {
     // Table might not exist
     return [];
@@ -134,10 +142,11 @@ async function getRecentConsumption(days = 30) {
 }
 
 /**
- * Get collection breakdown by colour and style.
+ * Get collection breakdown by colour and style, scoped to a cellar.
+ * @param {string} cellarId - Cellar ID to scope results
  * @returns {Promise<Object>} Collection statistics
  */
-async function getCollectionStats() {
+async function getCollectionStats(cellarId) {
   const colourBreakdown = await db.prepare(`
     SELECT
       w.colour,
@@ -145,8 +154,9 @@ async function getCollectionStats() {
       COUNT(DISTINCT w.id) as wine_count
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
+    WHERE w.cellar_id = ?
     GROUP BY w.colour
-  `).all();
+  `).all(cellarId);
 
   const styleBreakdown = await db.prepare(`
     SELECT
@@ -155,14 +165,18 @@ async function getCollectionStats() {
       COUNT(s.id) as bottle_count
     FROM wines w
     JOIN slots s ON s.wine_id = w.id
-    GROUP BY w.style
+    WHERE w.cellar_id = ?
+    GROUP BY w.style, w.colour
     ORDER BY bottle_count DESC
     LIMIT 10
-  `).all();
+  `).all(cellarId);
 
   const totalResult = await db.prepare(`
-    SELECT COUNT(*) as count FROM slots WHERE wine_id IS NOT NULL
-  `).get();
+    SELECT COUNT(s.id) as count
+    FROM slots s
+    JOIN wines w ON w.id = s.wine_id
+    WHERE w.cellar_id = ?
+  `).get(cellarId);
   const totalBottles = totalResult?.count || 0;
 
   return {
@@ -190,6 +204,10 @@ function buildPrompt(data) {
     if (wine.purchase_stars) prompt += ` | Stars: ${wine.purchase_stars}`;
     if (wine.reduce_reason) prompt += ` | Note: ${wine.reduce_reason}`;
     prompt += '\n';
+    if (wine._context?.food_pairings?.length > 0) {
+      const pairings = wine._context.food_pairings.slice(0, 3).map(p => p.pairing).join(', ');
+      prompt += `  Pairs with: ${pairings}\n`;
+    }
   }
 
   prompt += '\n## Recent Consumption (Last 30 Days)\n\n';
@@ -229,24 +247,38 @@ function buildPrompt(data) {
  * Generate AI-powered drink recommendations.
  * @param {Object} options - Options for recommendations
  * @param {number} [options.limit=5] - Max recommendations
+ * @param {string} [options.cellarId] - Cellar ID for tenant-scoped queries
  * @param {Object} [options.context] - Context (weather, occasion, food)
  * @returns {Promise<Object>} Recommendations and insights
  */
 export async function generateDrinkRecommendations(options = {}) {
-  const { limit = 5, context = null } = options;
+  const { limit = 5, cellarId, context = null } = options;
 
   // Check if API key is configured
   if (!process.env.ANTHROPIC_API_KEY) {
     return {
       error: 'AI features require Claude API key',
-      recommendations: getFallbackRecommendations(limit)
+      recommendations: await getFallbackRecommendations(limit, cellarId)
     };
   }
 
   // Gather data
-  const urgentWines = await getUrgentWines();
-  const recentConsumption = await getRecentConsumption(30);
-  const collectionStats = await getCollectionStats();
+  const urgentWines = await getUrgentWines(cellarId);
+
+  // Enrich urgent wines with food pairing context (single batch query — no N+1)
+  if (urgentWines.length > 0) {
+    try {
+      const contextMap = await buildWineContextBatch(urgentWines, cellarId, { includePairings: true });
+      for (const wine of urgentWines) {
+        wine._context = contextMap.get(wine.id) ?? null;
+      }
+    } catch (err) {
+      logger.warn('DrinkNow', `Food pairing enrichment failed: ${err.message}`);
+    }
+  }
+
+  const recentConsumption = await getRecentConsumption(30, cellarId);
+  const collectionStats = await getCollectionStats(cellarId);
 
   if (urgentWines.length === 0) {
     return {
@@ -297,7 +329,7 @@ export async function generateDrinkRecommendations(options = {}) {
     // Return fallback recommendations
     return {
       error: 'AI temporarily unavailable',
-      recommendations: getFallbackRecommendations(limit),
+      recommendations: await getFallbackRecommendations(limit, cellarId),
       collection_insight: 'Showing wines that need attention based on drinking windows.',
       drinking_tip: 'AI-powered recommendations will be available when the service is restored.'
     };
@@ -308,10 +340,11 @@ export async function generateDrinkRecommendations(options = {}) {
  * Get fallback recommendations when AI is unavailable.
  * Uses simple urgency-based logic.
  * @param {number} limit - Max recommendations
- * @returns {Array} Basic recommendations
+ * @param {string} [cellarId] - Cellar ID for tenant-scoped query
+ * @returns {Promise<Array>} Basic recommendations
  */
-function getFallbackRecommendations(limit = 5) {
-  const wines = getUrgentWines().slice(0, limit);
+async function getFallbackRecommendations(limit = 5, cellarId) {
+  const wines = (await getUrgentWines(cellarId)).slice(0, limit);
 
   return wines.map(wine => ({
     wine_id: wine.id,

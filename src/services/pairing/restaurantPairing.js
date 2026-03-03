@@ -16,6 +16,8 @@ import { recommendResponseSchema } from '../../schemas/restaurantPairing.js';
 import { auditPairingRecommendations } from './pairingAuditor.js';
 import { toAuditMetadata } from '../shared/auditUtils.js';
 import logger from '../../utils/logger.js';
+import db from '../../db/index.js';
+import { buildWineContext } from '../wine/wineContextBuilder.js';
 
 /** Per-call timeout for Claude API calls (ms) */
 const RECOMMEND_TIMEOUT_MS = 30_000;
@@ -188,7 +190,14 @@ function buildUserPrompt({ wines, dishes, colour_preferences, budget_max, party_
     if (w.vintage) parts.push(`${w.vintage}`);
     if (w.price != null) parts.push(`${w.price}`);
     if (w.by_the_glass) parts.push('[glass]');
-    return parts.join(' ');
+    let line = parts.join(' ');
+    if (w._context?.food_pairings?.length > 0) {
+      const pairingList = w._context.food_pairings.slice(0, 3)
+        .map(p => p.user_rating ? `${p.pairing} ${'★'.repeat(p.user_rating)}` : p.pairing)
+        .join(', ');
+      line += `\n  Pairs with: ${pairingList}`;
+    }
+    return line;
   }).join('\n');
 
   const dishesList = dishes.map(d => {
@@ -243,6 +252,24 @@ export async function getRecommendations(params, userId, cellarId) {
 
   const modelId = getModelForTask('restaurantPairing');
   const systemPrompt = buildSystemPrompt();
+
+  // Enrich wines sourced from the user's cellar with food pairings
+  if (cellarId) {
+    await Promise.all(params.wines.map(async wine => {
+      if (!wine.cellar_wine_id) return;
+      try {
+        const dbWine = await db.prepare(
+          'SELECT * FROM wines WHERE id = $1 AND cellar_id = $2'
+        ).get(wine.cellar_wine_id, cellarId);
+        if (dbWine) {
+          wine._context = await buildWineContext(dbWine, cellarId, { includePairings: true });
+        }
+      } catch (err) {
+        logger.warn('RestaurantPairing', `Cellar enrichment failed for wine ${wine.cellar_wine_id}: ${err.message}`);
+      }
+    }));
+  }
+
   const userPrompt = buildUserPrompt(params);
 
   const { controller, cleanup } = createTimeoutAbort(RECOMMEND_TIMEOUT_MS);

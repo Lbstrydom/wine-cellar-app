@@ -13,7 +13,7 @@
 
 import { unifiedWineSearch } from '../services/search/claudeWineSearch.js';
 import { saveExtractedWindows } from '../services/ai/index.js';
-import { saveFoodPairings } from '../services/shared/foodPairingsService.js';
+import { persistSearchResults } from '../services/shared/wineUpdateService.js';
 import {
   calculateWineRatings,
   saveRatings,
@@ -23,7 +23,6 @@ import {
 } from '../services/ratings/ratings.js';
 import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
 import db from '../db/index.js';
-import { nowFunc } from '../db/helpers.js';
 import logger from '../utils/logger.js';
 
 /**
@@ -211,39 +210,19 @@ async function handleRatingFetch(payload, context) {
   const tastingNotesStructured = result.tasting_notes || null;
   const foodPairings = result.food_pairings || [];
 
-  const currentTime = nowFunc();
-  const sql = [
-    'UPDATE wines SET',
-    'competition_index = ?,',
-    'critics_index = ?,',
-    'community_index = ?,',
-    'purchase_score = ?,',
-    'purchase_stars = ?,',
-    'confidence_level = ?,',
-    'tasting_notes = COALESCE(?, tasting_notes),',
-    'tasting_notes_structured = COALESCE(?, tasting_notes_structured),',
-    'ratings_updated_at = ' + currentTime,
-    'WHERE id = ?'
-  ].join(' ');
-
-  await db.prepare(sql).run(
-    aggregates.competition_index,
-    aggregates.critics_index,
-    aggregates.community_index,
-    aggregates.purchase_score,
-    aggregates.purchase_stars,
-    aggregates.confidence_level,
-    narrativeText,
-    tastingNotesStructured ? JSON.stringify(tastingNotesStructured) : null,
-    wineId
-  );
-
   // ═══════════════════════════════════════════════════════════════════════════
-  // FOOD PAIRINGS: Upsert AI-suggested pairings (preserves user ratings)
+  // PERSIST: Update wines + food pairings via shared helper
+  // Persists aggregates, tasting notes, style_summary, producer_description,
+  // extracted_awards, and food pairings in a single consistent operation.
   // ═══════════════════════════════════════════════════════════════════════════
-  if (foodPairings.length > 0) {
-    await saveFoodPairings(wineId, wine.cellar_id, foodPairings);
-  }
+  await persistSearchResults(wineId, wine.cellar_id, wine, aggregates, {
+    narrative: narrativeText,
+    tastingNotesStructured,
+    styleSummary: result.style_summary || null,
+    producerInfo: result.producer_info || null,
+    awards: result.awards || [],
+    foodPairings
+  });
 
   await updateProgress(100, 'Complete');
 

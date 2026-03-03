@@ -27,6 +27,18 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
   - **Validation**: `npm run test:unit` → 2970 passed (77 search tests, no regressions)
   - **Docs**: CLAUDE.md, AGENTS.md, STATUS.md all updated with two-phase architecture
 
+- **Pairing-Aware Pending Ratings & Feedback Loop — COMPLETE** ✅:
+  - **Pairing session linking** (dual strategy): `slots.js` POST drink endpoint now accepts explicit `pairing_session_id` from the pairing UI, with 48h heuristic fallback (`findRecentSessionForWine`) for non-pairing drink paths. `linkConsumption()` is finally called from production code.
+  - **Migration 061** (`data/migrations/061_pending_ratings_pairing_link.sql`): Added `pairing_session_id` FK column + partial index to `pending_ratings` table.
+  - **New Zod schemas** (`src/schemas/pendingRating.js`): `pairingFeedbackSchema` + `resolvePendingRatingSchema` for the resolve endpoint. `drinkBottleSchema` in `src/schemas/slot.js` extended with optional `pairing_session_id`.
+  - **Enhanced GET `/api/pending-ratings`**: Now JOINs `wines.personal_rating` (previous rating hint) + `pairing_sessions` (`pairing_dish`, `pairing_already_rated`). Heuristic retroactive linking for rows where explicit link wasn't written at drink time.
+  - **Enhanced PUT resolve**: Zod validation, idempotency guard (`WHERE status = 'pending'`), non-atomic pairing feedback write via `recordFeedback()` with partial-success toast on failure.
+  - **Frontend `ratingReminder.js`**: `_pendingItems` Map replaces fragile DOM data-* coupling. Shows "Previously rated X/5" hint + pre-selects dropdown. Collapsed inline pairing section with progressive-disclosure toggle ("🍽 Paired with: dish — Rate pairing ▸"). `wouldPairAgain` sent as `null` (not defaulted) when unanswered.
+  - **Sommelier feedback loop**: `getRelevantPairingHistory()` added to `pairingSession.js`. `sommelier.js` injects "PAST PAIRING EXPERIENCES" block into user prompt (not system prompt), enabling Claude to avoid repeating poor pairings.
+  - **Pairing drink panel** (`public/js/pairing.js`): `drinkBottle()` call now passes `pairing_session_id: currentSessionId`.
+  - **Data integrity**: Partial success acceptable — wine rating write and pairing feedback write are independent try/catch blocks. Double-submit safe (404 on already-resolved).
+  - Plan document archived: `docs/par-plan.md` → `docs/archive/par-plan.md`.
+
 **Previous Enhancements** (2 Mar 2026):
 - **Wine Search Pipeline Simplification — Post-Completion Audit & Documentation Sync** ✅:
   - Full codebase audit of all 5 phases against `docs/win-ser-plan.md` — verified all claims correct (files created/deleted, imports rewired, frontend cleanup, narrative rendering, dependency removal).

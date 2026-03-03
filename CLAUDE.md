@@ -27,7 +27,7 @@ src/
 │   ├── bottles.js         # /api/bottles/* endpoints
 │   ├── buyingGuideItems.js # /api/buying-guide-items/* endpoints (shopping cart)
 │   ├── pairing.js         # /api/pairing/* endpoints (incl. manual pairing sessions)
-│   ├── pendingRatings.js  # /api/pending-ratings/* endpoints (drink-now-rate-later)
+│   ├── pendingRatings.js  # /api/pending-ratings/* endpoints (drink-now-rate-later + pairing session link)
 │   ├── reduceNow.js       # /api/reduce-now/* endpoints + evaluateSingleWine() export
 │   └── stats.js           # /api/stats endpoint
 ├── config/
@@ -89,7 +89,8 @@ public/
     ├── dragdrop.js        # Drag and drop functionality
     ├── sommelier.js       # Claude pairing UI
     ├── manualPairing.js   # Manual wine-dish pairing coordinator
-    ├── ratingReminder.js  # Drink-now-rate-later reminder bar
+    ├── pairing.js         # Pairing session state + drink action panel (passes pairing_session_id to drinkBottle)
+    ├── ratingReminder.js  # Drink-now-rate-later reminder bar (pairing feedback, previous rating hint)
     ├── bottles.js         # Bottle add/edit functionality
     │   └── bottles/
     │       ├── form.js    # Bottle form with cascading country/region dropdowns
