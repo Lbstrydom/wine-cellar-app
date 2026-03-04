@@ -9,7 +9,7 @@
     "dev": "node --watch src/server.js",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:unit": "vitest run tests/unit --no-isolate",
+    "test:unit": "vitest run tests/unit",
     "test:benchmark": "vitest run tests/benchmark",
     "test:benchmark:live": "vitest run tests/benchmark/unifiedSearchBenchmark.test.js",
     "test:benchmark:validate": "node tests/benchmark/validateSchema.js",
