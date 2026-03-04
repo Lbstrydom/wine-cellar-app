@@ -808,6 +808,8 @@ The project uses **Vitest** for testing with self-contained integration tests th
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
 
+`npm run test:unit` uses Vitest default per-file isolation. Do not add `--no-isolate`.
+
 ### Recommended Workflow
 
 ```bash
@@ -862,11 +864,15 @@ This means you can run `npm run test:integration` with zero manual setup.
 DEBUG_INTEGRATION=1 npm run test:integration
 ```
 
-### No-Isolate Mock Hygiene (CRITICAL)
+### Test Isolation Policy
 
-Unit tests run with `--no-isolate`, so leaked mocks can break unrelated suites. Three patterns prevent cross-contamination:
+Unit tests run with **per-file isolation** (Vitest default). Each test file gets its own module registry, so mocks cannot leak between files.
 
-**1. `vi.importActual()` for real implementations** — When a test file needs the real module but other files mock it, use `vi.importActual()` in `beforeAll` to bypass the shared mock registry:
+**Why not `--no-isolate`?** It was removed after root-cause analysis showed it caused 0–24 random test failures per run. In `--no-isolate` mode, Vitest runs files in parallel workers that share a live ESM module registry. When one file's `vi.mock()` factory patches the shared `db.default.prepare` binding, concurrent tests in other files that read that binding see the wrong mock — a non-deterministic race condition across 46+ test files. The performance delta is 3 s → 5 s, which is worth the guaranteed correctness.
+
+**Mock patterns** (still relevant in isolated mode):
+
+**1. `vi.importActual()` for real implementations** — When a test file needs the real module but has mocked its dependencies, use `vi.importActual()` in `beforeAll`:
 
 ```javascript
 let myFunction, myOtherFunction;
@@ -875,7 +881,7 @@ beforeAll(async () => {
 });
 ```
 
-**2. `vi.hoisted()` for stable mock references** — When multiple test files mock the same module, mock factory functions can get overwritten. Use `vi.hoisted()` to create stable references that survive overwrites:
+**2. `vi.hoisted()` for mock references used inside `vi.mock()` factories** — Required when mock factory functions must reference variables that are declared before hoisting:
 
 ```javascript
 const { mockFn1, mockFn2 } = vi.hoisted(() => ({
@@ -889,7 +895,7 @@ vi.mock('../../src/services/myModule.js', () => ({
 }));
 ```
 
-**3. Targeted spy restoration** — Use `spy.mockRestore()` for individual spies, NOT `vi.restoreAllMocks()`:
+**3. Targeted spy restoration** — Use `spy.mockRestore()` for individual spies:
 
 ```javascript
 // ✅ CORRECT: Restore only the specific spy
@@ -897,14 +903,13 @@ const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1234567890);
 // ... test ...
 dateSpy.mockRestore();
 
-// ❌ WRONG: Restores ALL mocks — corrupts module registry for downstream suites
-vi.restoreAllMocks();  // NEVER use in --no-isolate mode
+// ❌ WRONG: Restores ALL mocks including vi.mock() registrations
+vi.restoreAllMocks();  // Do not use
 ```
 
 **Additional rules:**
 - Reset mutable mocks in `beforeEach` with `vi.clearAllMocks()` (clears call history, NOT implementations).
-- Avoid `vi.resetModules()` — it can reset module state used by later suites.
-- Never use `vi.restoreAllMocks()` in `afterAll` or `afterEach` — it restores mock implementations to originals, corrupting the shared mock registry and causing downstream test failures.
+- Do not use `vi.resetModules()` or `vi.restoreAllMocks()` — they affect module state beyond the current test.
 
 ### Test Structure
 
@@ -1678,8 +1683,9 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Bypass `requireCellarContext` middleware for data routes
 - Use raw `fetch()` for `/api/*` calls in frontend - use `api/` module functions instead (they add auth headers)
 - Parse LLM JSON with ad-hoc greedy regex when `extractJsonFromText()` already exists in `src/services/shared/auditUtils.js`
-- Use `vi.resetModules()` in `--no-isolate` unit tests unless there is no safer alternative
-- Use `vi.restoreAllMocks()` in `--no-isolate` tests — it corrupts mock implementations for downstream suites; use `vi.clearAllMocks()` or targeted `spy.mockRestore()` instead
+- Use `vi.resetModules()` in unit tests — it resets module state in unexpected ways
+- Use `vi.restoreAllMocks()` — it restores `vi.mock()` registrations; use `vi.clearAllMocks()` or targeted `spy.mockRestore()` instead
+- Re-add `--no-isolate` to the `test:unit` script — it caused non-deterministic failures due to shared ESM live bindings across parallel workers (see Test Isolation Policy)
 
 ---
 
@@ -1704,6 +1710,6 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Apply `requireAuth` + `requireCellarContext` middleware to all data routes
 - Use `api/` module functions for all frontend API calls (automatic auth headers)
 - Reuse `src/services/shared/auditUtils.js` when implementing any new LLM auditor module
-- Use `vi.importActual()` for real-module imports in `--no-isolate` test files to avoid cross-suite mock leakage
-- Use `vi.hoisted()` for stable mock function references when the same module is mocked by multiple test files
+- Use `vi.importActual()` when a test needs the real module implementation despite its dependencies being mocked
+- Use `vi.hoisted()` for mock function references that must be created before `vi.mock()` factory execution
 - Use targeted `spy.mockRestore()` instead of `vi.restoreAllMocks()` when restoring individual spies

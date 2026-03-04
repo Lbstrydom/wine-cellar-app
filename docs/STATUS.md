@@ -10,6 +10,11 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 4 Mar 2026**:
+- **Documentation Sync (AGENTS/CLAUDE/STATUS) — COMPLETE** ✅:
+  - Synced `AGENTS.md` test guidance with `CLAUDE.md`: replaced stale `--no-isolate` language with the current per-file isolation policy and explicit rationale for keeping `--no-isolate` disabled.
+  - Standardized test-mocking guidance (`vi.importActual()`, `vi.hoisted()`, targeted `spy.mockRestore()`) and strengthened prohibitions on `vi.resetModules()`/`vi.restoreAllMocks()` misuse.
+  - Added explicit note in both docs that `npm run test:unit` uses Vitest default per-file isolation.
+
 - **Overflow Placement Logic Overhaul — COMPLETE** ✅:
   - **`bottleScanner.js` `isInValidOverflow()`**: Extended from a single-path check (direct `overflowZoneId` chain) to two paths: (a) direct chain as before, (b) colour-compatible buffer/fallback zone. Covers curated zones (e.g. Curiosities) whose wines land in colour-appropriate buffers rather than a fixed overflow target.
   - **`consolidationOpportunities` fix**: Simplified scattered-wine detection to reuse the already-computed `w.correctlyPlaced` flag instead of duplicating `isInValidOverflow` logic — eliminates false positives for wines validly placed in colour-compatible buffers.

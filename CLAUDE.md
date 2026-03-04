@@ -808,6 +808,8 @@ The project uses **Vitest** for testing with self-contained integration tests th
 | `npm run test:all` | Runs unit then integration | ✅ Auto-managed |
 | `npm run test:coverage` | Runs with coverage report | ❌ No |
 
+`npm run test:unit` uses Vitest default per-file isolation. Do not add `--no-isolate`.
+
 ### Recommended Workflow
 
 ```bash
