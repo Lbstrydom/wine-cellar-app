@@ -75,9 +75,18 @@ export function renderLayoutProposalCTA(analysis) {
     const consolidationCount = analysis?.bottleScan?.consolidationOpportunities?.reduce(
       (sum, o) => sum + o.scattered.length, 0
     ) || 0;
-    const subtitle = consolidationCount > 0
-      ? `${stayCount} bottles are in their correct zone positions. ${consolidationCount} bottle(s) in overflow zones could be tidied up — see Zone Consolidation above.`
-      : `All ${stayCount} bottles are in their correct zone positions. No moves needed.`;
+    const groupingAlert = analysis?.alerts?.find(a => a.type === 'wine_grouping');
+
+    let subtitle;
+    if (consolidationCount > 0 && groupingAlert) {
+      subtitle = `${stayCount} bottles are in their correct zone positions. Some tidying available — see Zone Consolidation and Cellar Placement.`;
+    } else if (consolidationCount > 0) {
+      subtitle = `${stayCount} bottles are in their correct zone positions. ${consolidationCount} bottle(s) in overflow zones could be tidied up — see Zone Consolidation above.`;
+    } else if (groupingAlert) {
+      subtitle = `${stayCount} bottles are in their correct zone positions. ${groupingAlert.message} Go to Cellar Placement to apply the suggested swaps.`;
+    } else {
+      subtitle = `All ${stayCount} bottles are in their correct zone positions. No moves needed.`;
+    }
     ctaEl.innerHTML = `
       <div class="layout-proposal-cta">
         <div class="layout-proposal-icon">\u2713</div>

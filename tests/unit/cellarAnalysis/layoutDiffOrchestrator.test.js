@@ -184,6 +184,34 @@ describe('renderLayoutProposalCTA', () => {
     });
     expect(ctaEl.innerHTML).toContain('All 0 bottles');
   });
+
+  it('mentions wine_grouping alert in subtitle and points to Cellar Placement', () => {
+    renderLayoutProposalCTA({
+      layoutProposal: { sortPlan: [], stats: { stayInPlace: 83 } },
+      alerts: [{ type: 'wine_grouping', message: '3 wine(s) have bottles scattered within the same row. 6 swap(s) suggested to group them adjacently.' }]
+    });
+    expect(ctaEl.innerHTML).toContain('optimally organised');
+    expect(ctaEl.innerHTML).toContain('3 wine(s)');
+    expect(ctaEl.innerHTML).toContain('Cellar Placement');
+  });
+
+  it('mentions both consolidation and wine_grouping when both present', () => {
+    renderLayoutProposalCTA({
+      layoutProposal: { sortPlan: [], stats: { stayInPlace: 50 } },
+      alerts: [{ type: 'wine_grouping', message: '2 wine(s) have bottles scattered within the same row.' }],
+      bottleScan: { consolidationOpportunities: [{ scattered: ['R1C1', 'R2C1'] }] }
+    });
+    expect(ctaEl.innerHTML).toContain('Zone Consolidation');
+    expect(ctaEl.innerHTML).toContain('Cellar Placement');
+  });
+
+  it('shows plain "No moves needed" when no grouping or consolidation issues', () => {
+    renderLayoutProposalCTA({
+      layoutProposal: { sortPlan: [], stats: { stayInPlace: 20 } },
+      alerts: []
+    });
+    expect(ctaEl.innerHTML).toContain('No moves needed');
+  });
 });
 
 // ───────────────────────────────────────────────────────────
