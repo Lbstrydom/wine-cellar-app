@@ -888,22 +888,90 @@ export function renderRowAllocationInfo(layoutSettings) {
 }
 
 /**
+ * Create a reusable diagnostic section renderer from a configuration object.
+ * Handles container show/hide, HTML rendering, execute UX, and dismiss behaviour.
+ *
+ * Config shape:
+ *   containerId      {string}   Element ID of the section wrapper
+ *   listId           {string}   Element ID of the list container
+ *   itemClass        {string}   CSS class prefix, e.g. 'compaction' → 'compaction-execute-btn'
+ *   indexAttr        {string}   dataset key for item index (camelCase), e.g. 'compactionIndex'
+ *   preprocessItems  {Function} Optional: (rawItems) => { items, context } — filter/prepare items
+ *   renderItemHtml   {Function} (item, index, context) => HTML string
+ *   getExecuteMoves  {Function} (item, rawItems, context) => [{wineId, from, to}]
+ *   getToastMsg      {Function} (item, context) => string
+ *   getButtonLabel   {Function} Optional: (item, context) => string for restore-on-error label
+ *
+ * @param {Object} config
+ * @returns {Function} renderSection(rawItems)
+ */
+function makeDiagnosticRenderer({
+  containerId, listId, itemClass, indexAttr,
+  preprocessItems, renderItemHtml, getExecuteMoves, getToastMsg, getButtonLabel,
+}) {
+  return function renderSection(rawItems) {
+    const container = document.getElementById(containerId);
+    const listEl = document.getElementById(listId);
+    if (!container || !listEl) return;
+
+    const { items = rawItems ?? [], context = {} } = preprocessItems
+      ? preprocessItems(rawItems ?? [])
+      : { items: rawItems ?? [] };
+
+    if (items.length === 0) { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+
+    listEl.innerHTML = items.map((item, i) => renderItemHtml(item, i, context)).join('');
+
+    listEl.querySelectorAll(`.${itemClass}-execute-btn`).forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const idx = Number.parseInt(btn.dataset[indexAttr], 10);
+        const item = items[idx];
+        if (!item) return;
+        const movesToExecute = getExecuteMoves(item, rawItems, context);
+        const toastMsg = getToastMsg(item, context);
+        const buttonLabel = getButtonLabel ? getButtonLabel(item, context) : 'Move';
+        try {
+          btn.disabled = true;
+          btn.textContent = 'Working...';
+          await executeCellarMoves(movesToExecute);
+          showToast(toastMsg);
+          await refreshLayout();
+          const { loadAnalysis } = await import('./analysis.js');
+          await loadAnalysis(true);
+        } catch (err) {
+          if (err.validation) showValidationErrorModal(err.validation);
+          else showToast(`Error: ${err.message}`);
+          btn.disabled = false;
+          btn.textContent = buttonLabel;
+        }
+      });
+    });
+
+    listEl.querySelectorAll(`.${itemClass}-dismiss-btn`).forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const item = btn.closest(`.${itemClass}-item`);
+        if (item) item.remove();
+        if (listEl.querySelectorAll(`.${itemClass}-item`).length === 0) {
+          container.style.display = 'none';
+        }
+      });
+    });
+  };
+}
+
+/**
  * Render compaction moves (row gap fills).
  * @param {Array} compactionMoves - Array of compaction move objects
  */
-export function renderCompactionMoves(compactionMoves) {
-  const container = document.getElementById('analysis-compaction');
-  const listEl = document.getElementById('compaction-list');
-  if (!container || !listEl) return;
-
-  if (!compactionMoves || compactionMoves.length === 0) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'block';
-
-  listEl.innerHTML = compactionMoves.map((move, index) => `
+export const renderCompactionMoves = makeDiagnosticRenderer({
+  containerId: 'analysis-compaction',
+  listId: 'compaction-list',
+  itemClass: 'compaction',
+  indexAttr: 'compactionIndex',
+  renderItemHtml: (move, index) => `
     <div class="move-item compaction-item priority-4" data-compaction-index="${index}">
       <div class="move-details">
         <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
@@ -918,79 +986,28 @@ export function renderCompactionMoves(compactionMoves) {
         <button class="btn btn-primary btn-small compaction-execute-btn" data-compaction-index="${index}" title="Move this bottle to fill the gap">Move</button>
         <button class="btn btn-secondary btn-small compaction-dismiss-btn" data-compaction-index="${index}" title="Ignore">Ignore</button>
       </div>
-    </div>
-  `).join('');
-
-  // Wire up execute buttons
-  listEl.querySelectorAll('.compaction-execute-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const idx = Number.parseInt(btn.dataset.compactionIndex, 10);
-      const move = compactionMoves[idx];
-      if (!move) return;
-      try {
-        btn.disabled = true;
-        btn.textContent = 'Moving...';
-        await executeCellarMoves([{ wineId: move.wineId, from: move.from, to: move.to }]);
-        showToast(`Moved to ${move.to}`);
-        await refreshLayout();
-        const { loadAnalysis } = await import('./analysis.js');
-        await loadAnalysis(true);
-      } catch (err) {
-        if (err.validation) {
-          showValidationErrorModal(err.validation);
-        } else {
-          showToast(`Error: ${err.message}`);
-        }
-        btn.disabled = false;
-        btn.textContent = 'Move';
-      }
-    });
-  });
-
-  // Wire up dismiss buttons
-  listEl.querySelectorAll('.compaction-dismiss-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = btn.closest('.compaction-item');
-      if (item) item.remove();
-      // Hide section if all dismissed
-      if (listEl.querySelectorAll('.compaction-item').length === 0) {
-        container.style.display = 'none';
-      }
-    });
-  });
-}
+    </div>`,
+  getExecuteMoves: (move) => [{ wineId: move.wineId, from: move.from, to: move.to }],
+  getToastMsg: (move) => `Moved to ${move.to}`,
+});
 
 /**
  * Render grouping moves (same-wine intra-row bottle grouping swaps).
  * @param {Array} groupingMoves - Array of grouping move objects from the analysis
  */
-export function renderGroupingMoves(groupingMoves) {
-  const container = document.getElementById('analysis-grouping');
-  const listEl = document.getElementById('grouping-list');
-  if (!container || !listEl) return;
-
-  // Show only primary moves; "Make room" partners are executed automatically
-  const primaryMoves = groupingMoves
-    ? groupingMoves.filter(m => !m.reason?.startsWith('Make room'))
-    : [];
-
-  if (primaryMoves.length === 0) {
-    container.style.display = 'none';
-    return;
-  }
-
-  container.style.display = 'block';
-
-  // Build set of swap target slots so we can label the action correctly
-  const swapTargets = new Set(
-    groupingMoves
-      .filter(m => m.reason?.startsWith('Make room'))
-      .map(m => m.from)
-  );
-
-  listEl.innerHTML = primaryMoves.map((move, index) => {
+export const renderGroupingMoves = makeDiagnosticRenderer({
+  containerId: 'analysis-grouping',
+  listId: 'grouping-list',
+  itemClass: 'grouping',
+  indexAttr: 'groupingIndex',
+  preprocessItems: (rawItems) => {
+    const items = rawItems.filter(m => !m.reason?.startsWith('Make room'));
+    const swapTargets = new Set(
+      rawItems.filter(m => m.reason?.startsWith('Make room')).map(m => m.from)
+    );
+    return { items, context: { swapTargets, rawItems } };
+  },
+  renderItemHtml: (move, index, { swapTargets }) => {
     const isSwap = swapTargets.has(move.to);
     const actionLabel = isSwap ? 'Swap' : 'Move';
     const actionTitle = isSwap
@@ -1016,52 +1033,16 @@ export function renderGroupingMoves(groupingMoves) {
                 title="Ignore this suggestion">Ignore</button>
       </div>
     </div>`;
-  }).join('');
-
-  listEl.querySelectorAll('.grouping-execute-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const idx = Number.parseInt(btn.dataset.groupingIndex, 10);
-      const move = primaryMoves[idx];
-      if (!move) return;
-
-      // Include the swap partner (Make room move) when present
-      const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to }];
-      const partner = groupingMoves.find(
-        m => m.reason?.startsWith('Make room') && m.from === move.to && m.to === move.from
-      );
-      if (partner) {
-        movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to });
-      }
-
-      try {
-        btn.disabled = true;
-        btn.textContent = 'Working...';
-        await executeCellarMoves(movesToExecute);
-        showToast(partner ? `Swapped ${move.from} ↔ ${move.to}` : `Moved to ${move.to}`);
-        await refreshLayout();
-        const { loadAnalysis } = await import('./analysis.js');
-        await loadAnalysis(true);
-      } catch (err) {
-        if (err.validation) {
-          showValidationErrorModal(err.validation);
-        } else {
-          showToast(`Error: ${err.message}`);
-        }
-        btn.disabled = false;
-        btn.textContent = partner ? 'Swap' : 'Move';
-      }
-    });
-  });
-
-  listEl.querySelectorAll('.grouping-dismiss-btn').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const item = btn.closest('.grouping-item');
-      if (item) item.remove();
-      if (listEl.querySelectorAll('.grouping-item').length === 0) {
-        container.style.display = 'none';
-      }
-    });
-  });
-}
+  },
+  getExecuteMoves: (move, rawItems) => {
+    const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to }];
+    const partner = rawItems.find(
+      m => m.reason?.startsWith('Make room') && m.from === move.to && m.to === move.from
+    );
+    if (partner) movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to });
+    return movesToExecute;
+  },
+  getToastMsg: (move, { swapTargets }) =>
+    swapTargets.has(move.to) ? `Swapped ${move.from} ↔ ${move.to}` : `Moved to ${move.to}`,
+  getButtonLabel: (move, { swapTargets }) => swapTargets.has(move.to) ? 'Swap' : 'Move',
+});

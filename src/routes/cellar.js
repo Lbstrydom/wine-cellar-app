@@ -57,6 +57,38 @@ export async function getAllWinesWithSlots(cellarId) {
 }
 
 /**
+ * Get all empty fridge slots (F-prefixed, unoccupied) for a cellar.
+ * @param {string} cellarId - Cellar ID to filter by
+ * @returns {Promise<string[]>} Sorted array of empty fridge slot codes
+ */
+export async function getEmptyFridgeSlots(cellarId) {
+  const rows = await db.prepare(`
+    SELECT location_code FROM slots
+    WHERE cellar_id = $1
+      AND wine_id IS NULL
+      AND location_code ~ '^F[0-9]+$'
+    ORDER BY location_code
+  `).all(cellarId);
+  return rows.map(r => r.location_code);
+}
+
+/**
+ * Get the storage_type of the cellar's fridge area (wine_fridge or kitchen_fridge).
+ * Returns 'wine_fridge' if no fridge area is configured.
+ * @param {string} cellarId - Cellar ID to filter by
+ * @returns {Promise<string>}
+ */
+export async function getFridgeStorageType(cellarId) {
+  const area = await db.prepare(`
+    SELECT storage_type FROM storage_areas
+    WHERE cellar_id = $1
+      AND storage_type IN ('wine_fridge', 'kitchen_fridge')
+    LIMIT 1
+  `).get(cellarId);
+  return area?.storage_type ?? 'wine_fridge';
+}
+
+/**
  * Get currently occupied slots.
  * @param {string} cellarId - Cellar ID to filter by
  * @returns {Promise<Set<string>>} Set of occupied slot IDs

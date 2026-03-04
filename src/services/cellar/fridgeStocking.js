@@ -458,16 +458,37 @@ function buildFillReason(wine, category, drinkByYear) {
   return parts.join(' • ');
 }
 
+/** Red-temperature fridge categories — excluded when fridge type is kitchen_fridge */
+const RED_FRIDGE_CATEGORIES = new Set(['chillableRed']);
+
 /**
  * Get complete fridge analysis with candidates.
  * @param {Array} fridgeWines - Current fridge contents
  * @param {Array} cellarWines - All cellar wines
  * @param {string} [cellarId] - Cellar ID for tenant isolation
+ * @param {Object} [options]
+ * @param {string} [options.fridgeType] - 'wine_fridge' (default) or 'kitchen_fridge'
+ * @param {string[]} [options.emptyFridgeSlots] - Pre-queried empty slot codes (dynamic discovery)
  * @returns {Promise<Object>} Complete fridge analysis
  */
-export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
+export async function analyseFridge(fridgeWines, cellarWines, cellarId, options = {}) {
+  const { fridgeType = 'wine_fridge', emptyFridgeSlots } = options;
+  const isHouseholdFridge = fridgeType === 'kitchen_fridge';
+
   const status = getFridgeStatus(fridgeWines);
   const reduceNowIds = await getReduceNowWineIds(cellarId);
+
+  // Build the complete set of fridge slot codes dynamically.
+  // Occupied slots come from fridgeWines; empty slots from the pre-queried list
+  // (or fall back to the legacy hardcoded list for backward compatibility).
+  const occupiedSlotCodes = fridgeWines.map(w => w.slot_id || w.location_code).filter(Boolean);
+  const emptySlotCodes = emptyFridgeSlots
+    ?? ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'].filter(
+      s => !new Set(occupiedSlotCodes).has(s)
+    );
+  const allSlots = [...new Set([...occupiedSlotCodes, ...emptySlotCodes])].sort(
+    (a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10)
+  );
 
   let candidates = [];
   let alternatives = {};
@@ -480,6 +501,14 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
     candidates = status.hasGaps
       ? await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, maxCandidates, cellarId)
       : [];
+
+    // Household fridge: exclude reds (too cold for storage)
+    if (isHouseholdFridge) {
+      candidates = candidates.filter(c =>
+        !RED_FRIDGE_CATEGORIES.has(c.category) &&
+        !(c.category === 'flex' && c.colour === 'red')
+      );
+    }
 
     // Detect which gaps weren't fully filled (none or insufficient suitable wines)
     if (status.hasGaps) {
@@ -522,22 +551,28 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
       for (const alts of Object.values(alternatives)) {
         for (const a of alts) excludeIds.add(a.wineId);
       }
-      const flexCandidates = await selectFlexCandidates(
+      let flexCandidates = await selectFlexCandidates(
         cellarWines, slotsAfterGapFill, excludeIds, reduceNowIds
       );
+      if (isHouseholdFridge) {
+        flexCandidates = flexCandidates.filter(c => c.colour !== 'red');
+      }
       candidates.push(...flexCandidates);
     }
 
-    // Assign deterministic targetSlot values to candidates
-    const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
-    const occupiedSlots = new Set(fridgeWines.map(w => w.slot_id || w.location_code));
-    const emptySlotsList = fridgeSlots.filter(s => !occupiedSlots.has(s));
+    // Assign deterministic targetSlot values using the dynamic empty slot list
     candidates.forEach((c, i) => {
-      c.targetSlot = emptySlotsList[i] || null;
+      c.targetSlot = emptySlotCodes[i] || null;
     });
   } else if (status.hasGaps) {
     // Fridge is full but has gaps — swap suggestions
     candidates = await selectFridgeFillCandidates(cellarWines, status.parLevelGaps, 3, cellarId);
+    if (isHouseholdFridge) {
+      candidates = candidates.filter(c =>
+        !RED_FRIDGE_CATEGORIES.has(c.category) &&
+        !(c.category === 'flex' && c.colour === 'red')
+      );
+    }
     if (Object.keys(status.parLevelGaps).length > 0) {
       alternatives = await selectFridgeAlternatives(
         cellarWines, status.parLevelGaps, candidates, reduceNowIds
@@ -547,6 +582,11 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId) {
 
   return {
     ...status,
+    fridgeType,
+    allSlots,
+    ...(isHouseholdFridge && {
+      householdFridgeWarning: 'Household fridge selected — red wines excluded (too cold for red wine storage).'
+    }),
     candidates,
     alternatives,
     unfilledGaps,

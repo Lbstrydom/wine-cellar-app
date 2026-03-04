@@ -148,7 +148,12 @@ export function renderFridgeStatus(fridgeStatus) {
     ? '<button class="btn btn-secondary btn-small organize-fridge-btn">Organize Fridge</button>'
     : '';
 
+  const householdWarningHtml = fridgeStatus.householdFridgeWarning
+    ? `<div class="fridge-household-warning">${fridgeStatus.householdFridgeWarning}</div>`
+    : '';
+
   contentEl.innerHTML = `
+    ${householdWarningHtml}
     <div class="fridge-status-header">
       <div class="fridge-capacity-bar">
         <div class="fridge-capacity-fill" style="width: ${fillPercent}%"></div>
@@ -211,11 +216,7 @@ async function moveFridgeCandidate(index) {
   }
 
   // Use pre-assigned targetSlot from backend, fallback to finding one
-  const targetSlot = candidate.targetSlot || (() => {
-    const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
-    const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
-    return fridgeSlots.find(s => !occupiedSlots.has(s));
-  })();
+  const targetSlot = candidate.targetSlot || findEmptyFridgeSlot(currentAnalysis.fridgeStatus);
 
   if (!targetSlot) {
     showToast('No empty fridge slots available');
@@ -535,12 +536,14 @@ async function swapFridgeCandidate(candidateIndex) {
 }
 
 /**
- * Find an empty fridge slot.
+ * Find an empty fridge slot using the dynamic slot list from fridgeStatus.
+ * Falls back to the legacy hardcoded F1–F9 list for backward compatibility
+ * with cached responses that pre-date the allSlots field.
  * @param {Object} fridgeStatus
  * @returns {string|null}
  */
 function findEmptyFridgeSlot(fridgeStatus) {
-  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
+  const fridgeSlots = fridgeStatus.allSlots ?? ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
   const occupiedSlots = new Set(fridgeStatus.wines?.map(w => w.slot) || []);
   return fridgeSlots.find(s => !occupiedSlots.has(s)) || null;
 }

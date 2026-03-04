@@ -497,6 +497,76 @@ describe('generateSameWineGroupingMoves', () => {
       expect(move.priority).toBe(5);
     }
   });
+
+  it('produces a valid sequential plan for interleaved same-name vintages', () => {
+    // Simulate: KZ-2018 at C5,C7 and KZ-2020 at C6,C8 (alternating)
+    // The old algorithm produced conflicting suggestions targeting the same slot.
+    // The simulation approach must produce moves that are valid when applied in order.
+    const initial = new Map([
+      ['R11C5', { id: 10, wine_name: 'KZ Cab 2018' }],
+      ['R11C6', { id: 20, wine_name: 'KZ Cab 2020' }],
+      ['R11C7', { id: 10, wine_name: 'KZ Cab 2018' }],
+      ['R11C8', { id: 20, wine_name: 'KZ Cab 2020' }]
+    ]);
+    const moves = generateSameWineGroupingMoves(initial, {});
+
+    // Simulate applying each primary move in order — each must find the expected wine at "from"
+    const board = new Map(initial);
+    const primaryMoves = moves.filter(m => !m.reason?.startsWith('Make room'));
+    for (const move of primaryMoves) {
+      const fromEntry = board.get(move.from);
+      expect(fromEntry?.id).toBe(move.wineId); // wine is still where planned
+      const toEntry = board.get(move.to);
+      board.delete(move.from);
+      board.set(move.to, fromEntry);
+      if (toEntry) board.set(move.from, toEntry); // swap partner moves back
+    }
+
+    // After all moves, each wine should have its bottles contiguous
+    const colsOf = (wineId) => [...board.entries()]
+      .filter(([, w]) => w.id === wineId)
+      .map(([slot]) => Number.parseInt(slot.match(/C(\d+)/)[1], 10))
+      .sort((a, b) => a - b);
+
+    const cols10 = colsOf(10);
+    const cols20 = colsOf(20);
+    const isContiguous = (cols) => cols.every((c, i) => i === 0 || c === cols[i - 1] + 1);
+    expect(isContiguous(cols10)).toBe(true);
+    expect(isContiguous(cols20)).toBe(true);
+
+    // At most 1 primary suggestion per wine (simulation keeps moves minimal)
+    expect(primaryMoves.filter(m => m.wineId === 10).length).toBeLessThanOrEqual(1);
+    expect(primaryMoves.filter(m => m.wineId === 20).length).toBeLessThanOrEqual(1);
+  });
+
+  it('generates 0 moves for a wine that is already contiguous after simulation', () => {
+    // Wine A at C3,C4 (already contiguous) alongside other wines
+    const slotToWine = buildSlotMap([
+      { slot: 'R5C1', id: 99, wine_name: 'Other' },
+      { slot: 'R5C3', id: 1, wine_name: 'Wine A' },
+      { slot: 'R5C4', id: 1, wine_name: 'Wine A' },
+      { slot: 'R5C7', id: 99, wine_name: 'Other' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    const wineAMoves = moves.filter(m => m.wineId === 1);
+    expect(wineAMoves).toHaveLength(0);
+  });
+
+  it('prefers empty slots over occupied when grouping to avoid displacing other wines', () => {
+    // Wine A at C1,C5; Wine B at C3,C7; C2,C4,C6 empty
+    // Wine A should move C5→C2 (empty), not swap with Wine B at C3
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C3', id: 2, wine_name: 'Wine B' },
+      { slot: 'R3C5', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C7', id: 2, wine_name: 'Wine B' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+    const wineAMoves = moves.filter(m => m.wineId === 1 && !m.reason?.startsWith('Make room'));
+    // Wine A's primary move should go to an empty slot (C2), not displace Wine B
+    expect(wineAMoves).toHaveLength(1);
+    expect(wineAMoves[0].to).toBe('R3C2');
+  });
 });
 
 // ───────────────────────────────────────────────────────────

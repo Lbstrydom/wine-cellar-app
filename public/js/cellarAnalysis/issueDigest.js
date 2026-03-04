@@ -133,6 +133,20 @@ function classifyAlert(alert, summary) {
     };
   }
 
+  // Duplicate slot assignments: data-integrity notice shown in Cellar Placement.
+  // Currently a no-op (detection requires bottle_count schema field) but handler
+  // is in place so the alert renders correctly once the data model is complete.
+  if (type === 'duplicate_placements') {
+    return {
+      workspace: 'placement',
+      severity: 'warning',
+      message: alert.message,
+      cta: TAB_CELLAR_PLACEMENT,
+      ctaWorkspace: 'placement',
+      sourceAlert: alert
+    };
+  }
+
   // Default: generic placement issue
   return {
     workspace: 'placement',

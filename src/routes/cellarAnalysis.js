@@ -15,9 +15,22 @@ import {
 } from '../services/shared/cacheService.js';
 import { proposeZoneLayout, getSavedZoneLayout } from '../services/zone/zoneLayoutProposal.js';
 import { asyncHandler } from '../utils/errorResponse.js';
-import { getAllWinesWithSlots } from './cellar.js';
+import { getAllWinesWithSlots, getEmptyFridgeSlots, getFridgeStorageType } from './cellar.js';
 
 const router = express.Router();
+
+/**
+ * Strip internal-only fields from an analysis report before sending to the UI.
+ * The full report (including stripped fields) is always preserved in the cache
+ * so that /analyse/ai and the reconfig planner continue to receive complete data.
+ * @param {Object} report - Full internal analysis report
+ * @returns {Object} UI-safe report (new object, original unmodified)
+ */
+function serializeAnalysisForUI(report) {
+  // eslint-disable-next-line no-unused-vars
+  const { timestamp, overflowAnalysis, moveAudit, ...uiReport } = report;
+  return uiReport;
+}
 
 /**
  * Run analysis and generate report (shared logic).
@@ -98,7 +111,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
     if (cached) {
       return res.json({
         success: true,
-        report: cached.data,
+        report: serializeAnalysisForUI(cached.data),
         shouldTriggerAIReview: shouldTriggerAIReview(cached.data),
         fromCache: true,
         cachedAt: cached.createdAt
@@ -122,15 +135,23 @@ router.get('/analyse', asyncHandler(async (req, res) => {
     const slot = w.slot_id || w.location_code;
     return slot && slot.startsWith('R');
   });
-  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, req.cellarId);
+  const [fridgeType, emptyFridgeSlots] = await Promise.all([
+    getFridgeStorageType(req.cellarId),
+    getEmptyFridgeSlots(req.cellarId)
+  ]);
+  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, req.cellarId, {
+    fridgeType,
+    emptyFridgeSlots
+  });
 
-  // Cache the result
+  // Cache the FULL report (AI route and reconfig planner need all fields)
   const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
   await cacheAnalysis(cacheKey, report, wineCount, req.cellarId);
 
+  // Send UI-safe report (strips internal-only fields)
   res.json({
     success: true,
-    report,
+    report: serializeAnalysisForUI(report),
     shouldTriggerAIReview: shouldTriggerAIReview(report),
     fromCache: false
   });
