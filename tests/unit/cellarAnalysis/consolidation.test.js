@@ -97,7 +97,8 @@ describe('renderConsolidationCards', () => {
             ]
           }
         ]
-      }
+      },
+      layoutProposal: { sortPlan: [{ from: 'R8C1', to: 'R3C5' }] }
     });
 
     expect(containerEl.style.display).toBe('block');
@@ -108,6 +109,47 @@ describe('renderConsolidationCards', () => {
 
     buttonEl._clickHandler?.();
     expect(movesEl.scrollIntoView).toHaveBeenCalledWith({ behavior: 'smooth', block: 'start' });
+  });
+
+  it('hides View Moves button when layout proposal has no moves', () => {
+    renderConsolidationCards({
+      bottleScan: {
+        consolidationOpportunities: [
+          {
+            zoneId: 'shiraz',
+            displayName: 'Shiraz',
+            scattered: [
+              { wineId: 10, wineName: 'Barossa Shiraz', currentSlot: 'R8C1', physicalRowZone: 'Red Buffer' }
+            ]
+          }
+        ]
+      },
+      layoutProposal: { sortPlan: [] }
+    });
+
+    expect(containerEl.style.display).toBe('block');
+    expect(containerEl.innerHTML).toContain('Zone Consolidation');
+    expect(containerEl.innerHTML).not.toContain('View Moves');
+  });
+
+  it('shows View Moves button when layoutProposal is absent (fallback scroll still works)', () => {
+    renderConsolidationCards({
+      bottleScan: {
+        consolidationOpportunities: [
+          {
+            zoneId: 'shiraz',
+            displayName: 'Shiraz',
+            scattered: [
+              { wineId: 10, wineName: 'Barossa Shiraz', currentSlot: 'R8C1', physicalRowZone: 'Red Buffer' }
+            ]
+          }
+        ]
+      }
+      // No layoutProposal at all — API failure / not computed yet
+    });
+
+    expect(containerEl.style.display).toBe('block');
+    expect(containerEl.innerHTML).toContain('View Moves');
   });
 
   it('renders Visual Guide button when there are actionable moves', () => {

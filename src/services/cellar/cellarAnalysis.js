@@ -453,23 +453,25 @@ function buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap) {
           }
         }
         // Count colour-compatible wines as correctly placed when their
-        // canonical zone has no dedicated rows (under-threshold overflow)
+        // canonical zone has no dedicated rows (under-threshold overflow).
+        // Uses the same two-path logic as bottleScanner.isInValidOverflow:
+        //   (a) direct overflow chain: canonicalZone.overflowZoneId === zone.id
+        //   (b) colour-compatible buffer/fallback (e.g. Curiosities/Saperavi → red_buffer)
+        // Both paths collapse to: colour-compatible + canonical has no rows,
+        // since colour violations are already filtered in the loop above.
         for (const w of zoneWines) {
+          // Skip colour violations (already counted as misplaced above)
           const zoneColours = Array.isArray(zone.colour) ? zone.colour : (zone.colour ? [zone.colour] : []);
           const wineColour = (w.colour || inferColour(w) || '').toLowerCase();
-          // Skip colour violations (already counted as misplaced above)
           if (zoneColours.length > 0 && wineColour) {
             const allWhiteFamily = zoneColours.every(c => isWhiteFamily(c));
             const isViolation = (allWhiteFamily && wineColour === 'red') ||
               (zoneColours.every(c => c.toLowerCase() === 'red') && isWhiteFamily(wineColour));
             if (isViolation) continue;
           }
-          // Check if canonical zone has no allocated rows (under-threshold)
+          // Wine is colour-compatible with this buffer/fallback zone.
+          // Count as correctly placed only when canonical zone has no dedicated rows.
           const bestZone = findBestZone(w);
-          const canonicalZone = getZoneById(bestZone.zoneId);
-          const isCanonicalOverflowTarget = canonicalZone?.overflowZoneId === zone.id;
-          if (!isCanonicalOverflowTarget) continue;
-
           const canonicalHasRows = Object.values(zoneMap).some(
             info => info.zoneId === bestZone.zoneId
           );

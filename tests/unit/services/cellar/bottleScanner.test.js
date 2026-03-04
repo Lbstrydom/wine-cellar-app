@@ -500,6 +500,34 @@ describe('scanBottles (Phase B1)', () => {
       expect(group.wines[0].correctlyPlaced).toBe(false);
     });
 
+    it('marks wine as correctly placed when in colour-compatible buffer (curated zone)', () => {
+      // Saperavi (red, Curiosities zone) in red_buffer — Curiosities overflows to
+      // unclassified, not red_buffer, but red_buffer is colour-compatible and
+      // Curiosities has no allocated rows
+      const wines = [
+        makeWine({
+          id: 1,
+          wine_name: 'Marani Saperavi 2020',
+          colour: 'red',
+          grapes: 'saperavi',
+          country: 'Georgia',
+          zone_id: 'curiosities',
+          slot_id: 'R15C9'
+        })
+      ];
+
+      const zoneMap = {
+        R15: zoneMapEntry('red_buffer', 'Red Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const group = result.groups.find(g => g.zoneId === 'curiosities');
+
+      expect(group.correctlyPlacedCount).toBe(1);
+      expect(group.misplacedCount).toBe(0);
+      expect(group.wines[0].correctlyPlaced).toBe(true);
+    });
+
     it('marks wine as misplaced when in non-overflow, non-canonical zone', () => {
       // Cabernet wine in shiraz row — not an overflow target
       const wines = [
@@ -787,6 +815,27 @@ describe('rowCleanlinessSweep (Phase B3)', () => {
         grapes: 'cabernet sauvignon',
         colour: 'red',
         slot_id: 'R15C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R15: zoneMapEntry('red_buffer', 'Red Reserve')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+    expect(violations).toHaveLength(0);
+  });
+
+  it('skips violation for curated zone wine in colour-compatible buffer', () => {
+    // Saperavi (Curiosities) in red_buffer — not in overflow chain but colour-compatible
+    const slotToWine = new Map([
+      ['R15C9', makeWine({
+        id: 1,
+        wine_name: 'Marani Saperavi 2020',
+        grapes: 'saperavi',
+        colour: 'red',
+        country: 'Georgia',
+        slot_id: 'R15C9'
       })]
     ]);
 

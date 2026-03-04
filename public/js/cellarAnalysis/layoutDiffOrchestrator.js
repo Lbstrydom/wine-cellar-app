@@ -72,12 +72,18 @@ export function renderLayoutProposalCTA(analysis) {
   const stayCount = proposal.stats?.stayInPlace ?? 0;
 
   if (moveCount === 0) {
+    const consolidationCount = analysis?.bottleScan?.consolidationOpportunities?.reduce(
+      (sum, o) => sum + o.scattered.length, 0
+    ) || 0;
+    const subtitle = consolidationCount > 0
+      ? `${stayCount} bottles are in their correct zone positions. ${consolidationCount} bottle(s) in overflow zones could be tidied up — see Zone Consolidation above.`
+      : `All ${stayCount} bottles are in their correct zone positions. No moves needed.`;
     ctaEl.innerHTML = `
       <div class="layout-proposal-cta">
         <div class="layout-proposal-icon">\u2713</div>
         <div class="layout-proposal-text">
           <strong>Cellar is optimally organised</strong>
-          <p>All ${stayCount} bottles are in their correct zone positions. No moves needed.</p>
+          <p>${subtitle}</p>
         </div>
       </div>
     `;

@@ -29,9 +29,13 @@ export function renderConsolidationCards(analysis) {
 
   const totalScattered = opportunities.reduce((sum, o) => sum + o.scattered.length, 0);
 
-  // Check if there are actionable moves to offer the Visual Guide
+  // Check if there are actionable moves to offer the Visual Guide / View Moves
   const suggestedMoves = analysis?.suggestedMoves || [];
   const hasActionableMoves = suggestedMoves.some(m => m.type === 'move');
+  // Show "View Moves" unless the layout proposal explicitly returned zero moves.
+  // When layoutProposal is absent (API failure), the fallback scroll targets still work.
+  const sortPlan = analysis?.layoutProposal?.sortPlan;
+  const hasLayoutMoves = sortPlan == null || sortPlan.length > 0;
 
   let html = `
     <div class="consolidation-section">
@@ -90,9 +94,9 @@ export function renderConsolidationCards(analysis) {
           </div>
         </div>
         <div class="consolidation-card-actions">
-          <button class="btn btn-primary btn-small consolidation-view-moves-btn"
+          ${hasLayoutMoves ? `<button class="btn btn-primary btn-small consolidation-view-moves-btn"
                   data-zone-id="${escapeHtml(opp.zoneId)}"
-                  title="View move suggestions for these wines">View Moves</button>
+                  title="View move suggestions for these wines">View Moves</button>` : ''}
         </div>
       </div>
     `;

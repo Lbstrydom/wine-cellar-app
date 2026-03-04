@@ -609,10 +609,19 @@ describe('detectDuplicatePlacements', () => {
     expect(result[0].actualSlots).toHaveLength(3);
   });
 
-  it('defaults bottle_count to 1 when not specified', () => {
+  it('skips wines with NULL bottle_count (slot count is ground truth)', () => {
     const wines = [
       { id: 1, wine_name: 'Wine A', slot_id: 'R1C1' },
       { id: 1, wine_name: 'Wine A', slot_id: 'R2C1' }
+    ];
+    // NULL bottle_count → no flag (can't determine if it's a true duplicate)
+    expect(detectDuplicatePlacements(wines)).toEqual([]);
+  });
+
+  it('flags wine with explicit bottle_count=1 in multiple slots', () => {
+    const wines = [
+      { id: 1, wine_name: 'Wine A', slot_id: 'R1C1', bottle_count: 1 },
+      { id: 1, wine_name: 'Wine A', slot_id: 'R2C1', bottle_count: 1 }
     ];
     const result = detectDuplicatePlacements(wines);
     expect(result).toHaveLength(1);

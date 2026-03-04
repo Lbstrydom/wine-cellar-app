@@ -268,13 +268,19 @@ export function detectDuplicatePlacements(wines) {
       wineSlotCounts.set(wine.id, {
         name: wine.wine_name,
         slots: [],
-        bottleCount: wine.bottle_count || 1
+        bottleCount: wine.bottle_count ?? 1,
+        bottleCountWasNull: wine.bottle_count == null
       });
     }
     wineSlotCounts.get(wine.id).slots.push(slotId);
   }
   return [...wineSlotCounts.entries()]
-    .filter(([, d]) => d.slots.length > d.bottleCount)
+    .filter(([, d]) => {
+      // Only flag when we have a known bottle_count that disagrees with slot count.
+      // When bottle_count is NULL the slot count is the ground truth — no flag.
+      if (d.bottleCountWasNull) return false;
+      return d.slots.length > d.bottleCount;
+    })
     .map(([wineId, d]) => ({
       wineId,
       wineName: d.name,

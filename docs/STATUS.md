@@ -10,6 +10,16 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
 **Recent Enhancements** ✨ **NEW - 4 Mar 2026**:
+- **Overflow Placement Logic Overhaul — COMPLETE** ✅:
+  - **`bottleScanner.js` `isInValidOverflow()`**: Extended from a single-path check (direct `overflowZoneId` chain) to two paths: (a) direct chain as before, (b) colour-compatible buffer/fallback zone. Covers curated zones (e.g. Curiosities) whose wines land in colour-appropriate buffers rather than a fixed overflow target.
+  - **`consolidationOpportunities` fix**: Simplified scattered-wine detection to reuse the already-computed `w.correctlyPlaced` flag instead of duplicating `isInValidOverflow` logic — eliminates false positives for wines validly placed in colour-compatible buffers.
+  - **`rowCleanlinessSweep` fix**: Replaced narrow `canonicalZone.overflowZoneId === rowZoneInfo.zoneId` guard with a full `isInValidOverflow()` call, suppressing false-positive row-cleanliness violations for the same two-path overflow case.
+  - **`cellarAnalysis.js` `buildZoneAnalysis`**: Updated overflow counting to remove the strict `overflowZoneId === zone.id` requirement; now correctly counts colour-compatible wines in any buffer/fallback zone as correctly placed when their canonical zone has no dedicated rows.
+  - **`cellarMetrics.js` `detectDuplicatePlacements`**: Guard against `bottle_count IS NULL` — when count is unknown, slot count is the ground truth; no false overflow flag.
+  - **`layoutDiffOrchestrator.js`**: Zero-moves CTA now shows a context-aware subtitle: if consolidation opportunities exist it says "X bottle(s) in overflow zones could be tidied up — see Zone Consolidation above" instead of the generic "No moves needed."
+  - **`consolidation.js`**: "View Moves" button conditionally rendered — hidden when `sortPlan` is explicitly empty (layout proposer returned zero moves), still shown when `layoutProposal` is absent (API failure fallback).
+  - **Tests**: Regression coverage added in `bottleScanner.test.js` (buffer/fallback two-path logic), `cellarMetrics.test.js` (NULL bottle_count guard), `consolidation.test.js` (conditional button + zero-moves subtitle). **All 3079 tests passing** (up from 3074; also resolved 5 pre-existing `buyingGuide` mock-leakage failures fixed as a side-effect of the test-file hygiene improvements).
+
 - **Database Security Lint Fixes (Migration 063) — COMPLETE** ✅:
   - **RLS enforcement**: Enabled Row Level Security on 5 tables created dynamically by recipe services (`wine_food_pairings`, `recipes`, `recipe_sync_state`, `recipe_sync_log`, `cooking_profiles`). Strategy: RLS enabled with no anon policies (blocks PostgREST; Express backend via `DATABASE_URL` bypasses RLS).
   - **Stale table cleanup**: Dropped `wines_name_cleanup_backup_20260228` (one-off backup from Feb-28 name cleanup, no longer needed, had no RLS).

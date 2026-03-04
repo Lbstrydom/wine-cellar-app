@@ -386,6 +386,20 @@ In-transaction integrity gate       ← validateAllocationIntegrity() fails TX o
 3. Run `filterLLMActions` after any external modifications (e.g., reviewer patches)
 4. Keep `validateAllocationIntegrity` as the last-resort gate inside the transaction
 
+### Overflow Placement Logic (Two-Path Check)
+
+`bottleScanner.isInValidOverflow()` and `cellarAnalysis.buildZoneAnalysis()` both use a two-path check to determine whether a wine is validly placed outside its canonical zone:
+
+**(a) Direct overflow chain** — `canonicalZone.overflowZoneId === physicalRowZoneId`
+**(b) Colour-compatible buffer/fallback zone** — the row's zone is marked `isBufferZone` or `isFallbackZone` and its colour accepts the wine's colour family
+
+Both paths additionally require the canonical zone to have **zero allocated rows** (under-threshold); if the canonical zone has dedicated rows, the placement is a consolidation opportunity, not valid overflow.
+
+**When modifying overflow/placement logic:**
+- Never reduce back to a single-path check — curated zones (e.g. Curiosities, colour: null) use path (b) because they have no fixed `overflowZoneId`.
+- Keep `consolidationOpportunities` logic in sync with `isInValidOverflow` — use the `w.correctlyPlaced` flag rather than duplicating overflow checks inline.
+- In `detectDuplicatePlacements`, use `bottle_count ?? 1` (not `||`) — `NULL` means the count is unknown and slot count is ground truth.
+
 ---
 
 ## Multi-User / Cellar-Scoped Patterns (CRITICAL)
