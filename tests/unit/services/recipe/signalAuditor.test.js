@@ -46,7 +46,13 @@ vi.mock('../../../../src/config/aiModels.js', () => ({
   getModelForTask: vi.fn(() => 'claude-haiku-4-5-20251001')
 }));
 
-import { isSignalAuditEnabled, auditSignals } from '../../../../src/services/recipe/signalAuditor.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. cookingProfile.test.js mocks signalAuditor.js)
+let isSignalAuditEnabled, auditSignals;
+beforeAll(async () => {
+  ({ isSignalAuditEnabled, auditSignals } =
+    await vi.importActual('../../../../src/services/recipe/signalAuditor.js'));
+});
 import anthropic from '../../../../src/services/ai/claudeClient.js';
 import { extractText } from '../../../../src/services/ai/claudeResponseUtils.js';
 import { isCircuitOpen } from '../../../../src/services/shared/circuitBreaker.js';

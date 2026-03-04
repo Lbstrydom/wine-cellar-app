@@ -8,7 +8,7 @@ import db from '../../db/index.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
-import { inferColor } from './cellarPlacement.js';
+import { inferColour } from './cellarPlacement.js';
 import { parseSlot, extractRowNumber } from './slotUtils.js';
 
 /**
@@ -497,7 +497,7 @@ export async function validateMovePlan(moves, cellarId) {
       const sql = 'SELECT id, colour, wine_name, grapes, style FROM wines WHERE cellar_id = $1 AND id IN (' + placeholders + ')';
       const wineRows = await db.prepare(sql).all(cellarId, ...wineIds);
       for (const w of wineRows) {
-        const wineColour = (w.colour || inferColor(w) || '').toLowerCase();
+        const wineColour = (w.colour || inferColour(w) || '').toLowerCase();
         wineColourMap.set(w.id, wineColour);
       }
     }
@@ -512,29 +512,29 @@ export async function validateMovePlan(moves, cellarId) {
 
       const zone = getZoneById(zoneInfo.zoneId);
       if (!zone || zone.isFallbackZone || zone.isCuratedZone || zone.isBufferZone) continue;
-      if (!zone.color) continue; // Zone has no colour constraint
+      if (!zone.colour) continue; // Zone has no colour constraint
 
       const wineColour = wineColourMap.get(move.wineId);
       if (!wineColour) continue; // Can't determine wine colour — don't penalise
 
-      const zoneColors = Array.isArray(zone.color) ? zone.color : [zone.color];
+      const zoneColours = Array.isArray(zone.colour) ? zone.colour : [zone.colour];
 
       // Direct match: wine colour is one of the zone's accepted colours
-      if (zoneColors.some(c => c.toLowerCase() === wineColour)) continue;
+      if (zoneColours.some(c => c.toLowerCase() === wineColour)) continue;
 
       // Family-level check: white-family zone rejects red, red zone rejects white-family
-      const allWhiteFamily = zoneColors.every(c => isWhiteFamily(c));
-      const allRed = zoneColors.every(c => c.toLowerCase() === 'red');
+      const allWhiteFamily = zoneColours.every(c => isWhiteFamily(c));
+      const allRed = zoneColours.every(c => c.toLowerCase() === 'red');
 
       if ((allWhiteFamily && wineColour === 'red') || (allRed && isWhiteFamily(wineColour))) {
         errors.push({
           type: 'zone_colour_violation',
-          message: `${move.wineName || `Wine ${move.wineId}`} (${wineColour}) would move to ${move.to} in ${zone.displayName} (${zoneColors.join('/')}) — colour violation`,
+          message: `${move.wineName || `Wine ${move.wineId}`} (${wineColour}) would move to ${move.to} in ${zone.displayName} (${zoneColours.join('/')}) — colour violation`,
           move,
           wineColour,
           targetZone: zone.displayName,
           targetZoneId: zone.id,
-          zoneColors
+          zoneColours
         });
       }
     }

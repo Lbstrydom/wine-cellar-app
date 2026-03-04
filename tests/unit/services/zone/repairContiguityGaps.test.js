@@ -7,21 +7,21 @@
 // Mock cellarZones before importing
 vi.mock('../../../../src/config/cellarZones.js', () => {
   const zones = [
-    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: { grapes: ['sauvignon blanc'] } },
-    { id: 'chenin_blanc', displayName: 'Chenin Blanc', color: 'white', rules: { grapes: ['chenin blanc'] } },
-    { id: 'chardonnay', displayName: 'Chardonnay', color: 'white', rules: { grapes: ['chardonnay'] } },
-    { id: 'loire_light', displayName: 'Loire & Light', color: 'white', rules: {} },
-    { id: 'aromatic_whites', displayName: 'Aromatic Whites', color: 'white', rules: {} },
-    { id: 'cabernet', displayName: 'Cabernet Sauvignon', color: 'red', rules: { grapes: ['cabernet sauvignon'] } },
-    { id: 'shiraz', displayName: 'Shiraz', color: 'red', rules: { grapes: ['shiraz', 'syrah'] } },
-    { id: 'southern_france', displayName: 'Southern France', color: 'red', rules: {} },
-    { id: 'pinot_noir', displayName: 'Pinot Noir', color: 'red', rules: { grapes: ['pinot noir'] } },
-    { id: 'merlot', displayName: 'Merlot', color: 'red', rules: { grapes: ['merlot'] } },
-    { id: 'curiosities', displayName: 'Curiosities', color: 'red', rules: {} },
-    { id: 'appassimento', displayName: 'Appassimento', color: 'red', rules: {} },
-    { id: 'puglia_primitivo', displayName: 'Puglia Primitivo', color: 'red', rules: {} },
-    { id: 'red_buffer', displayName: 'Red Reserve', color: 'red', isBufferZone: true, rules: {} },
-    { id: 'white_buffer', displayName: 'White Reserve', color: 'white', isBufferZone: true, rules: {} }
+    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white', rules: { grapes: ['sauvignon blanc'] } },
+    { id: 'chenin_blanc', displayName: 'Chenin Blanc', colour: 'white', rules: { grapes: ['chenin blanc'] } },
+    { id: 'chardonnay', displayName: 'Chardonnay', colour: 'white', rules: { grapes: ['chardonnay'] } },
+    { id: 'loire_light', displayName: 'Loire & Light', colour: 'white', rules: {} },
+    { id: 'aromatic_whites', displayName: 'Aromatic Whites', colour: 'white', rules: {} },
+    { id: 'cabernet', displayName: 'Cabernet Sauvignon', colour: 'red', rules: { grapes: ['cabernet sauvignon'] } },
+    { id: 'shiraz', displayName: 'Shiraz', colour: 'red', rules: { grapes: ['shiraz', 'syrah'] } },
+    { id: 'southern_france', displayName: 'Southern France', colour: 'red', rules: {} },
+    { id: 'pinot_noir', displayName: 'Pinot Noir', colour: 'red', rules: { grapes: ['pinot noir'] } },
+    { id: 'merlot', displayName: 'Merlot', colour: 'red', rules: { grapes: ['merlot'] } },
+    { id: 'curiosities', displayName: 'Curiosities', colour: 'red', rules: {} },
+    { id: 'appassimento', displayName: 'Appassimento', colour: 'red', rules: {} },
+    { id: 'puglia_primitivo', displayName: 'Puglia Primitivo', colour: 'red', rules: {} },
+    { id: 'red_buffer', displayName: 'Red Reserve', colour: 'red', isBufferZone: true, rules: {} },
+    { id: 'white_buffer', displayName: 'White Reserve', colour: 'white', isBufferZone: true, rules: {} }
   ];
   return {
     CELLAR_ZONES: { zones },
@@ -30,11 +30,11 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
 });
 
 vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
-  getEffectiveZoneColor: (zone) => {
+  getEffectiveZoneColour: (zone) => {
     if (!zone) return 'any';
-    const color = zone.color;
-    if (Array.isArray(color)) return color.includes('red') ? 'red' : 'white';
-    if (color === 'red' || color === 'white') return color;
+    const colour = zone.colour;
+    if (Array.isArray(colour)) return colour.includes('red') ? 'red' : 'white';
+    if (colour === 'red' || colour === 'white') return colour;
     return 'any';
   }
 }));

@@ -17,10 +17,10 @@ vi.mock('../../../../src/db/index.js', () => ({
 
 vi.mock('../../../../src/config/cellarZones.js', () => {
   const zones = [
-    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: { grapes: ['sauvignon blanc'] } },
-    { id: 'chenin_blanc', displayName: 'Chenin Blanc', color: 'white', rules: { grapes: ['chenin blanc'] } },
-    { id: 'cabernet', displayName: 'Cabernet Sauvignon', color: 'red', rules: { grapes: ['cabernet sauvignon'] } },
-    { id: 'shiraz', displayName: 'Shiraz', color: 'red', rules: { grapes: ['shiraz'] } }
+    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white', rules: { grapes: ['sauvignon blanc'] } },
+    { id: 'chenin_blanc', displayName: 'Chenin Blanc', colour: 'white', rules: { grapes: ['chenin blanc'] } },
+    { id: 'cabernet', displayName: 'Cabernet Sauvignon', colour: 'red', rules: { grapes: ['cabernet sauvignon'] } },
+    { id: 'shiraz', displayName: 'Shiraz', colour: 'red', rules: { grapes: ['shiraz'] } }
   ];
   return {
     CELLAR_ZONES: { zones },
@@ -29,9 +29,9 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
 });
 
 vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
-  getEffectiveZoneColor: (zone) => {
+  getEffectiveZoneColour: (zone) => {
     if (!zone) return 'any';
-    const c = zone.color;
+    const c = zone.colour;
     if (Array.isArray(c)) return c.includes('red') ? 'red' : 'white';
     return c === 'red' || c === 'white' ? c : 'any';
   }
@@ -140,7 +140,7 @@ function buildMinimalReport() {
     ],
     bottleScan: { groups: [] },
     scatteredWines: [],
-    colorAdjacencyIssues: []
+    colourAdjacencyIssues: []
   };
 }
 
@@ -162,7 +162,7 @@ function buildOverflowReport() {
     ],
     bottleScan: { groups: [] },
     scatteredWines: [],
-    colorAdjacencyIssues: []
+    colourAdjacencyIssues: []
   };
 }
 

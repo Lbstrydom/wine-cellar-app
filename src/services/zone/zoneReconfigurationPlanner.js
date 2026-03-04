@@ -10,7 +10,7 @@ import { getNeverMergeZones } from './zonePins.js';
 import { getModelForTask, getThinkingConfig } from '../../config/aiModels.js';
 import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
-import { getEffectiveZoneColor } from '../cellar/cellarMetrics.js';
+import { getEffectiveZoneColour } from '../cellar/cellarMetrics.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
@@ -158,8 +158,8 @@ function calculateZoneAffinity(zone1, zone2) {
   const r1 = zone1.rules || {};
   const r2 = zone2.rules || {};
 
-  // Same color is essential
-  if (zone1.color === zone2.color) score += 0.3;
+  // Same colour is essential
+  if (zone1.colour === zone2.colour) score += 0.3;
 
   // Overlapping grapes
   const grapes1 = new Set(r1.grapes || []);
@@ -187,7 +187,7 @@ function getAffinityReason(zone1, zone2) {
   const r1 = zone1.rules || {};
   const r2 = zone2.rules || {};
 
-  if (zone1.color === zone2.color) reasons.push(`both ${zone1.color}`);
+  if (zone1.colour === zone2.colour) reasons.push(`both ${zone1.colour}`);
 
   const countries1 = new Set(r1.countries || []);
   const countries2 = new Set(r2.countries || []);
@@ -272,8 +272,8 @@ function wouldCreateColorViolation(action, zoneRowMap) {
   const toZone = getZoneById(action.toZoneId);
   if (!toZone) return false;
 
-  const toColor = getEffectiveZoneColor(toZone);
-  if (toColor === 'any') return false;
+  const toColour = getEffectiveZoneColour(toZone);
+  if (toColour === 'any') return false;
 
   const rowId = typeof action.rowNumber === 'number' ? `R${action.rowNumber}` : String(action.rowNumber);
   const rowNum = parseInt(rowId.replace('R', ''), 10);
@@ -299,10 +299,10 @@ function wouldCreateColorViolation(action, zoneRowMap) {
     const adjacentZone = getZoneById(adjacentZoneId);
     if (!adjacentZone) continue;
 
-    const adjacentColor = getEffectiveZoneColor(adjacentZone);
-    if (adjacentColor === 'any') continue;
+    const adjacentColour = getEffectiveZoneColour(adjacentZone);
+    if (adjacentColour === 'any') continue;
 
-    if (toColor !== adjacentColor) {
+    if (toColour !== adjacentColour) {
       return true;
     }
   }
@@ -369,9 +369,9 @@ async function refinePlanWithLLM(ctx) {
     scatteredWines: (report.scatteredWines || []).slice(0, 10).map(sw => ({
       wineName: sw.wineName, bottleCount: sw.bottleCount, rows: sw.rows
     })),
-    colorAdjacencyIssues: (report.colorAdjacencyIssues || []).map(ci => ({
-      row1: ci.row1, zone1: ci.zone1, zone1Name: ci.zone1Name, color1: ci.color1,
-      row2: ci.row2, zone2: ci.zone2, zone2Name: ci.zone2Name, color2: ci.color2
+    colourAdjacencyIssues: (report.colourAdjacencyIssues || []).map(ci => ({
+      row1: ci.row1, zone1: ci.zone1, zone1Name: ci.zone1Name, colour1: ci.colour1,
+      row2: ci.row2, zone2: ci.zone2, zone2Name: ci.zone2Name, colour2: ci.colour2
     }))
   };
 
@@ -401,9 +401,9 @@ The draft plan was generated algorithmically. It addresses capacity deficits and
 - Strategic zone restructuring (e.g., reorganizing by style instead of geography)
 - Nuanced merge candidates that improve the collection's thematic organization
 - Better prioritization of actions
-- Color boundary violations the solver couldn't resolve with simple swaps
+- colour boundary violations the solver couldn't resolve with simple swaps
 
-Check colorAdjacencyIssues in the state data — if any violations remain unaddressed by the draft, add actions to fix them.
+Check colourAdjacencyIssues in the state data — if any violations remain unaddressed by the draft, add actions to fix them.
 You may accept all draft actions, modify some, add new ones, or remove counterproductive ones.`
     : '\n\nNo draft plan available — generate a plan from scratch.';
 
@@ -495,12 +495,12 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
       if (!allValid) return false;
       if (!a.sourceZones.every(z => !neverMerge.has(z))) return false;
       // Colour compatibility: reject merges across colour families
-      const targetColor = getEffectiveZoneColor(targetZoneDef);
+      const targetColor = getEffectiveZoneColour(targetZoneDef);
       if (targetColor !== 'any') {
         for (const srcId of a.sourceZones) {
-          const srcColor = getEffectiveZoneColor(getZoneById(srcId));
-          if (srcColor !== 'any' && srcColor !== targetColor) {
-            logger.warn('Reconfig', `Filtering merge_zones: source ${srcId} (${srcColor}) incompatible with target ${a.targetZoneId} (${targetColor})`);
+          const srcColour = getEffectiveZoneColour(getZoneById(srcId));
+          if (srcColour !== 'any' && srcColour !== targetColor) {
+            logger.warn('Reconfig', `Filtering merge_zones: source ${srcId} (${srcColour}) incompatible with target ${a.targetZoneId} (${targetColor})`);
             return false;
           }
         }
@@ -513,10 +513,10 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
       if (!retireZoneDef || !mergeIntoDef) return false;
       if (neverMerge.has(a.zoneId)) return false;
       // Colour compatibility: reject cross-colour retirements
-      const retireColor = getEffectiveZoneColor(retireZoneDef);
-      const mergeColor = getEffectiveZoneColor(mergeIntoDef);
-      if (retireColor !== 'any' && mergeColor !== 'any' && retireColor !== mergeColor) {
-        logger.warn('Reconfig', `Filtering retire_zone: ${a.zoneId} (${retireColor}) incompatible with ${a.mergeIntoZoneId} (${mergeColor})`);
+      const retireColour = getEffectiveZoneColour(retireZoneDef);
+      const mergeColour = getEffectiveZoneColour(mergeIntoDef);
+      if (retireColour !== 'any' && mergeColour !== 'any' && retireColour !== mergeColour) {
+        logger.warn('Reconfig', `Filtering retire_zone: ${a.zoneId} (${retireColour}) incompatible with ${a.mergeIntoZoneId} (${mergeColour})`);
         return false;
       }
       return true;
@@ -657,7 +657,7 @@ function heuristicGapFill(
     if (addressedZones.has(toZoneId)) continue;
     const toZoneDef = getZoneById(toZoneId);
     if (!toZoneDef) continue;
-    const toColor = getEffectiveZoneColor(toZoneDef);
+    const toColour = getEffectiveZoneColour(toZoneDef);
 
     for (const donor of underutilizedZones) {
       if (donor.zoneId === toZoneId) continue;
@@ -670,8 +670,8 @@ function heuristicGapFill(
 
       // Colour compatibility: skip cross-colour donations
       if (donorZoneDef) {
-        const donorColor = getEffectiveZoneColor(donorZoneDef);
-        if (toColor !== 'any' && donorColor !== 'any' && toColor !== donorColor) {
+        const donorColour = getEffectiveZoneColour(donorZoneDef);
+        if (toColour !== 'any' && donorColour !== 'any' && toColour !== donorColour) {
           continue;
         }
       }
@@ -837,9 +837,9 @@ export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
         // Colour compatibility check
         const zone = getZoneById(zoneId);
         const other = getZoneById(otherZone);
-        const zoneColor = zone ? getEffectiveZoneColor(zone) : 'any';
-        const otherColor = other ? getEffectiveZoneColor(other) : 'any';
-        if (zoneColor !== 'any' && otherColor !== 'any' && zoneColor !== otherColor) continue;
+        const zoneColour = zone ? getEffectiveZoneColour(zone) : 'any';
+        const otherColour = other ? getEffectiveZoneColour(other) : 'any';
+        if (zoneColour !== 'any' && otherColour !== 'any' && zoneColour !== otherColour) continue;
 
         // Only skip if another repair already claimed these rows
         const alreadyInRepair = repairActions.some(a =>
@@ -942,7 +942,7 @@ async function buildZoneListWithAllocations(cellarId) {
   return zones.map(z => ({
     id: z.id,
     name: z.displayName || z.name || z.id,
-    color: z.color,
+    colour: z.colour,
     preferredRows: z.rows || z.preferredRowRange || [],
     // ACTUAL rows currently assigned in the database - this is what the AI must use
     actualAssignedRows: allocMap.get(z.id) || []
@@ -1034,9 +1034,9 @@ export async function generateReconfigurationPlan(report, options = {}) {
       const isWhiteRow = whiteRowSet.has(orphanNum);
 
       for (const z of zonesWithAllocations) {
-        const zoneColor = getEffectiveZoneColor(getZoneById(z.id));
-        const isWhiteZone = zoneColor === 'white';
-        if (zoneColor !== 'any' && isWhiteRow !== isWhiteZone) continue;
+        const zoneColour = getEffectiveZoneColour(getZoneById(z.id));
+        const isWhiteZone = zoneColour === 'white';
+        if (zoneColour !== 'any' && isWhiteRow !== isWhiteZone) continue;
 
         const zoneRows = zoneRowMap.get(z.id) || [];
         const util = utilization[z.id];
@@ -1106,15 +1106,15 @@ export async function generateReconfigurationPlan(report, options = {}) {
       neverMerge,
       stabilityBias: stability,
       scatteredWines: report.scatteredWines || [],
-      colorAdjacencyIssues: report.colorAdjacencyIssues || [],
+      colourAdjacencyIssues: report.colourAdjacencyIssues || [],
       colourOrder: layoutSettings.colourOrder
     });
     const solverMs = Date.now() - solverStart;
-    const colorFixCount = solverResult.actions.filter(a => a.priority === 1 && a.reason?.includes('color')).length;
-    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s) (${colorFixCount} color fixes)`);
-    if (colorFixCount > 0) {
-      const colorActions = solverResult.actions.filter(a => a.reason?.includes('color'));
-      for (const ca of colorActions) {
+    const colourFixCount = solverResult.actions.filter(a => a.priority === 1 && a.reasonCode?.startsWith('fix_colour')).length;
+    logger.info('Reconfig', `Solver completed in ${solverMs}ms with ${solverResult.actions.length} action(s) (${colourFixCount} color fixes)`);
+    if (colourFixCount > 0) {
+      const colourActions = solverResult.actions.filter(a => a.reasonCode?.startsWith('fix_colour'));
+      for (const ca of colourActions) {
         logger.info('Reconfig', `  Color fix: R${ca.rowNumber} ${ca.fromZoneId} → ${ca.toZoneId}: ${ca.reason}`);
       }
     }
@@ -1163,7 +1163,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
   // so only remote swap partners reach here.
   if (llmActions && solverActions.length > 0) {
     const solverColorFixes = solverActions.filter(a =>
-      a.priority === 1 && a.reason?.includes('color')
+      a.priority === 1 && a.reasonCode?.startsWith('fix_colour')
     );
     if (solverColorFixes.length > 0) {
       // Check by row number (robust) rather than keyword matching on LLM reasoning

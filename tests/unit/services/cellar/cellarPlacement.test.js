@@ -37,7 +37,7 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
   })
 }));
 
-import { findBestZone, findAvailableSlot, inferColor } from '../../../../src/services/cellar/cellarPlacement.js';
+import { findBestZone, findAvailableSlot, inferColour } from '../../../../src/services/cellar/cellarPlacement.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from '../../../../src/services/cellar/cellarAllocation.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, isWhiteFamily } from '../../../../src/services/shared/cellarLayoutSettings.js';
 
@@ -68,7 +68,7 @@ function resetAllocationMocks() {
   getActiveZoneMap.mockResolvedValue({});
 }
 
-describe('inferColor expanded grape coverage', () => {
+describe('inferColour expanded grape coverage', () => {
   it.each([
     ['Kleine Zalze Shiraz 2021', 'red'],
     ['De Grendel Shiraz 2019', 'red'],
@@ -83,7 +83,7 @@ describe('inferColor expanded grape coverage', () => {
     ['Petit Verdot Single Vineyard', 'red'],
     ['Cabernet Franc Reserve', 'red'],
   ])('infers %s as %s', (wineName, expected) => {
-    expect(inferColor({ wine_name: wineName })).toBe(expected);
+    expect(inferColour({ wine_name: wineName })).toBe(expected);
   });
 
   it.each([
@@ -95,19 +95,19 @@ describe('inferColor expanded grape coverage', () => {
     ['Semillon Hunter Valley', 'white'],
     ['Pinot Gris Reserve', 'white'],
   ])('infers %s as %s', (wineName, expected) => {
-    expect(inferColor({ wine_name: wineName })).toBe(expected);
+    expect(inferColour({ wine_name: wineName })).toBe(expected);
   });
 
   it('uses grapes field when wine name is ambiguous', () => {
     // "Albert Bichot Bourgogne" has no grape in name, but grapes field has "pinot noir"
-    expect(inferColor({
+    expect(inferColour({
       wine_name: 'Albert Bichot Bourgogne 2023',
       grapes: 'pinot noir'
     })).toBe('red');
   });
 
   it('returns null when no colour can be determined', () => {
-    expect(inferColor({ wine_name: 'Mystery Estate Reserve 2022' })).toBeNull();
+    expect(inferColour({ wine_name: 'Mystery Estate Reserve 2022' })).toBeNull();
   });
 });
 

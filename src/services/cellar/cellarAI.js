@@ -264,7 +264,7 @@ ${JSON.stringify(cappedAmbiguity)}
 </AMBIGUITY_CANDIDATES>` : ''}
 
 <DATA>
-{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount},"scatteredWines":${report.summary.scatteredWineCount || 0},"overflowingZones":${report.summary.overflowingZones?.length || 0},"fragmentedZones":${report.summary.fragmentedZones?.length || 0},"colorBoundaryViolations":${report.summary.colorAdjacencyViolations || 0},"duplicatePlacements":${report.summary.duplicatePlacementCount || 0}},"suggestedMoves":${JSON.stringify(sanitizedMoves)},"duplicatePlacements":${JSON.stringify(duplicateContext)}}
+{"summary":{"totalBottles":${report.summary.totalBottles},"correctlyPlaced":${report.summary.correctlyPlaced},"misplaced":${report.summary.misplacedBottles},"unclassified":${report.summary.unclassifiedCount},"scatteredWines":${report.summary.scatteredWineCount || 0},"overflowingZones":${report.summary.overflowingZones?.length || 0},"fragmentedZones":${report.summary.fragmentedZones?.length || 0},"colourBoundaryViolations":${report.summary.colourAdjacencyViolations || 0},"duplicatePlacements":${report.summary.duplicatePlacementCount || 0}},"suggestedMoves":${JSON.stringify(sanitizedMoves)},"duplicatePlacements":${JSON.stringify(duplicateContext)}}
 </DATA>
 
 ${layoutBaseline ? `<LAYOUT_BASELINE>${JSON.stringify(layoutBaseline)}</LAYOUT_BASELINE>` : ''}
@@ -324,7 +324,7 @@ function getIssueSnapshot(report) {
   const summary = report?.summary || {};
   const overflowingZones = Array.isArray(summary.overflowingZones) ? summary.overflowingZones.length : 0;
   const fragmentedZones = Array.isArray(summary.fragmentedZones) ? summary.fragmentedZones.length : 0;
-  const colorBoundaryViolations = Number(summary.colorAdjacencyViolations || 0);
+  const colourBoundaryViolations = Number(summary.colourAdjacencyViolations || 0);
   const zoneCapacityIssues = Array.isArray(report?.zoneCapacityIssues) ? report.zoneCapacityIssues.length : 0;
   const duplicatePlacementCount = Number(summary.duplicatePlacementCount || 0);
   const layoutBaselineDrift = countLayoutBaselineDrift(report?.layoutBaseline);
@@ -340,7 +340,7 @@ function getIssueSnapshot(report) {
     scatteredWineCount,
     duplicatePlacementCount,
     layoutBaselineDrift,
-    structureIssueCount: overflowingZones + fragmentedZones + colorBoundaryViolations + zoneCapacityIssues + layoutBaselineDrift,
+    structureIssueCount: overflowingZones + fragmentedZones + colourBoundaryViolations + zoneCapacityIssues + layoutBaselineDrift,
     placementIssueCount: misplacedBottles + unclassifiedCount + scatteredWineCount + duplicatePlacementCount
   };
 }

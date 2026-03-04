@@ -134,7 +134,7 @@ router.get('/zones', (_req, res) => {
     zones: CELLAR_ZONES.zones.map(z => ({
       id: z.id,
       displayName: z.displayName,
-      color: z.color,
+      colour: z.colour,
       isBufferZone: z.isBufferZone || false,
       isFallbackZone: z.isFallbackZone || false,
       isCuratedZone: z.isCuratedZone || false,

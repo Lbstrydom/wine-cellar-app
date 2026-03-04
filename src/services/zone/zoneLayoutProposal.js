@@ -116,7 +116,7 @@ export async function proposeZoneLayout(cellarId) {
       anyColourZones.push(z.id);
       continue;
     }
-    const primaryColor = Array.isArray(z.color) ? z.color[0] : z.color;
+    const primaryColor = Array.isArray(z.colour) ? z.colour[0] : z.colour;
     const zoneIsWhite = isWhiteFamily(primaryColor);
     if (z.isBufferZone) {
       (zoneIsWhite ? whiteBuffers : redBuffers).push(z.id);

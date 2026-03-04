@@ -39,11 +39,13 @@ vi.mock('../../../../src/utils/logger.js', () => ({
   }
 }));
 
-import {
-  isMoveAuditEnabled,
-  buildAuditPrompt,
-  auditMoveSuggestions
-} from '../../../../src/services/cellar/moveAuditor.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. cellarAnalysis.test.js mocks moveAuditor.js)
+let isMoveAuditEnabled, buildAuditPrompt, auditMoveSuggestions;
+beforeAll(async () => {
+  ({ isMoveAuditEnabled, buildAuditPrompt, auditMoveSuggestions } =
+    await vi.importActual('../../../../src/services/cellar/moveAuditor.js'));
+});
 
 describe('moveAuditor', () => {
   const originalEnv = process.env;

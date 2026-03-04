@@ -12,7 +12,7 @@ vi.mock('../../../src/db/index.js', () => ({
 vi.mock('../../../src/services/cellar/cellarPlacement.js', () => ({
   findBestZone: vi.fn(),
   findAvailableSlot: vi.fn(),
-  inferColor: vi.fn(),
+  inferColour: vi.fn(),
 }));
 
 vi.mock('../../../src/services/cellar/cellarAllocation.js', () => ({

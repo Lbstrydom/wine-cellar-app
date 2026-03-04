@@ -3,7 +3,7 @@
  * Tests endpoints, validation, and status codes.
  */
 
-import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 
@@ -92,9 +92,9 @@ describe('buyingGuideItems routes', () => {
     app = createApp();
   });
 
-  afterAll(() => {
-    vi.restoreAllMocks();
-  });
+  // NOTE: Do NOT use vi.restoreAllMocks() in afterAll — in --no-isolate mode it
+  // restores mocked modules to their original implementations, corrupting
+  // the module registry for downstream suites.
 
   beforeEach(() => {
     vi.clearAllMocks();

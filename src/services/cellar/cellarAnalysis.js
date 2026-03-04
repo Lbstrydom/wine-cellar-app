@@ -8,13 +8,13 @@
 
 import { getZoneById } from '../../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
-import { findBestZone, inferColor } from './cellarPlacement.js';
+import { findBestZone, inferColour } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import {
   parseSlot, analyseZone, getWinesInRows,
-  detectScatteredWines, detectColorAdjacencyIssues,
+  detectScatteredWines, detectColourAdjacencyIssues,
   detectColourOrderViolations, detectDuplicatePlacements
 } from './cellarMetrics.js';
 import { generateZoneNarratives } from './cellarNarratives.js';
@@ -250,18 +250,18 @@ export async function analyseCellar(wines) {
   // and colour order violations (zones in wrong vertical region)
   if (hasZoneAllocations) {
     const { rowToZoneId } = await getCurrentZoneAllocation(cellarId);
-    const colorAdjacencyIssues = detectColorAdjacencyIssues(rowToZoneId, dynamicRanges);
-    report.colorAdjacencyIssues = colorAdjacencyIssues;
-    report.summary.colorAdjacencyViolations = colorAdjacencyIssues.length;
+    const colourAdjacencyIssues = detectColourAdjacencyIssues(rowToZoneId, dynamicRanges);
+    report.colourAdjacencyIssues = colourAdjacencyIssues;
+    report.summary.colourAdjacencyViolations = colourAdjacencyIssues.length;
 
-    if (colorAdjacencyIssues.length > 0) {
-      const examples = colorAdjacencyIssues.slice(0, 3)
-        .map(i => `${i.zone1Name} (${i.color1}) in ${i.row1} next to ${i.zone2Name} (${i.color2}) in ${i.row2}`);
+    if (colourAdjacencyIssues.length > 0) {
+      const examples = colourAdjacencyIssues.slice(0, 3)
+        .map(i => `${i.zone1Name} (${i.colour1}) in ${i.row1} next to ${i.zone2Name} (${i.colour2}) in ${i.row2}`);
       report.alerts.push({
-        type: 'color_adjacency_violation',
+        type: 'colour_adjacency_violation',
         severity: 'warning',
-        message: `${colorAdjacencyIssues.length} color boundary violation(s): ${examples.join('; ')}.`,
-        data: { issues: colorAdjacencyIssues }
+        message: `${colourAdjacencyIssues.length} colour boundary violation(s): ${examples.join('; ')}.`,
+        data: { issues: colourAdjacencyIssues }
       });
     }
 
@@ -306,14 +306,14 @@ export async function analyseCellar(wines) {
     (report.summary.totalBottles > 0 &&
       (report.summary.misplacedBottles / report.summary.totalBottles * 100) >= REORG_THRESHOLDS.minMisplacedPercent) ||
     scatteredWines.length > 0 ||
-    (report.colorAdjacencyIssues?.length ?? 0) > 0 ||
+    (report.colourAdjacencyIssues?.length ?? 0) > 0 ||
     (report.colourOrderViolations?.length ?? 0) > 0;
 
   if (shouldReorg && hasZoneAllocations) {
     const reasons = [];
     if (report.summary.misplacedBottles > 0) reasons.push(`${report.summary.misplacedBottles} misplaced`);
     if (scatteredWines.length > 0) reasons.push(`${scatteredWines.length} scattered`);
-    if (report.colorAdjacencyIssues?.length > 0) reasons.push(`${report.colorAdjacencyIssues.length} color boundary issue(s)`);
+    if (report.colourAdjacencyIssues?.length > 0) reasons.push(`${report.colourAdjacencyIssues.length} colour boundary issue(s)`);
     if (report.colourOrderViolations?.length > 0) reasons.push(`${report.colourOrderViolations.length} colour order violation(s)`);
     report.alerts.push({
       type: 'reorganisation_recommended',
@@ -424,16 +424,16 @@ function buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap) {
         // Check for colour violations even in buffer zones
         // (wineViolatesZoneColour skips buffer zones by design, so check inline)
         for (const w of zoneWines) {
-          const zoneColors = Array.isArray(zone.color) ? zone.color : (zone.color ? [zone.color] : []);
-          if (zoneColors.length === 0) continue; // No colour constraint → skip
-          const wineColor = (w.colour || w.color || inferColor(w) || '').toLowerCase();
-          if (!wineColor) continue; // Can't determine → don't penalise
+          const zoneColours = Array.isArray(zone.colour) ? zone.colour : (zone.colour ? [zone.colour] : []);
+          if (zoneColours.length === 0) continue; // No colour constraint → skip
+          const wineColour = (w.colour || inferColour(w) || '').toLowerCase();
+          if (!wineColour) continue; // Can't determine → don't penalise
           // Direct match: wine colour is one of the accepted colours
-          if (zoneColors.some(c => c.toLowerCase() === wineColor)) continue;
+          if (zoneColours.some(c => c.toLowerCase() === wineColour)) continue;
           // Family-level check
-          const allWhiteFamily = zoneColors.every(c => isWhiteFamily(c));
-          const isViolation = (allWhiteFamily && wineColor === 'red') ||
-            (zoneColors.every(c => c.toLowerCase() === 'red') && isWhiteFamily(wineColor));
+          const allWhiteFamily = zoneColours.every(c => isWhiteFamily(c));
+          const isViolation = (allWhiteFamily && wineColour === 'red') ||
+            (zoneColours.every(c => c.toLowerCase() === 'red') && isWhiteFamily(wineColour));
           if (isViolation) {
             const bestZone = findBestZone(w);
             report.misplacedWines.push({

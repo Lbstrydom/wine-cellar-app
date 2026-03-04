@@ -118,15 +118,15 @@ function calculateZoneMatch(wine, zone) {
   let possiblePoints = 0;
   const matchedOn = [];
 
-  // Color match
-  if (zone.color) {
-    possiblePoints += SCORING_WEIGHTS.color;
-    const zoneColors = Array.isArray(zone.color) ? zone.color : [zone.color];
-    if (wine.color && zoneColors.includes(wine.color.toLowerCase())) {
-      earnedPoints += SCORING_WEIGHTS.color;
-      matchedOn.push(`color: ${wine.color}`);
-    } else if (wine.color && !zoneColors.includes(wine.color.toLowerCase())) {
-      return { score: 0, matchedOn: [], rejectionReason: `Colour mismatch: wine is ${wine.color}, zone requires ${zoneColors.join('/')}` };
+  // Colour match
+  if (zone.colour) {
+    possiblePoints += SCORING_WEIGHTS.colour;
+    const zoneColours = Array.isArray(zone.colour) ? zone.colour : [zone.colour];
+    if (wine.colour && zoneColours.includes(wine.colour.toLowerCase())) {
+      earnedPoints += SCORING_WEIGHTS.colour;
+      matchedOn.push(`colour: ${wine.colour}`);
+    } else if (wine.colour && !zoneColours.includes(wine.colour.toLowerCase())) {
+      return { score: 0, matchedOn: [], rejectionReason: `Colour mismatch: wine is ${wine.colour}, zone requires ${zoneColours.join('/')}` };
     }
   }
 
@@ -271,7 +271,7 @@ function calculateConfidence(bestScore, allMatches) {
  * Find an available slot for a wine in a zone.
  * @param {string} zoneId
  * @param {Array|Set} occupiedSlots - Currently occupied slot IDs
- * @param {Object} wine - Wine object (for color-based preference in fallback)
+ * @param {Object} wine - Wine object (for colour-based preference in fallback)
  * @returns {Promise<Object|null>} Slot placement result
  */
 export async function findAvailableSlot(zoneId, occupiedSlots, wine = null) {
@@ -468,11 +468,11 @@ function isSensibleOverflow(fromZone, toZone, wine) {
 }
 
 function zonesShareColour(fromZone, toZone, wine) {
-  const fromColours = normalizeColours(fromZone.color);
-  const toColours = normalizeColours(toZone.color);
+  const fromColours = normalizeColours(fromZone.colour);
+  const toColours = normalizeColours(toZone.colour);
 
   // If a wine is provided, use its inferred colour as a tie-breaker.
-  const wineColour = (wine?.colour || wine?.color || '').toLowerCase();
+  const wineColour = (wine?.colour || '').toLowerCase();
   if (wineColour && toColours.has(wineColour) && fromColours.has(wineColour)) {
     return true;
   }
@@ -483,9 +483,9 @@ function zonesShareColour(fromZone, toZone, wine) {
   return false;
 }
 
-function normalizeColours(color) {
-  if (!color) return new Set();
-  const arr = Array.isArray(color) ? color : [color];
+function normalizeColours(colour) {
+  if (!colour) return new Set();
+  const arr = Array.isArray(colour) ? colour : [colour];
   return new Set(arr.map(c => String(c).toLowerCase()));
 }
 
@@ -604,7 +604,7 @@ function findSlotInRows(rows, occupiedSet, fillDirection = 'left', sameWineSlots
  * Find any available slot in entire cellar (for fallback zones).
  * Uses dynamic row ranges when provided, falling back to even 50/50 split.
  * @param {Set} occupiedSet
- * @param {Object} wine - Wine object for color preference
+ * @param {Object} wine - Wine object for colour preference
  * @param {string} [fillDirection='left'] - Fill from 'left' or 'right'
  * @param {string} [colourOrder='whites-top'] - Colour ordering preference
  * @param {number[]} [dynWhiteRows] - Dynamic white-family row numbers
@@ -623,7 +623,7 @@ function findAnyAvailableSlot(occupiedSet, wine = null, fillDirection = 'left', 
   }
 
   let preferredRows, fallbackRows;
-  const wineColour = wine?.color || wine?.colour || '';
+  const wineColour = wine?.colour || '';
 
   if (isWhiteFamily(wineColour)) {
     preferredRows = wRows;
@@ -677,7 +677,7 @@ function normalizeWineAttributes(wine) {
     name: wine.wine_name || wine.name || '',
     grapes: resolvedGrapes,
     style: wine.style || '',
-    color: wine.colour || wine.color || inferColor(wine),
+    colour: wine.colour || inferColour(wine),
     country: wine.country || '',
     region: wine.region || '',
     appellation: wine.appellation || '',
@@ -741,11 +741,11 @@ function parseTextArray(value) {
 }
 
 /**
- * Infer wine color from name, style and grapes.
+ * Infer wine colour from name, style and grapes.
  * @param {Object} wine
  * @returns {string|null}
  */
-export function inferColor(wine) {
+export function inferColour(wine) {
   const text = `${wine.wine_name || ''} ${wine.style || ''} ${wine.grapes || ''}`.toLowerCase();
 
   if (text.includes('rosé') || text.includes('rose') || text.includes('rosado')) return 'rose';

@@ -1,18 +1,21 @@
 /**
  * @fileoverview Unit tests for slotUtils — shared slot parsing utilities.
+ *
+ * Uses vi.importActual() to bypass --no-isolate mock leakage: slotUtils.js
+ * is mocked by cellarMetrics.test.js (overrides getRowCapacity).
  * @module tests/unit/services/cellar/slotUtils.test
  */
 
-import {
-  parseSlot,
-  slotToRowId,
-  buildSlotId,
-  extractRowNumber,
-  getRowCapacity,
-  isCellarSlot,
-  isFridgeSlot,
-  sortRowIds
-} from '../../../../src/services/cellar/slotUtils.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. cellarMetrics.test.js mocks slotUtils.js)
+let parseSlot, slotToRowId, buildSlotId, extractRowNumber,
+  getRowCapacity, isCellarSlot, isFridgeSlot, sortRowIds;
+beforeAll(async () => {
+  ({
+    parseSlot, slotToRowId, buildSlotId, extractRowNumber,
+    getRowCapacity, isCellarSlot, isFridgeSlot, sortRowIds
+  } = await vi.importActual('../../../../src/services/cellar/slotUtils.js'));
+});
 
 describe('parseSlot', () => {
   it('parses cellar slot R3C7', () => {

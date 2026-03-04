@@ -177,7 +177,7 @@ function renderZoneIssueActions(analysis, onRenderAnalysis) {
 
   const alerts = Array.isArray(analysis?.alerts) ? analysis.alerts : [];
   const capacityAlerts = alerts.filter(a => a.type === 'zone_capacity_issue');
-  const adjacencyAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
+  const adjacencyAlerts = alerts.filter(a => a.type === 'colour_adjacency_violation');
   const colourOrderAlerts = alerts.filter(a => a.type === 'colour_order_violation');
 
   if (capacityAlerts.length === 0 && adjacencyAlerts.length === 0 && colourOrderAlerts.length === 0) return;

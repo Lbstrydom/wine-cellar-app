@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 3 March 2026 (updated)
+## 4 March 2026 (updated)
 
 ---
 
@@ -9,7 +9,40 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 3 Mar 2026**:
+**Recent Enhancements** ✨ **NEW - 4 Mar 2026**:
+- **Database Security Lint Fixes (Migration 063) — COMPLETE** ✅:
+  - **RLS enforcement**: Enabled Row Level Security on 5 tables created dynamically by recipe services (`wine_food_pairings`, `recipes`, `recipe_sync_state`, `recipe_sync_log`, `cooking_profiles`). Strategy: RLS enabled with no anon policies (blocks PostgREST; Express backend via `DATABASE_URL` bypasses RLS).
+  - **Stale table cleanup**: Dropped `wines_name_cleanup_backup_20260228` (one-off backup from Feb-28 name cleanup, no longer needed, had no RLS).
+  - **RLS perf fix**: Rewrote `source_credentials_isolation` policy to wrap `current_setting()` in a subquery — planner now hoists evaluation out of per-row loop.
+  - Migration: `data/migrations/063_security_lint_fixes_2.sql`.
+
+**Previous Enhancements** (3 Mar 2026):
+- **`color` → `colour` Standardisation — COMPLETE** ✅:
+  - Standardised all zone config properties, function names, report fields, alert types, and local variables from American `color` to British `colour` across 22 source files, 10 test files, and 2 frontend JS files (~300+ identifier renames).
+  - Functions renamed: `getEffectiveZoneColor()` → `getEffectiveZoneColour()`, `detectColorAdjacencyIssues()` → `detectColourAdjacencyIssues()`, `inferColor()` → `inferColour()`, plus 4 internal solver functions.
+  - Config: `cellarZones.js` ~24 `color:` → `colour:`, `cellarThresholds.js` `SCORING_WEIGHTS.color` → `.colour`.
+  - **Structural improvement**: Added machine-readable `reasonCode` fields (`fix_colour_boundary`, `fix_colour_adjacency`) to solver actions, eliminating brittle `reason.includes('color')` string-matching in `zoneReconfigurationPlanner.js`.
+  - Dead code removed: `wine.color` fallbacks in `cellarPlacement.js`, `cellarMetrics.js`, `cellarAnalysis.js`, `bottleScanner.js`.
+  - All 3065 tests passing. Plan archived: `docs/col-plan.md` → `docs/archive/`.
+
+- **`--no-isolate` Mock Leakage Fixes — COMPLETE** ✅:
+  - Systematically fixed cross-suite mock contamination across 8 test files that caused intermittent failures when execution order varied.
+  - Applied `vi.importActual()` in `beforeAll` to: `cellarMetrics.test.js` (mocked by 5 files), `moveAuditor.test.js`, `slotUtils.test.js`, `signalAuditor.test.js`, `pairingAuditor.test.js`, `cookingProfile.test.js` (3 modules).
+  - Applied `vi.hoisted()` for stable mock references in `styleInference.test.js` (pairingEngine + grapeEnrichment mocked by 3+ files).
+  - Removed dangerous `vi.restoreAllMocks()` from `buyingGuideItems.test.js` `afterAll` (corrupted downstream suites).
+  - Replaced 4x `vi.restoreAllMocks()` in `cookingProfile.test.js` with targeted `dateSpy.mockRestore()`.
+  - Updated CLAUDE.md and AGENTS.md with expanded `--no-isolate` mock hygiene patterns (vi.hoisted, targeted spy restore, vi.restoreAllMocks ban).
+  - All 3065 tests passing across 128 files.
+
+- **Wire Extracted Data & Cross-Feature Integration — COMPLETE** ✅:
+  - **Phase 0** (critical bug): Fixed `drinkNowAI.js` cellar scoping — `getUrgentWines()`, `getRecentConsumption()`, `getCollectionStats()` now filter by `cellar_id`.
+  - **Phase 1**: Migration 062 adds `style_summary`, `producer_description`, `extracted_awards` JSONB columns to wines table.
+  - **Phase 2**: New `wineUpdateService.js` shared persistence helper (DRY), used by both `ratingsTier.js` and `unifiedRatingFetchJob.js`. Dead API response fields removed.
+  - **Phase 3**: New `wineContextBuilder.js` with single + batch variants for AI prompt enrichment.
+  - **Phase 4**: drinkNowAI enriched with food pairings; restaurant pairing enriched via `cellar_wine_id` lookup.
+  - **Phase 5**: Style summary display, extracted awards section, tasting service card refresh after research, food pairing source badges (AI/manual) + "Rate this pairing" affordance on unrated items.
+  - Plan archived: `docs/upg-plan.md` → `docs/archive/`.
+
 - **Awards: Deterministic/AI Route Split + Unicode Normalisation — COMPLETE** ✅:
   - **`POST /awards/match-all`** is now a pure deterministic-only pass (no AI), faster and cost-free. Response omits `aiVerifiedMatches`/`aiEnabled` fields.
   - **New `POST /awards/deep-match`** — opt-in AI-assisted pass over the fuzzy/unmatched pool. Only auto-links high-confidence AI verdicts; gracefully returns zero AI counters when `ANTHROPIC_API_KEY` is absent.

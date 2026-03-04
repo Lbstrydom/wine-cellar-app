@@ -89,25 +89,25 @@ export async function allocateRowToZone(zoneId, cellarId, options = {}) {
 
   // If no preferred row available, try color-compatible rows using dynamic ranges
   if (!assignedRow) {
-    const zoneColor = zone.color;
-    const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
-    const zoneIsWhite = isWhiteFamily(primaryColor);
+    const zoneColour = zone.colour;
+    const primaryColour = Array.isArray(zoneColour) ? zoneColour[0] : zoneColour;
+    const zoneIsWhite = isWhiteFamily(primaryColour);
 
     // Use dynamic colour ranges that respect colourOrder setting
-    let colorRange;
+    let colourRange;
     try {
       const layoutSettings = await getCellarLayoutSettings(cellarId);
       const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
-      colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
+      colourRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
     } catch (_err) {
       // Fallback to static ranges if settings unavailable
-      colorRange = zoneIsWhite
+      colourRange = zoneIsWhite
         ? [1, 2, 3, 4, 5, 6, 7]
         : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
     }
 
     // Try color-compatible rows first
-    for (const rowNum of colorRange) {
+    for (const rowNum of colourRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
         assignedRow = rowId;
@@ -338,12 +338,12 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
       // Skip fallback zones only — buffer zones CAN own rows
       if (!zone || zone.isFallbackZone) continue;
 
-      const zoneColor = zone.color;
-      const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
-      const zoneIsWhite = isWhiteFamily(primaryColor);
+      const zoneColour = zone.colour;
+      const primaryColour = Array.isArray(zoneColour) ? zoneColour[0] : zoneColour;
+      const zoneIsWhite = isWhiteFamily(primaryColour);
 
       // Skip colour-incompatible zones (unless zone accepts any colour)
-      if (primaryColor !== 'any' && isWhiteRow !== zoneIsWhite) continue;
+      if (primaryColour !== 'any' && isWhiteRow !== zoneIsWhite) continue;
 
       const rows = parseAssignedRows(alloc.assigned_rows);
       const wineCount = alloc.wine_count || 0;
@@ -405,7 +405,7 @@ export async function getAllZoneAllocations(cellarId) {
       ...alloc,
       assigned_rows: parseAssignedRows(alloc.assigned_rows),
       displayName: zone?.displayName || alloc.zone_id,
-      color: zone?.color || null
+      colour: zone?.colour || null
     };
   });
 }
@@ -427,7 +427,7 @@ export async function getZoneStatuses(cellarId) {
     return {
       id: zone.id,
       displayName: zone.displayName,
-      color: zone.color,
+      colour: zone.colour,
       isBufferZone: zone.isBufferZone || false,
       isFallbackZone: zone.isFallbackZone || false,
       isCuratedZone: zone.isCuratedZone || false,

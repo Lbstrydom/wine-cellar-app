@@ -1,22 +1,40 @@
 /**
  * @fileoverview Tests for style inference service.
+ *
+ * Uses vi.hoisted() for stable mock references to prevent --no-isolate leakage.
+ * pairingEngine.js and grapeEnrichment.js are mocked by multiple other test files
+ * (buyingGuide, buyingGuideProjected, recipeProfile, suggestPlacement, etc.),
+ * which could overwrite the mock factory and leave stale function references.
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock pairingEngine before import
+// --- Stable mock references via vi.hoisted ---
+const { mockMatchWineToStyle, mockDetectGrapesFromWine } = vi.hoisted(() => ({
+  mockMatchWineToStyle: vi.fn(),
+  mockDetectGrapesFromWine: vi.fn()
+}));
+
+// Mock pairingEngine before import (stable refs survive --no-isolate mock overwrites)
 vi.mock('../../../../src/services/pairing/pairingEngine.js', () => ({
-  matchWineToStyle: vi.fn()
+  matchWineToStyle: mockMatchWineToStyle
 }));
 
 // Mock grapeEnrichment before import
 vi.mock('../../../../src/services/wine/grapeEnrichment.js', () => ({
-  detectGrapesFromWine: vi.fn()
+  detectGrapesFromWine: mockDetectGrapesFromWine
 }));
 
-import { inferStyleForItem } from '../../../../src/services/recipe/styleInference.js';
-import { matchWineToStyle } from '../../../../src/services/pairing/pairingEngine.js';
-import { detectGrapesFromWine } from '../../../../src/services/wine/grapeEnrichment.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (buyingGuideItems.test.js & buyingGuideArrival.test.js mock styleInference.js)
+let inferStyleForItem;
+beforeAll(async () => {
+  ({ inferStyleForItem } = await vi.importActual('../../../../src/services/recipe/styleInference.js'));
+});
+
+// Use the hoisted references directly (not module imports that could become stale)
+const matchWineToStyle = mockMatchWineToStyle;
+const detectGrapesFromWine = mockDetectGrapesFromWine;
 
 beforeEach(() => {
   vi.clearAllMocks();

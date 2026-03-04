@@ -27,7 +27,7 @@ vi.mock('../../../../src/config/cellarZones.js', () => ({
 // isWhiteFamily is a pure function that works correctly without mocking.
 
 vi.mock('../../../../src/services/cellar/cellarPlacement.js', () => ({
-  inferColor: vi.fn()
+  inferColour: vi.fn()
 }));
 
 import { validateMovePlan } from '../../../../src/services/cellar/movePlanner.js';
@@ -505,7 +505,7 @@ describe('validateMovePlan', () => {
       // Zone map: R1 is white zone
       setupZoneMocks(
         { R1: { zoneId: 'sauvignon_blanc' } },
-        { sauvignon_blanc: { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white' } }
+        { sauvignon_blanc: { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white' } }
       );
 
       // DB mock: slots (call 1) and wines (call 2)
@@ -542,7 +542,7 @@ describe('validateMovePlan', () => {
     it('should reject white wine moving to red-only zone row', async () => {
       setupZoneMocks(
         { R10: { zoneId: 'cabernet_sauvignon' } },
-        { cabernet_sauvignon: { id: 'cabernet_sauvignon', displayName: 'Cabernet Sauvignon', color: 'red' } }
+        { cabernet_sauvignon: { id: 'cabernet_sauvignon', displayName: 'Cabernet Sauvignon', colour: 'red' } }
       );
 
       let callCount = 0;
@@ -570,7 +570,7 @@ describe('validateMovePlan', () => {
     it('should allow white wine moving to white zone row', async () => {
       setupZoneMocks(
         { R1: { zoneId: 'sauvignon_blanc' } },
-        { sauvignon_blanc: { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white' } }
+        { sauvignon_blanc: { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white' } }
       );
 
       let callCount = 0;
@@ -616,7 +616,7 @@ describe('validateMovePlan', () => {
     it('should skip fridge target slots', async () => {
       setupZoneMocks(
         { R1: { zoneId: 'whites' } },
-        { whites: { id: 'whites', displayName: 'White Wines', color: 'white' } }
+        { whites: { id: 'whites', displayName: 'White Wines', colour: 'white' } }
       );
 
       db.prepare.mockReturnValue({
@@ -638,7 +638,7 @@ describe('validateMovePlan', () => {
     it('should skip fallback/buffer zones', async () => {
       setupZoneMocks(
         { R15: { zoneId: 'red_buffer' } },
-        { red_buffer: { id: 'red_buffer', displayName: 'Red Buffer', color: 'red', isBufferZone: true } }
+        { red_buffer: { id: 'red_buffer', displayName: 'Red Buffer', colour: 'red', isBufferZone: true } }
       );
 
       let callCount = 0;
@@ -666,7 +666,7 @@ describe('validateMovePlan', () => {
     it('should skip wines with no determinable colour', async () => {
       setupZoneMocks(
         { R1: { zoneId: 'whites' } },
-        { whites: { id: 'whites', displayName: 'White Wines', color: 'white' } }
+        { whites: { id: 'whites', displayName: 'White Wines', colour: 'white' } }
       );
 
       let callCount = 0;
@@ -696,7 +696,7 @@ describe('validateMovePlan', () => {
       // The wines table only has "colour" (British spelling).
       setupZoneMocks(
         { R1: { zoneId: 'whites' } },
-        { whites: { id: 'whites', displayName: 'White Wines', color: 'white' } }
+        { whites: { id: 'whites', displayName: 'White Wines', colour: 'white' } }
       );
 
       let callCount = 0;

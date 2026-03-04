@@ -49,7 +49,7 @@ function buildGrapeColourMap() {
     // Skip buffer, fallback, and curated zones
     if (zone.isBufferZone || zone.isFallbackZone || zone.isCuratedZone) continue;
 
-    const zoneColours = Array.isArray(zone.color) ? zone.color : (zone.color ? [zone.color] : []);
+    const zoneColours = Array.isArray(zone.colour) ? zone.colour : (zone.colour ? [zone.colour] : []);
     const grapes = zone.rules?.grapes;
     if (!grapes || !Array.isArray(grapes) || grapes.length === 0) continue;
 

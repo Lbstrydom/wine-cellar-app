@@ -82,7 +82,7 @@ function classifyAlert(alert, summary) {
   // Color adjacency violations are shown in detail inside Cellar Review
   // workspace (#zone-issue-actions). Suppress from digest to avoid
   // duplicating what the user sees when they navigate there.
-  if (type === 'color_adjacency_violation') {
+  if (type === 'colour_adjacency_violation') {
     return null;
   }
 
@@ -159,14 +159,14 @@ export function buildDigestGroups(analysis) {
     groups[item.workspace].push(item);
   }
 
-  // Add color adjacency summary (suppressed from classifyAlert, shown as one line)
+  // Add colour adjacency summary (suppressed from classifyAlert, shown as one line)
   // No CTA here — the Zone Issues banner in Cellar Review already provides "Reorganise Zones".
-  const colorAlerts = alerts.filter(a => a.type === 'color_adjacency_violation');
-  if (colorAlerts.length > 0) {
+  const colourAlerts = alerts.filter(a => a.type === 'colour_adjacency_violation');
+  if (colourAlerts.length > 0) {
     groups.structure.push({
       workspace: 'structure',
       severity: 'warning',
-      message: `${colorAlerts.length} color boundary violation(s)`
+      message: `${colourAlerts.length} colour boundary violation(s)`
     });
   }
 

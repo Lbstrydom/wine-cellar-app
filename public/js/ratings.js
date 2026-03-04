@@ -17,6 +17,7 @@ import {
 } from './api.js';
 import { showToast, escapeHtml, getAllSlotsFromLayout } from './utils.js';
 import { state } from './app.js';
+import { renderTastingServiceCard } from './tastingService.js';
 
 // Main rating sources for the dropdown
 const MAIN_RATING_SOURCES = [
@@ -478,7 +479,20 @@ async function handleFetchRatings(wineId, useAsync = true) {
       await loadFoodPairings(pairingsContainer, wineId);
     }
 
-    // 3. Update tasting notes directly in the modal DOM
+    // 3. Refresh tasting service card with newly-extracted structured notes
+    const tastingServiceContainer = document.getElementById('tasting-service-container');
+    if (tastingServiceContainer && wineData) {
+      renderTastingServiceCard({
+        id: wineData.id,
+        wine_id: wineData.id,
+        wine_name: wineData.wine_name,
+        style: wineData.style,
+        colour: wineData.colour,
+        vintage: wineData.vintage
+      }, tastingServiceContainer);
+    }
+
+    // 4. Update legacy tasting notes fallback in the modal DOM
     const tastingNotesField = document.getElementById('modal-tasting-notes-field');
     const tastingNotesText = document.getElementById('modal-tasting-notes');
 
@@ -491,7 +505,7 @@ async function handleFetchRatings(wineId, useAsync = true) {
       }
     }
 
-    // 3. Update local slot state for consistency (if modal has currentSlot reference)
+    // 5. Update local slot state for consistency (if modal has currentSlot reference)
     if (window.currentSlot) {
       window.currentSlot.tasting_notes = wineData?.tasting_notes || null;
     }
@@ -824,13 +838,14 @@ function renderFoodPairingsHtml(pairings) {
 
   const rows = pairings.map(p => {
     const currentRating = p.user_rating || 0;
+    const unratedHint = currentRating === 0 ? ' — Rate this pairing' : '';
     const stars = [1, 2, 3, 4, 5].map(n => {
       const filled = n <= currentRating;
       return `<button class="pairing-star${filled ? ' pairing-star--filled' : ''}"
         data-pairing-id="${p.id}"
         data-star="${n}"
-        aria-label="${n} star${n !== 1 ? 's' : ''}"
-        title="${n} star${n !== 1 ? 's' : ''}"
+        aria-label="${n} star${n !== 1 ? 's' : ''}${unratedHint}"
+        title="${n} star${n !== 1 ? 's' : ''}${unratedHint}"
         type="button">★</button>`;
     }).join('');
 

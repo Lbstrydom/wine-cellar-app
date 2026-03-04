@@ -1,10 +1,14 @@
 /**
  * @fileoverview Unit tests for cooking profile computation engine.
  * Tests rating weights, seasonal bias, overrides, edge cases.
+ *
+ * Uses vi.importActual() to bypass --no-isolate mock leakage: pairingEngine.js
+ * is mocked by styleInference.test.js, buyingGuide.test.js and others, which
+ * would replace the real extractSignals with a vi.fn() stub.
  * @module tests/unit/services/recipe/cookingProfile.test
  */
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 
 // Mock the database before importing the module
 vi.mock('../../../../src/db/index.js', () => ({
@@ -40,9 +44,15 @@ vi.mock('../../../../src/services/recipe/signalAuditor.js', () => ({
 
 // Import after mocks
 import { getCurrentSeason, applyProfileWeighting, SEASON_BOOSTS, CLIMATE_MULTIPLIERS } from '../../../../src/services/recipe/cookingProfile.js';
-import { extractSignals } from '../../../../src/services/pairing/pairingEngine.js';
-import { getCategorySignalBoosts } from '../../../../src/services/recipe/categorySignalMap.js';
-import { FOOD_SIGNALS, SIGNAL_TIER_WEIGHTS } from '../../../../src/config/pairingRules.js';
+
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. styleInference.test.js mocks pairingEngine.js)
+let extractSignals, getCategorySignalBoosts, FOOD_SIGNALS, SIGNAL_TIER_WEIGHTS;
+beforeAll(async () => {
+  ({ extractSignals } = await vi.importActual('../../../../src/services/pairing/pairingEngine.js'));
+  ({ getCategorySignalBoosts } = await vi.importActual('../../../../src/services/recipe/categorySignalMap.js'));
+  ({ FOOD_SIGNALS, SIGNAL_TIER_WEIGHTS } = await vi.importActual('../../../../src/config/pairingRules.js'));
+});
 
 // ==========================================
 // getCurrentSeason
@@ -50,7 +60,7 @@ import { FOOD_SIGNALS, SIGNAL_TIER_WEIGHTS } from '../../../../src/config/pairin
 describe('getCurrentSeason', () => {
   it('returns summer for January in southern hemisphere', () => {
     const realDate = Date;
-    vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
+    const dateSpy = vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
       if (args.length === 0) {
         const d = new realDate(2026, 0, 15); // January
         d.getMonth = () => 0;
@@ -59,12 +69,12 @@ describe('getCurrentSeason', () => {
       return new realDate(...args);
     });
     expect(getCurrentSeason('southern')).toBe('summer');
-    vi.restoreAllMocks();
+    dateSpy.mockRestore(); // Targeted restore — vi.restoreAllMocks() is unsafe in --no-isolate
   });
 
   it('returns winter for January in northern hemisphere', () => {
     const realDate = Date;
-    vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
+    const dateSpy = vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
       if (args.length === 0) {
         const d = new realDate(2026, 0, 15);
         d.getMonth = () => 0;
@@ -73,12 +83,12 @@ describe('getCurrentSeason', () => {
       return new realDate(...args);
     });
     expect(getCurrentSeason('northern')).toBe('winter');
-    vi.restoreAllMocks();
+    dateSpy.mockRestore();
   });
 
   it('returns winter for July in southern hemisphere', () => {
     const realDate = Date;
-    vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
+    const dateSpy = vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
       if (args.length === 0) {
         const d = new realDate(2026, 6, 15); // July
         d.getMonth = () => 6;
@@ -87,12 +97,12 @@ describe('getCurrentSeason', () => {
       return new realDate(...args);
     });
     expect(getCurrentSeason('southern')).toBe('winter');
-    vi.restoreAllMocks();
+    dateSpy.mockRestore();
   });
 
   it('returns summer for July in northern hemisphere', () => {
     const realDate = Date;
-    vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
+    const dateSpy = vi.spyOn(globalThis, 'Date').mockImplementation(function (...args) {
       if (args.length === 0) {
         const d = new realDate(2026, 6, 15);
         d.getMonth = () => 6;
@@ -101,7 +111,7 @@ describe('getCurrentSeason', () => {
       return new realDate(...args);
     });
     expect(getCurrentSeason('northern')).toBe('summer');
-    vi.restoreAllMocks();
+    dateSpy.mockRestore();
   });
 
   it('defaults to southern hemisphere when not specified', () => {

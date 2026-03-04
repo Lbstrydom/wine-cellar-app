@@ -5,7 +5,7 @@
  */
 
 import { getZoneById } from '../../config/cellarZones.js';
-import { findBestZone, inferColor } from './cellarPlacement.js';
+import { findBestZone, inferColour } from './cellarPlacement.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 import { parseSlot, getRowCapacity } from './slotUtils.js';
 
@@ -111,26 +111,26 @@ export function detectScatteredWines(wines) {
 }
 
 // ───────────────────────────────────────────────────────────
-// Color adjacency detection
+// Colour adjacency detection
 // ───────────────────────────────────────────────────────────
 
 /**
- * Get the effective color category for a zone (red or white-family).
+ * Get the effective colour category for a zone (red or white-family).
  * @param {Object} zone - Zone configuration
- * @returns {'red'|'white'|'any'} Effective color
+ * @returns {'red'|'white'|'any'} Effective colour
  */
-export function getEffectiveZoneColor(zone) {
+export function getEffectiveZoneColour(zone) {
   if (!zone) return 'any';
   if (zone.isFallbackZone || zone.isCuratedZone) return 'any';
-  const color = zone.color;
-  if (Array.isArray(color)) {
-    return color.includes('red') ? 'red' : 'white';
+  const colour = zone.colour;
+  if (Array.isArray(colour)) {
+    return colour.includes('red') ? 'red' : 'white';
   }
-  return color === 'red' ? 'red' : 'white';
+  return colour === 'red' ? 'red' : 'white';
 }
 
 /**
- * Detect color boundary violations where red and white zones are adjacent.
+ * Detect colour boundary violations where red and white zones are adjacent.
  *
  * The single expected transition at the natural white/red boundary (e.g. the last
  * white row sitting directly above the first red row) is intentional and must NOT
@@ -141,7 +141,7 @@ export function getEffectiveZoneColor(zone) {
  * @param {Object} [dynamicRanges] - Optional { whiteRows: number[], redRows: number[] }
  * @returns {Array} Adjacency violation objects
  */
-export function detectColorAdjacencyIssues(rowToZoneId, dynamicRanges = null) {
+export function detectColourAdjacencyIssues(rowToZoneId, dynamicRanges = null) {
   const issues = [];
 
   // Identify the single expected colour split point so it can be skipped.
@@ -173,8 +173,8 @@ export function detectColorAdjacencyIssues(rowToZoneId, dynamicRanges = null) {
     const nextZone = getZoneById(nextZoneId);
     if (!currentZone || !nextZone) continue;
 
-    const c1 = getEffectiveZoneColor(currentZone);
-    const c2 = getEffectiveZoneColor(nextZone);
+    const c1 = getEffectiveZoneColour(currentZone);
+    const c2 = getEffectiveZoneColour(nextZone);
 
     // Skip buffer/fallback/curated zones (they can be anywhere)
     if (c1 === 'any' || c2 === 'any') continue;
@@ -184,11 +184,11 @@ export function detectColorAdjacencyIssues(rowToZoneId, dynamicRanges = null) {
         row1: `R${row}`,
         zone1: currentZoneId,
         zone1Name: currentZone.displayName,
-        color1: c1,
+        colour1: c1,
         row2: `R${row + 1}`,
         zone2: nextZoneId,
         zone2Name: nextZone.displayName,
-        color2: c2
+        colour2: c2
       });
     }
   }
@@ -219,26 +219,26 @@ export function detectColourOrderViolations(rowToZoneId, colourOrder, whiteRows,
     const zone = getZoneById(zoneId);
     if (!zone) continue;
 
-    const zoneColor = getEffectiveZoneColor(zone);
-    if (zoneColor === 'any') continue;
+    const zoneColour = getEffectiveZoneColour(zone);
+    if (zoneColour === 'any') continue;
 
-    if (zoneColor === 'white' && redRowSet.has(row)) {
+    if (zoneColour === 'white' && redRowSet.has(row)) {
       issues.push({
         row: `R${row}`,
         zoneId,
         zoneName: zone.displayName,
-        zoneColor,
-        expectedColor: 'red',
+        zoneColour,
+        expectedColour: 'red',
         colourOrder,
         message: `${zone.displayName} (white) in R${row} is in the ${colourOrder === 'whites-top' ? 'red (bottom)' : 'red (top)'} section`
       });
-    } else if (zoneColor === 'red' && whiteRowSet.has(row)) {
+    } else if (zoneColour === 'red' && whiteRowSet.has(row)) {
       issues.push({
         row: `R${row}`,
         zoneId,
         zoneName: zone.displayName,
-        zoneColor,
-        expectedColor: 'white',
+        zoneColour,
+        expectedColour: 'white',
         colourOrder,
         message: `${zone.displayName} (red) in R${row} is in the ${colourOrder === 'whites-top' ? 'white (top)' : 'white (bottom)'} section`
       });
@@ -314,39 +314,39 @@ export function isLegitimateBufferPlacement(wine, physicalZone) {
 export function wineViolatesZoneColour(wine, zone) {
   if (!zone || zone.isFallbackZone || zone.isCuratedZone || zone.isBufferZone) return false;
 
-  const zoneColor = zone.color;
+  const zoneColour = zone.colour;
   // Zones with null/undefined colour accept anything
-  if (!zoneColor) return false;
+  if (!zoneColour) return false;
   // Array-typed colours (e.g. ['rose','sparkling']) — check membership + colour family
-  if (Array.isArray(zoneColor)) {
-    const wineColor = (wine.colour || wine.color || inferColor(wine) || '').toLowerCase();
-    if (!wineColor) return false; // Can't determine colour — don't penalise
+  if (Array.isArray(zoneColour)) {
+    const wineColour = (wine.colour || inferColour(wine) || '').toLowerCase();
+    if (!wineColour) return false; // Can't determine colour — don't penalise
 
     // Direct match: wine colour is one of the zone's accepted colours
-    if (zoneColor.some(c => c.toLowerCase() === wineColor)) return false;
+    if (zoneColour.some(c => c.toLowerCase() === wineColour)) return false;
 
     // Family-level check: if all accepted colours are white-family, red wine = violation
-    const allWhiteFamily = zoneColor.every(c => isWhiteFamily(c));
-    if (allWhiteFamily && wineColor === 'red') return true;
+    const allWhiteFamily = zoneColour.every(c => isWhiteFamily(c));
+    if (allWhiteFamily && wineColour === 'red') return true;
 
     // Opposite: all accepted colours are red, white-family wine = violation
-    const allRedFamily = zoneColor.every(c => c.toLowerCase() === 'red');
-    if (allRedFamily && isWhiteFamily(wineColor)) return true;
+    const allRedFamily = zoneColour.every(c => c.toLowerCase() === 'red');
+    if (allRedFamily && isWhiteFamily(wineColour)) return true;
 
     return false;
   }
 
   // Only enforce for the two primary colour families
-  if (zoneColor !== 'red' && zoneColor !== 'white') return false;
+  if (zoneColour !== 'red' && zoneColour !== 'white') return false;
 
-  const wineColor = wine.colour || wine.color || inferColor(wine);
-  if (!wineColor) return false; // Can't determine colour — don't penalise
+  const wineColour = wine.colour || inferColour(wine);
+  if (!wineColour) return false; // Can't determine colour — don't penalise
 
-  const wineIsWhiteFamily = isWhiteFamily(wineColor);
-  const wineIsRed = wineColor.toLowerCase() === 'red';
+  const wineIsWhiteFamily = isWhiteFamily(wineColour);
+  const wineIsRed = wineColour.toLowerCase() === 'red';
 
-  if (zoneColor === 'white' && wineIsRed) return true;
-  if (zoneColor === 'red' && wineIsWhiteFamily) return true;
+  if (zoneColour === 'white' && wineIsRed) return true;
+  if (zoneColour === 'red' && wineIsWhiteFamily) return true;
 
   return false;
 }

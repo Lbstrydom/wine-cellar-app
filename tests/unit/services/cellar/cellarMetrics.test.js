@@ -1,6 +1,10 @@
 /**
- * @fileoverview Unit tests for cellar metrics: scattering detection, color adjacency,
+ * @fileoverview Unit tests for cellar metrics: scattering detection, colour adjacency,
  * and per-bottle colour guard.
+ *
+ * Uses vi.importActual() to bypass --no-isolate mock leakage: cellarMetrics.js
+ * is mocked by cellarSuggestions, executeMoves, orphanedRowRecoveryE2E,
+ * repairContiguityGaps, and rowAllocationSolver test files.
  * @module tests/unit/services/cellar/cellarMetrics.test
  */
 
@@ -19,19 +23,26 @@ vi.mock('../../../../src/services/cellar/slotUtils.js', async (importOriginal) =
   };
 });
 
-import {
-  detectScatteredWines,
-  detectColorAdjacencyIssues,
-  detectColourOrderViolations,
-  getEffectiveZoneColor,
-  parseSlot,
-  calculateFragmentation,
-  wineViolatesZoneColour,
-  isCorrectlyPlaced,
-  isLegitimateBufferPlacement,
-  detectDuplicatePlacements,
-  analyseZone
-} from '../../../../src/services/cellar/cellarMetrics.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. cellarSuggestions.test.js, executeMoves.test.js mock cellarMetrics.js)
+let detectScatteredWines, detectColourAdjacencyIssues, detectColourOrderViolations,
+  getEffectiveZoneColour, parseSlot, calculateFragmentation, wineViolatesZoneColour,
+  isCorrectlyPlaced, isLegitimateBufferPlacement, detectDuplicatePlacements, analyseZone;
+beforeAll(async () => {
+  ({
+    detectScatteredWines,
+    detectColourAdjacencyIssues,
+    detectColourOrderViolations,
+    getEffectiveZoneColour,
+    parseSlot,
+    calculateFragmentation,
+    wineViolatesZoneColour,
+    isCorrectlyPlaced,
+    isLegitimateBufferPlacement,
+    detectDuplicatePlacements,
+    analyseZone
+  } = await vi.importActual('../../../../src/services/cellar/cellarMetrics.js'));
+});
 
 // ─── parseSlot ────────────────────────────────────────────
 
@@ -148,71 +159,71 @@ describe('detectScatteredWines', () => {
   });
 });
 
-// ─── getEffectiveZoneColor ────────────────────────────────
+// ─── getEffectiveZoneColour ────────────────────────────────
 
-describe('getEffectiveZoneColor', () => {
+describe('getEffectiveZoneColour', () => {
   it('returns "red" for red zones', () => {
-    expect(getEffectiveZoneColor({ color: 'red' })).toBe('red');
+    expect(getEffectiveZoneColour({ colour: 'red' })).toBe('red');
   });
 
   it('returns "white" for white zones', () => {
-    expect(getEffectiveZoneColor({ color: 'white' })).toBe('white');
+    expect(getEffectiveZoneColour({ colour: 'white' })).toBe('white');
   });
 
   it('returns "white" for rose/sparkling array colors', () => {
-    expect(getEffectiveZoneColor({ color: ['rose', 'sparkling'] })).toBe('white');
+    expect(getEffectiveZoneColour({ colour: ['rose', 'sparkling'] })).toBe('white');
   });
 
   it('returns "red" for array containing red', () => {
-    expect(getEffectiveZoneColor({ color: ['red'] })).toBe('red');
+    expect(getEffectiveZoneColour({ colour: ['red'] })).toBe('red');
   });
 
   it('returns "any" for fallback zones', () => {
-    expect(getEffectiveZoneColor({ isFallbackZone: true, color: 'red' })).toBe('any');
+    expect(getEffectiveZoneColour({ isFallbackZone: true, colour: 'red' })).toBe('any');
   });
 
   it('returns "any" for curated zones', () => {
-    expect(getEffectiveZoneColor({ isCuratedZone: true, color: null })).toBe('any');
+    expect(getEffectiveZoneColour({ isCuratedZone: true, colour: null })).toBe('any');
   });
 
   it('returns "any" for null input', () => {
-    expect(getEffectiveZoneColor(null)).toBe('any');
+    expect(getEffectiveZoneColour(null)).toBe('any');
   });
 });
 
-// ─── detectColorAdjacencyIssues ───────────────────────────
+// ─── detectColourAdjacencyIssues ───────────────────────────
 
-describe('detectColorAdjacencyIssues', () => {
+describe('detectColourAdjacencyIssues', () => {
   it('returns empty array when no zones allocated', () => {
-    expect(detectColorAdjacencyIssues({})).toEqual([]);
+    expect(detectColourAdjacencyIssues({})).toEqual([]);
   });
 
   it('returns empty when same zone occupies adjacent rows', () => {
     const rowToZone = { R3: 'sauvignon_blanc', R4: 'sauvignon_blanc' };
-    expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone)).toEqual([]);
   });
 
   it('returns empty when white zones are adjacent', () => {
     const rowToZone = { R1: 'sauvignon_blanc', R2: 'chenin_blanc' };
-    expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone)).toEqual([]);
   });
 
   it('returns empty when red zones are adjacent', () => {
     const rowToZone = { R8: 'cabernet', R9: 'shiraz' };
-    expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone)).toEqual([]);
   });
 
   it('detects red zone adjacent to white zone', () => {
     const rowToZone = { R6: 'sauvignon_blanc', R7: 'cabernet' };
-    const result = detectColorAdjacencyIssues(rowToZone);
+    const result = detectColourAdjacencyIssues(rowToZone);
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({
       row1: 'R6',
       zone1: 'sauvignon_blanc',
-      color1: 'white',
+      colour1: 'white',
       row2: 'R7',
       zone2: 'cabernet',
-      color2: 'red'
+      colour2: 'red'
     });
   });
 
@@ -222,7 +233,7 @@ describe('detectColorAdjacencyIssues', () => {
       R4: 'chenin_blanc', // white
       R5: 'shiraz'        // red
     };
-    const result = detectColorAdjacencyIssues(rowToZone);
+    const result = detectColourAdjacencyIssues(rowToZone);
     // R3-R4: red next to white, R4-R5: white next to red
     expect(result).toHaveLength(2);
   });
@@ -233,7 +244,7 @@ describe('detectColorAdjacencyIssues', () => {
       R8: 'unclassified',     // fallback - any
       R9: 'cabernet'          // red
     };
-    const result = detectColorAdjacencyIssues(rowToZone);
+    const result = detectColourAdjacencyIssues(rowToZone);
     expect(result).toEqual([]);
   });
 
@@ -243,7 +254,7 @@ describe('detectColorAdjacencyIssues', () => {
       R6: 'curiosities',
       R7: 'cabernet'
     };
-    const result = detectColorAdjacencyIssues(rowToZone);
+    const result = detectColourAdjacencyIssues(rowToZone);
     expect(result).toEqual([]);
   });
 
@@ -251,7 +262,7 @@ describe('detectColorAdjacencyIssues', () => {
     // Only R1 and R3 are allocated, R2 is empty
     const rowToZone = { R1: 'sauvignon_blanc', R3: 'cabernet' };
     // R1-R2: R2 is empty (no zone), R2-R3: R2 is empty
-    expect(detectColorAdjacencyIssues(rowToZone)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone)).toEqual([]);
   });
 
   it('suppresses the natural boundary crossing when dynamicRanges provided (whites-top)', () => {
@@ -261,7 +272,7 @@ describe('detectColorAdjacencyIssues', () => {
       whiteRows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       redRows:   [11, 12, 13, 14, 15, 16, 17, 18, 19]
     };
-    expect(detectColorAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
   });
 
   it('suppresses the natural boundary crossing when dynamicRanges provided (reds-top)', () => {
@@ -271,7 +282,7 @@ describe('detectColorAdjacencyIssues', () => {
       whiteRows: [10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       redRows:   [1, 2, 3, 4, 5, 6, 7, 8, 9]
     };
-    expect(detectColorAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
+    expect(detectColourAdjacencyIssues(rowToZone, dynamicRanges)).toEqual([]);
   });
 
   it('still flags a stray colour crossing that is not the natural boundary', () => {
@@ -281,19 +292,19 @@ describe('detectColorAdjacencyIssues', () => {
       whiteRows: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
       redRows:   [11, 12, 13, 14, 15, 16, 17, 18, 19]
     };
-    const result = detectColorAdjacencyIssues(rowToZone, dynamicRanges);
+    const result = detectColourAdjacencyIssues(rowToZone, dynamicRanges);
     // R10→R11 suppressed (natural boundary); R11→R12 and R12→R13 are genuine violations
     expect(result).toHaveLength(2);
-    expect(result[0]).toMatchObject({ row1: 'R11', color1: 'red', row2: 'R12', color2: 'white' });
-    expect(result[1]).toMatchObject({ row1: 'R12', color1: 'white', row2: 'R13', color2: 'red' });
+    expect(result[0]).toMatchObject({ row1: 'R11', colour1: 'red', row2: 'R12', colour2: 'white' });
+    expect(result[1]).toMatchObject({ row1: 'R12', colour1: 'white', row2: 'R13', colour2: 'red' });
   });
 
   it('falls back to flagging all transitions when dynamicRanges not provided', () => {
     // Without dynamicRanges the natural boundary is unknown — existing behaviour unchanged
     const rowToZone = { R10: 'sauvignon_blanc', R11: 'cabernet' };
-    const result = detectColorAdjacencyIssues(rowToZone);
+    const result = detectColourAdjacencyIssues(rowToZone);
     expect(result).toHaveLength(1);
-    expect(result[0]).toMatchObject({ row1: 'R10', color1: 'white', row2: 'R11', color2: 'red' });
+    expect(result[0]).toMatchObject({ row1: 'R10', colour1: 'white', row2: 'R11', colour2: 'red' });
   });
 });
 
@@ -301,12 +312,12 @@ describe('detectColorAdjacencyIssues', () => {
 
 describe('wineViolatesZoneColour', () => {
   // Helper: minimal zone object
-  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
-  const redZone = { id: 'cabernet', color: 'red' };
-  const arrayZone = { id: 'rose_sparkling', color: ['rose', 'sparkling'] };
-  const nullColorZone = { id: 'curiosities', color: null, isCuratedZone: true };
-  const fallbackZone = { id: 'unclassified', color: null, isFallbackZone: true };
-  const bufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+  const whiteZone = { id: 'sauvignon_blanc', colour: 'white' };
+  const redZone = { id: 'cabernet', colour: 'red' };
+  const arrayZone = { id: 'rose_sparkling', colour: ['rose', 'sparkling'] };
+  const nullColorZone = { id: 'curiosities', colour: null, isCuratedZone: true };
+  const fallbackZone = { id: 'unclassified', colour: null, isFallbackZone: true };
+  const bufferZone = { id: 'white_buffer', colour: ['white', 'rose'], isBufferZone: true };
 
   // ── Red wine in white zone ──
 
@@ -316,13 +327,13 @@ describe('wineViolatesZoneColour', () => {
   });
 
   it('flags red wine (inferred from name) in white zone', () => {
-    // No explicit colour field — inferColor should detect "shiraz" as red
+    // No explicit colour field — inferColour should detect "shiraz" as red
     const wine = { wine_name: 'De Grendel Shiraz 2020' };
     expect(wineViolatesZoneColour(wine, whiteZone)).toBe(true);
   });
 
-  it('flags red wine via .color field in white zone', () => {
-    const wine = { color: 'red', wine_name: 'Merlot 2019' };
+  it('flags red wine via .colour field in white zone', () => {
+    const wine = { colour: 'red', wine_name: 'Merlot 2019' };
     expect(wineViolatesZoneColour(wine, whiteZone)).toBe(true);
   });
 
@@ -402,19 +413,19 @@ describe('wineViolatesZoneColour', () => {
   });
 
   it('flags red wine in dessert_fortified zone (array white-family colours)', () => {
-    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const dessertZone = { id: 'dessert_fortified', colour: ['dessert', 'fortified'] };
     const wine = { colour: 'red', wine_name: 'Cabernet 2020' };
     expect(wineViolatesZoneColour(wine, dessertZone)).toBe(true);
   });
 
   it('allows fortified wine in dessert_fortified zone', () => {
-    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const dessertZone = { id: 'dessert_fortified', colour: ['dessert', 'fortified'] };
     const wine = { colour: 'fortified', wine_name: 'Tawny Port' };
     expect(wineViolatesZoneColour(wine, dessertZone)).toBe(false);
   });
 
   it('allows dessert wine in dessert_fortified zone', () => {
-    const dessertZone = { id: 'dessert_fortified', color: ['dessert', 'fortified'] };
+    const dessertZone = { id: 'dessert_fortified', colour: ['dessert', 'fortified'] };
     const wine = { colour: 'dessert', wine_name: 'Sauternes 2018' };
     expect(wineViolatesZoneColour(wine, dessertZone)).toBe(false);
   });
@@ -440,25 +451,25 @@ describe('wineViolatesZoneColour', () => {
 
   it('R5C3: Cabernet Sauvignon in Sauvignon Blanc zone', () => {
     const wine = { wine_name: 'Kleine Zalze Cabernet Sauvignon 2021', colour: 'red' };
-    const zone = { id: 'sauvignon_blanc', color: 'white' };
+    const zone = { id: 'sauvignon_blanc', colour: 'white' };
     expect(wineViolatesZoneColour(wine, zone)).toBe(true);
   });
 
   it('R8: Shiraz in Chenin Blanc zone', () => {
     const wine = { wine_name: 'De Grendel Shiraz 2020', colour: 'red' };
-    const zone = { id: 'chenin_blanc', color: 'white' };
+    const zone = { id: 'chenin_blanc', colour: 'white' };
     expect(wineViolatesZoneColour(wine, zone)).toBe(true);
   });
 
   it('R9: Pinot Noir in Aromatic Whites zone', () => {
     const wine = { wine_name: 'Albert Bichot Bourgogne Pinot Noir 2020' };
-    const zone = { id: 'aromatic_whites', color: 'white' };
+    const zone = { id: 'aromatic_whites', colour: 'white' };
     expect(wineViolatesZoneColour(wine, zone)).toBe(true);
   });
 
   it('R9: Malvasia (white) in Aromatic Whites zone stays allowed', () => {
     const wine = { wine_name: 'Onna Malvasia 2022', colour: 'white' };
-    const zone = { id: 'aromatic_whites', color: 'white' };
+    const zone = { id: 'aromatic_whites', colour: 'white' };
     expect(wineViolatesZoneColour(wine, zone)).toBe(false);
   });
 });
@@ -466,8 +477,8 @@ describe('wineViolatesZoneColour', () => {
 // ─── isCorrectlyPlaced (colour guard integration) ───────
 
 describe('isCorrectlyPlaced', () => {
-  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
-  const redZone = { id: 'cabernet', color: 'red' };
+  const whiteZone = { id: 'sauvignon_blanc', colour: 'white' };
+  const redZone = { id: 'cabernet', colour: 'red' };
 
   it('returns false for red wine in white zone even when zone_id matches', () => {
     const wine = { colour: 'red', zone_id: 'sauvignon_blanc', wine_name: 'Cab Sauv' };
@@ -495,7 +506,7 @@ describe('isCorrectlyPlaced', () => {
 
   it('returns true via overflow zone match when colour is correct', () => {
     const wine = { colour: 'white', zone_id: 'other', wine_name: 'Mystery White' };
-    const whiteBufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+    const whiteBufferZone = { id: 'white_buffer', colour: ['white', 'rose'], isBufferZone: true };
     // sauvignon_blanc has overflowZoneId: 'white_buffer'
     const bestZone = { zoneId: 'sauvignon_blanc', displayName: 'Sauvignon Blanc' };
     expect(isCorrectlyPlaced(wine, whiteBufferZone, bestZone)).toBe(true);
@@ -512,9 +523,9 @@ describe('isCorrectlyPlaced', () => {
 // ─── isCorrectlyPlaced (Phase 4.1 – stale zone_id hardening) ──────
 
 describe('isCorrectlyPlaced – stale zone_id detection (Phase 4.1)', () => {
-  const whiteZone = { id: 'sauvignon_blanc', color: 'white' };
-  const redZone = { id: 'cabernet', color: 'red' };
-  const otherRedZone = { id: 'shiraz', color: 'red' };
+  const whiteZone = { id: 'sauvignon_blanc', colour: 'white' };
+  const redZone = { id: 'cabernet', colour: 'red' };
+  const otherRedZone = { id: 'shiraz', colour: 'red' };
 
   it('returns false when zone_id matches physical zone but bestZone disagrees and physical is NOT an alternative', () => {
     // Wine has zone_id=cabernet, sits in cabernet zone, but bestZone says shiraz
@@ -635,9 +646,9 @@ describe('detectDuplicatePlacements', () => {
 // ─── isLegitimateBufferPlacement with physicalZone colour guard ──
 
 describe('isLegitimateBufferPlacement', () => {
-  const whiteZone = { id: 'chenin_blanc', color: 'white' };
-  const redZone = { id: 'shiraz', color: 'red' };
-  const bufferZone = { id: 'white_buffer', color: ['white', 'rose'], isBufferZone: true };
+  const whiteZone = { id: 'chenin_blanc', colour: 'white' };
+  const redZone = { id: 'shiraz', colour: 'red' };
+  const bufferZone = { id: 'white_buffer', colour: ['white', 'rose'], isBufferZone: true };
 
   it('returns false when wine has no zone_id', () => {
     expect(isLegitimateBufferPlacement({ zone_id: null })).toBe(false);
@@ -723,8 +734,8 @@ describe('detectColourOrderViolations', () => {
     expect(result[0]).toMatchObject({
       row: 'R3',
       zoneId: 'cabernet',
-      zoneColor: 'red',
-      expectedColor: 'white',
+      zoneColour: 'red',
+      expectedColour: 'white',
       colourOrder: 'whites-top'
     });
   });
@@ -738,8 +749,8 @@ describe('detectColourOrderViolations', () => {
     expect(result[0]).toMatchObject({
       row: 'R12',
       zoneId: 'sauvignon_blanc',
-      zoneColor: 'white',
-      expectedColor: 'red'
+      zoneColour: 'white',
+      expectedColour: 'red'
     });
   });
 
@@ -754,8 +765,8 @@ describe('detectColourOrderViolations', () => {
     };
     const result = detectColourOrderViolations(rowToZone, 'reds-top', whiteRowsBottom, redRowsTop);
     expect(result).toHaveLength(2);
-    expect(result.find(v => v.row === 'R2')).toMatchObject({ zoneColor: 'white', expectedColor: 'red' });
-    expect(result.find(v => v.row === 'R15')).toMatchObject({ zoneColor: 'red', expectedColor: 'white' });
+    expect(result.find(v => v.row === 'R2')).toMatchObject({ zoneColour: 'white', expectedColour: 'red' });
+    expect(result.find(v => v.row === 'R15')).toMatchObject({ zoneColour: 'red', expectedColour: 'white' });
   });
 
   it('detects multiple violations in same region', () => {
@@ -766,7 +777,7 @@ describe('detectColourOrderViolations', () => {
     };
     const result = detectColourOrderViolations(rowToZone, 'whites-top', whiteRows, redRows);
     expect(result).toHaveLength(2);
-    expect(result.every(v => v.zoneColor === 'red')).toBe(true);
+    expect(result.every(v => v.zoneColour === 'red')).toBe(true);
   });
 
   it('skips fallback/curated zones (any colour)', () => {
@@ -801,7 +812,7 @@ describe('detectColourOrderViolations', () => {
 // ─── analyseZone (row-aware capacity) ─────────────────────
 
 describe('analyseZone', () => {
-  const mockZone = { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: {} };
+  const mockZone = { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white', rules: {} };
 
   it('uses capacity 7 for Row 1', () => {
     const wines = Array.from({ length: 5 }, (_, i) => ({

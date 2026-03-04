@@ -14,7 +14,7 @@ import { computeSortPlan } from '../services/cellar/layoutSorter.js';
 import { ensureReconfigurationTables } from '../services/zone/reconfigurationTables.js';
 import { putPlan, getPlan, deletePlan } from '../services/zone/reconfigurationPlanStore.js';
 import { generateReconfigurationPlan } from '../services/zone/zoneReconfigurationPlanner.js';
-import { detectColourOrderViolations, getEffectiveZoneColor } from '../services/cellar/cellarMetrics.js';
+import { detectColourOrderViolations, getEffectiveZoneColour } from '../services/cellar/cellarMetrics.js';
 import { getCurrentZoneAllocation } from '../services/cellar/cellarSuggestions.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import logger from '../utils/logger.js';
@@ -71,7 +71,7 @@ export function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
     const zoneRows = Array.isArray(rows) ? rows.map(String).filter(Boolean) : [];
     const seenWithinZone = new Set();
     const zone = getZoneById(zoneId);
-    const zoneColor = getEffectiveZoneColor(zone);
+    const zoneColour = getEffectiveZoneColour(zone);
 
     for (const rowId of zoneRows) {
       if (seenWithinZone.has(rowId)) {
@@ -85,13 +85,13 @@ export function validateAllocationIntegrity(zoneAllocMap, dynamicRanges) {
       }
       rowOwners.get(rowId).push(zoneId);
 
-      if (dynamicRanges && zoneColor !== 'any') {
+      if (dynamicRanges && zoneColour !== 'any') {
         const rowNum = parseRowNumber(rowId);
         if (!Number.isFinite(rowNum)) continue;
 
-        if (zoneColor === 'white' && redRowSet.has(rowNum)) {
+        if (zoneColour === 'white' && redRowSet.has(rowNum)) {
           errors.push(`Colour violation: ${zoneId} (white) assigned to ${rowId} in red region`);
-        } else if (zoneColor === 'red' && whiteRowSet.has(rowNum)) {
+        } else if (zoneColour === 'red' && whiteRowSet.has(rowNum)) {
           errors.push(`Colour violation: ${zoneId} (red) assigned to ${rowId} in white region`);
         }
       }
@@ -330,30 +330,30 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
   if (!zone) throw new Error(`Unknown zone: ${zoneId}`);
 
   const preferredRange = zone.preferredRowRange || [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
-  const zoneColor = zone.color;
-  const primaryColor = Array.isArray(zoneColor) ? zoneColor[0] : zoneColor;
-  const zoneIsWhite = isWhiteFamily(primaryColor);
-  const effectiveColor = getEffectiveZoneColor(zone);
+  const zoneColour = zone.colour;
+  const primaryColour = Array.isArray(zoneColour) ? zoneColour[0] : zoneColour;
+  const zoneIsWhite = isWhiteFamily(primaryColour);
+  const effectiveColour = getEffectiveZoneColour(zone);
   let assignedRow = null;
-  let colorRange = null;
+  let colourRange = null;
 
-  if (effectiveColor !== 'any') {
+  if (effectiveColour !== 'any') {
     if (dynamicRanges?.whiteRows && dynamicRanges?.redRows) {
-      colorRange = effectiveColor === 'white' ? dynamicRanges.whiteRows : dynamicRanges.redRows;
+      colourRange = effectiveColour === 'white' ? dynamicRanges.whiteRows : dynamicRanges.redRows;
     } else {
       try {
         const layoutSettings = await getCellarLayoutSettings(cellarId);
         const dynamic = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
-        colorRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
+        colourRange = zoneIsWhite ? dynamic.whiteRows : dynamic.redRows;
       } catch (_err) {
-        colorRange = zoneIsWhite
+        colourRange = zoneIsWhite
           ? [1, 2, 3, 4, 5, 6, 7]
           : [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];
       }
     }
   }
 
-  const colorSet = Array.isArray(colorRange) ? new Set(colorRange.map(Number)) : null;
+  const colourSet = Array.isArray(colourRange) ? new Set(colourRange.map(Number)) : null;
 
   // Query zone's existing rows to prefer adjacent rows (contiguity)
   const existingAlloc = await client.query(
@@ -384,7 +384,7 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
   const preferredCandidates = [];
   for (const rowNum of preferredRange) {
     const rowId = `R${rowNum}`;
-    const isColorCompatible = !colorSet || colorSet.has(rowNum);
+    const isColorCompatible = !colourSet || colourSet.has(rowNum);
     if (!usedRows.has(rowId) && isColorCompatible) {
       preferredCandidates.push(rowNum);
     }
@@ -397,9 +397,9 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
   }
 
   // If no preferred row available, try colour-compatible rows using dynamic ranges
-  if (!assignedRow && Array.isArray(colorRange)) {
+  if (!assignedRow && Array.isArray(colourRange)) {
     const colorCandidates = [];
-    for (const rowNum of colorRange) {
+    for (const rowNum of colourRange) {
       const rowId = `R${rowNum}`;
       if (!usedRows.has(rowId)) {
         colorCandidates.push(rowNum);
@@ -413,7 +413,7 @@ async function allocateRowTransactional(client, cellarId, zoneId, usedRows, dyna
 
   if (!assignedRow) {
     // Hard rule for reconfiguration: do not cross colour regions.
-    if (effectiveColor !== 'any') {
+    if (effectiveColour !== 'any') {
       throw new Error(`No colour-compatible rows available for zone ${zoneId}`);
     }
 
@@ -521,16 +521,16 @@ async function reallocateRowTransactional(client, cellarId, fromZoneId, toZoneId
   if (toZoneId !== '__unassigned' && dynamicRanges) {
     const toZone = getZoneById(toZoneId);
     if (toZone) {
-      const toColor = getEffectiveZoneColor(toZone);
-      if (toColor !== 'any') {
+      const toColour = getEffectiveZoneColour(toZone);
+      if (toColour !== 'any') {
         const rowNum = parseRowNumber(rowId);
         const whiteRowSet = new Set((dynamicRanges.whiteRows || []).map(Number));
         const redRowSet = new Set((dynamicRanges.redRows || []).map(Number));
-        if (toColor === 'white' && redRowSet.has(rowNum)) {
+        if (toColour === 'white' && redRowSet.has(rowNum)) {
           logger.warn('Reconfig', `Blocked: ${rowId} is in red region, cannot assign to white zone ${toZoneId}`);
           return { success: false, skipped: true, reason: `Colour violation: ${rowId} in red region, target ${toZoneId} is white` };
         }
-        if (toColor === 'red' && whiteRowSet.has(rowNum)) {
+        if (toColour === 'red' && whiteRowSet.has(rowNum)) {
           logger.warn('Reconfig', `Blocked: ${rowId} is in white region, cannot assign to red zone ${toZoneId}`);
           return { success: false, skipped: true, reason: `Colour violation: ${rowId} in white region, target ${toZoneId} is red` };
         }
@@ -698,12 +698,12 @@ router.post('/reconfiguration-plan/apply', asyncHandler(async (req, res) => {
         if (dynamicRanges) {
           const toZone = getZoneById(toZoneId);
           if (toZone) {
-            const toColor = getEffectiveZoneColor(toZone);
-            if (toColor !== 'any') {
+            const toColour = getEffectiveZoneColour(toZone);
+            if (toColour !== 'any') {
               const rowNum = parseRowNumber(rowId);
               const whiteRowSet = new Set((dynamicRanges.whiteRows || []).map(Number));
               const redRowSet = new Set((dynamicRanges.redRows || []).map(Number));
-              if ((toColor === 'white' && redRowSet.has(rowNum)) || (toColor === 'red' && whiteRowSet.has(rowNum))) {
+              if ((toColour === 'white' && redRowSet.has(rowNum)) || (toColour === 'red' && whiteRowSet.has(rowNum))) {
                 logger.warn('Reconfig', `Blocked orphan assign: ${rowId} colour incompatible with ${toZoneId}`);
                 actionsAutoSkipped++;
                 continue;

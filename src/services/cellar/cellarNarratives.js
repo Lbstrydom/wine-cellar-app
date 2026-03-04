@@ -103,8 +103,8 @@ export function detectZoneDrift(zone, wines, _intent) {
   };
 
   // Check for wines with wrong colour
-  if (zone.color) {
-    const expectedColours = Array.isArray(zone.color) ? zone.color : [zone.color];
+  if (zone.colour) {
+    const expectedColours = Array.isArray(zone.colour) ? zone.colour : [zone.colour];
     const wrongColour = wines.filter(w =>
       w.colour && !expectedColours.includes(w.colour.toLowerCase())
     );

@@ -54,7 +54,7 @@ export const CONFIDENCE_THRESHOLDS = {
  * Scoring weights for zone matching algorithm
  */
 export const SCORING_WEIGHTS = {
-  color: 15,
+  colour: 15,
   grape: 35,
   keyword: 25,
   country: 15,

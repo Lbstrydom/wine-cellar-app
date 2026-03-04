@@ -33,10 +33,13 @@ vi.mock('../../../../src/utils/logger.js', () => ({
   default: { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
 }));
 
-import {
-  isPairingAuditEnabled,
-  auditPairingRecommendations
-} from '../../../../src/services/pairing/pairingAuditor.js';
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. restaurantPairing.test.js mocks pairingAuditor.js)
+let isPairingAuditEnabled, auditPairingRecommendations;
+beforeAll(async () => {
+  ({ isPairingAuditEnabled, auditPairingRecommendations } =
+    await vi.importActual('../../../../src/services/pairing/pairingAuditor.js'));
+});
 
 describe('pairingAuditor', () => {
   const originalEnv = process.env;

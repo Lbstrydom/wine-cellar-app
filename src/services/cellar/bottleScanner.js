@@ -5,7 +5,7 @@
  * @module services/cellar/bottleScanner
  */
 
-import { findBestZone, inferColor } from './cellarPlacement.js';
+import { findBestZone, inferColour } from './cellarPlacement.js';
 import { parseSlot } from './slotUtils.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
@@ -202,16 +202,16 @@ function severitySort(a, b) {
  */
 function zoneColourFamily(zone) {
   if (!zone) return null;
-  const color = zone.color;
-  if (Array.isArray(color)) {
-    const allWhite = color.every(c => isWhiteFamily(c));
-    const allRed = color.every(c => c.toLowerCase() === 'red');
+  const colour = zone.colour;
+  if (Array.isArray(colour)) {
+    const allWhite = colour.every(c => isWhiteFamily(c));
+    const allRed = colour.every(c => c.toLowerCase() === 'red');
     if (allWhite) return 'white';
     if (allRed) return 'red';
     return null; // mixed-colour zone — no single family
   }
-  if (isWhiteFamily(color)) return 'white';
-  if (color === 'red') return 'red';
+  if (isWhiteFamily(colour)) return 'white';
+  if (colour === 'red') return 'red';
   return null;
 }
 
@@ -221,7 +221,7 @@ function zoneColourFamily(zone) {
  * @returns {'red'|'white'|null}
  */
 function wineColourFamily(wine) {
-  const colour = (wine.colour || wine.color || inferColor(wine) || '').toLowerCase();
+  const colour = (wine.colour || inferColour(wine) || '').toLowerCase();
   if (!colour) return null;
   if (isWhiteFamily(colour)) return 'white';
   if (colour === 'red') return 'red';

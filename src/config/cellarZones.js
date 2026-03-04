@@ -19,7 +19,7 @@ export const CELLAR_ZONES = {
       displayName: 'Sauvignon Blanc',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: 'white',
+      colour: 'white',
       rules: {
         grapes: ['sauvignon blanc'],
         keywords: ['fumé blanc', 'pouilly-fumé', 'sancerre']
@@ -31,7 +31,7 @@ export const CELLAR_ZONES = {
       displayName: 'Chenin Blanc',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: 'white',
+      colour: 'white',
       rules: {
         grapes: ['chenin blanc'],
         keywords: ['vouvray', 'savennières', 'steen'],
@@ -44,7 +44,7 @@ export const CELLAR_ZONES = {
       displayName: 'Aromatic Whites',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: 'white',
+      colour: 'white',
       rules: {
         grapes: ['riesling', 'gewürztraminer', 'gewurztraminer', 'viognier',
                  'torrontés', 'muscat', 'moscato', 'malvasia', 'albariño', 'albarino'],
@@ -57,7 +57,7 @@ export const CELLAR_ZONES = {
       displayName: 'Chardonnay',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: 'white',
+      colour: 'white',
       rules: {
         grapes: ['chardonnay'],
         keywords: ['white burgundy', 'chablis', 'meursault', 'pouilly-fuissé', 'montrachet']
@@ -69,7 +69,7 @@ export const CELLAR_ZONES = {
       displayName: 'Loire & Light',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: 'white',
+      colour: 'white',
       rules: {
         grapes: ['melon de bourgogne', 'picpoul', 'vermentino', 'verdejo',
                  'grüner veltliner', 'gruner veltliner', 'assyrtiko'],
@@ -85,14 +85,14 @@ export const CELLAR_ZONES = {
       displayName: 'Rosé & Sparkling',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: ['rose', 'sparkling'],
+      colour: ['rose', 'sparkling'],
       rules: {
         grapes: [],
         keywords: ['rosé', 'rose', 'rosado', 'sparkling', 'champagne', 'prosecco',
                    'cava', 'crémant', 'cremant', 'spumante', 'sekt', 'méthode traditionnelle'],
         winemaking: ['méthode champenoise', 'charmat', 'pet-nat']
       },
-      sortPreference: ['color', 'country', 'vintage']
+      sortPreference: ['colour', 'country', 'vintage']
     },
 
     // ========== DESSERT & FORTIFIED ==========
@@ -101,7 +101,7 @@ export const CELLAR_ZONES = {
       displayName: 'Dessert & Fortified',
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       overflowZoneId: 'white_buffer',
-      color: ['dessert', 'fortified'],
+      colour: ['dessert', 'fortified'],
       rules: {
         grapes: [],
         keywords: ['port', 'porto', 'sherry', 'madeira', 'marsala', 'vin santo',
@@ -119,7 +119,7 @@ export const CELLAR_ZONES = {
       displayName: 'Iberian Fresh',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['tempranillo', 'garnacha', 'grenache', 'bobal', 'mencía', 'mencia',
                  'monastrell', 'cariñena'],
@@ -134,7 +134,7 @@ export const CELLAR_ZONES = {
       displayName: 'Rioja & Ribera',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['tempranillo', 'tinto fino', 'tinta del país'],
         keywords: ['rioja', 'ribera del duero', 'reserva', 'gran reserva', 'crianza', 'toro'],
@@ -148,7 +148,7 @@ export const CELLAR_ZONES = {
       displayName: 'Portugal',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['touriga nacional', 'touriga franca', 'tinta roriz', 'castelão',
                  'baga', 'trincadeira', 'alicante bouschet'],
@@ -164,7 +164,7 @@ export const CELLAR_ZONES = {
       displayName: 'Southern France',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['syrah', 'grenache', 'mourvèdre', 'carignan', 'cinsault', 'malbec'],
         keywords: ['côtes du rhône', 'cotes du rhone', 'languedoc', 'roussillon',
@@ -182,7 +182,7 @@ export const CELLAR_ZONES = {
       displayName: 'Puglia & Primitivo',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['primitivo', 'negroamaro', 'susumaniello', 'nero di troia', 'malvasia nera'],
         keywords: ['primitivo', 'salice salentino', 'manduria', 'puglia', 'salento'],
@@ -197,7 +197,7 @@ export const CELLAR_ZONES = {
       displayName: 'Appassimento',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       priority: 'high',
       rules: {
         winemaking: ['appassimento', 'dried grape', 'raisined'],
@@ -210,7 +210,7 @@ export const CELLAR_ZONES = {
       displayName: 'Piedmont',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['nebbiolo', 'barbera', 'dolcetto'],
         keywords: ['barolo', 'barbaresco', 'langhe', 'roero', 'gattinara', 'ghemme'],
@@ -225,7 +225,7 @@ export const CELLAR_ZONES = {
       displayName: 'Romagna & Tuscany',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['sangiovese', 'montepulciano', 'canaiolo', 'colorino'],
         keywords: ['chianti', 'brunello', 'vino nobile', 'morellino', 'rosso di montalcino'],
@@ -242,7 +242,7 @@ export const CELLAR_ZONES = {
       displayName: 'Cabernet Sauvignon',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['cabernet sauvignon'],
         keywords: ['cabernet sauvignon'],
@@ -256,7 +256,7 @@ export const CELLAR_ZONES = {
       displayName: 'SA Blends',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['cabernet sauvignon', 'merlot', 'cabernet franc', 'petit verdot',
                  'malbec', 'pinotage'],
@@ -271,7 +271,7 @@ export const CELLAR_ZONES = {
       displayName: 'Shiraz / Syrah',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['shiraz', 'syrah'],
         keywords: ['shiraz', 'syrah'],
@@ -284,7 +284,7 @@ export const CELLAR_ZONES = {
       displayName: 'Pinot Noir',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['pinot noir'],
         keywords: ['pinot noir', 'red burgundy', 'bourgogne rouge', 'spätburgunder']
@@ -296,7 +296,7 @@ export const CELLAR_ZONES = {
       displayName: 'Chile & Argentina',
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       overflowZoneId: 'red_buffer',
-      color: 'red',
+      colour: 'red',
       rules: {
         grapes: ['carmenere', 'carmenère', 'malbec', 'bonarda'],
         keywords: ['maipo', 'colchagua', 'mendoza', 'uco valley'],
@@ -311,7 +311,7 @@ export const CELLAR_ZONES = {
       displayName: 'White Reserve',
       isBufferZone: true,
       overflowZoneId: 'unclassified',
-      color: ['white', 'rose', 'sparkling', 'dessert', 'fortified'],
+      colour: ['white', 'rose', 'sparkling', 'dessert', 'fortified'],
       preferredRowRange: [1, 2, 3, 4, 5, 6, 7],
       rules: {}
     },
@@ -320,7 +320,7 @@ export const CELLAR_ZONES = {
       displayName: 'Red Reserve',
       isBufferZone: true,
       overflowZoneId: 'unclassified',
-      color: ['red'],
+      colour: ['red'],
       preferredRowRange: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
       rules: {}
     },
@@ -329,7 +329,7 @@ export const CELLAR_ZONES = {
       displayName: 'Curiosities',
       isCuratedZone: true,
       overflowZoneId: 'unclassified',
-      color: null,
+      colour: null,
       rules: {
         grapes: ['saperavi', 'xinomavro', 'agiorgitiko', 'plavac mali',
                  'blaufränkisch', 'zweigelt', 'kadarka', 'furmint', 'fetească'],
@@ -345,7 +345,7 @@ export const CELLAR_ZONES = {
       isFallbackZone: true,
       alertOnPlacement: true,
       overflowZoneId: null,
-      color: null,
+      colour: null,
       rules: {}
     }
   ]
@@ -359,7 +359,7 @@ export const ZONE_PRIORITY_ORDER = [
   'appassimento',
   'dessert_fortified',
 
-  // Color-first check
+  // Colour-first check
   'rose_sparkling',
 
   // Region-specific (most specific)

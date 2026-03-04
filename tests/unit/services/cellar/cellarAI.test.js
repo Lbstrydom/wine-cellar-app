@@ -236,7 +236,7 @@ describe('enforceAdviceConsistency', () => {
         scatteredWineCount: 2,
         overflowingZones: ['Pinot Noir', 'Shiraz'],
         fragmentedZones: [],
-        colorAdjacencyViolations: 1
+        colourAdjacencyViolations: 1
       },
       zoneCapacityIssues: [{ zoneId: 'pinot_noir' }]
     };
@@ -261,7 +261,7 @@ describe('enforceAdviceConsistency', () => {
         scatteredWineCount: 0,
         overflowingZones: [],
         fragmentedZones: [],
-        colorAdjacencyViolations: 0
+        colourAdjacencyViolations: 0
       },
       zoneCapacityIssues: []
     };
@@ -286,7 +286,7 @@ describe('enforceAdviceConsistency', () => {
         duplicatePlacementCount: 2,
         overflowingZones: [],
         fragmentedZones: [],
-        colorAdjacencyViolations: 0
+        colourAdjacencyViolations: 0
       },
       zoneCapacityIssues: []
     };
@@ -309,7 +309,7 @@ describe('Phase B5: buildCellarAdvicePrompt', () => {
         scatteredWineCount: 2,
         overflowingZones: [],
         fragmentedZones: [],
-        colorAdjacencyViolations: 0,
+        colourAdjacencyViolations: 0,
         duplicatePlacementCount: 0
       },
       misplacedWines: [],

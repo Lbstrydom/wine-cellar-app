@@ -40,7 +40,14 @@ vi.mock('../../../../src/utils/logger.js', () => ({
 }));
 
 import db from '../../../../src/db/index.js';
-import { allocateRowToZone, adjustZoneCountAfterBottleCrud, updateZoneWineCount, getActiveZoneMap } from '../../../../src/services/cellar/cellarAllocation.js';
+
+// Use vi.importActual to bypass any vi.mock() registered by other test files
+// in --no-isolate mode (e.g. suggestPlacement.test.js mocks cellarAllocation.js)
+let allocateRowToZone, adjustZoneCountAfterBottleCrud, updateZoneWineCount, getActiveZoneMap;
+beforeAll(async () => {
+  ({ allocateRowToZone, adjustZoneCountAfterBottleCrud, updateZoneWineCount, getActiveZoneMap } =
+    await vi.importActual('../../../../src/services/cellar/cellarAllocation.js'));
+});
 
 describe('allocateRowToZone cross-colour safety (Phase 3.1)', () => {
   beforeEach(() => {

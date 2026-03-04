@@ -93,19 +93,19 @@ describe('issueDigest buildDigestGroups', () => {
     });
   });
 
-  describe('color_adjacency_violation still works correctly', () => {
-    it('suppresses color_adjacency_violation from classifyAlert and adds summary to structure', () => {
+  describe('colour_adjacency_violation is handled correctly', () => {
+    it('suppresses colour_adjacency_violation from classifyAlert and adds summary to structure', () => {
       const analysis = {
         alerts: [
-          { type: 'color_adjacency_violation', severity: 'warning', message: 'R7-R8 boundary issue' },
-          { type: 'color_adjacency_violation', severity: 'warning', message: 'R12-R13 boundary issue' }
+          { type: 'colour_adjacency_violation', severity: 'warning', message: 'R7-R8 boundary issue' },
+          { type: 'colour_adjacency_violation', severity: 'warning', message: 'R12-R13 boundary issue' }
         ]
       };
 
       const groups = buildDigestGroups(analysis);
       expect(groups.placement).toHaveLength(0);
       expect(groups.structure).toHaveLength(1);
-      expect(groups.structure[0].message).toContain('2 color boundary violation');
+      expect(groups.structure[0].message).toContain('2 colour boundary violation');
     });
   });
 
@@ -113,7 +113,7 @@ describe('issueDigest buildDigestGroups', () => {
     it('shows separate summaries for adjacency and colour order in structure', () => {
       const analysis = {
         alerts: [
-          { type: 'color_adjacency_violation', severity: 'warning', message: 'adj1' },
+          { type: 'colour_adjacency_violation', severity: 'warning', message: 'adj1' },
           {
             type: 'colour_order_violation',
             severity: 'warning',
@@ -126,7 +126,7 @@ describe('issueDigest buildDigestGroups', () => {
       const groups = buildDigestGroups(analysis);
       expect(groups.structure).toHaveLength(2);
       const messages = groups.structure.map(i => i.message);
-      expect(messages).toContainEqual(expect.stringContaining('color boundary'));
+      expect(messages).toContainEqual(expect.stringContaining('colour boundary'));
       expect(messages).toContainEqual(expect.stringContaining('colour order'));
       expect(groups.placement).toHaveLength(0);
     });

@@ -45,7 +45,7 @@ vi.mock('../../../src/services/zone/zoneReconfigurationPlanner.js', () => ({
 
 vi.mock('../../../src/services/cellar/cellarMetrics.js', () => ({
   detectColourOrderViolations: vi.fn(),
-  getEffectiveZoneColor: vi.fn()
+  getEffectiveZoneColour: vi.fn()
 }));
 
 vi.mock('../../../src/services/cellar/cellarSuggestions.js', () => ({

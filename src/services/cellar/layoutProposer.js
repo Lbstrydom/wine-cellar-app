@@ -321,7 +321,7 @@ export async function proposeIdealLayout(wines, options = {}) {
 
     // Route overflow through the zone's overflow chain
     if (overflow.length > 0) {
-      const colour = Array.isArray(zone.color) ? zone.color[0] : zone.color;
+      const colour = Array.isArray(zone.colour) ? zone.colour[0] : zone.colour;
       const bucket = isWhiteFamily(colour) ? overflowByColour.white : overflowByColour.red;
       for (const inst of overflow) {
         bucket.push({ ...inst, sourceZoneId: zoneId, colour });

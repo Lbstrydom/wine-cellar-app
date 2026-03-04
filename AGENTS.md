@@ -382,7 +382,7 @@ In-transaction integrity gate       ← validateAllocationIntegrity() fails TX o
 
 **When modifying the reconfiguration pipeline**:
 1. Always dedup rows before appending: `[...rows.filter(r => r !== newRow), newRow]`
-2. Always check colour compatibility using `getEffectiveZoneColor()` + dynamic row ranges
+2. Always check colour compatibility using `getEffectiveZoneColour()` + dynamic row ranges
 3. Run `filterLLMActions` after any external modifications (e.g., reviewer patches)
 4. Keep `validateAllocationIntegrity` as the last-resort gate inside the transaction
 
@@ -850,11 +850,47 @@ DEBUG_INTEGRATION=1 npm run test:integration
 
 ### No-Isolate Mock Hygiene (CRITICAL)
 
-Unit tests run with `--no-isolate`, so leaked mocks can break unrelated suites.
+Unit tests run with `--no-isolate`, so leaked mocks can break unrelated suites. Three patterns prevent cross-contamination:
 
-- If a test file needs real implementations despite global mocks, import them with `vi.importActual(...)` in `beforeAll`.
-- Avoid `vi.resetModules()` in shared-process test runs unless strictly necessary; it can reset module state used by later suites.
-- Reset mutable mocks in `beforeEach` (`vi.clearAllMocks()` or `vi.restoreAllMocks()`) when tests override mock behavior.
+**1. `vi.importActual()` for real implementations** — When a test file needs the real module but other files mock it, use `vi.importActual()` in `beforeAll` to bypass the shared mock registry:
+
+```javascript
+let myFunction, myOtherFunction;
+beforeAll(async () => {
+  ({ myFunction, myOtherFunction } = await vi.importActual('../../src/services/myModule.js'));
+});
+```
+
+**2. `vi.hoisted()` for stable mock references** — When multiple test files mock the same module, mock factory functions can get overwritten. Use `vi.hoisted()` to create stable references that survive overwrites:
+
+```javascript
+const { mockFn1, mockFn2 } = vi.hoisted(() => ({
+  mockFn1: vi.fn(),
+  mockFn2: vi.fn()
+}));
+
+vi.mock('../../src/services/myModule.js', () => ({
+  fn1: mockFn1,
+  fn2: mockFn2
+}));
+```
+
+**3. Targeted spy restoration** — Use `spy.mockRestore()` for individual spies, NOT `vi.restoreAllMocks()`:
+
+```javascript
+// ✅ CORRECT: Restore only the specific spy
+const dateSpy = vi.spyOn(Date, 'now').mockReturnValue(1234567890);
+// ... test ...
+dateSpy.mockRestore();
+
+// ❌ WRONG: Restores ALL mocks — corrupts module registry for downstream suites
+vi.restoreAllMocks();  // NEVER use in --no-isolate mode
+```
+
+**Additional rules:**
+- Reset mutable mocks in `beforeEach` with `vi.clearAllMocks()` (clears call history, NOT implementations).
+- Avoid `vi.resetModules()` — it can reset module state used by later suites.
+- Never use `vi.restoreAllMocks()` in `afterAll` or `afterEach` — it restores mock implementations to originals, corrupting the shared mock registry and causing downstream test failures.
 
 ### Test Structure
 
@@ -1629,6 +1665,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use raw `fetch()` for `/api/*` calls in frontend - use `api/` module functions instead (they add auth headers)
 - Parse LLM JSON with ad-hoc greedy regex when `extractJsonFromText()` already exists in `src/services/shared/auditUtils.js`
 - Use `vi.resetModules()` in `--no-isolate` unit tests unless there is no safer alternative
+- Use `vi.restoreAllMocks()` in `--no-isolate` tests — it corrupts mock implementations for downstream suites; use `vi.clearAllMocks()` or targeted `spy.mockRestore()` instead
 
 ---
 
@@ -1654,3 +1691,5 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use `api/` module functions for all frontend API calls (automatic auth headers)
 - Reuse `src/services/shared/auditUtils.js` when implementing any new LLM auditor module
 - Use `vi.importActual()` for real-module imports in `--no-isolate` test files to avoid cross-suite mock leakage
+- Use `vi.hoisted()` for stable mock function references when the same module is mocked by multiple test files
+- Use targeted `spy.mockRestore()` instead of `vi.restoreAllMocks()` when restoring individual spies

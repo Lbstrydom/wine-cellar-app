@@ -6,21 +6,21 @@
 // Mock cellarZones before importing solver
 vi.mock('../../../../src/config/cellarZones.js', () => {
   const zones = [
-    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', color: 'white', rules: { grapes: ['sauvignon blanc'] } },
-    { id: 'chenin_blanc', displayName: 'Chenin Blanc', color: 'white', rules: { grapes: ['chenin blanc'] } },
-    { id: 'chardonnay', displayName: 'Chardonnay', color: 'white', rules: { grapes: ['chardonnay'] } },
-    { id: 'loire_light', displayName: 'Loire & Light', color: 'white', rules: {} },
-    { id: 'aromatic_whites', displayName: 'Aromatic Whites', color: 'white', rules: { grapes: ['riesling', 'viognier'] } },
-    { id: 'cabernet', displayName: 'Cabernet Sauvignon', color: 'red', rules: { grapes: ['cabernet sauvignon'] } },
-    { id: 'shiraz', displayName: 'Shiraz', color: 'red', rules: { grapes: ['shiraz', 'syrah'] } },
-    { id: 'pinot_noir', displayName: 'Pinot Noir', color: 'red', rules: { grapes: ['pinot noir'] } },
-    { id: 'merlot', displayName: 'Merlot', color: 'red', rules: { grapes: ['merlot'] } },
-    { id: 'southern_france', displayName: 'Southern France', color: 'red', rules: {} },
-    { id: 'iberian_fresh', displayName: 'Iberian Fresh', color: 'red', rules: {} },
-    { id: 'curiosities', displayName: 'Curiosities', color: 'red', isCuratedZone: true, rules: {} },
-    { id: 'unclassified', displayName: 'Unclassified', color: ['red', 'white'], isFallbackZone: true, rules: {} },
-    { id: 'white_buffer', displayName: 'White Buffer', color: 'white', isBufferZone: true, rules: {} },
-    { id: 'red_buffer', displayName: 'Red Buffer', color: 'red', isBufferZone: true, rules: {} }
+    { id: 'sauvignon_blanc', displayName: 'Sauvignon Blanc', colour: 'white', rules: { grapes: ['sauvignon blanc'] } },
+    { id: 'chenin_blanc', displayName: 'Chenin Blanc', colour: 'white', rules: { grapes: ['chenin blanc'] } },
+    { id: 'chardonnay', displayName: 'Chardonnay', colour: 'white', rules: { grapes: ['chardonnay'] } },
+    { id: 'loire_light', displayName: 'Loire & Light', colour: 'white', rules: {} },
+    { id: 'aromatic_whites', displayName: 'Aromatic Whites', colour: 'white', rules: { grapes: ['riesling', 'viognier'] } },
+    { id: 'cabernet', displayName: 'Cabernet Sauvignon', colour: 'red', rules: { grapes: ['cabernet sauvignon'] } },
+    { id: 'shiraz', displayName: 'Shiraz', colour: 'red', rules: { grapes: ['shiraz', 'syrah'] } },
+    { id: 'pinot_noir', displayName: 'Pinot Noir', colour: 'red', rules: { grapes: ['pinot noir'] } },
+    { id: 'merlot', displayName: 'Merlot', colour: 'red', rules: { grapes: ['merlot'] } },
+    { id: 'southern_france', displayName: 'Southern France', colour: 'red', rules: {} },
+    { id: 'iberian_fresh', displayName: 'Iberian Fresh', colour: 'red', rules: {} },
+    { id: 'curiosities', displayName: 'Curiosities', colour: 'red', isCuratedZone: true, rules: {} },
+    { id: 'unclassified', displayName: 'Unclassified', colour: ['red', 'white'], isFallbackZone: true, rules: {} },
+    { id: 'white_buffer', displayName: 'White Buffer', colour: 'white', isBufferZone: true, rules: {} },
+    { id: 'red_buffer', displayName: 'Red Buffer', colour: 'red', isBufferZone: true, rules: {} }
   ];
   return {
     CELLAR_ZONES: { zones },
@@ -30,13 +30,13 @@ vi.mock('../../../../src/config/cellarZones.js', () => {
 
 // Mock cellarMetrics
 vi.mock('../../../../src/services/cellar/cellarMetrics.js', () => ({
-  getEffectiveZoneColor: (zone) => {
+  getEffectiveZoneColour: (zone) => {
     if (!zone) return 'any';
-    const color = zone.color;
-    if (Array.isArray(color)) {
-      return color.includes('red') ? 'red' : 'white';
+    const colour = zone.colour;
+    if (Array.isArray(colour)) {
+      return colour.includes('red') ? 'red' : 'white';
     }
-    if (color === 'red' || color === 'white') return color;
+    if (colour === 'red' || colour === 'white') return colour;
     return 'any';
   }
 }));
@@ -55,10 +55,10 @@ import { solveRowAllocation, MIN_BOTTLES_FOR_ROW } from '../../../../src/service
 // ─── Test helpers ───
 
 function makeZone(id, rows, bottles) {
-  return { id, name: id, color: getColorForId(id), actualAssignedRows: rows };
+  return { id, name: id, colour: getColourForId(id), actualAssignedRows: rows };
 }
 
-function getColorForId(id) {
+function getColourForId(id) {
   const whites = ['sauvignon_blanc', 'chenin_blanc', 'chardonnay', 'aromatic_whites', 'white_buffer', 'loire_light'];
   if (whites.includes(id)) return 'white';
   if (id === 'unclassified') return ['red', 'white'];
@@ -260,7 +260,7 @@ describe('rowAllocationSolver', () => {
       expect(merges[0].targetZoneId).toBe('cabernet');
     });
 
-    it('prefers same-color donors for row reallocation', () => {
+    it('prefers same-colour donors for row reallocation', () => {
       const zones = [
         makeZone('cabernet', ['R10'], 15),         // red, overflowing
         makeZone('sauvignon_blanc', ['R1', 'R2', 'R3'], 3),  // white, underutilized
@@ -488,7 +488,7 @@ describe('rowAllocationSolver', () => {
         neverMerge: new Set(),
         stabilityBias: 'moderate',
         scatteredWines: [],
-        colorAdjacencyIssues: []
+        colourAdjacencyIssues: []
       });
       const elapsed = performance.now() - start;
 
@@ -501,7 +501,7 @@ describe('rowAllocationSolver', () => {
   describe('colourOrder support', () => {
     it('fixes white zones in red region for whites-top (default)', () => {
       // White zone (chenin_blanc) at R15, red zone (cabernet) at R1 → both violated
-      // boundary = countColorRows('white') = 1, so white region = R1, red region = R2-19
+      // boundary = countColourRows('white') = 1, so white region = R1, red region = R2-19
       const zones = [
         makeZone('chenin_blanc', ['R15'], 5),
         makeZone('cabernet', ['R1'], 8)
@@ -520,7 +520,7 @@ describe('rowAllocationSolver', () => {
       // Should produce swap actions to fix colour boundary
       const reallocateActions = result.actions.filter(a => a.type === 'reallocate_row');
       expect(reallocateActions.length).toBeGreaterThanOrEqual(2);
-      expect(reallocateActions.some(a => a.reason.includes('color boundary'))).toBe(true);
+      expect(reallocateActions.some(a => a.reason.includes('colour boundary'))).toBe(true);
     });
 
     it('fixes red zones in white region for reds-top', () => {
@@ -592,7 +592,7 @@ describe('rowAllocationSolver', () => {
       // There are only 2 zones, both at the boundary. No remote swap partner.
       // The solver should NOT generate swap actions for this pair.
       const colorSwaps = result.actions.filter(a =>
-        a.type === 'reallocate_row' && a.reason.includes('color')
+        a.type === 'reallocate_row' && a.reason.includes('colour')
       );
       expect(colorSwaps).toHaveLength(0);
     });
@@ -788,12 +788,12 @@ describe('rowAllocationSolver', () => {
     });
   });
 
-  describe('color interleaving detection', () => {
+  describe('colour interleaving detection', () => {
     it('fixes white zone sandwiched between red zones (R8=red, R9=white, R10=red)', () => {
       // Real scenario: Aromatic Whites in R9 (white region should be R1-R7)
       // surrounded by red zones on both sides. In whites-top mode, white→red
       // is technically "correct order" but the white zone is interleaved in the
-      // red region, causing a color adjacency violation.
+      // red region, causing a colour adjacency violation.
       const zones = [
         makeZone('sauvignon_blanc', ['R1', 'R2'], 12),
         makeZone('chenin_blanc', ['R3'], 7),
@@ -822,17 +822,17 @@ describe('rowAllocationSolver', () => {
         zones,
         utilization,
         colourOrder: 'whites-top',
-        colorAdjacencyIssues: [
-          { row1: 'R8', zone1: 'iberian_fresh', color1: 'red',
-            row2: 'R9', zone2: 'aromatic_whites', color2: 'white' },
-          { row1: 'R9', zone1: 'aromatic_whites', color1: 'white',
-            row2: 'R10', zone2: 'southern_france', color2: 'red' }
+        colourAdjacencyIssues: [
+          { row1: 'R8', zone1: 'iberian_fresh', colour1: 'red',
+            row2: 'R9', zone2: 'aromatic_whites', colour2: 'white' },
+          { row1: 'R9', zone1: 'aromatic_whites', colour1: 'white',
+            row2: 'R10', zone2: 'southern_france', colour2: 'red' }
         ]
       });
 
       // Solver should detect the interleaving and produce swap actions
       const colorFixes = result.actions.filter(a =>
-        a.type === 'reallocate_row' && a.reason.includes('color')
+        a.type === 'reallocate_row' && a.reason.includes('colour')
       );
       expect(colorFixes.length).toBeGreaterThanOrEqual(1);
 
@@ -868,7 +868,7 @@ describe('rowAllocationSolver', () => {
 
       // Solver should detect the red zone (R5) interleaved in white region
       const colorFixes = result.actions.filter(a =>
-        a.type === 'reallocate_row' && a.reason.includes('color')
+        a.type === 'reallocate_row' && a.reason.includes('colour')
       );
       expect(colorFixes.length).toBeGreaterThanOrEqual(1);
 
