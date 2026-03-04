@@ -961,3 +961,107 @@ export function renderCompactionMoves(compactionMoves) {
     });
   });
 }
+
+/**
+ * Render grouping moves (same-wine intra-row bottle grouping swaps).
+ * @param {Array} groupingMoves - Array of grouping move objects from the analysis
+ */
+export function renderGroupingMoves(groupingMoves) {
+  const container = document.getElementById('analysis-grouping');
+  const listEl = document.getElementById('grouping-list');
+  if (!container || !listEl) return;
+
+  // Show only primary moves; "Make room" partners are executed automatically
+  const primaryMoves = groupingMoves
+    ? groupingMoves.filter(m => !m.reason?.startsWith('Make room'))
+    : [];
+
+  if (primaryMoves.length === 0) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = 'block';
+
+  // Build set of swap target slots so we can label the action correctly
+  const swapTargets = new Set(
+    groupingMoves
+      .filter(m => m.reason?.startsWith('Make room'))
+      .map(m => m.from)
+  );
+
+  listEl.innerHTML = primaryMoves.map((move, index) => {
+    const isSwap = swapTargets.has(move.to);
+    const actionLabel = isSwap ? 'Swap' : 'Move';
+    const actionTitle = isSwap
+      ? `Swap ${move.from} ↔ ${move.to} to group ${escapeHtml(move.wineName)} bottles`
+      : `Move ${move.from} → ${move.to} to group ${escapeHtml(move.wineName)} bottles`;
+    return `
+    <div class="move-item grouping-item priority-5" data-grouping-index="${index}">
+      <div class="move-details">
+        <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
+        <div class="move-path">
+          <span class="from">${move.from}</span>
+          <span class="arrow">${isSwap ? '↔' : '→'}</span>
+          <span class="to">${move.to}</span>
+        </div>
+        <div class="move-reason">${escapeHtml(move.reason || 'Group bottles')}</div>
+      </div>
+      <div class="move-actions">
+        <button class="btn btn-primary btn-small grouping-execute-btn"
+                data-grouping-index="${index}"
+                title="${actionTitle}">${actionLabel}</button>
+        <button class="btn btn-secondary btn-small grouping-dismiss-btn"
+                data-grouping-index="${index}"
+                title="Ignore this suggestion">Ignore</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.grouping-execute-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const idx = Number.parseInt(btn.dataset.groupingIndex, 10);
+      const move = primaryMoves[idx];
+      if (!move) return;
+
+      // Include the swap partner (Make room move) when present
+      const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to }];
+      const partner = groupingMoves.find(
+        m => m.reason?.startsWith('Make room') && m.from === move.to && m.to === move.from
+      );
+      if (partner) {
+        movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to });
+      }
+
+      try {
+        btn.disabled = true;
+        btn.textContent = 'Working...';
+        await executeCellarMoves(movesToExecute);
+        showToast(partner ? `Swapped ${move.from} ↔ ${move.to}` : `Moved to ${move.to}`);
+        await refreshLayout();
+        const { loadAnalysis } = await import('./analysis.js');
+        await loadAnalysis(true);
+      } catch (err) {
+        if (err.validation) {
+          showValidationErrorModal(err.validation);
+        } else {
+          showToast(`Error: ${err.message}`);
+        }
+        btn.disabled = false;
+        btn.textContent = partner ? 'Swap' : 'Move';
+      }
+    });
+  });
+
+  listEl.querySelectorAll('.grouping-dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const item = btn.closest('.grouping-item');
+      if (item) item.remove();
+      if (listEl.querySelectorAll('.grouping-item').length === 0) {
+        container.style.display = 'none';
+      }
+    });
+  });
+}
