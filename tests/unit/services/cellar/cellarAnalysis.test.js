@@ -203,6 +203,36 @@ describe('analyseCellar buffer zone colour-violation detection (Phase 3.2)', () 
     expect(report.summary.misplacedBottles).toBe(1);
   });
 
+  it('does NOT count non-overflow fallback placement as correctly placed when canonical has no rows', async () => {
+    getActiveZoneMap.mockResolvedValue({
+      R19: {
+        zoneId: 'unclassified',
+        displayName: 'Unclassified',
+        rowNumber: 1,
+        totalRows: 1,
+        wineCount: 1
+      }
+    });
+
+    const wines = [
+      {
+        id: 101,
+        wine_name: 'Mystery Wine',
+        colour: null,
+        country: null,
+        region: null,
+        grapes: null,
+        style: null,
+        slot_id: 'R19C1',
+        zone_id: 'unclassified'
+      }
+    ];
+
+    const report = await analyseCellar(wines, { cellarId: 'test-cellar' });
+
+    expect(report.summary.correctlyPlaced).toBe(0);
+  });
+
   it('records skipped move-audit metadata when auditor is skipped', async () => {
     getActiveZoneMap.mockResolvedValue({});
     auditMoveSuggestions.mockResolvedValueOnce({

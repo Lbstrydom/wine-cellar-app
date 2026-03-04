@@ -10,6 +10,37 @@ import { parseSlot } from './slotUtils.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 
+/**
+ * Check whether a wine's physical row is a valid overflow destination for its
+ * canonical zone AND that canonical zone has no allocated rows (under-threshold).
+ *
+ * Matches cellarMetrics.js:384 pattern: canonicalZone.overflowZoneId === physicalZoneId.
+ * Only counts as valid overflow when the canonical zone has zero allocated rows
+ * (bottles < MIN_BOTTLES_FOR_ROW), preserving tidy-up opportunities when the
+ * zone does have dedicated capacity.
+ *
+ * @param {string} physicalRow - Row ID e.g. 'R3'
+ * @param {string} canonicalZoneId - Wine's canonical zone from findBestZone
+ * @param {Object} zoneMap - Active zone map (rowId → { zoneId, ... })
+ * @returns {boolean}
+ */
+function isInValidOverflow(physicalRow, canonicalZoneId, zoneMap) {
+  const rowZoneId = zoneMap[physicalRow]?.zoneId;
+  if (!rowZoneId) return false;
+
+  const canonicalZone = getZoneById(canonicalZoneId);
+  if (!canonicalZone) return false;
+
+  // Physical row's zone must be the canonical zone's overflow target
+  if (canonicalZone.overflowZoneId !== rowZoneId) return false;
+
+  // Only valid if canonical zone has zero allocated rows (under-threshold)
+  const hasAllocatedRows = Object.values(zoneMap).some(
+    info => info.zoneId === canonicalZoneId
+  );
+  return !hasAllocatedRows;
+}
+
 /** Slots per row: R1 has 7, all others have 9. */
 const SLOTS_PER_ROW_DEFAULT = 9;
 const SLOTS_ROW_1 = 7;
@@ -71,9 +102,10 @@ export function scanBottles(wines, zoneMap) {
     const parsed = parseSlot(slotId);
     const physicalRow = parsed ? `R${parsed.row}` : null;
 
-    // Determine whether this wine is in a row allocated to its canonical zone
+    // Determine whether this wine is in a row allocated to its canonical zone,
+    // or in a valid overflow zone when its canonical zone has no dedicated rows
     const isCorrectlyPlaced = physicalRow
-      ? zoneMap[physicalRow]?.zoneId === zoneId
+      ? (zoneMap[physicalRow]?.zoneId === zoneId || isInValidOverflow(physicalRow, zoneId, zoneMap))
       : false;
 
     groupMap.get(zoneId).wines.push({
@@ -151,7 +183,8 @@ export function scanBottles(wines, zoneMap) {
   for (const group of groups) {
     const allocatedSet = new Set(group.allocatedRows);
     const scattered = group.wines.filter(
-      w => w.physicalRow && !allocatedSet.has(w.physicalRow)
+      w => w.physicalRow && !allocatedSet.has(w.physicalRow) &&
+        !isInValidOverflow(w.physicalRow, group.zoneId, zoneMap)
     );
 
     if (scattered.length > 0) {
@@ -255,6 +288,10 @@ export function rowCleanlinessSweep(slotToWine, zoneMap) {
 
       // Wine already belongs in this row's zone — no violation
       if (bestZone.zoneId === rowZoneInfo.zoneId) continue;
+
+      // Wine in its canonical zone's overflow row — not a violation
+      const bestZoneConfig = getZoneById(bestZone.zoneId);
+      if (bestZoneConfig?.overflowZoneId === rowZoneInfo.zoneId) continue;
 
       // Determine severity
       const wineColour = wineColourFamily(wine);

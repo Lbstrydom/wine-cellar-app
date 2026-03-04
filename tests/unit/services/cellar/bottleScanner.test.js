@@ -442,6 +442,121 @@ describe('scanBottles (Phase B1)', () => {
     });
   });
 
+  describe('buffer zone overflow tolerance', () => {
+    it('marks wine as correctly placed when in overflow zone and canonical zone has no rows', () => {
+      // Cabernet wine sits in red_buffer row; cabernet has NO allocated rows (under-threshold)
+      const wines = [
+        makeWine({ id: 1, wine_name: 'Stellenbosch Cab 2020', slot_id: 'R15C1', zone_id: 'cabernet' })
+      ];
+
+      // Only red_buffer has rows — cabernet has zero allocated rows
+      const zoneMap = {
+        R15: zoneMapEntry('red_buffer', 'Red Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const group = result.groups.find(g => g.zoneId === 'cabernet');
+
+      expect(group.correctlyPlacedCount).toBe(1);
+      expect(group.misplacedCount).toBe(0);
+      expect(group.wines[0].correctlyPlaced).toBe(true);
+    });
+
+    it('marks wine as misplaced when in overflow zone but canonical zone HAS rows (tidy-up)', () => {
+      // Cabernet wine sits in red_buffer row, but cabernet also has R8 allocated
+      const wines = [
+        makeWine({ id: 1, wine_name: 'Stellenbosch Cab 2020', slot_id: 'R15C1', zone_id: 'cabernet' })
+      ];
+
+      const zoneMap = {
+        R8: zoneMapEntry('cabernet', 'Cabernet Sauvignon'),
+        R15: zoneMapEntry('red_buffer', 'Red Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const group = result.groups.find(g => g.zoneId === 'cabernet');
+
+      expect(group.correctlyPlacedCount).toBe(0);
+      expect(group.misplacedCount).toBe(1);
+      expect(group.wines[0].correctlyPlaced).toBe(false);
+    });
+
+    it('marks wine as misplaced when in wrong-colour overflow zone', () => {
+      // Red wine in white_buffer row — colour mismatch, never valid overflow
+      const wines = [
+        makeWine({ id: 1, wine_name: 'Stellenbosch Cab 2020', colour: 'red', slot_id: 'R3C1', zone_id: 'cabernet' })
+      ];
+
+      // cabernet overflows to red_buffer, not white_buffer — so white_buffer is not valid overflow
+      const zoneMap = {
+        R3: zoneMapEntry('white_buffer', 'White Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const group = result.groups.find(g => g.zoneId === 'cabernet');
+
+      expect(group.correctlyPlacedCount).toBe(0);
+      expect(group.misplacedCount).toBe(1);
+      expect(group.wines[0].correctlyPlaced).toBe(false);
+    });
+
+    it('marks wine as misplaced when in non-overflow, non-canonical zone', () => {
+      // Cabernet wine in shiraz row — not an overflow target
+      const wines = [
+        makeWine({ id: 1, slot_id: 'R10C1', zone_id: 'cabernet' })
+      ];
+
+      const zoneMap = {
+        R10: zoneMapEntry('shiraz', 'Shiraz')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const group = result.groups.find(g => g.zoneId === 'cabernet');
+
+      expect(group.correctlyPlacedCount).toBe(0);
+      expect(group.misplacedCount).toBe(1);
+    });
+  });
+
+  describe('consolidation excludes valid overflow', () => {
+    it('excludes overflow bottles from scattered when canonical zone has no rows', () => {
+      // Cabernet wine in red_buffer — cabernet has NO allocated rows
+      const wines = [
+        makeWine({ id: 1, wine_name: 'Cab 1', slot_id: 'R15C1', zone_id: 'cabernet' })
+      ];
+
+      const zoneMap = {
+        R15: zoneMapEntry('red_buffer', 'Red Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+
+      // Should not appear as consolidation opportunity — overflow is valid
+      const cabConsolidation = result.consolidationOpportunities.find(o => o.zoneId === 'cabernet');
+      expect(cabConsolidation).toBeUndefined();
+    });
+
+    it('includes overflow bottles in scattered when canonical zone HAS rows (tidy-up)', () => {
+      // Cabernet wine in red_buffer, but cabernet has R8 allocated
+      const wines = [
+        makeWine({ id: 1, wine_name: 'Cab 1', slot_id: 'R15C1', zone_id: 'cabernet' }),
+        makeWine({ id: 2, wine_name: 'Cab 2', slot_id: 'R8C1', zone_id: 'cabernet' })
+      ];
+
+      const zoneMap = {
+        R8: zoneMapEntry('cabernet', 'Cabernet Sauvignon'),
+        R15: zoneMapEntry('red_buffer', 'Red Reserve')
+      };
+
+      const result = scanBottles(wines, zoneMap);
+      const cabConsolidation = result.consolidationOpportunities.find(o => o.zoneId === 'cabernet');
+
+      expect(cabConsolidation).toBeDefined();
+      expect(cabConsolidation.scattered).toHaveLength(1);
+      expect(cabConsolidation.scattered[0].wineId).toBe(1);
+    });
+  });
+
   describe('unclassified wines', () => {
     it('groups unclassified wines into an unclassified zone group', () => {
       // Wine with no grape signal — findBestZone returns unclassified
@@ -661,6 +776,47 @@ describe('rowCleanlinessSweep (Phase B3)', () => {
     // Critical should come first
     expect(violations[0].severity).toBe('critical');
     expect(violations[violations.length - 1].severity).toBe('moderate');
+  });
+
+  it('skips violation for wine in its canonical overflow zone row', () => {
+    // Cabernet wine in red_buffer row — cabernet overflows to red_buffer, so no violation
+    const slotToWine = new Map([
+      ['R15C1', makeWine({
+        id: 1,
+        wine_name: 'Stellenbosch Cab 2020',
+        grapes: 'cabernet sauvignon',
+        colour: 'red',
+        slot_id: 'R15C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R15: zoneMapEntry('red_buffer', 'Red Reserve')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+    expect(violations).toHaveLength(0);
+  });
+
+  it('still flags colour violation even if overflow chain exists', () => {
+    // Red wine in white_buffer — cabernet does NOT overflow to white_buffer
+    const slotToWine = new Map([
+      ['R3C1', makeWine({
+        id: 1,
+        wine_name: 'Stellenbosch Cab 2020',
+        grapes: 'cabernet sauvignon',
+        colour: 'red',
+        slot_id: 'R3C1'
+      })]
+    ]);
+
+    const zoneMap = {
+      R3: zoneMapEntry('white_buffer', 'White Reserve')
+    };
+
+    const violations = rowCleanlinessSweep(slotToWine, zoneMap);
+    expect(violations.length).toBeGreaterThanOrEqual(1);
+    expect(violations[0].severity).toBe('critical');
   });
 
   it('populates all expected fields on each violation', () => {

@@ -452,6 +452,32 @@ function buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap) {
             report.summary.misplacedBottles++;
           }
         }
+        // Count colour-compatible wines as correctly placed when their
+        // canonical zone has no dedicated rows (under-threshold overflow)
+        for (const w of zoneWines) {
+          const zoneColours = Array.isArray(zone.colour) ? zone.colour : (zone.colour ? [zone.colour] : []);
+          const wineColour = (w.colour || inferColour(w) || '').toLowerCase();
+          // Skip colour violations (already counted as misplaced above)
+          if (zoneColours.length > 0 && wineColour) {
+            const allWhiteFamily = zoneColours.every(c => isWhiteFamily(c));
+            const isViolation = (allWhiteFamily && wineColour === 'red') ||
+              (zoneColours.every(c => c.toLowerCase() === 'red') && isWhiteFamily(wineColour));
+            if (isViolation) continue;
+          }
+          // Check if canonical zone has no allocated rows (under-threshold)
+          const bestZone = findBestZone(w);
+          const canonicalZone = getZoneById(bestZone.zoneId);
+          const isCanonicalOverflowTarget = canonicalZone?.overflowZoneId === zone.id;
+          if (!isCanonicalOverflowTarget) continue;
+
+          const canonicalHasRows = Object.values(zoneMap).some(
+            info => info.zoneId === bestZone.zoneId
+          );
+          if (!canonicalHasRows) {
+            report.summary.correctlyPlaced++;
+          }
+        }
+
         report.overflowAnalysis.push({
           zoneId: zone.id,
           displayName: zone.displayName,
