@@ -45,6 +45,7 @@ export async function getAllWinesWithSlots(cellarId) {
       w.zone_confidence,
       w.drink_from,
       w.drink_until,
+      w.bottle_count,
       s.location_code as slot_id,
       dw.drink_by_year,
       dw.drink_from_year,

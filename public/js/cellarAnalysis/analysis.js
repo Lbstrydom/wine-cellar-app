@@ -20,6 +20,7 @@ import { escapeHtml, showToast } from '../utils.js';
 import { renderGrapeHealthBanner } from './grapeHealth.js';
 import { renderConsolidationCards } from './consolidation.js';
 import { renderLayoutProposalCTA } from './layoutDiffOrchestrator.js';
+import { renderDuplicatePlacements } from './placementIssues.js';
 
 let _onRenderAnalysis = null;
 
@@ -311,6 +312,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderMoves(analysis.suggestedMoves, analysis.needsZoneSetup, analysis.movesHaveSwaps);
   renderCompactionMoves(analysis.compactionMoves);
   renderGroupingMoves(analysis.groupingMoves);
+  renderDuplicatePlacements(analysis.duplicatePlacements);
   renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
 
