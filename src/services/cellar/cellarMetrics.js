@@ -212,8 +212,9 @@ export function detectColourOrderViolations(rowToZoneId, colourOrder, whiteRows,
   const redRowSet = new Set(redRows);
   const issues = [];
 
-  for (let row = 1; row <= 19; row++) {
-    const zoneId = rowToZoneId[`R${row}`];
+  for (const rowKey of Object.keys(rowToZoneId)) {
+    const row = Number.parseInt(rowKey.slice(1), 10);
+    const zoneId = rowToZoneId[rowKey];
     if (!zoneId) continue;
 
     const zone = getZoneById(zoneId);
@@ -498,7 +499,10 @@ export function analyseZone(zone, zoneWines, rowId) {
 export function detectRowGaps(slotToWine, fillDirection = 'left', storageAreaRows = []) {
   const gaps = [];
 
-  for (let row = 1; row <= 19; row++) {
+  const maxRowNum = storageAreaRows.length > 0
+    ? Math.max(...storageAreaRows.map(r => r.row_num))
+    : 19;
+  for (let row = 1; row <= maxRowNum; row++) {
     const maxCol = getRowCapacity(`R${row}`, storageAreaRows);
     const occupied = [];
     const empty = [];

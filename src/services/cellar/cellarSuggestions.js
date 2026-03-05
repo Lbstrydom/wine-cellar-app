@@ -645,8 +645,8 @@ export function validateMoveZoneAlignment(moves, zoneMap) {
  * @param {string} fillDirection - 'left' or 'right'
  * @returns {Array<Object>} Compaction move suggestions
  */
-export function generateCompactionMoves(slotToWine, fillDirection = 'left') {
-  const gaps = detectRowGaps(slotToWine, fillDirection);
+export function generateCompactionMoves(slotToWine, fillDirection = 'left', storageAreaRows = []) {
+  const gaps = detectRowGaps(slotToWine, fillDirection, storageAreaRows);
 
   return gaps.map(gap => ({
     type: 'compaction',

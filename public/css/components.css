@@ -1671,6 +1671,176 @@
   opacity: 0.9;
 }
 
+/* ── Grouping step UI (Phase 1.7) ────────────────────────── */
+.grouping-steps-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.grouping-steps-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.move-progress-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.move-progress-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--bg-surface, rgba(255,255,255,0.08));
+  border-radius: 3px;
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.move-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.grouping-row-section {
+  margin-bottom: 0.5rem;
+}
+
+.grouping-row-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.3rem 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.35rem;
+}
+
+.grouping-step-card {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.35rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+.move-step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.move-step--completed .move-step-badge {
+  background: var(--color-success, #4caf50);
+}
+
+.move-step--completed {
+  opacity: 0.55;
+}
+
+.move-step--next {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb, 139,90,43), 0.07);
+}
+
+.move-step-body {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.move-step-type-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.4rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.move-step-type--move {
+  background: rgba(var(--accent-rgb, 139,90,43), 0.2);
+  color: var(--accent);
+}
+
+.move-step-type--swap {
+  background: rgba(var(--color-caution-rgb, 255,165,0), 0.2);
+  color: var(--color-caution, #f5a623);
+}
+
+.move-step-type--rotation {
+  background: rgba(var(--color-info-rgb, 100,149,237), 0.2);
+  color: var(--color-info, #6495ed);
+}
+
+.move-step-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  font-size: 0.82rem;
+  min-width: 0;
+}
+
+.move-step-slots {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.swap-step-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.rotation-detail {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.rotation-move-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.move-step-done-label {
+  font-size: 0.75rem;
+  color: var(--color-success, #4caf50);
+  font-weight: 600;
+}
+
+.grouping-cross-row-section {
+  margin-top: 0.5rem;
+}
+
 /* Zone Consolidation Cards (Phase B4) */
 .consolidation-section {
   margin-bottom: 1rem;

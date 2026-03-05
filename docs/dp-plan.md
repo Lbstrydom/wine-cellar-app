@@ -10,9 +10,9 @@
 
 | Section | Name | Phases | Status | Progress |
 |---------|------|--------|--------|----------|
-| **A** | Core Grouping Engine | 1.1 – 1.4 | IN PROGRESS | 2 / 4 |
-| **B** | Analysis Infrastructure | 1.5 – 1.6 | NOT STARTED | 0 / 2 |
-| **C** | Grouping UI | 1.7 | NOT STARTED | 0 / 1 |
+| **A** | Core Grouping Engine | 1.1 – 1.4 | ✅ DONE | 4 / 4 |
+| **B** | Analysis Infrastructure | 1.5 – 1.6 | ✅ DONE | 2 / 2 |
+| **C** | Grouping UI | 1.7 | ✅ DONE | 1 / 1 |
 | **D** | Full Hardcoding Removal | 2.1 – 2.3 | NOT STARTED | 0 / 3 |
 | **E** | Multi-Storage-Area Grouping | 3.1 – 3.2 | NOT STARTED | 0 / 2 |
 | **F** | Zone Auto-Discovery | 4.1 – 4.4 | NOT STARTED | 0 / 4 |
@@ -21,13 +21,13 @@
 
 | Phase | Description | Status | Owner | Notes |
 |-------|-------------|--------|-------|-------|
-| **1.1** | Layout provider service | NOT STARTED | — | Prerequisite for all |
+| **1.1** | Layout provider service | ✅ DONE | — | cellarLayout.js + hardcoding removed from cellarMetrics/cellarSuggestions/cellarPlacement/bottleScanner |
 | **1.2** | Target-first grouping algorithm | ✅ DONE | — | Branch-and-bound optimizer, cycle decomposition |
 | **1.3** | Grouping test suite (unit + property) | ✅ DONE | — | 26 unit + 11 property tests (500 trials each) |
-| **1.4** | Wire grouping into analysis pipeline | NOT STARTED | — | Depends on 1.1, 1.2. ⚠️ cellarSuggestions.test.js interleaved-apply bug fixed (same pattern as property test [3]) |
-| **1.5** | Zone move fixes + swap metadata | NOT STARTED | — | Depends on 1.1. ⚠️ Reviewer flag: `'Make room'` string coupling in moves.js L1004/L1040, cellarSuggestions.js L762 — replace with structured step metadata |
-| **1.6** | Cache fingerprint update | NOT STARTED | — | Independent |
-| **1.7** | Frontend step UI + progress | NOT STARTED | — | Depends on 1.4. ⚠️ Reviewer flag: rotation-step semantics (k>2 cycles) need explicit UI representation, not just swap cards |
+| **1.4** | Wire grouping into analysis pipeline | ✅ DONE | — | storageAreaRows threaded through grouping + compaction; groupingSteps in report; 2 new integration tests |
+| **1.5** | Zone move fixes + swap metadata | ✅ DONE | — | 'Make room' string coupling replaced with isDisplacement flag in moves.js L1004/L1006/L1040 |
+| **1.6** | Cache fingerprint update | ✅ DONE | — | storage_area_rows added to hash; ANALYSIS_LOGIC_VERSION bumped 7→8 |
+| **1.7** | Frontend step UI + progress | ✅ DONE | — | renderGroupingSteps: numbered step cards (move/swap/rotation), local progress Set, Execute All, per-step execute. Rotation steps show all k moves explicitly. CSS: move-step-badge, move-step--next/completed, move-progress-bar. sw.js v193→v194. |
 | **2.1** | Backend: zone planner & solver | NOT STARTED | — | Depends on 1.1. ⚠️ Reviewer flag: hardcoded cellar layout in bottles.js L20/L99, cellarPlacement.js L544/L617, cellarMetrics.js L501, cacheService.js L620 |
 | **2.2** | Backend: bottles route & fridge | NOT STARTED | — | Depends on 1.1 |
 | **2.3** | Frontend: grid + fridge + layout API | NOT STARTED | — | Depends on 2.1, 2.2 |

@@ -560,7 +560,7 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 7;  // v7: add layoutProposal (unified bottle-to-slot layout computation) to analysis report
+const ANALYSIS_LOGIC_VERSION = 8;  // v8: include storage_area_rows layout in cache fingerprint
 
 /**
  * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
@@ -608,6 +608,14 @@ async function generateSlotHash(cellarId) {
       ORDER BY zone_id
     `).all(cellarId);
 
+    const layoutRows = await db.prepare(`
+      SELECT sar.row_num, sar.col_count
+      FROM storage_area_rows sar
+      JOIN storage_areas sa ON sa.id = sar.storage_area_id
+      WHERE sa.cellar_id = ?
+      ORDER BY sar.row_num
+    `).all(cellarId);
+
     const slotData = slots.map(s =>
       `${s.location_code}:${s.wine_id}:${s.colour || ''}:${s.style || ''}:${s.country || ''}:${s.grapes || ''}`
     ).join('|');
@@ -615,9 +623,10 @@ async function generateSlotHash(cellarId) {
       const rows = parseAssignedRowsForHash(a.assigned_rows).sort((aRow, bRow) => aRow.localeCompare(bRow));
       return `${a.zone_id}:${rows.join(',')}:${a.wine_count ?? ''}`;
     }).join('|');
+    const layoutData = layoutRows.map(r => `${r.row_num}:${r.col_count}`).join('|');
 
     return crypto.createHash('md5').update(
-      `v${ANALYSIS_LOGIC_VERSION}|slots:${slotData}|alloc:${allocationData}`
+      `v${ANALYSIS_LOGIC_VERSION}|slots:${slotData}|alloc:${allocationData}|layout:${layoutData}`
     ).digest('hex');
   } catch (err) {
     logger.warn('Cache', `Slot hash generation failed: ${err.message}`);

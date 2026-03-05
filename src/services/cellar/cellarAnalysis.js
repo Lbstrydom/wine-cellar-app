@@ -188,7 +188,7 @@ export async function analyseCellar(wines) {
     console.error('[CellarAnalysis] Failed to load layout settings, using defaults:', err.message);
     layoutSettings = { ...LAYOUT_DEFAULTS };
   }
-  const compactionMoves = generateCompactionMoves(slotToWine, layoutSettings.fillDirection);
+  const compactionMoves = generateCompactionMoves(slotToWine, layoutSettings.fillDirection, storageAreaRows);
   report.compactionMoves = compactionMoves;
   report.summary.gapCount = compactionMoves.length;
 

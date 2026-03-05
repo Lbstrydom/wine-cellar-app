@@ -1001,9 +1001,11 @@ export const renderGroupingMoves = makeDiagnosticRenderer({
   itemClass: 'grouping',
   indexAttr: 'groupingIndex',
   preprocessItems: (rawItems) => {
-    const items = rawItems.filter(m => !m.reason?.startsWith('Make room'));
+    // isDisplacement marks the "make room" half of a grouping swap — hide it from the
+    // primary list but expose its source slot so the UI can show ↔ for swap pairs.
+    const items = rawItems.filter(m => !m.isDisplacement);
     const swapTargets = new Set(
-      rawItems.filter(m => m.reason?.startsWith('Make room')).map(m => m.from)
+      rawItems.filter(m => m.isDisplacement).map(m => m.from)
     );
     return { items, context: { swapTargets, rawItems } };
   },
@@ -1037,7 +1039,7 @@ export const renderGroupingMoves = makeDiagnosticRenderer({
   getExecuteMoves: (move, rawItems) => {
     const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to }];
     const partner = rawItems.find(
-      m => m.reason?.startsWith('Make room') && m.from === move.to && m.to === move.from
+      m => m.isDisplacement && m.from === move.to && m.to === move.from
     );
     if (partner) movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to });
     return movesToExecute;
@@ -1046,3 +1048,382 @@ export const renderGroupingMoves = makeDiagnosticRenderer({
     swapTargets.has(move.to) ? `Swapped ${move.from} ↔ ${move.to}` : `Moved to ${move.to}`,
   getButtonLabel: (move, { swapTargets }) => swapTargets.has(move.to) ? 'Swap' : 'Move',
 });
+
+// ── Phase 1.7: Structured grouping step UI ────────────────────────────────
+
+/**
+ * Local progress state for grouping steps.
+ * Keys: `${rowId}:${stepNumber}` — cleared on each fresh renderGroupingSteps call.
+ * @type {Set<string>}
+ */
+const _groupingStepsDone = new Set();
+
+/**
+ * Render a single grouping step's move details as HTML.
+ * @param {string} rowId - Row identifier, e.g. 'R3'
+ * @param {Object} step - Step object from planRowGrouping
+ * @returns {string} HTML string
+ */
+function renderStepMovesHtml(rowId, step) {
+  const { stepType, moves } = step;
+
+  if (stepType === 'move') {
+    const m = moves[0];
+    return `
+      <span class="move-step-type-badge move-step-type--move">Move</span>
+      <div class="move-step-detail">
+        <span class="move-wine-name">${escapeHtml(m.wineName)}</span>
+        <span class="move-step-slots"><span class="from">${rowId}C${m.from}</span> <span class="arrow">→</span> <span class="to">${rowId}C${m.to}</span></span>
+      </div>`;
+  }
+
+  if (stepType === 'swap') {
+    const primary = moves.find(m => !m.isDisplacement) ?? moves[0];
+    const displaced = moves.find(m => m.isDisplacement) ?? moves[1];
+    return `
+      <span class="move-step-type-badge move-step-type--swap">Swap</span>
+      <div class="move-step-detail">
+        <div class="swap-step-line">
+          <span class="move-wine-name">${escapeHtml(primary.wineName)}</span>
+          <span class="swap-arrow">↔</span>
+          <span class="move-wine-name">${escapeHtml(displaced.wineName)}</span>
+        </div>
+        <span class="move-step-slots">${rowId}C${primary.from} ↔ ${rowId}C${primary.to}</span>
+      </div>`;
+  }
+
+  if (stepType === 'rotation') {
+    const lines = moves.map(m =>
+      `<div class="rotation-move-line">
+         <span class="move-wine-name">${escapeHtml(m.wineName)}</span>
+         <span class="from">${rowId}C${m.from}</span><span class="arrow">→</span><span class="to">${rowId}C${m.to}</span>
+       </div>`
+    ).join('');
+    return `
+      <span class="move-step-type-badge move-step-type--rotation">Rotation (${moves.length})</span>
+      <div class="move-step-detail rotation-detail">${lines}</div>`;
+  }
+
+  return '';
+}
+
+/**
+ * Update the progress bar and step card states after a step is completed.
+ * @param {Array} groupingSteps
+ * @param {HTMLElement} listEl
+ * @param {number} totalSteps
+ */
+function updateGroupingProgress(groupingSteps, listEl, totalSteps) {
+  const doneCount = _groupingStepsDone.size;
+  const pct = totalSteps > 0 ? Math.round((doneCount / totalSteps) * 100) : 0;
+
+  const fill = document.getElementById('grouping-progress-fill');
+  const label = document.getElementById('grouping-progress-label');
+  if (fill) fill.style.width = `${pct}%`;
+  if (label) label.textContent = `${doneCount} / ${totalSteps} steps done`;
+
+  // Update card states
+  listEl.querySelectorAll('.grouping-step-card').forEach(card => {
+    const rowId = card.dataset.rowId;
+    const stepNum = Number.parseInt(card.dataset.stepNum, 10);
+    const key = `${rowId}:${stepNum}`;
+    if (_groupingStepsDone.has(key)) {
+      card.classList.add('move-step--completed');
+      card.classList.remove('move-step--next');
+    }
+  });
+
+  // Mark first non-done step in each row section as "next"
+  listEl.querySelectorAll('.grouping-row-section').forEach(section => {
+    const rowId = section.dataset.rowId;
+    let markedNext = false;
+    section.querySelectorAll('.grouping-step-card').forEach(card => {
+      const stepNum = Number.parseInt(card.dataset.stepNum, 10);
+      if (!_groupingStepsDone.has(`${rowId}:${stepNum}`) && !markedNext) {
+        card.classList.add('move-step--next');
+        markedNext = true;
+      } else {
+        card.classList.remove('move-step--next');
+      }
+    });
+  });
+}
+
+/**
+ * Execute one atomic step from a grouping plan.
+ * @param {string} rowId
+ * @param {Object} step
+ * @param {Array} allGroupingSteps
+ * @param {HTMLElement} listEl
+ * @param {number} totalSteps
+ */
+async function executeGroupingStep(rowId, step, allGroupingSteps, listEl, totalSteps) {
+  const movesToExecute = step.moves.map(m => ({
+    wineId: m.wineId,
+    wineName: m.wineName,
+    from: `${rowId}C${m.from}`,
+    to: `${rowId}C${m.to}`,
+  }));
+
+  const result = await executeCellarMoves(movesToExecute);
+  if (result?.success === false) {
+    if (result.validation) showValidationErrorModal(result.validation);
+    else showToast('Step execution failed');
+    return false;
+  }
+
+  _groupingStepsDone.add(`${rowId}:${step.stepNumber}`);
+  await refreshLayout();
+  updateGroupingProgress(allGroupingSteps, listEl, totalSteps);
+
+  // Disable the executed button and show done label on the card
+  const card = listEl.querySelector(
+    `.grouping-step-card[data-row-id="${CSS.escape(rowId)}"][data-step-num="${step.stepNumber}"]`
+  );
+  if (card) {
+    card.querySelector('.grouping-step-execute-btn')?.remove();
+    if (!card.querySelector('.move-step-done-label')) {
+      const doneLabel = document.createElement('span');
+      doneLabel.className = 'move-step-done-label';
+      doneLabel.textContent = 'Done';
+      card.appendChild(doneLabel);
+    }
+  }
+
+  // When all steps are done, reload analysis
+  if (_groupingStepsDone.size >= totalSteps) {
+    const { loadAnalysis } = await import('./analysis.js');
+    await loadAnalysis(true);
+  }
+
+  return true;
+}
+
+/** @param {boolean} disabled @param {string} label */
+function setExecAllBtnState(disabled, label) {
+  const btn = document.getElementById('grouping-execute-all-btn');
+  if (!btn) return;
+  btn.disabled = disabled;
+  btn.textContent = label;
+}
+
+/**
+ * Execute all pending grouping steps sequentially.
+ * @param {Array} groupingSteps
+ * @param {HTMLElement} listEl
+ */
+async function executeAllGroupingSteps(groupingSteps, listEl) {
+  const totalSteps = groupingSteps.reduce((s, r) => s + r.steps.length, 0);
+  setExecAllBtnState(true, 'Running...');
+
+  try {
+    for (const rowPlan of groupingSteps) {
+      const aborted = await runRowSteps(rowPlan, groupingSteps, listEl, totalSteps);
+      if (aborted) { setExecAllBtnState(false, 'Execute All'); return; }
+    }
+  } catch (err) {
+    if (err.validation) showValidationErrorModal(err.validation);
+    else showToast(`Error: ${err.message}`);
+    setExecAllBtnState(false, 'Execute All');
+  }
+}
+
+/**
+ * Run all pending steps for one row plan. Returns true if aborted on failure.
+ * @returns {Promise<boolean>}
+ */
+async function runRowSteps(rowPlan, groupingSteps, listEl, totalSteps) {
+  for (const step of rowPlan.steps) {
+    if (_groupingStepsDone.has(`${rowPlan.rowId}:${step.stepNumber}`)) continue;
+    const card = listEl.querySelector(
+      `.grouping-step-card[data-row-id="${CSS.escape(rowPlan.rowId)}"][data-step-num="${step.stepNumber}"]`
+    );
+    const btn = card?.querySelector('.grouping-step-execute-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Working...'; }
+
+    const ok = await executeGroupingStep(rowPlan.rowId, step, groupingSteps, listEl, totalSteps);
+    if (!ok) {
+      if (btn) { btn.disabled = false; btn.textContent = btn.dataset.label ?? 'Execute'; }
+      return true; // aborted
+    }
+  }
+  return false;
+}
+
+/**
+ * Render grouping steps as numbered atomic step cards with local progress tracking.
+ * Falls back to renderGroupingMoves when no structured step data is available.
+ *
+ * @param {Array} groupingSteps - [{rowId, steps: [{stepNumber, stepType, moves}], cost}]
+ * @param {Array} groupingMoves - Flat move list (used for cross-row moves + fallback)
+ */
+/** @param {string} stepType @returns {string} */
+function stepActionLabel(stepType) {
+  if (stepType === 'swap') return 'Swap';
+  if (stepType === 'rotation') return 'Rotate';
+  return 'Move';
+}
+
+/** Build HTML for the step cards section of groupingSteps. */
+function buildGroupingStepsHtml(groupingSteps, totalSteps) {
+  let html = `
+    <div class="grouping-steps-header">
+      <div class="grouping-steps-meta">
+        <span class="move-progress-label" id="grouping-progress-label">0 / ${totalSteps} steps done</span>
+        <div class="move-progress-bar">
+          <div class="move-progress-fill" id="grouping-progress-fill" style="width:0%"></div>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-small" id="grouping-execute-all-btn">Execute All</button>
+    </div>`;
+
+  for (const rowPlan of groupingSteps) {
+    html += `<div class="grouping-row-section" data-row-id="${escapeHtml(rowPlan.rowId)}">`;
+    html += `<div class="grouping-row-header">Row ${escapeHtml(rowPlan.rowId.slice(1))}</div>`;
+    for (const step of rowPlan.steps) {
+      const label = stepActionLabel(step.stepType);
+      html += `
+        <div class="grouping-step-card" data-row-id="${escapeHtml(rowPlan.rowId)}" data-step-num="${step.stepNumber}">
+          <span class="move-step-badge">${step.stepNumber}</span>
+          <div class="move-step-body">${renderStepMovesHtml(rowPlan.rowId, step)}</div>
+          <button class="btn btn-primary btn-small grouping-step-execute-btn" data-label="${label}">${label}</button>
+        </div>`;
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+/** Build HTML for the cross-row moves section. */
+function buildCrossRowMovesHtml(crossRowMoves, showHeader) {
+  let html = '<div class="grouping-cross-row-section">';
+  if (showHeader) html += '<div class="grouping-row-header">Cross-row moves</div>';
+  html += crossRowMoves.map((move, i) => `
+    <div class="move-item grouping-item priority-5" data-cross-row-index="${i}">
+      <div class="move-details">
+        <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
+        <div class="move-path">
+          <span class="from">${move.from}</span>
+          <span class="arrow">→</span>
+          <span class="to">${move.to}</span>
+        </div>
+        <div class="move-reason">${escapeHtml(move.reason || 'Group bottles')}</div>
+      </div>
+      <div class="move-actions">
+        <button class="btn btn-primary btn-small cross-row-execute-btn" data-cross-row-index="${i}">Move</button>
+        <button class="btn btn-secondary btn-small cross-row-dismiss-btn" data-cross-row-index="${i}">Ignore</button>
+      </div>
+    </div>`).join('');
+  return html + '</div>';
+}
+
+/** Wire event handlers for step execute buttons. */
+function wireStepButtons(groupingSteps, listEl, totalSteps) {
+  listEl.querySelectorAll('.grouping-row-section').forEach(section => {
+    section.querySelector('.grouping-step-card')?.classList.add('move-step--next');
+  });
+
+  listEl.querySelectorAll('.grouping-step-execute-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const card = btn.closest('.grouping-step-card');
+      const rowId = card.dataset.rowId;
+      const stepNum = Number.parseInt(card.dataset.stepNum, 10);
+      const step = groupingSteps.find(r => r.rowId === rowId)?.steps.find(s => s.stepNumber === stepNum);
+      if (!step) return;
+      btn.disabled = true;
+      btn.textContent = 'Working...';
+      try {
+        const ok = await executeGroupingStep(rowId, step, groupingSteps, listEl, totalSteps);
+        if (!ok) { btn.disabled = false; btn.textContent = btn.dataset.label ?? 'Execute'; }
+      } catch (err) {
+        if (err.validation) showValidationErrorModal(err.validation);
+        else showToast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = btn.dataset.label ?? 'Execute';
+      }
+    });
+  });
+
+  document.getElementById('grouping-execute-all-btn')
+    ?.addEventListener('click', () => executeAllGroupingSteps(groupingSteps, listEl));
+}
+
+/** Wire event handlers for cross-row move buttons. */
+function wireCrossRowButtons(crossRowMoves, listEl, container) {
+  listEl.querySelectorAll('.cross-row-execute-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const move = crossRowMoves[Number.parseInt(btn.dataset.crossRowIndex, 10)];
+      if (!move) return;
+      btn.disabled = true;
+      btn.textContent = 'Working...';
+      try {
+        await executeCellarMoves([{ wineId: move.wineId, from: move.from, to: move.to }]);
+        showToast(`Moved to ${move.to}`);
+        removeCrossRowItem(btn, listEl, container);
+        await refreshLayout();
+      } catch (err) {
+        if (err.validation) showValidationErrorModal(err.validation);
+        else showToast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Move';
+      }
+    });
+  });
+
+  listEl.querySelectorAll('.cross-row-dismiss-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeCrossRowItem(btn, listEl, container);
+    });
+  });
+}
+
+function removeCrossRowItem(btn, listEl, container) {
+  btn.closest('.grouping-item')?.remove();
+  if (!listEl.querySelector('.grouping-item')) {
+    listEl.querySelector('.grouping-cross-row-section')?.remove();
+    if (!listEl.querySelector('.grouping-row-section')) container.style.display = 'none';
+  }
+}
+
+/**
+ * Render grouping steps as numbered atomic step cards with local progress tracking.
+ * Falls back to renderGroupingMoves when no structured step data is available.
+ *
+ * @param {Array} groupingSteps - [{rowId, steps: [{stepNumber, stepType, moves}], cost}]
+ * @param {Array} groupingMoves - Flat move list (used for cross-row moves + fallback)
+ */
+export function renderGroupingSteps(groupingSteps, groupingMoves) {
+  const container = document.getElementById('analysis-grouping');
+  const listEl = document.getElementById('grouping-list');
+  if (!container || !listEl) return;
+
+  _groupingStepsDone.clear();
+
+  const hasSteps = Array.isArray(groupingSteps) && groupingSteps.length > 0;
+  const crossRowMoves = (groupingMoves || []).filter(m => {
+    const fromRow = (m.from ?? '').match(/^(R\d+)/)?.[1];
+    const toRow = (m.to ?? '').match(/^(R\d+)/)?.[1];
+    return fromRow && toRow && fromRow !== toRow;
+  });
+
+  if (!hasSteps && crossRowMoves.length === 0) {
+    // Fallback to flat list for backwards compat (e.g., old cached analysis)
+    renderGroupingMoves(groupingMoves ?? []);
+    return;
+  }
+
+  container.style.display = 'block';
+  const totalSteps = hasSteps ? groupingSteps.reduce((s, r) => s + r.steps.length, 0) : 0;
+
+  let html = '';
+  if (hasSteps) html += buildGroupingStepsHtml(groupingSteps, totalSteps);
+  if (crossRowMoves.length > 0) html += buildCrossRowMovesHtml(crossRowMoves, hasSteps);
+
+  listEl.innerHTML = html;
+
+  if (hasSteps) wireStepButtons(groupingSteps, listEl, totalSteps);
+  if (crossRowMoves.length > 0) wireCrossRowButtons(crossRowMoves, listEl, container);
+}

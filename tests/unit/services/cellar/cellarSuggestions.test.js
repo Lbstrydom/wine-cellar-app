@@ -634,6 +634,35 @@ describe('generateSameWineGroupingMoves', () => {
     const santaMakeRoom = moves.filter(m => m.wineId === 2);
     expect(santaMakeRoom).toHaveLength(0);
   });
+
+  it('respects non-standard column count from storageAreaRows (12-col row)', () => {
+    // Row 3 configured with 12 columns via storageAreaRows.
+    // Wine A at C1 and C12 — in a 9-col default layout C12 is out of range and would be ignored,
+    // but with storageAreaRows it is valid and should produce a grouping move.
+    const slotToWine = buildSlotMap([
+      { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R3C12', id: 1, wine_name: 'Wine A' }
+    ]);
+    const storageAreaRows = [{ row_num: 3, col_count: 12 }];
+    const moves = generateSameWineGroupingMoves(slotToWine, {}, storageAreaRows);
+
+    // C12 bottle should move to C2 (min-cost target adjacent to C1), not be dropped
+    expect(moves).toHaveLength(1);
+    expect(moves[0].from).toBe('R3C12');
+    expect(moves[0].to).toBe('R3C2');
+  });
+
+  it('uses default 9-col capacity when storageAreaRows is empty', () => {
+    // Wine A at C1 and C9 in a row not in storageAreaRows — should use legacy 9-col limit
+    const slotToWine = buildSlotMap([
+      { slot: 'R5C1', id: 1, wine_name: 'Wine A' },
+      { slot: 'R5C9', id: 1, wine_name: 'Wine A' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {}, []);
+    expect(moves).toHaveLength(1);
+    expect(moves[0].from).toBe('R5C9');
+    expect(moves[0].to).toBe('R5C2');
+  });
 });
 
 // ───────────────────────────────────────────────────────────
