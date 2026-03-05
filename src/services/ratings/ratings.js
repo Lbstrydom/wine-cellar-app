@@ -135,9 +135,15 @@ export function normalizeScore(source, scoreType, rawScore) {
  * @returns {Object} Identity tokens
  */
 export function buildIdentityTokensFromWine(wine) {
+  // When producer is empty, wine_name typically contains "Producer WineName"
+  // (e.g. "Backsberg Patriarch"). Use wine_name as producer fallback so identity
+  // tokens can match the producer in search results.
+  const producer = wine.producer || wine.winery || '';
+  const producerOrName = producer || wine.wine_name || '';
+
   return generateIdentityTokens({
-    producer_name: wine.producer || wine.winery || '',
-    winery: wine.producer || wine.winery || '',
+    producer_name: producerOrName,
+    winery: producerOrName,
     range_name: wine.wine_name || '',
     grape_variety: wine.grapes || '',
     country: wine.country || '',
