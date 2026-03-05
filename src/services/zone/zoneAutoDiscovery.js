@@ -15,7 +15,7 @@
  */
 
 import db from '../../db/index.js';
-import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
+import { getZoneById, getZonesForCellar } from '../../config/cellarZones.js';
 import { findBestZone } from '../cellar/cellarPlacement.js';
 import { proposeZoneLayout } from './zoneLayoutProposal.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
@@ -65,6 +65,9 @@ function bufferZoneForFamily(family) {
 export async function proposeZones(cellarId, options = {}) {
   const minBottlesPerZone = options.minBottlesPerZone ?? DEFAULT_MIN_BOTTLES;
 
+  // ── Phase 4.3: Fetch per-cellar zone list (falls back to global) ─
+  const cellarZones = await getZonesForCellar(cellarId, db);
+
   // ── 1. Fetch all cellar wines with slot assignments ─────────
   const wines = await db.prepare(`
     SELECT
@@ -85,22 +88,22 @@ export async function proposeZones(cellarId, options = {}) {
    */
   const zoneAgg = new Map();
 
-  // Initialise all known zones
-  CELLAR_ZONES.zones.forEach(z => {
+  // Initialise from the per-cellar zone list (honours disabled/filtered zones)
+  cellarZones.forEach(z => {
     zoneAgg.set(z.id, { count: 0, wines: [], confidenceCounts: { high: 0, medium: 0, low: 0 } });
   });
 
   const confidenceSummary = { high: 0, medium: 0, low: 0, total: wines.length };
 
   for (const wine of wines) {
-    const result = findBestZone(wine);
+    // Classify within the per-cellar zone list so disabled zones are excluded
+    const result = findBestZone(wine, { zones: cellarZones });
     const zoneId = result.zoneId;
     const conf = result.confidence || 'low'; // 'high' | 'medium' | 'low'
 
     confidenceSummary[conf] = (confidenceSummary[conf] || 0) + 1;
 
     if (!zoneAgg.has(zoneId)) {
-      // Shouldn't happen (zones initialised above) but guard anyway
       zoneAgg.set(zoneId, { count: 0, wines: [], confidenceCounts: { high: 0, medium: 0, low: 0 } });
     }
     const entry = zoneAgg.get(zoneId);
@@ -114,7 +117,7 @@ export async function proposeZones(cellarId, options = {}) {
 
   // Buffer and fallback zones are never candidates; they receive merged wines
   const skipZoneIds = new Set(
-    CELLAR_ZONES.zones
+    cellarZones
       .filter(z => z.isBufferZone || z.isFallbackZone)
       .map(z => z.id)
   );
@@ -153,9 +156,16 @@ export async function proposeZones(cellarId, options = {}) {
   }
 
   // ── 5. Delegate row allocation to existing engine ───────────
-  // proposeZoneLayout classifies wines independently using its own query;
-  // we call it here for row allocation and augment its result with our metadata.
-  const layoutProposal = await proposeZoneLayout(cellarId);
+  // Pass only the zones that survived the threshold filter (plus always-present
+  // buffer/fallback zones) so proposeZoneLayout's independent classification
+  // respects the same merge decisions made above.
+  const aboveThresholdIds = new Set(
+    [...zoneAgg.entries()].filter(([, e]) => e.count > 0).map(([id]) => id)
+  );
+  const filteredZones = cellarZones.filter(
+    z => skipZoneIds.has(z.id) || aboveThresholdIds.has(z.id)
+  );
+  const layoutProposal = await proposeZoneLayout(cellarId, { zones: filteredZones });
 
   // ── 6. Annotate proposals with confidence data ───────────────
   const annotatedProposals = layoutProposal.proposals.map(p => {
@@ -167,7 +177,6 @@ export async function proposeZones(cellarId, options = {}) {
   });
 
   // ── 7. Annotate underThresholdZones with merge info ──────────
-  const mergedZoneIds = new Set(mergedZones.map(m => m.zoneId));
   const underThreshold = layoutProposal.underThresholdZones.map(utz => {
     const mergeLog = mergedZones.find(m => m.zoneId === utz.zoneId);
     return {
@@ -178,7 +187,7 @@ export async function proposeZones(cellarId, options = {}) {
   });
   // Add any zones we merged that proposeZoneLayout didn't mention
   for (const m of mergedZones) {
-    if (!underThreshold.find(u => u.zoneId === m.zoneId)) {
+    if (!underThreshold.some(u => u.zoneId === m.zoneId)) {
       underThreshold.push({
         zoneId: m.zoneId,
         displayName: m.displayName,

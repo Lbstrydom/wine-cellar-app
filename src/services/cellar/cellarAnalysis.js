@@ -568,26 +568,31 @@ const ZONE_MERGE_THRESHOLD = 3;
  * @returns {Object[]} Suggestions array
  */
 /**
- * Count wines in buffer/fallback zones that have a high-confidence specific zone match.
+ * Count wines physically stored in buffer/fallback rows that have a specific zone match.
+ * Uses the zoneMap to identify which wines are in buffer/fallback rows, then classifies
+ * them to find what dedicated zone they would naturally belong to.
  * @param {Object[]} cellarWines
+ * @param {Object}   zoneMap - rowId → { zoneId, ... }
  * @returns {Map<string, {high: number, total: number}>} zoneId → confidence counts
  */
-function collectCandidateCounts(cellarWines) {
+function collectCandidateCounts(cellarWines, zoneMap) {
   const counts = new Map();
   for (const wine of cellarWines) {
+    // Determine if this wine is physically in a buffer or fallback zone row
+    const slotId = wine.slot_id || wine.location_code;
+    const rowId = slotId?.match(/^(R\d+)/)?.[1];
+    const zoneInfo = rowId ? zoneMap[rowId] : null;
+    if (!zoneInfo) continue;
+    const physicalZone = getZoneById(zoneInfo.zoneId);
+    if (!physicalZone?.isBufferZone && !physicalZone?.isFallbackZone) continue;
+
+    // What specific (non-buffer) zone would this wine naturally belong to?
     const result = findBestZone(wine);
-    const zone = getZoneById(result.zoneId);
-    if (!zone?.isBufferZone && !zone?.isFallbackZone) continue;
+    const specificZone = getZoneById(result.zoneId);
+    if (!specificZone || specificZone.isBufferZone || specificZone.isFallbackZone) continue;
 
-    // Best non-buffer alternative this wine would naturally fit
-    const specificZoneId = result.alternativeZones?.find(a => {
-      const z = getZoneById(a.zoneId);
-      return z && !z.isBufferZone && !z.isFallbackZone;
-    })?.zoneId;
-    if (!specificZoneId) continue;
-
-    if (!counts.has(specificZoneId)) counts.set(specificZoneId, { high: 0, total: 0 });
-    const entry = counts.get(specificZoneId);
+    if (!counts.has(result.zoneId)) counts.set(result.zoneId, { high: 0, total: 0 });
+    const entry = counts.get(result.zoneId);
     entry.total++;
     if (result.confidence === 'high') entry.high++;
   }
@@ -654,7 +659,7 @@ function buildMergeZoneSuggestions(cellarWines, zoneMap) {
 
 function generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations) {
   const cellarWines = wines.filter(w => (w.slot_id ?? w.location_code)?.startsWith('R'));
-  const enableSuggestions = buildEnableZoneSuggestions(collectCandidateCounts(cellarWines));
+  const enableSuggestions = buildEnableZoneSuggestions(collectCandidateCounts(cellarWines, zoneMap));
   const mergeSuggestions = hasZoneAllocations
     ? buildMergeZoneSuggestions(cellarWines, zoneMap)
     : [];
@@ -667,3 +672,6 @@ function generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations) {
 
 export { shouldTriggerAIReview } from './cellarNarratives.js';
 export { getEffectiveDrinkByYear, getFridgeCandidates } from '../wine/drinkingStrategy.js';
+
+// Test-only export — not part of the public API
+export { generateZoneHealthSuggestions as _generateZoneHealthSuggestions };

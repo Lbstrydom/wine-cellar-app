@@ -1,6 +1,7 @@
 /**
  * @fileoverview Unit tests for Phase 4.4 zone health suggestion engine.
- * Tests the classification and zone filtering logic used by the engine.
+ * Tests the classification and zone filtering logic used by the engine,
+ * and exercises generateZoneHealthSuggestions end-to-end via its test export.
  * @module tests/unit/services/cellar/zoneHealthSuggestions.test
  */
 
@@ -133,5 +134,164 @@ describe('getZoneById', () => {
 
   it('returns undefined for unknown zone', () => {
     expect(getZoneById('does_not_exist_xyz')).toBeUndefined();
+  });
+});
+
+// ── Helpers ────────────────────────────────────────────────
+
+/**
+ * Build a wine fixture that strongly matches the 'piedmont' zone
+ * (Nebbiolo + Barolo keyword + Italy/Piedmont region).
+ * Used to test enable_zone suggestions.
+ */
+function makePiedmontWine(slotId) {
+  return {
+    colour: 'red',
+    country: 'Italy',
+    region: 'Piedmont',
+    grapes: 'Nebbiolo',
+    wine_name: 'Barolo Riserva',
+    vintage: 2018,
+    slot_id: slotId,
+    location_code: slotId
+  };
+}
+
+describe('generateZoneHealthSuggestions — enable_zone', () => {
+  let generateZoneHealthSuggestions;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ _generateZoneHealthSuggestions: generateZoneHealthSuggestions } =
+      await vi.importActual('../../../../src/services/cellar/cellarAnalysis.js'));
+  });
+
+  it('generates enable_zone when ≥10 buffer-zone wines match a specific zone', () => {
+    // 10 Piedmont wines physically stored in red_buffer rows
+    const wines = Array.from({ length: 10 }, (_, i) => makePiedmontWine(`R8C${i + 1}`));
+
+    const zoneMap = {
+      R8: { zoneId: 'red_buffer' }
+    };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+    const enableSuggestions = suggestions.filter(s => s.type === 'enable_zone');
+
+    expect(enableSuggestions).toHaveLength(1);
+    expect(enableSuggestions[0].zoneId).toBe('piedmont');
+    expect(enableSuggestions[0].bottleCount).toBe(10);
+    expect(enableSuggestions[0].message).toContain('Piedmont');
+  });
+
+  it('does NOT generate enable_zone when fewer than 10 buffer wines match', () => {
+    // Only 9 Piedmont wines in red_buffer rows → below threshold
+    const wines = Array.from({ length: 9 }, (_, i) => makePiedmontWine(`R8C${i + 1}`));
+
+    const zoneMap = { R8: { zoneId: 'red_buffer' } };
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+
+    expect(suggestions.filter(s => s.type === 'enable_zone')).toHaveLength(0);
+  });
+
+  it('does NOT generate enable_zone for wines NOT in buffer/fallback rows', () => {
+    // 15 Piedmont wines — but their rows map to 'piedmont', not a buffer zone
+    const wines = Array.from({ length: 15 }, (_, i) => makePiedmontWine(`R9C${i + 1}`));
+
+    const zoneMap = { R9: { zoneId: 'piedmont' } };
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+
+    expect(suggestions.filter(s => s.type === 'enable_zone')).toHaveLength(0);
+  });
+
+  it('ignores fridge wines (non-R slots) in enable_zone counting', () => {
+    // 10 Piedmont wines in fridge slots — should be filtered out
+    const wines = Array.from({ length: 10 }, (_, i) => ({
+      ...makePiedmontWine(`F${i + 1}`),
+      slot_id: `F${i + 1}`,
+      location_code: `F${i + 1}`
+    }));
+
+    const zoneMap = { R8: { zoneId: 'red_buffer' } };
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+
+    expect(suggestions.filter(s => s.type === 'enable_zone')).toHaveLength(0);
+  });
+});
+
+describe('generateZoneHealthSuggestions — merge_zone', () => {
+  let generateZoneHealthSuggestions;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ _generateZoneHealthSuggestions: generateZoneHealthSuggestions } =
+      await vi.importActual('../../../../src/services/cellar/cellarAnalysis.js'));
+  });
+
+  it('generates merge_zone when ≤3 wines occupy a dedicated zone row', () => {
+    // 2 wines in R8 which is mapped to 'piedmont' (a non-buffer zone)
+    const wines = [
+      { colour: 'red', slot_id: 'R8C1', location_code: 'R8C1' },
+      { colour: 'red', slot_id: 'R8C2', location_code: 'R8C2' }
+    ];
+    const zoneMap = { R8: { zoneId: 'piedmont' } };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+    const mergeSuggestions = suggestions.filter(s => s.type === 'merge_zone');
+
+    expect(mergeSuggestions).toHaveLength(1);
+    expect(mergeSuggestions[0].zoneId).toBe('piedmont');
+    expect(mergeSuggestions[0].bottleCount).toBe(2);
+    expect(mergeSuggestions[0].message).toContain('Piedmont');
+  });
+
+  it('does NOT generate merge_zone when >3 wines in zone', () => {
+    // 4 wines → above threshold
+    const wines = Array.from({ length: 4 }, (_, i) => ({
+      colour: 'red', slot_id: `R8C${i + 1}`, location_code: `R8C${i + 1}`
+    }));
+    const zoneMap = { R8: { zoneId: 'piedmont' } };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+    expect(suggestions.filter(s => s.type === 'merge_zone')).toHaveLength(0);
+  });
+
+  it('suppresses merge_zone suggestions when hasZoneAllocations is false', () => {
+    const wines = [
+      { colour: 'red', slot_id: 'R8C1', location_code: 'R8C1' }
+    ];
+    const zoneMap = { R8: { zoneId: 'piedmont' } };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, false);
+    expect(suggestions.filter(s => s.type === 'merge_zone')).toHaveLength(0);
+  });
+
+  it('does NOT generate merge_zone for buffer zones', () => {
+    // 1 wine in a red_buffer row → red_buffer is a buffer zone, should not be merge candidate
+    const wines = [{ colour: 'red', slot_id: 'R8C1', location_code: 'R8C1' }];
+    const zoneMap = { R8: { zoneId: 'red_buffer' } };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+    expect(suggestions.filter(s => s.type === 'merge_zone')).toHaveLength(0);
+  });
+});
+
+describe('generateZoneHealthSuggestions — healthy collection', () => {
+  let generateZoneHealthSuggestions;
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    ({ _generateZoneHealthSuggestions: generateZoneHealthSuggestions } =
+      await vi.importActual('../../../../src/services/cellar/cellarAnalysis.js'));
+  });
+
+  it('returns empty array when no health issues detected', () => {
+    // 8 wines in piedmont rows (> merge threshold, < enable threshold trigger)
+    const wines = Array.from({ length: 8 }, (_, i) => ({
+      colour: 'red', slot_id: `R8C${i + 1}`, location_code: `R8C${i + 1}`
+    }));
+    const zoneMap = { R8: { zoneId: 'piedmont' } };
+
+    const suggestions = generateZoneHealthSuggestions(wines, zoneMap, true);
+    expect(suggestions).toHaveLength(0);
   });
 });

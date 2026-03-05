@@ -150,6 +150,12 @@ router.get('/analyse', asyncHandler(async (req, res) => {
     emptyFridgeSlots
   });
 
+  // Phase 3.2: cross-area suggestions (cellar↔fridge based on drinking windows)
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, report.fridgeStatus);
+  if (crossAreaSuggestions.length > 0) {
+    report.crossAreaSuggestions = crossAreaSuggestions;
+  }
+
   // Cache the FULL report (AI route and reconfig planner need all fields)
   const wineCount = wines.filter(w => w.slot_id || w.location_code).length;
   await cacheAnalysis(cacheKey, report, wineCount, req.cellarId);

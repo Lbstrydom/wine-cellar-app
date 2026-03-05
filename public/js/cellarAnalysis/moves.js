@@ -1406,24 +1406,39 @@ export function renderGroupingSteps(groupingSteps, groupingMoves, groupingByArea
 
   _groupingStepsDone.clear();
 
-  // Multi-area mode: render each area's steps under a labelled header
+  // Multi-area mode: render each area's steps + cross-row moves under a labelled header
   const areaEntries = groupingByArea ? Object.values(groupingByArea) : [];
   if (areaEntries.length > 0) {
     container.style.display = 'block';
     let html = '';
     for (const area of areaEntries) {
-      if (!area.steps || area.steps.length === 0) continue;
-      const totalAreaSteps = area.steps.reduce((s, r) => s + r.steps.length, 0);
+      const areaCrossRow = (area.groupingMoves || []).filter(m => {
+        const fromRow = (m.from ?? '').match(/^(R\d+)/)?.[1];
+        const toRow = (m.to ?? '').match(/^(R\d+)/)?.[1];
+        return fromRow && toRow && fromRow !== toRow;
+      });
+      const hasAreaSteps = area.steps && area.steps.length > 0;
+      if (!hasAreaSteps && areaCrossRow.length === 0) continue;
+      const totalAreaSteps = hasAreaSteps
+        ? area.steps.reduce((s, r) => s + r.steps.length, 0) : 0;
       html += `<div class="grouping-area-section" data-area-id="${escapeHtml(area.areaId)}">`;
       html += `<div class="grouping-area-header">${escapeHtml(area.areaName)}</div>`;
-      html += buildGroupingStepsHtml(area.steps, totalAreaSteps);
+      if (hasAreaSteps) html += buildGroupingStepsHtml(area.steps, totalAreaSteps);
+      if (areaCrossRow.length > 0) html += buildCrossRowMovesHtml(areaCrossRow, hasAreaSteps);
       html += '</div>';
     }
     listEl.innerHTML = html;
     for (const area of areaEntries) {
-      if (!area.steps || area.steps.length === 0) continue;
-      const totalAreaSteps = area.steps.reduce((s, r) => s + r.steps.length, 0);
-      wireStepButtons(area.steps, listEl, totalAreaSteps);
+      const areaCrossRow = (area.groupingMoves || []).filter(m => {
+        const fromRow = (m.from ?? '').match(/^(R\d+)/)?.[1];
+        const toRow = (m.to ?? '').match(/^(R\d+)/)?.[1];
+        return fromRow && toRow && fromRow !== toRow;
+      });
+      if (area.steps && area.steps.length > 0) {
+        const totalAreaSteps = area.steps.reduce((s, r) => s + r.steps.length, 0);
+        wireStepButtons(area.steps, listEl, totalAreaSteps);
+      }
+      if (areaCrossRow.length > 0) wireCrossRowButtons(areaCrossRow, listEl, container);
     }
     return;
   }
@@ -1488,34 +1503,10 @@ export function renderCrossAreaSuggestions(suggestions) {
           <div class="move-reason">${escapeHtml(s.reason || '')}</div>
         </div>
         <div class="move-actions">
-          <button class="btn btn-primary btn-small cross-area-move-btn" data-index="${i}">Move</button>
-          <button class="btn btn-secondary btn-small cross-area-ignore-btn" data-index="${i}">Ignore</button>
+          <button class="btn btn-secondary btn-small cross-area-ignore-btn" data-index="${i}">Dismiss</button>
         </div>
       </div>`;
   }).join('');
-
-  listEl.querySelectorAll('.cross-area-move-btn').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      const s = suggestions[Number.parseInt(btn.dataset.index, 10)];
-      if (!s || !s.from) return;
-      btn.disabled = true;
-      btn.textContent = 'Working...';
-      try {
-        // For cellar→fridge the API needs a target slot; use null to let the server pick.
-        // For fridge→cellar the server similarly finds the best row.
-        await executeCellarMoves([{ wineId: s.wineId, from: s.from, to: null }]);
-        showToast(`Moved ${s.wineName}`);
-        btn.closest('.cross-area-item')?.remove();
-        if (!listEl.querySelector('.cross-area-item')) container.style.display = 'none';
-        await refreshLayout();
-      } catch (err) {
-        showToast(`Error: ${err.message}`);
-        btn.disabled = false;
-        btn.textContent = 'Move';
-      }
-    });
-  });
 
   listEl.querySelectorAll('.cross-area-ignore-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
