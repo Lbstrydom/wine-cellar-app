@@ -560,7 +560,7 @@ export async function cachePublicExtraction(
 // Bump this version when analysis logic changes to invalidate cached results.
 // The version is included in the slot hash so code changes bust the cache
 // even when slot assignments haven't changed.
-const ANALYSIS_LOGIC_VERSION = 8;  // v8: include storage_area_rows layout in cache fingerprint
+const ANALYSIS_LOGIC_VERSION = 9;  // v9: fix collectCandidateCounts to use physical zoneMap location
 
 /**
  * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
