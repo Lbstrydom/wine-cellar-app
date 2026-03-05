@@ -6,7 +6,7 @@
  * @module services/cellar/cellarAnalysis
  */
 
-import { getZoneById } from '../../config/cellarZones.js';
+import { getZoneById, CELLAR_ZONES } from '../../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
 import { findBestZone, inferColour } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
@@ -367,6 +367,14 @@ export async function analyseCellar(wines) {
     report.layoutProposal = null;
   }
 
+  // ── Phase 4.4: Zone health suggestions ───────────────────
+  // Surface when buffer zones have accumulated enough high-confidence
+  // wines to justify a new dedicated zone, or active zones are too sparse.
+  const zoneHealthSuggestions = generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations);
+  if (zoneHealthSuggestions.length > 0) {
+    report.zoneHealthSuggestions = zoneHealthSuggestions;
+  }
+
   return report;
 }
 
@@ -538,6 +546,119 @@ function buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap) {
     }
     report.summary.zonesUsed++;
   }
+}
+
+// ───────────────────────────────────────────────────────────
+// Phase 4.4: Zone health suggestion engine
+// ───────────────────────────────────────────────────────────
+
+/** Bottles in a buffer/fallback zone to trigger "enable dedicated zone" suggestion. */
+const ZONE_ENABLE_THRESHOLD = 10;
+/** Bottles below which an active zone triggers "consider merging" suggestion. */
+const ZONE_MERGE_THRESHOLD = 3;
+
+/**
+ * Generate zone health suggestions by looking at:
+ * (a) Buffer/fallback zones with many high-confidence wines → suggest enabling a dedicated zone
+ * (b) Active zones with very few bottles → suggest merging into buffer
+ *
+ * @param {Object[]} wines - All wines with slot assignments
+ * @param {Object}   zoneMap - Active zone map (rowId → zoneInfo)
+ * @param {boolean}  hasZoneAllocations
+ * @returns {Object[]} Suggestions array
+ */
+/**
+ * Count wines in buffer/fallback zones that have a high-confidence specific zone match.
+ * @param {Object[]} cellarWines
+ * @returns {Map<string, {high: number, total: number}>} zoneId → confidence counts
+ */
+function collectCandidateCounts(cellarWines) {
+  const counts = new Map();
+  for (const wine of cellarWines) {
+    const result = findBestZone(wine);
+    const zone = getZoneById(result.zoneId);
+    if (!zone?.isBufferZone && !zone?.isFallbackZone) continue;
+
+    // Best non-buffer alternative this wine would naturally fit
+    const specificZoneId = result.alternativeZones?.find(a => {
+      const z = getZoneById(a.zoneId);
+      return z && !z.isBufferZone && !z.isFallbackZone;
+    })?.zoneId;
+    if (!specificZoneId) continue;
+
+    if (!counts.has(specificZoneId)) counts.set(specificZoneId, { high: 0, total: 0 });
+    const entry = counts.get(specificZoneId);
+    entry.total++;
+    if (result.confidence === 'high') entry.high++;
+  }
+  return counts;
+}
+
+/**
+ * Count bottles per active zone using the current zone-row map.
+ * @param {Object[]} cellarWines
+ * @param {Object}   zoneMap
+ * @returns {Map<string, number>} zoneId → bottle count
+ */
+function collectActiveZoneCounts(cellarWines, zoneMap) {
+  const counts = new Map();
+  for (const wine of cellarWines) {
+    const slotId = wine.slot_id || wine.location_code;
+    const rowId = slotId?.match(/^(R\d+)/)?.[1];
+    const zoneInfo = rowId ? zoneMap[rowId] : null;
+    if (!zoneInfo) continue;
+    counts.set(zoneInfo.zoneId, (counts.get(zoneInfo.zoneId) || 0) + 1);
+  }
+  return counts;
+}
+
+/** Build enable_zone suggestions from candidate counts. */
+function buildEnableZoneSuggestions(candidateCounts) {
+  const suggestions = [];
+  for (const [zoneId, counts] of candidateCounts) {
+    if (counts.total < ZONE_ENABLE_THRESHOLD) continue;
+    const zone = getZoneById(zoneId);
+    if (!zone) continue;
+    const plural = counts.total === 1 ? '' : 's';
+    suggestions.push({
+      type: 'enable_zone',
+      zoneId,
+      displayName: zone.displayName || zoneId,
+      bottleCount: counts.total,
+      highConfidenceCount: counts.high,
+      message: `${counts.total} bottle${plural} would fit "${zone.displayName}" — consider adding a dedicated zone section`
+    });
+  }
+  return suggestions;
+}
+
+/** Build merge_zone suggestions from active zone counts. */
+function buildMergeZoneSuggestions(cellarWines, zoneMap) {
+  const suggestions = [];
+  const activeZoneCounts = collectActiveZoneCounts(cellarWines, zoneMap);
+  for (const [zoneId, count] of activeZoneCounts) {
+    if (count > ZONE_MERGE_THRESHOLD) continue;
+    const zone = getZoneById(zoneId);
+    if (!zone || zone.isBufferZone || zone.isFallbackZone) continue;
+    const plural = count === 1 ? '' : 's';
+    suggestions.push({
+      type: 'merge_zone',
+      zoneId,
+      displayName: zone.displayName || zoneId,
+      bottleCount: count,
+      message: `"${zone.displayName}" has only ${count} bottle${plural} — consider merging into a buffer zone`
+    });
+  }
+  return suggestions;
+}
+
+function generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations) {
+  const cellarWines = wines.filter(w => (w.slot_id ?? w.location_code)?.startsWith('R'));
+  const enableSuggestions = buildEnableZoneSuggestions(collectCandidateCounts(cellarWines));
+  const mergeSuggestions = hasZoneAllocations
+    ? buildMergeZoneSuggestions(cellarWines, zoneMap)
+    : [];
+  return [...enableSuggestions, ...mergeSuggestions];
 }
 
 // ───────────────────────────────────────────────────────────

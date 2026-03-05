@@ -18,6 +18,7 @@ import {
   getSavedZoneLayout,
   generateConsolidationMoves
 } from '../services/zone/zoneLayoutProposal.js';
+import { proposeZones } from '../services/zone/zoneAutoDiscovery.js';
 import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { discussZoneClassification } from '../services/zone/zoneChat.js';
 import { asyncHandler } from '../utils/errorResponse.js';
@@ -120,6 +121,44 @@ router.get('/zones-needing-review', asyncHandler(async (_req, res) => {
 router.get('/zone-layout/propose', asyncHandler(async (req, res) => {
   const proposal = await proposeZoneLayout(req.cellarId);
   res.json({ success: true, ...proposal });
+}));
+
+// ============================================================
+// Zone Auto-Discovery Endpoints (Phase 4.1/4.2)
+// ============================================================
+
+/**
+ * POST /api/cellar/zones/propose
+ * Analyse collection and propose an optimal, collection-scoped zone set.
+ * Body (optional): { minBottlesPerZone: number }
+ */
+router.post('/zones/propose', asyncHandler(async (req, res) => {
+  const { minBottlesPerZone } = req.body || {};
+  const proposal = await proposeZones(req.cellarId, {
+    ...(minBottlesPerZone != null && { minBottlesPerZone: Number(minBottlesPerZone) })
+  });
+  res.json({ success: true, ...proposal });
+}));
+
+/**
+ * POST /api/cellar/zones/apply
+ * Persist a zone proposal (assignments array) and invalidate analysis cache.
+ * Body: { assignments: [{ zoneId, assignedRows, bottleCount }] }
+ */
+router.post('/zones/apply', asyncHandler(async (req, res) => {
+  const { assignments } = req.body || {};
+
+  if (!Array.isArray(assignments) || assignments.length === 0) {
+    return res.status(400).json({ error: 'assignments array required' });
+  }
+
+  await saveZoneLayout(assignments, req.cellarId);
+  await invalidateAnalysisCache(null, req.cellarId);
+
+  res.json({
+    success: true,
+    message: `Applied zone layout with ${assignments.length} zone(s)`
+  });
 }));
 
 /**

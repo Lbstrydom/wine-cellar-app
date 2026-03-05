@@ -6,6 +6,7 @@
 import { analyseCellar } from '../api.js';
 import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis, switchWorkspace } from './state.js';
 import { renderMoves, renderCompactionMoves, renderGroupingSteps, renderRowAllocationInfo, renderCrossAreaSuggestions } from './moves.js';
+import { openZoneProposalModal } from './zoneProposal.js';
 import { renderFridgeStatus } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
@@ -313,6 +314,7 @@ function renderAnalysis(analysis, onRenderAnalysis) {
   renderCompactionMoves(analysis.compactionMoves);
   renderGroupingSteps(analysis.groupingSteps, analysis.groupingMoves, analysis.groupingByArea);
   renderCrossAreaSuggestions(analysis.crossAreaSuggestions);
+  renderZoneHealthSuggestions(analysis.zoneHealthSuggestions, _onRenderAnalysis);
   renderDuplicatePlacements(analysis.duplicatePlacements);
   renderRowAllocationInfo(analysis.layoutSettings);
   updateActionButton(analysis, onRenderAnalysis);
@@ -344,6 +346,47 @@ function renderAnalysis(analysis, onRenderAnalysis) {
       loadAnalysis(true);
     }
   };
+}
+
+/**
+ * Render Phase 4.4 zone health suggestion notifications.
+ * Suggestions come in two types:
+ *   enable_zone  — buffer zone has enough bottles for a dedicated section
+ *   merge_zone   — active zone too sparse, suggest collapsing to buffer
+ *
+ * @param {Object[]|undefined} suggestions
+ * @param {Function} onRenderAnalysis
+ */
+function renderZoneHealthSuggestions(suggestions, onRenderAnalysis) {
+  const section = document.getElementById('analysis-zone-health');
+  const list = document.getElementById('zone-health-list');
+  if (!section || !list) return;
+
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
+    section.style.display = 'none';
+    return;
+  }
+
+  section.style.display = '';
+  list.innerHTML = suggestions.map((s, idx) => {
+    const icon = s.type === 'enable_zone' ? '📈' : '📉';
+    const actionHtml = s.type === 'enable_zone'
+      ? `<button class="btn btn-secondary btn-small zone-health-propose-btn" data-idx="${idx}">Propose Zone Layout</button>`
+      : '';
+    return `
+      <div class="zone-health-card zone-health-${s.type}">
+        <span class="zone-health-icon">${icon}</span>
+        <span class="zone-health-message">${escapeHtml(s.message)}</span>
+        ${actionHtml}
+      </div>
+    `;
+  }).join('');
+
+  list.querySelectorAll('.zone-health-propose-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      openZoneProposalModal({ onApplied: onRenderAnalysis });
+    });
+  });
 }
 
 /**

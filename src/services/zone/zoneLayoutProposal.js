@@ -90,9 +90,11 @@ function classifyWine(wine) {
 /**
  * Propose optimal zone layout based on collection.
  * @param {string} cellarId - Cellar ID for tenant isolation
+ * @param {Object} [opts]
+ * @param {Object[]} [opts.zones] - Optional filtered zone list (defaults to all CELLAR_ZONES.zones)
  * @returns {Promise<Object>} Proposed layout with zone assignments
  */
-export async function proposeZoneLayout(cellarId) {
+export async function proposeZoneLayout(cellarId, opts = {}) {
   const [bottlesByZone, layoutSettings, storageAreaRows, totalCellarRows] = await Promise.all([
     getBottlesByZone(cellarId),
     getCellarLayoutSettings(cellarId),
@@ -100,6 +102,9 @@ export async function proposeZoneLayout(cellarId) {
     getCellarRowCount(cellarId)
   ]);
   const isRedsTop = layoutSettings.colourOrder === 'reds-top';
+
+  // Use caller-supplied zone list (per-cellar config) or the full global set.
+  const zoneList = opts.zones || CELLAR_ZONES.zones;
 
   // Zone groups by colour family — derived from zone definitions, not hardcoded.
   // Buffer zones go at the END of their colour block (last row of each section).
@@ -110,7 +115,7 @@ export async function proposeZoneLayout(cellarId) {
   const redBuffers = [];
   const anyColourZones = [];
 
-  for (const z of CELLAR_ZONES.zones) {
+  for (const z of zoneList) {
     if (z.isFallbackZone || z.isCuratedZone) {
       anyColourZones.push(z.id);
       continue;

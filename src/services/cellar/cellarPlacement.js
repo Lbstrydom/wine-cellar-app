@@ -18,6 +18,7 @@ import db from '../../db/index.js';
  * @param {Object} wine - Wine object with canonical fields
  * @param {Object} [options]
  * @param {boolean} [options.explain=false] - Include rejected zones with reasons
+ * @param {Object[]} [options.zones] - Optional per-cellar zone list (defaults to ZONE_PRIORITY_ORDER)
  * @returns {Object} Zone match result with confidence and alternatives
  */
 export function findBestZone(wine, options) {
@@ -26,7 +27,12 @@ export function findBestZone(wine, options) {
   const matches = [];
   const rejectedZones = explain ? [] : undefined;
 
-  for (const zoneId of ZONE_PRIORITY_ORDER) {
+  // Build the ordered zone list: use caller-supplied zones or the global priority order
+  const zoneList = options?.zones
+    ? options.zones.map(z => z.id)        // caller supplied filtered list
+    : ZONE_PRIORITY_ORDER;
+
+  for (const zoneId of zoneList) {
     const zone = getZoneById(zoneId);
     if (!zone) continue;
 

@@ -418,3 +418,63 @@ export function isBufferZoneId(zoneId) {
 export function getZoneById(zoneId) {
   return CELLAR_ZONES.zones.find(z => z.id === zoneId);
 }
+
+/**
+ * Get the effective zone list for a cellar.
+ *
+ * When the cellar has rows in `cellar_zone_config`, only enabled zones are
+ * returned, with any display-name or sort-order overrides applied.
+ * When no config exists the full global list is returned unchanged.
+ *
+ * @param {string|null} cellarId - Cellar ID (null → global list)
+ * @param {import('../db/index.js').default} db - DB instance
+ * @returns {Promise<Object[]>} Ordered zone objects
+ */
+export async function getZonesForCellar(cellarId, db) {
+  if (!cellarId || !db) return CELLAR_ZONES.zones;
+
+  let rows;
+  try {
+    rows = await db.prepare(`
+      SELECT zone_id, enabled, display_name, sort_order
+      FROM cellar_zone_config
+      WHERE cellar_id = ?
+    `).all(cellarId);
+  } catch {
+    // Table may not exist yet in older deployments — fall back gracefully
+    return CELLAR_ZONES.zones;
+  }
+
+  if (!rows || rows.length === 0) return CELLAR_ZONES.zones;
+
+  const configMap = new Map(rows.map(r => [r.zone_id, r]));
+
+  // Build customised zone list: only enabled zones, with overrides applied
+  const customised = CELLAR_ZONES.zones
+    .filter(z => {
+      const cfg = configMap.get(z.id);
+      // If no row exists for this zone it is implicitly enabled
+      return !cfg || cfg.enabled;
+    })
+    .map(z => {
+      const cfg = configMap.get(z.id);
+      if (!cfg) return z;
+      return {
+        ...z,
+        ...(cfg.display_name ? { displayName: cfg.display_name } : {}),
+        _sortOrder: cfg.sort_order ?? null
+      };
+    });
+
+  // Apply custom sort_order where specified; keep original order for the rest
+  customised.sort((a, b) => {
+    const aOrd = a._sortOrder;
+    const bOrd = b._sortOrder;
+    if (aOrd == null && bOrd == null) return 0;
+    if (aOrd == null) return 1;
+    if (bOrd == null) return -1;
+    return aOrd - bOrd;
+  });
+
+  return customised;
+}

@@ -15,7 +15,7 @@
 | **C** | Grouping UI | 1.7 | ✅ DONE | 1 / 1 |
 | **D** | Full Hardcoding Removal | 2.1 – 2.3 | ✅ DONE | 3 / 3 |
 | **E** | Multi-Storage-Area Grouping | 3.1 – 3.2 | ✅ DONE | 2 / 2 |
-| **F** | Zone Auto-Discovery | 4.1 – 4.4 | NOT STARTED | 0 / 4 |
+| **F** | Zone Auto-Discovery | 4.1 – 4.4 | ✅ DONE | 4 / 4 |
 
 ### Detailed Phase Tracker
 
@@ -33,10 +33,10 @@
 | **2.3** | Frontend: grid + fridge + layout API | ✅ DONE | — | GET /api/cellar/layout added to cellarZoneLayout.js; fridge.js line 266 uses findEmptyFridgeSlot(); grid.js already dynamic |
 | **3.1** | Storage-area-scoped grouping | ✅ DONE | — | `planStorageAreaGrouping` in cellarSuggestions.js; `groupingByArea` in analysis report; per-area section headers in moves.js; candidate count limiter in cellarGrouping.js `findAssignment` |
 | **3.2** | Cross-storage-area suggestions | ✅ DONE | — | `generateCrossAreaSuggestions` in fridgeStocking.js; `crossAreaSuggestions` in report (route layer); `#analysis-cross-area` section + `renderCrossAreaSuggestions` in frontend |
-| **4.1** | Zone proposal engine | NOT STARTED | — | Depends on 2.3 |
-| **4.2** | Zone proposal API & UI | NOT STARTED | — | Depends on 4.1 |
-| **4.3** | Per-cellar zone configuration | NOT STARTED | — | Depends on 4.2 |
-| **4.4** | Collection-aware zone suggestions | NOT STARTED | — | Depends on 4.3 |
+| **4.1** | Zone proposal engine | ✅ DONE | — | `proposeZones` in zoneAutoDiscovery.js; classifies all wines via findBestZone, merges under-threshold zones into colour-scoped buffers, delegates row allocation to proposeZoneLayout |
+| **4.2** | Zone proposal API & UI | ✅ DONE | — | `POST /zones/propose` + `POST /zones/apply` in cellarZoneLayout.js; `openZoneProposalModal` in zoneProposal.js; confidence summary, merged-zones list, Apply button wired to saveZoneLayout |
+| **4.3** | Per-cellar zone configuration | ✅ DONE | — | `cellar_zone_config` table (migration 065); `getZonesForCellar(cellarId, db)` in cellarZones.js; `findBestZone` accepts `options.zones`; `proposeZoneLayout` accepts `opts.zones` |
+| **4.4** | Collection-aware zone suggestions | ✅ DONE | — | `generateZoneHealthSuggestions` in cellarAnalysis.js; `enable_zone` (≥10 bottles in buffer for specific zone) + `merge_zone` (≤3 bottles in active zone); `#analysis-zone-health` section + `renderZoneHealthSuggestions` + "Propose Zone Layout" button in analysis.js |
 
 ### Dependency Graph
 
