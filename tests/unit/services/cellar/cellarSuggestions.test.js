@@ -369,7 +369,7 @@ describe('generateSameWineGroupingMoves', () => {
   }
 
   it('returns empty array when slotToWine is empty', () => {
-    expect(generateSameWineGroupingMoves(new Map(), {})).toEqual([]);
+    expect(generateSameWineGroupingMoves(new Map(), {})).toHaveLength(0);
   });
 
   it('returns empty when all wines have only one bottle', () => {
@@ -377,7 +377,7 @@ describe('generateSameWineGroupingMoves', () => {
       { slot: 'R3C1', id: 1, wine_name: 'Wine A' },
       { slot: 'R3C3', id: 2, wine_name: 'Wine B' }
     ]);
-    expect(generateSameWineGroupingMoves(slotToWine, {})).toEqual([]);
+    expect(generateSameWineGroupingMoves(slotToWine, {})).toHaveLength(0);
   });
 
   it('returns empty when same-wine bottles are already contiguous', () => {
@@ -386,7 +386,7 @@ describe('generateSameWineGroupingMoves', () => {
       { slot: 'R3C2', id: 1, wine_name: 'Wine A' },
       { slot: 'R3C3', id: 1, wine_name: 'Wine A' }
     ]);
-    expect(generateSameWineGroupingMoves(slotToWine, {})).toEqual([]);
+    expect(generateSameWineGroupingMoves(slotToWine, {})).toHaveLength(0);
   });
 
   it('generates move to empty slot when scattered bottles exist', () => {
@@ -469,7 +469,7 @@ describe('generateSameWineGroupingMoves', () => {
       { slot: 'R5C1', id: 1, wine_name: 'Wine A' }
     ]);
     const moves = generateSameWineGroupingMoves(slotToWine, {});
-    expect(moves).toEqual([]);
+    expect(moves).toHaveLength(0);
   });
 
   it('skips bottles that are already part of contiguous block', () => {
@@ -498,10 +498,9 @@ describe('generateSameWineGroupingMoves', () => {
     }
   });
 
-  it('produces a valid sequential plan for interleaved same-name vintages', () => {
-    // Simulate: KZ-2018 at C5,C7 and KZ-2020 at C6,C8 (alternating)
-    // The old algorithm produced conflicting suggestions targeting the same slot.
-    // The simulation approach must produce moves that are valid when applied in order.
+  it('produces a valid atomic-step plan for interleaved same-name vintages', () => {
+    // KZ-2018 at C5,C7 and KZ-2020 at C6,C8 (alternating) → optimal plan: one swap step.
+    // The cycle-decomposition algorithm emits the swap as two symmetric primary moves.
     const initial = new Map([
       ['R11C5', { id: 10, wine_name: 'KZ Cab 2018' }],
       ['R11C6', { id: 20, wine_name: 'KZ Cab 2020' }],
@@ -510,19 +509,23 @@ describe('generateSameWineGroupingMoves', () => {
     ]);
     const moves = generateSameWineGroupingMoves(initial, {});
 
-    // Simulate applying each primary move in order — each must find the expected wine at "from"
+    // Apply each step atomically: snapshot sources, delete all, then set all.
+    // Two-phase apply correctly handles swap/rotation cycles where from/to overlap.
     const board = new Map(initial);
-    const primaryMoves = moves.filter(m => !m.reason?.startsWith('Make room'));
-    for (const move of primaryMoves) {
-      const fromEntry = board.get(move.from);
-      expect(fromEntry?.id).toBe(move.wineId); // wine is still where planned
-      const toEntry = board.get(move.to);
-      board.delete(move.from);
-      board.set(move.to, fromEntry);
-      if (toEntry) board.set(move.from, toEntry); // swap partner moves back
+    const rowSteps = moves._rowSteps?.[0]?.steps ?? [];
+    for (const step of rowSteps) {
+      const sources = new Map(step.moves.map(m => [m.from, board.get(`R11C${m.from}`)]));
+      for (const m of step.moves) board.delete(`R11C${m.from}`);
+      for (const m of step.moves) {
+        const val = sources.get(m.from);
+        if (val !== undefined) board.set(`R11C${m.to}`, val);
+      }
     }
 
-    // After all moves, each wine should have its bottles contiguous
+    // Conservation: no bottles lost during apply
+    expect(board.size).toBe(initial.size);
+
+    // After all steps, each wine should have its bottles contiguous
     const colsOf = (wineId) => [...board.entries()]
       .filter(([, w]) => w.id === wineId)
       .map(([slot]) => Number.parseInt(slot.match(/C(\d+)/)[1], 10))
@@ -534,9 +537,8 @@ describe('generateSameWineGroupingMoves', () => {
     expect(isContiguous(cols10)).toBe(true);
     expect(isContiguous(cols20)).toBe(true);
 
-    // At most 1 primary suggestion per wine (simulation keeps moves minimal)
-    expect(primaryMoves.filter(m => m.wineId === 10).length).toBeLessThanOrEqual(1);
-    expect(primaryMoves.filter(m => m.wineId === 20).length).toBeLessThanOrEqual(1);
+    // Optimal plan: at most 2 moves total (one swap is sufficient)
+    expect(moves.length).toBeLessThanOrEqual(2);
   });
 
   it('generates 0 moves for a wine that is already contiguous after simulation', () => {
@@ -562,10 +564,75 @@ describe('generateSameWineGroupingMoves', () => {
       { slot: 'R3C7', id: 2, wine_name: 'Wine B' }
     ]);
     const moves = generateSameWineGroupingMoves(slotToWine, {});
-    const wineAMoves = moves.filter(m => m.wineId === 1 && !m.reason?.startsWith('Make room'));
+    const wineAMoves = moves.filter(m => m.wineId === 1 && !m.reason?.startsWith('Swap'));
     // Wine A's primary move should go to an empty slot (C2), not displace Wine B
     expect(wineAMoves).toHaveLength(1);
     expect(wineAMoves[0].to).toBe('R3C2');
+  });
+
+  it('does not displace a contiguous pair to group a different wine — circular prevention', () => {
+    // Regression: Domaine at C1,C2 (already contiguous pair), El Castilla at C3,C4,C5,C7
+    // (scattered — C7 needs to join C3-C5 block), Douglas Green at C6 (single bottle).
+    // OLD BUG: algorithm picked C2 (Domaine contiguous pair) as swap target, then tried to
+    // re-group Domaine → generated R1C7↔R1C2 twice (circular, cancelling out).
+    // FIX: should pick C6 (Douglas Green, single) over C2 (contiguous pair).
+    const slotToWine = buildSlotMap([
+      { slot: 'R1C1', id: 10, wine_name: 'Domaine' },
+      { slot: 'R1C2', id: 10, wine_name: 'Domaine' },
+      { slot: 'R1C3', id: 20, wine_name: 'El Castilla' },
+      { slot: 'R1C4', id: 20, wine_name: 'El Castilla' },
+      { slot: 'R1C5', id: 20, wine_name: 'El Castilla' },
+      { slot: 'R1C6', id: 30, wine_name: 'Douglas Green' },
+      { slot: 'R1C7', id: 20, wine_name: 'El Castilla' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+
+    // El Castilla (id=20) should swap its C7 bottle with Douglas Green at C6 (single)
+    // — NOT with Domaine at C2 (contiguous pair that would cause circular suggestions)
+    const elCastillaPrimary = moves.filter(m => m.wineId === 20 && !m.reason?.startsWith('Swap'));
+    expect(elCastillaPrimary).toHaveLength(1);
+    expect(elCastillaPrimary[0].from).toBe('R1C7');
+    expect(elCastillaPrimary[0].to).toBe('R1C6');
+
+    // Domaine (id=10) was never disrupted — no grouping moves needed for it
+    const domaineMoves = moves.filter(m => m.wineId === 10);
+    expect(domaineMoves).toHaveLength(0);
+  });
+
+  it('does not fragment an already-grouped wine when grouping a second wine — fragmentation prevention', () => {
+    // Regression: Santa Alicia at C3,C4 (contiguous pair), KZ-2018 at C5,C7, KZ-2020 at C6,C8.
+    // OLD BUG: KZ-2018 swapped C7 with Santa Alicia C4 (contiguous pair), then KZ-2020 swapped
+    // its C8 with the KZ-2018 now at C5, leaving KZ-2018 fragmented at C4,C8.
+    // FIX: KZ-2018 should prefer C6 (KZ-2020, not yet contiguous) over C4 (Santa Alicia pair).
+    const slotToWine = buildSlotMap([
+      { slot: 'R11C1', id: 1, wine_name: '1865' },
+      { slot: 'R11C2', id: 1, wine_name: '1865' },
+      { slot: 'R11C3', id: 2, wine_name: 'Santa Alicia' },
+      { slot: 'R11C4', id: 2, wine_name: 'Santa Alicia' },
+      { slot: 'R11C5', id: 3, wine_name: 'KZ Cab 2018' },
+      { slot: 'R11C6', id: 4, wine_name: 'KZ Cab 2020' },
+      { slot: 'R11C7', id: 3, wine_name: 'KZ Cab 2018' },
+      { slot: 'R11C8', id: 4, wine_name: 'KZ Cab 2020' },
+      { slot: 'R11C9', id: 5, wine_name: 'Quoin Rock' }
+    ]);
+    const moves = generateSameWineGroupingMoves(slotToWine, {});
+
+    // KZ-2018 (id=3) should swap C7 with KZ-2020 (id=4) at C6 — NOT with Santa Alicia (id=2) at C4
+    // (Santa Alicia is a contiguous pair; displacing it would cause circular suggestions)
+    const kz2018Primary = moves.filter(m => m.wineId === 3 && !m.reason?.startsWith('Swap'));
+    expect(kz2018Primary).toHaveLength(1);
+    expect(kz2018Primary[0].from).toBe('R11C7');
+    expect(kz2018Primary[0].to).toBe('R11C6'); // Swaps with KZ-2020 (non-contiguous), not Santa Alicia
+
+    // KZ-2020 is the other half of the same swap — also gets an explicit primary move
+    const kz2020Primary = moves.filter(m => m.wineId === 4 && !m.reason?.startsWith('Swap'));
+    expect(kz2020Primary).toHaveLength(1);
+    expect(kz2020Primary[0].from).toBe('R11C6');
+    expect(kz2020Primary[0].to).toBe('R11C7');
+
+    // Santa Alicia was never disrupted — no make-room move targets it
+    const santaMakeRoom = moves.filter(m => m.wineId === 2);
+    expect(santaMakeRoom).toHaveLength(0);
   });
 });
 

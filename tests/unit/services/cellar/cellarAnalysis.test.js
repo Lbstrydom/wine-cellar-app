@@ -34,6 +34,10 @@ vi.mock('../../../../src/services/cellar/moveAuditor.js', () => ({
   auditMoveSuggestions: vi.fn().mockResolvedValue({ skipped: true, reason: 'disabled' })
 }));
 
+vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
+  getStorageAreaRows: vi.fn().mockResolvedValue([])
+}));
+
 vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
   LAYOUT_DEFAULTS: { colourOrder: 'whites-top', fillDirection: 'left' },
   isWhiteFamily: vi.fn((colour) => {

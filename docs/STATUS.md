@@ -1,5 +1,5 @@
 # Wine Cellar App - Status Report
-## 4 March 2026 (updated)
+## 5 March 2026 (updated)
 
 ---
 
@@ -9,27 +9,54 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 4 Mar 2026**:
+**Recent Enhancements** ✨ **NEW - 5 Mar 2026**:
+- **Dynamic Placement — Core Grouping Engine (Phases 1.2 & 1.3) — COMPLETE** ✅:
+  - **New module `cellarGrouping.js`** (388 lines): Pure-function target-first grouping algorithm with zero DB dependencies.
+    - `planRowGrouping(board, maxCol)`: Identifies multi-bottle wine groups, generates optimal contiguous placement via branch-and-bound backtracking, decomposes target permutation into atomic steps (moves, swaps, cycle rotations).
+    - **Branch-and-bound optimizer**: Cost-based pruning guarantees minimum-cost assignment. Only early-returns at cost=0 (provably optimal). Counterexample from reviewer (maxCol=8, 3 interleaved wines) verified: cost 8→6 after fix.
+    - **Cycle decomposition**: `decomposeIntoCycles()` detects length-1 no-ops, length-2 swaps, and length-k rotations. Steps ordered: empty-slot moves first, then swaps, then longer cycles.
+    - **`newlyAdded` backtracking**: Fallback path correctly tracks which positions were added to the committed set, rolling them back on branch failure (prevents committed-set corruption).
+    - Post-condition validation: conservation check, contiguity check, cross-step dependency check.
+  - **New layout provider `cellarLayout.js`**: `getStorageAreaRows()`, `getCellarRowCount()`, `getRowSlotIds()`, `getStorageAreasByType()` — cellar-scoped row-capacity provider consuming `storage_area_rows` table. Legacy fallback for cellars without configured rows.
+  - **Existing `cellarSuggestions.js` refactored**: `generateSameWineGroupingMoves()` now delegates to `planRowGrouping()` instead of greedy forward-simulation. Output converted to existing move format with backward-compatible `reason` strings. Hardcoded `row === 'R1' ? 7 : 9` replaced with `getRowCapacity(rowId, storageAreaRows)` in grouping paths.
+  - **Test suite — 26 deterministic unit tests** (`cellarGrouping.test.js`):
+    - Already-contiguous (0 steps), single-bottle wines (0 steps), simple gap fill, 2-wine swap, 3-wine cycle rotation, full-row reorganization, variable column counts (5, 7, 9, 12, 15, 20), edge cases (empty row, single column, single wine).
+    - Regression tests: contiguous-pair penalty heuristic, circular swap prevention, fragmentation prevention.
+  - **Test suite — 11 property-based invariants × 500 trials** (`cellarGrouping.property.test.js`):
+    - [1] Conservation (same wine IDs/counts before/after)
+    - [2] Contiguity (every multi-bottle wine ends contiguous)
+    - [3] Step-order safety (atomic execution never produces collisions)
+    - [4] No cross-step circular dependencies
+    - [5] Bounded cost (≤ 2× board size)
+    - [6] Idempotency (re-running on output → 0 steps)
+    - [7] Monotonic progress (each step reduces disorder)
+    - [8] Empty slot hygiene (moves to empty slots have no reverse)
+    - [9] Variable column counts (5-20) satisfy all invariants
+    - [10] Dense boards (every slot occupied) produce valid plans
+    - [11] Out-of-range columns (post-resize drift) — no crashes, conservation holds
+  - **Reviewer findings addressed** (2 independent code reviews):
+    - ✅ Fixed: `committed` set corruption in `findAssignment` fallback path (`newlyAdded` tracking with proper backtracking)
+    - ✅ Fixed: Interleaved delete+set in property test [3] and `cellarSuggestions.test.js` — changed to two-phase atomic apply (snapshot sources → delete all → set all)
+    - ✅ Fixed: Optimality bug — premature early return accepted first zero-null assignment without exploring cheaper alternatives; replaced with branch-and-bound pruning
+    - ✅ Fixed: Out-of-range column coverage gap — added property test [11]
+    - ⚠️ Deferred to Phase 1.5: `'Make room'` string coupling (moves.js L1004/L1040, cellarSuggestions.js L762)
+    - ⚠️ Deferred to Phase 2.1-2.3: Hardcoded cellar layout in bottles.js, cellarPlacement.js, cellarMetrics.js, cacheService.js
+    - ⚠️ Deferred to Phase 3.1: Candidate count limiter for extreme cases (W>5 multi-bottle wines, maxCol>20)
+  - **Phase tracker updated** in `docs/dp-plan.md`: Phase 1.2 ✅ DONE, Phase 1.3 ✅ DONE, Section A 2/4.
+  - **All 3124 tests passing** across 130 test files (up from 3079).
+
+**Previous Enhancements** (4 Mar 2026):
 - **Documentation Sync (AGENTS/CLAUDE/STATUS) — COMPLETE** ✅:
   - Synced `AGENTS.md` test guidance with `CLAUDE.md`: replaced stale `--no-isolate` language with the current per-file isolation policy and explicit rationale for keeping `--no-isolate` disabled.
   - Standardized test-mocking guidance (`vi.importActual()`, `vi.hoisted()`, targeted `spy.mockRestore()`) and strengthened prohibitions on `vi.resetModules()`/`vi.restoreAllMocks()` misuse.
   - Added explicit note in both docs that `npm run test:unit` uses Vitest default per-file isolation.
 
 - **Overflow Placement Logic Overhaul — COMPLETE** ✅:
-  - **`bottleScanner.js` `isInValidOverflow()`**: Extended from a single-path check (direct `overflowZoneId` chain) to two paths: (a) direct chain as before, (b) colour-compatible buffer/fallback zone. Covers curated zones (e.g. Curiosities) whose wines land in colour-appropriate buffers rather than a fixed overflow target.
-  - **`consolidationOpportunities` fix**: Simplified scattered-wine detection to reuse the already-computed `w.correctlyPlaced` flag instead of duplicating `isInValidOverflow` logic — eliminates false positives for wines validly placed in colour-compatible buffers.
-  - **`rowCleanlinessSweep` fix**: Replaced narrow `canonicalZone.overflowZoneId === rowZoneInfo.zoneId` guard with a full `isInValidOverflow()` call, suppressing false-positive row-cleanliness violations for the same two-path overflow case.
-  - **`cellarAnalysis.js` `buildZoneAnalysis`**: Updated overflow counting to remove the strict `overflowZoneId === zone.id` requirement; now correctly counts colour-compatible wines in any buffer/fallback zone as correctly placed when their canonical zone has no dedicated rows.
-  - **`cellarMetrics.js` `detectDuplicatePlacements`**: Guard against `bottle_count IS NULL` — when count is unknown, slot count is the ground truth; no false overflow flag.
-  - **`layoutDiffOrchestrator.js`**: Zero-moves CTA now shows a context-aware subtitle: if consolidation opportunities exist it says "X bottle(s) in overflow zones could be tidied up — see Zone Consolidation above" instead of the generic "No moves needed."
-  - **`consolidation.js`**: "View Moves" button conditionally rendered — hidden when `sortPlan` is explicitly empty (layout proposer returned zero moves), still shown when `layoutProposal` is absent (API failure fallback).
-  - **Tests**: Regression coverage added in `bottleScanner.test.js` (buffer/fallback two-path logic), `cellarMetrics.test.js` (NULL bottle_count guard), `consolidation.test.js` (conditional button + zero-moves subtitle). **All 3079 tests passing** (up from 3074; also resolved 5 pre-existing `buyingGuide` mock-leakage failures fixed as a side-effect of the test-file hygiene improvements).
+  - Extended `bottleScanner.js` `isInValidOverflow()` to two-path check (direct overflow chain + colour-compatible buffer/fallback). Fixed `consolidationOpportunities`, `rowCleanlinessSweep`, `buildZoneAnalysis` overflow counting, `detectDuplicatePlacements` NULL guard, zero-moves CTA subtitle, conditional "View Moves" button.
+  - Tests: `bottleScanner.test.js`, `cellarMetrics.test.js`, `consolidation.test.js`. All 3079 tests passing.
 
 - **Database Security Lint Fixes (Migration 063) — COMPLETE** ✅:
-  - **RLS enforcement**: Enabled Row Level Security on 5 tables created dynamically by recipe services (`wine_food_pairings`, `recipes`, `recipe_sync_state`, `recipe_sync_log`, `cooking_profiles`). Strategy: RLS enabled with no anon policies (blocks PostgREST; Express backend via `DATABASE_URL` bypasses RLS).
-  - **Stale table cleanup**: Dropped `wines_name_cleanup_backup_20260228` (one-off backup from Feb-28 name cleanup, no longer needed, had no RLS).
-  - **RLS perf fix**: Rewrote `source_credentials_isolation` policy to wrap `current_setting()` in a subquery — planner now hoists evaluation out of per-row loop.
-  - Migration: `data/migrations/063_security_lint_fixes_2.sql`.
+  - RLS enforcement on 5 recipe tables, stale backup table dropped, `source_credentials_isolation` policy perf fix.
 
 **Previous Enhancements** (3 Mar 2026):
 - **`color` → `colour` Standardisation — COMPLETE** ✅:

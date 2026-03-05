@@ -100,6 +100,17 @@ function classifyAlert(alert, summary) {
     return null;
   }
 
+  if (type === 'wine_grouping') {
+    return {
+      workspace: 'placement',
+      severity: 'info',
+      message: alert.message,
+      cta: TAB_CELLAR_PLACEMENT,
+      ctaWorkspace: 'placement',
+      sourceAlert: alert
+    };
+  }
+
   if (type === 'scattered_wines') {
     return {
       workspace: 'placement',

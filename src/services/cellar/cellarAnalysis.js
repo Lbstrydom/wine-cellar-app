@@ -10,6 +10,7 @@ import { getZoneById } from '../../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
 import { findBestZone, inferColour } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
+import { getStorageAreaRows } from './cellarLayout.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import {
@@ -75,6 +76,7 @@ export async function analyseCellar(wines) {
   };
 
   const zoneMap = await getActiveZoneMap(cellarId);
+  const storageAreaRows = cellarId ? await getStorageAreaRows(cellarId) : [];
   const slotToWine = new Map();
 
   // Build slot -> wine mapping
@@ -191,11 +193,12 @@ export async function analyseCellar(wines) {
   report.summary.gapCount = compactionMoves.length;
 
   // Generate same-wine grouping moves (swap scattered bottles within rows)
-  const sameRowGroupingMoves = generateSameWineGroupingMoves(slotToWine, zoneMap);
+  const sameRowGroupingMoves = generateSameWineGroupingMoves(slotToWine, zoneMap, storageAreaRows);
   // Generate cross-row grouping moves (consolidate wines split across rows in same zone)
-  const crossRowGroupingMoves = generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowGroupingMoves);
+  const crossRowGroupingMoves = generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowGroupingMoves, storageAreaRows);
   const groupingMoves = [...sameRowGroupingMoves, ...crossRowGroupingMoves];
   report.groupingMoves = groupingMoves;
+  report.groupingSteps = sameRowGroupingMoves._rowSteps || [];
   report.summary.groupingMoveCount = groupingMoves.length;
 
   // Dynamic row allocation based on current inventory
@@ -224,7 +227,7 @@ export async function analyseCellar(wines) {
   }
 
   if (groupingMoves.length > 0) {
-    const wineCount = new Set(groupingMoves.filter(m => !m.reason.startsWith('Make room')).map(m => m.wineId)).size;
+    const wineCount = new Set(groupingMoves.filter(m => !m.reason.startsWith('Swap')).map(m => m.wineId)).size;
     report.alerts.push({
       type: 'wine_grouping',
       severity: 'info',

@@ -6,7 +6,7 @@
  */
 
 import { findBestZone, inferColour } from './cellarPlacement.js';
-import { parseSlot } from './slotUtils.js';
+import { parseSlot, getRowCapacity } from './slotUtils.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 
@@ -65,17 +65,14 @@ function isInValidOverflow(physicalRow, canonicalZoneId, zoneMap, wine) {
   return false;
 }
 
-/** Slots per row: R1 has 7, all others have 9. */
-const SLOTS_PER_ROW_DEFAULT = 9;
-const SLOTS_ROW_1 = 7;
-
 /**
  * Get slot capacity for a given row ID.
+ * Delegates to the shared getRowCapacity utility (legacy 7/9 fallback).
  * @param {string} rowId - e.g. 'R1', 'R8'
  * @returns {number}
  */
 function rowCapacity(rowId) {
-  return rowId === 'R1' ? SLOTS_ROW_1 : SLOTS_PER_ROW_DEFAULT;
+  return getRowCapacity(rowId, []);
 }
 
 /**
@@ -172,7 +169,7 @@ export function scanBottles(wines, zoneMap) {
     const allocatedRowSet = zoneAllocatedRows.get(zoneId) || new Set();
 
     // Demand: how many standard (9-slot) rows this zone needs
-    const demandRows = Math.ceil(bottleCount / SLOTS_PER_ROW_DEFAULT);
+    const demandRows = Math.ceil(bottleCount / 9);
 
     // Deficit: compare bottle count against actual allocated capacity (R1=7, rest=9)
     const allocatedCapacity = [...allocatedRowSet].reduce(
@@ -180,7 +177,7 @@ export function scanBottles(wines, zoneMap) {
     );
     const overflow = bottleCount - allocatedCapacity;
     const rowDeficit = overflow > 0
-      ? Math.ceil(overflow / SLOTS_PER_ROW_DEFAULT) // additional standard rows needed
+      ? Math.ceil(overflow / 9) // additional standard rows needed
       : demandRows - allocatedRowSet.size;           // zero or negative (surplus)
 
     groups.push({
@@ -300,7 +297,7 @@ export function rowCleanlinessSweep(slotToWine, zoneMap) {
     const rowZone = getZoneById(rowZoneInfo.zoneId);
     const rowZoneColour = zoneColourFamily(rowZone);
     const rowNum = parseInt(rowId.slice(1), 10);
-    const maxCol = rowId === 'R1' ? SLOTS_ROW_1 : SLOTS_PER_ROW_DEFAULT;
+    const maxCol = rowCapacity(rowId);
 
     for (let col = 1; col <= maxCol; col++) {
       const slotId = `R${rowNum}C${col}`;

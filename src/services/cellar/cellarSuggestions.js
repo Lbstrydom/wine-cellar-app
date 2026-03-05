@@ -8,6 +8,8 @@ import { getZoneById } from '../../config/cellarZones.js';
 import { findAvailableSlot } from './cellarPlacement.js';
 import { getActiveZoneMap, getAllocatedRowMap } from './cellarAllocation.js';
 import { detectRowGaps, parseSlot } from './cellarMetrics.js';
+import { getRowCapacity } from './slotUtils.js';
+import { planRowGrouping } from './cellarGrouping.js';
 
 // ───────────────────────────────────────────────────────────
 // Zone allocation queries
@@ -696,125 +698,78 @@ function findLongestContiguousBlock(sortedCols) {
   return new Set(sortedCols.slice(bestStart, bestStart + bestLen));
 }
 
-export function generateSameWineGroupingMoves(slotToWine, zoneMap) {
-  const moves = [];
+/**
+ * Returns true if the wine at `targetCol` is already part of a contiguous
+ * run of ≥ 2 bottles in the mutableBoard. Used to deprioritise candidates
+ * that would break an already-formed group (preventing circular swaps and
+ * fragmentation bugs).
+ * @param {number} targetCol
+ * @param {Map<number, {wineId, wine}>} mutableBoard
+ * @returns {boolean}
+ */
+function isOccupantContiguous(targetCol, mutableBoard) {
+  const occupant = mutableBoard.get(targetCol);
+  if (!occupant) return false;
+  const cols = [];
+  for (const [c, entry] of mutableBoard) {
+    if (entry?.wineId === occupant.wineId) cols.push(c);
+  }
+  if (cols.length < 2) return false;
+  cols.sort((a, b) => a - b);
+  for (let i = 0; i < cols.length - 1; i++) {
+    if (cols[i + 1] === cols[i] + 1 && (cols[i] === targetCol || cols[i + 1] === targetCol)) {
+      return true;
+    }
+  }
+  return false;
+}
 
-  // Build per-row wine groups: row → Map<wineId, [{slotId, col, wine}]>
-  const rowWineGroups = new Map();
+export function generateSameWineGroupingMoves(slotToWine, zoneMap, storageAreaRows = []) {
+  const moves = [];
+  const allRowSteps = [];
+
+  // Build per-row board: rowId → Map<col, {wineId, wineName}>
+  const rowBoards = new Map();
   for (const [slotId, wine] of slotToWine) {
     const parsed = parseSlot(slotId);
     if (!parsed) continue;
     const rowId = `R${parsed.row}`;
-    if (!rowWineGroups.has(rowId)) rowWineGroups.set(rowId, new Map());
-    const wineMap = rowWineGroups.get(rowId);
-    if (!wineMap.has(wine.id)) wineMap.set(wine.id, []);
-    wineMap.get(wine.id).push({ slotId, col: parsed.col, wine });
+    if (!rowBoards.has(rowId)) rowBoards.set(rowId, new Map());
+    rowBoards.get(rowId).set(parsed.col, { wineId: wine.id, wineName: wine.wine_name });
   }
 
-  for (const [rowId, wineMap] of rowWineGroups) {
-    const maxCol = rowId === 'R1' ? 7 : 9;
+  for (const [rowId, board] of rowBoards) {
+    const maxCol = getRowCapacity(rowId, storageAreaRows);
+    const plan = planRowGrouping(board, maxCol);
+    if (plan.steps.length === 0) continue;
 
-    // Build a mutable copy of the row's board state: col → {wineId, wine}
-    // This allows each wine's moves to be planned against the board state
-    // that results from all previous wines' moves (forward simulation).
-    const mutableBoard = new Map();
-    for (const [slotId, wine] of slotToWine) {
-      const parsed = parseSlot(slotId);
-      if (!parsed || `R${parsed.row}` !== rowId) continue;
-      mutableBoard.set(parsed.col, { wineId: wine.id, wine });
-    }
+    // Store per-row steps for report.groupingSteps
+    allRowSteps.push({ rowId, steps: plan.steps, cost: plan.cost });
 
-    // Process wines sorted by bottle count descending (group largest wines first
-    // to avoid scattering them when making room for smaller wines).
-    const wineEntries = [...wineMap.entries()].sort((a, b) => b[1].length - a[1].length);
+    // Convert steps to flat moves (preserving atomic step order for downstream consumer)
+    for (const step of plan.steps) {
+      // Identify the primary (non-displacement) wine for swap description strings
+      const primaryMove = step.moves.find(m => !m.isDisplacement);
+      const primaryWineName = primaryMove?.wineName ?? step.moves[0].wineName;
 
-    for (const [wineId, bottles] of wineEntries) {
-      if (bottles.length < 2) continue;
-
-      // Read CURRENT positions from mutableBoard — reflects earlier moves this row
-      const currentCols = [];
-      for (const [col, entry] of mutableBoard) {
-        if (entry?.wineId === wineId) currentCols.push(col);
-      }
-      if (currentCols.length < 2) continue;
-      currentCols.sort((a, b) => a - b);
-
-      // Check contiguity against current board state (not original positions)
-      const isContiguous = currentCols.every((c, i) => i === 0 || c === currentCols[i - 1] + 1);
-      if (isContiguous) continue;
-
-      const wineName = bottles[0].wine.wine_name;
-
-      // Anchor on the longest existing contiguous run
-      const blockCols = findLongestContiguousBlock(currentCols);
-      const scattered = currentCols.filter(c => !blockCols.has(c));
-
-      for (const scatteredCol of scattered) {
-        const scatteredSlot = `${rowId}C${scatteredCol}`;
-
-        // Collect candidate target columns adjacent to the current anchor block
-        const candidateSet = new Set();
-        for (const bc of blockCols) {
-          if (bc - 1 >= 1) candidateSet.add(bc - 1);
-          if (bc + 1 <= maxCol) candidateSet.add(bc + 1);
-        }
-
-        // Sort: prefer empty slots (avoid displacing other wines unless necessary),
-        // then by distance to block centre.
-        const blockCenter = [...blockCols].reduce((a, b) => a + b, 0) / blockCols.size;
-        const candidates = [...candidateSet]
-          .filter(c => c !== scatteredCol && !blockCols.has(c))
-          .sort((a, b) => {
-            const aEmpty = !mutableBoard.has(a);
-            const bEmpty = !mutableBoard.has(b);
-            if (aEmpty !== bEmpty) return aEmpty ? -1 : 1; // empty slots first
-            return Math.abs(a - blockCenter) - Math.abs(b - blockCenter);
-          });
-
-        for (const targetCol of candidates) {
-          const targetSlot = `${rowId}C${targetCol}`;
-          const occupant = mutableBoard.get(targetCol);
-
-          if (!occupant) {
-            // Empty slot — simple move
-            moves.push({
-              type: 'grouping', wineId, wineName,
-              from: scatteredSlot, to: targetSlot,
-              reason: `Group ${wineName} bottles together in ${rowId}`,
-              confidence: 'medium', priority: 5
-            });
-            mutableBoard.set(targetCol, { wineId, wine: bottles[0].wine });
-            mutableBoard.delete(scatteredCol);
-            blockCols.add(targetCol);
-            break;
-          } else if (occupant.wineId !== wineId) {
-            // Occupied by a different wine — swap
-            moves.push({
-              type: 'grouping', wineId, wineName,
-              from: scatteredSlot, to: targetSlot,
-              reason: `Group ${wineName} bottles together in ${rowId}`,
-              confidence: 'medium', priority: 5
-            });
-            moves.push({
-              type: 'grouping',
-              wineId: occupant.wineId,
-              wineName: occupant.wine.wine_name,
-              from: targetSlot, to: scatteredSlot,
-              reason: `Make room for ${wineName} grouping in ${rowId}`,
-              confidence: 'medium', priority: 5
-            });
-            // Apply swap to mutableBoard so subsequent iterations see updated state
-            mutableBoard.set(targetCol, { wineId, wine: bottles[0].wine });
-            mutableBoard.set(scatteredCol, occupant);
-            blockCols.add(targetCol);
-            break;
-          }
-          // Same wine in target slot — already counted in blockCols, skip
-        }
+      for (const m of step.moves) {
+        moves.push({
+          type: 'grouping',
+          wineId: m.wineId,
+          wineName: m.wineName,
+          from: `${rowId}C${m.from}`,
+          to: `${rowId}C${m.to}`,
+          reason: m.isDisplacement
+            ? `Swap: grouping ${primaryWineName} in ${rowId}`
+            : `Group ${m.wineName} bottles together in ${rowId}`,
+          confidence: 'medium',
+          priority: 5
+        });
       }
     }
   }
 
+  moves._rowSteps = allRowSteps;
   return moves;
 }
 
@@ -831,7 +786,7 @@ export function generateSameWineGroupingMoves(slotToWine, zoneMap) {
  * @param {Array<Object>} sameRowMoves - Moves from generateSameWineGroupingMoves()
  * @returns {Array<Object>} Cross-row grouping move suggestions (priority 6)
  */
-export function generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves = []) {
+export function generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves = [], storageAreaRows = []) {
   const moves = [];
 
   // Build simulated occupancy from same-row pass to avoid conflicts
@@ -886,7 +841,7 @@ export function generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves 
       if (scattered.length === 0) continue;
 
       // Count empty slots in anchor row, excluding already-allocated targets
-      const maxCol = anchorRow === 1 ? 7 : 9;
+      const maxCol = getRowCapacity(`R${anchorRow}`, storageAreaRows);
       const emptyInAnchor = [];
       for (let c = 1; c <= maxCol; c++) {
         const slotId = `R${anchorRow}C${c}`;

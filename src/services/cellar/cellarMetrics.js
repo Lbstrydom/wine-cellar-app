@@ -22,7 +22,7 @@ export { parseSlot };
  * @param {Array} wines - Wines in zone
  * @returns {number} Fragmentation score 0-100
  */
-export function calculateFragmentation(rows, wines) {
+export function calculateFragmentation(rows, wines, storageAreaRows = []) {
   if (wines.length <= 1) return 0;
 
   const slots = wines
@@ -40,11 +40,11 @@ export function calculateFragmentation(rows, wines) {
     if (prev.row === curr.row) {
       gaps += (curr.col - prev.col - 1);
     } else {
-      gaps += (9 - prev.col) + (curr.col - 1);
+      gaps += (getRowCapacity(`R${prev.row}`, storageAreaRows) - prev.col) + (curr.col - 1);
     }
   }
 
-  const maxPossibleGaps = (rows.length * 9) - wines.length;
+  const maxPossibleGaps = rows.reduce((sum, r) => sum + getRowCapacity(r, storageAreaRows), 0) - wines.length;
   return maxPossibleGaps > 0 ? Math.round((gaps / maxPossibleGaps) * 100) : 0;
 }
 
@@ -495,11 +495,11 @@ export function analyseZone(zone, zoneWines, rowId) {
  * @param {string} fillDirection - 'left' or 'right'
  * @returns {Array<{row: number, gapSlot: string, shiftFrom: string, wineId: number, wineName: string}>}
  */
-export function detectRowGaps(slotToWine, fillDirection = 'left') {
+export function detectRowGaps(slotToWine, fillDirection = 'left', storageAreaRows = []) {
   const gaps = [];
 
   for (let row = 1; row <= 19; row++) {
-    const maxCol = row === 1 ? 7 : 9;
+    const maxCol = getRowCapacity(`R${row}`, storageAreaRows);
     const occupied = [];
     const empty = [];
 

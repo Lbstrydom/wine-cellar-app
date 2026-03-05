@@ -8,6 +8,7 @@ import { ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { CONFIDENCE_THRESHOLDS, SCORING_WEIGHTS } from '../../config/cellarThresholds.js';
 import { getZoneRows, allocateRowToZone, getActiveZoneMap } from './cellarAllocation.js';
 import { grapeMatchesText } from '../../utils/wineNormalization.js';
+import { getRowCapacity } from './slotUtils.js';
 import { isWhiteFamily, getCellarLayoutSettings, getDynamicColourRowRanges, LAYOUT_DEFAULTS } from '../shared/cellarLayoutSettings.js';
 import { detectGrapesFromWine } from '../wine/grapeEnrichment.js';
 import db from '../../db/index.js';
@@ -540,7 +541,7 @@ export function findAdjacentToSameWine(rows, occupiedSet, sameWineSlots) {
   let bestDist = Infinity;
 
   for (const [row, wineCols] of sameWineByRow) {
-    const maxCol = row === 'R1' ? 7 : 9;
+    const maxCol = getRowCapacity(row, []);
     for (let col = 1; col <= maxCol; col++) {
       const slotId = `${row}C${col}`;
       if (occupiedSet.has(slotId)) continue;
@@ -580,7 +581,7 @@ function findSlotInRows(rows, occupiedSet, fillDirection = 'left', sameWineSlots
 
   // Default: first available slot in fill direction
   for (const row of sortedRows) {
-    const maxCol = row === 'R1' ? 7 : 9;
+    const maxCol = getRowCapacity(row, []);
     if (fillDirection === 'right') {
       for (let col = maxCol; col >= 1; col--) {
         const slotId = `${row}C${col}`;
@@ -634,7 +635,7 @@ function findAnyAvailableSlot(occupiedSet, wine = null, fillDirection = 'left', 
   }
 
   for (const rowNum of [...preferredRows, ...fallbackRows]) {
-    const maxCol = rowNum === 1 ? 7 : 9;
+    const maxCol = getRowCapacity(`R${rowNum}`, []);
     if (fillDirection === 'right') {
       for (let col = maxCol; col >= 1; col--) {
         const slotId = `R${rowNum}C${col}`;
