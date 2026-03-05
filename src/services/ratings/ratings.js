@@ -255,9 +255,11 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
   let insertedCount = 0;
 
   for (const rating of ratings) {
-    const sourceConfig = RATING_SOURCES[rating.source] || SOURCE_REGISTRY[rating.source];
+    // Normalize source name: "Decanter Magazine" → "decanter_magazine", "Tim Atkin" → "tim_atkin"
+    const sourceId = rating.source ? rating.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown';
+    const sourceConfig = RATING_SOURCES[sourceId] || SOURCE_REGISTRY[sourceId];
     if (!sourceConfig) {
-      logger.warn('Ratings', `Unknown source: ${rating.source}, skipping`);
+      logger.warn('Ratings', `Unknown source: ${rating.source} (normalized: ${sourceId}), skipping`);
       continue;
     }
 
@@ -268,7 +270,7 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
     }
 
     try {
-      const normalized = normalizeScore(rating.source, rating.score_type, rating.raw_score);
+      const normalized = normalizeScore(sourceId, rating.score_type, rating.raw_score);
 
       // Validate normalized values
       if (isNaN(normalized.min) || isNaN(normalized.max) || isNaN(normalized.mid)) {
@@ -291,7 +293,7 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
         cellarId,
         wineId,
         vintage,
-        rating.source,
+        sourceId,
         rating.lens || sourceConfig.lens,
         rating.score_type,
         rating.raw_score,
@@ -327,10 +329,12 @@ export async function saveRatings(wineId, vintage, ratings, cellarId = null) {
  */
 export function countSaveableRatings(ratings) {
   if (!ratings || !Array.isArray(ratings)) return 0;
-  return ratings.filter(r =>
-    !!(RATING_SOURCES[r.source]) &&
-    r.raw_score && r.raw_score !== 'null' && r.raw_score !== ''
-  ).length;
+  return ratings.filter(r => {
+    // Normalize source name the same way ratingsTier.js does before insert
+    const sourceId = r.source ? r.source.toLowerCase().replace(/[^a-z0-9]/g, '_') : 'unknown';
+    return !!(RATING_SOURCES[sourceId] || SOURCE_REGISTRY[sourceId]) &&
+      r.raw_score && r.raw_score !== 'null' && r.raw_score !== '';
+  }).length;
 }
 
 /**
