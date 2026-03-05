@@ -42,6 +42,7 @@ Output ONLY valid JSON (no markdown fences, no commentary):
 {"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null,"matched_wine_label":"...","evidence_excerpt":"..."}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}
 
 Rules:
+- source: use short lowercase_underscore IDs, e.g. "decanter", "wine_advocate", "tim_atkin", "wine_spectator", "wine_enthusiast", "jancis_robinson", "vivino", "cellartracker", "platters", "iwsc", "iwc", "michelangelo", "veritas", "old_mutual". Never use display names like "Decanter Magazine" or "Tim Atkin South Africa"
 - raw_score_numeric: number or null (e.g. "94/100" -> 94)
 - source_url: resolve from the SOURCE REFERENCE section, or null
 - matched_wine_label: the exact wine name as it appears in the source (e.g. "Backsberg Patriarch 2022")

@@ -68,27 +68,28 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
   const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
 
-  const sensitivity = getVintageSensitivity(wine);
-  const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
-
-  if (rawRatings.length > newRatings.length) {
-    logger.info('Ratings', `Filtered ${rawRatings.length - newRatings.length} ratings due to vintage mismatch (sensitivity: ${sensitivity})`);
-  }
+  const { accepted: newRatings, rejected: vintageRejected } = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
   // ONLY delete if we have valid replacements
   // This prevents losing data when search/extraction fails
   if (newRatings.length === 0) {
     const identityRejectedCount = identityRejected?.length ?? (rawRatings.length - identityValidRatings.length);
-    logger.info('Ratings', `No new ratings found via ${usedMethod}, keeping ${existingRatings.length} existing (${identityRejectedCount} rejected by identity gate)`);
+    const vintageRejectedCount = vintageRejected.length;
+    logger.info('Ratings', `No new ratings found via ${usedMethod}, keeping ${existingRatings.length} existing (${identityRejectedCount} identity, ${vintageRejectedCount} vintage)`);
 
-    const message = identityRejectedCount > 0
-      ? `Found ${rawRatings.length} ratings but all rejected by identity validation`
-      : 'No new ratings found, existing ratings preserved';
+    let message = 'No new ratings found, existing ratings preserved';
+    if (vintageRejectedCount > 0) {
+      message = `Found ${rawRatings.length} ratings but ${vintageRejectedCount} rejected by vintage filter (${getVintageSensitivity(wine)} sensitivity)`;
+    } else if (identityRejectedCount > 0) {
+      message = `Found ${rawRatings.length} ratings but all rejected by identity validation`;
+    }
 
     return res.json({
       message,
       ratings_kept: existingRatings.length,
       identity_rejected: identityRejectedCount,
+      vintage_rejected: vintageRejectedCount > 0 ? vintageRejectedCount : undefined,
+      vintage_sensitivity: vintageRejectedCount > 0 ? getVintageSensitivity(wine) : undefined,
       grapes_discovered: discoveredGrapes.length > 0 ? discoveredGrapes : undefined
     });
   }

@@ -21,7 +21,7 @@ import {
   buildIdentityTokensFromWine,
   validateRatingsWithIdentity
 } from '../services/ratings/ratings.js';
-import { filterRatingsByVintageSensitivity, getVintageSensitivity } from '../config/vintageSensitivity.js';
+import { filterRatingsByVintageSensitivity } from '../config/vintageSensitivity.js';
 import { getWineAwards } from '../services/awards/index.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
@@ -73,14 +73,9 @@ async function handleRatingFetch(payload, context) {
   ).get(wineId);
   const existingCount = existingCountRow?.count || 0;
 
-  const sensitivity = getVintageSensitivity(wine);
   const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
   const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
-  const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
-
-  if (rawRatings.length > newRatings.length) {
-    logger.info('UnifiedRatingFetchJob', `Filtered ${rawRatings.length - newRatings.length} ratings (sensitivity: ${sensitivity})`);
-  }
+  const { accepted: newRatings, rejected: vintageRejected } = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
   // ═══════════════════════════════════════════════════════════════════════════
   // NO-DELETE-ON-EMPTY INVARIANT
@@ -89,9 +84,17 @@ async function handleRatingFetch(payload, context) {
   // ═══════════════════════════════════════════════════════════════════════════
   if (newRatings.length === 0) {
     const identityRejectedCount = identityRejected?.length ?? (rawRatings.length - identityValidRatings.length);
+    const vintageRejectedCount = vintageRejected.length;
     logger.info('UnifiedRatingFetchJob',
-      `No new ratings found via ${usedMethod}, keeping ${existingCount} existing (${identityRejectedCount} rejected by identity gate)`
+      `No new ratings found via ${usedMethod}, keeping ${existingCount} existing (${identityRejectedCount} identity, ${vintageRejectedCount} vintage)`
     );
+
+    let searchNotes = 'No new ratings found, existing ratings preserved';
+    if (vintageRejectedCount > 0) {
+      searchNotes = `Found ${rawRatings.length} ratings but ${vintageRejectedCount} rejected by vintage filter`;
+    } else if (identityRejectedCount > 0) {
+      searchNotes = `Found ${rawRatings.length} ratings but all rejected by identity validation`;
+    }
 
     return {
       wineId,
@@ -104,9 +107,9 @@ async function handleRatingFetch(payload, context) {
       grapesDiscovered: null,
       grapesEnriched: false,
       method: usedMethod,
-      searchNotes: identityRejectedCount > 0
-        ? `Found ${rawRatings.length} ratings but all rejected by identity validation`
-        : 'No new ratings found, existing ratings preserved'
+      searchNotes,
+      vintageRejected: vintageRejectedCount,
+      identityRejected: identityRejectedCount
     };
   }
 

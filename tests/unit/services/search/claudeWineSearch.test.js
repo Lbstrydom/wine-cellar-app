@@ -650,7 +650,7 @@ describe('unifiedWineSearch() — error handling', () => {
     expect(result._error.userMessage).toContain('timed out');
   });
 
-  it('returns structured empty_response error when includeErrors=true and no narrative', async () => {
+  it('returns structured no_narrative error when includeErrors=true and search results but no text', async () => {
     mockStream.mockReturnValue(makeStreamFromContent([
       { type: 'web_search_tool_result', content: [] }
     ], 'end_turn'));
@@ -659,8 +659,8 @@ describe('unifiedWineSearch() — error handling', () => {
 
     expect(result).toBeTruthy();
     expect(result._error).toBeTruthy();
-    expect(result._error.code).toBe('empty_response');
-    expect(result._error.userMessage).toContain('empty response');
+    expect(result._error.code).toBe('no_narrative');
+    expect(result._error.userMessage).toContain('failed to generate a summary');
   });
 
   it('returns structured api_error for non-timeout errors when includeErrors=true', async () => {

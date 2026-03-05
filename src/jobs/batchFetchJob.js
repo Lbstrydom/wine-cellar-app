@@ -83,11 +83,7 @@ async function handleBatchFetch(payload, context) {
       // Identity validation + vintage sensitivity filter (mirrors unifiedRatingFetchJob)
       const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
       const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
-      const ratings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
-
-      if (rawRatings.length > ratings.length) {
-        logger.info('BatchFetchJob', `Filtered ${rawRatings.length - ratings.length} ratings by identity/vintage for ${wine.wine_name}`);
-      }
+      const { accepted: ratings } = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
       // Save ratings — only delete existing if new ratings have saveable sources
       if (ratings.length > 0 && countSaveableRatings(ratings) > 0) {

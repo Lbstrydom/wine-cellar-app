@@ -133,6 +133,12 @@ function buildSourceInjection(country) {
 
   const sources = getSourcesForCountry(country);
 
+  // Log when no local sources found — may indicate an unmapped country
+  const hasLocalSources = sources.some(s => s.home_regions?.length > 0 && s.home_regions.includes(country));
+  if (!hasLocalSources) {
+    logger.info('UnifiedWineSearch', `No local sources mapped for country "${country}" — using global sources only`);
+  }
+
   // Local = sources with explicit home_regions that include this country
   const localCompetitions = sources
     .filter(s => s.home_regions?.length > 0 && s.home_regions.includes(country) && s.lens === 'competition')
@@ -283,13 +289,24 @@ async function collectStreamContent(stream) {
 
   const t0 = Date.now();
   let eventCount = 0;
+  let skippedEvents = 0;
 
   for await (const event of stream) {
     eventCount++;
 
+    // Guard against malformed SSE events (missing type or delta)
+    if (!event?.type) {
+      skippedEvents++;
+      continue;
+    }
+
     switch (event.type) {
       case 'content_block_start': {
         const block = event.content_block;
+        if (!block?.type) {
+          skippedEvents++;
+          break;
+        }
 
         if (block.type === 'text') {
           currentBlock = { type: 'text', text: '', citations: [] };
@@ -313,7 +330,7 @@ async function collectStreamContent(stream) {
 
       case 'content_block_delta': {
         const delta = event.delta;
-        if (!currentBlock) break;
+        if (!delta?.type || !currentBlock) break;
 
         if (delta.type === 'text_delta' && currentBlock.type === 'text') {
           currentBlock.text += delta.text || '';
@@ -356,6 +373,9 @@ async function collectStreamContent(stream) {
     }
   }
 
+  if (skippedEvents > 0) {
+    logger.warn('UnifiedWineSearch', `Skipped ${skippedEvents} malformed SSE events out of ${eventCount}`);
+  }
   logger.info('UnifiedWineSearch', `Stream collected ${content.length} blocks (${eventCount} events) in ${Date.now() - t0}ms, stop=${stopReason}`);
 
   return { content, stopReason };
@@ -424,6 +444,24 @@ async function searchPhase(wine, params) {
       allContent.push(...contResult.content);
       lastStopReason = contResult.stopReason;
     }
+
+    // After pause_turn exhaustion: if we have search results but zero text blocks,
+    // log explicitly — the search worked but Claude never produced a summary
+    if (lastStopReason === 'pause_turn') {
+      const hasSearchResults = allContent.some(b => b.type === 'web_search_tool_result');
+      const hasText = allContent.some(b => b.type === 'text' && b.text?.trim().length > 0);
+      if (hasSearchResults && !hasText) {
+        logger.warn('UnifiedWineSearch', `pause_turn exhausted after ${continuations} continuations with search results but no text narrative`);
+      }
+    }
+  } catch (err) {
+    clearTimeout(abortTimer);
+    // Re-throw with clear context — AbortError means our safety timer fired
+    const isAbort = err?.name === 'AbortError' || String(err?.message || '').includes('abort');
+    if (isAbort) {
+      throw new Error(`Search stream aborted after ${STREAM_ABORT_TIMEOUT_MS}ms safety timeout`);
+    }
+    throw err;
   } finally {
     clearTimeout(abortTimer);
   }
@@ -508,13 +546,14 @@ CRITICAL RULES:
     if (!searchResult.narrative) {
       const stopReason = searchResult.lastStopReason || 'unknown';
       const blockTypes = searchResult.allContent.map(b => b.type).join(', ') || 'empty';
-      logger.warn('UnifiedWineSearch', `No text in response for "${wineName}" after ${searchResult.duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}])`);
+      const hasSearchResults = searchResult.allContent.some(b => b.type === 'web_search_tool_result');
+      const errorCode = hasSearchResults ? 'no_narrative' : 'empty_response';
+      const userMsg = hasSearchResults
+        ? 'Web search found results but failed to generate a summary. Please try again.'
+        : 'Wine search returned an empty response. Please try again.';
+      logger.warn('UnifiedWineSearch', `No text in response for "${wineName}" after ${searchResult.duration}ms (stop_reason: ${stopReason}, blocks: [${blockTypes}], hasSearchResults: ${hasSearchResults})`);
       if (includeErrors) {
-        return buildSearchError(
-          'empty_response',
-          'Wine search returned an empty response. Please try again.',
-          { wineName, duration: searchResult.duration, stopReason, blockTypes }
-        );
+        return buildSearchError(errorCode, userMsg, { wineName, duration: searchResult.duration, stopReason, blockTypes, hasSearchResults });
       }
       return null;
     }

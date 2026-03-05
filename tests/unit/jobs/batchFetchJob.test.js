@@ -39,7 +39,7 @@ vi.mock('../../../src/services/awards/index.js', () => ({
 }));
 
 vi.mock('../../../src/config/vintageSensitivity.js', () => ({
-  filterRatingsByVintageSensitivity: vi.fn().mockImplementation((_wine, ratings) => ratings),
+  filterRatingsByVintageSensitivity: vi.fn().mockImplementation((_wine, ratings) => ({ accepted: ratings, rejected: [] })),
   getVintageSensitivity: vi.fn().mockReturnValue('vintage')
 }));
 

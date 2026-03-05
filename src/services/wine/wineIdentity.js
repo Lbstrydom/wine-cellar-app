@@ -220,13 +220,62 @@ export function calculateIdentityScore(text, identityTokens) {
 
 /**
  * Match text against a set of tokens.
+ * Uses exact match first, then fuzzy match (edit distance ≤ 1) for tokens ≥ 5 chars
+ * to handle common typos (e.g., "patriach" matches "patriarch").
  * @param {string[]} tokens - Tokenized text
  * @param {string[]} targetTokens - Target tokens to find
- * @returns {boolean} True if all target tokens found
+ * @returns {boolean} True if all target tokens found (exact or fuzzy)
  */
 function matchesTokens(tokens, targetTokens) {
   if (!targetTokens || targetTokens.length === 0) return false;
-  return targetTokens.every(t => tokens.includes(t));
+  return targetTokens.every(t => tokens.includes(t) || fuzzyMatchToken(t, tokens));
+}
+
+/**
+ * Fuzzy match a single token against a list of candidates.
+ * Only applies to tokens ≥ 5 chars (short tokens have too many false positives).
+ * Uses Levenshtein distance ≤ 1 (single character insert/delete/replace/transpose).
+ * @param {string} target - Token to find
+ * @param {string[]} candidates - Candidate tokens to match against
+ * @returns {boolean} True if any candidate is within edit distance 1
+ */
+function fuzzyMatchToken(target, candidates) {
+  if (target.length < 5) return false;
+  return candidates.some(c => c.length >= 5 && editDistance1(target, c));
+}
+
+/**
+ * Check if two strings are within edit distance 1 (efficient early-exit implementation).
+ * Handles insertions, deletions, replacements, and transpositions.
+ * @param {string} a - First string
+ * @param {string} b - Second string
+ * @returns {boolean} True if edit distance ≤ 1
+ */
+function editDistance1(a, b) {
+  const lenDiff = a.length - b.length;
+  if (Math.abs(lenDiff) > 1) return false;
+  if (a === b) return true;
+
+  let mismatches = 0;
+  let i = 0;
+  let j = 0;
+
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) {
+      i++;
+      j++;
+    } else {
+      mismatches++;
+      if (mismatches > 1) return false;
+
+      if (lenDiff === 1) i++;       // deletion from a
+      else if (lenDiff === -1) j++;  // insertion into a
+      else { i++; j++; }            // replacement
+    }
+  }
+
+  // Remaining characters count as one edit
+  return mismatches + (a.length - i) + (b.length - j) <= 1;
 }
 
 /**

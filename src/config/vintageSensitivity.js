@@ -3,6 +3,8 @@
  * @module config/vintageSensitivity
  */
 
+import logger from '../utils/logger.js';
+
 /**
  * Vintage sensitivity levels:
  * - HIGH: Only exact vintage matches valid (age-worthy wines where each vintage differs)
@@ -217,33 +219,43 @@ export function isVintageMatchAcceptable(wine, wineVintage, ratingVintage, match
 
 /**
  * Filter ratings by vintage sensitivity.
+ * Returns both accepted ratings and rejected details for API visibility.
  * @param {Object} wine - Wine object
  * @param {Array} ratings - Extracted ratings
- * @returns {Array} Filtered ratings
+ * @returns {{accepted: Array, rejected: Array<{source: string, matchType: string, ratingVintage: number|null}>}}
  */
 export function filterRatingsByVintageSensitivity(wine, ratings) {
-  if (!ratings || !Array.isArray(ratings)) return [];
+  if (!ratings || !Array.isArray(ratings)) return { accepted: [], rejected: [] };
 
   const wineVintage = wine.vintage ? parseInt(wine.vintage) : null;
+  const accepted = [];
+  const rejected = [];
 
-  return ratings.filter(rating => {
+  for (const rating of ratings) {
     const ratingVintage = rating.vintage_year || rating.vintageYear;
     const matchType = rating.vintage_match || rating.vintageMatch || 'inferred';
 
-    const acceptable = isVintageMatchAcceptable(
+    const isAcceptable = isVintageMatchAcceptable(
       wine,
       wineVintage,
       ratingVintage,
       matchType
     );
 
-    if (!acceptable) {
-      console.log(`[Vintage] Rejecting ${rating.source} rating: ${matchType} match ` +
-        `(wine: ${wineVintage}, rating: ${ratingVintage}) for ${getVintageSensitivity(wine)} sensitivity wine`);
+    if (isAcceptable) {
+      accepted.push(rating);
+    } else {
+      rejected.push({ source: rating.source, matchType, ratingVintage });
     }
+  }
 
-    return acceptable;
-  });
+  if (rejected.length > 0) {
+    const sensitivity = getVintageSensitivity(wine);
+    const details = rejected.map(r => `${r.source}(${r.matchType})`).join(', ');
+    logger.info('VintageFilter', `Rejected ${rejected.length} rating(s) for ${sensitivity}-sensitivity wine (vintage ${wineVintage}): ${details}`);
+  }
+
+  return { accepted, rejected };
 }
 
 /**
