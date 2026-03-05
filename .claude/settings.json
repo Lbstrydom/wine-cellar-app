@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Read(//c/GIT/wine-cellar-app/**)"
+      "Read(//c/GIT/wine-cellar-app/**)",
+      "Bash(node -e \":*)"
     ]
   }
 }

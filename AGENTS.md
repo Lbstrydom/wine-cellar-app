@@ -1,4 +1,4 @@
-# AGENTS.md - AI Assistant Guidelines
+# CLAUDE.md - AI Assistant Guidelines
 
 This document defines coding standards and conventions for AI assistants working on the Wine Cellar App.
 
@@ -919,7 +919,7 @@ describe('Wine Routes', () => {
     it('returns all wines with bottle counts', async () => {
       // ...
     });
-
+    
     it('filters by colour when specified', async () => {
       // ...
     });
@@ -1684,7 +1684,7 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use raw `fetch()` for `/api/*` calls in frontend - use `api/` module functions instead (they add auth headers)
 - Parse LLM JSON with ad-hoc greedy regex when `extractJsonFromText()` already exists in `src/services/shared/auditUtils.js`
 - Use `vi.resetModules()` in unit tests — it resets module state in unexpected ways
-- Use `vi.restoreAllMocks()` — it restores `vi.mock()` registrations; use `vi.clearAllMocks()` or targeted `spy.mockRestore()` instead
+- Use `vi.restoreAllMocks()` — it restores vi.mock() registrations; use `vi.clearAllMocks()` or targeted `spy.mockRestore()` instead
 - Re-add `--no-isolate` to the `test:unit` script — it caused non-deterministic failures due to shared ESM live bindings across parallel workers (see Test Isolation Policy)
 
 ---
@@ -1711,5 +1711,5 @@ export function fuzzyMatch(a, b, threshold = 0.65) {
 - Use `api/` module functions for all frontend API calls (automatic auth headers)
 - Reuse `src/services/shared/auditUtils.js` when implementing any new LLM auditor module
 - Use `vi.importActual()` when a test needs the real module implementation despite its dependencies being mocked
-- Use `vi.hoisted()` for mock function references that must be created before `vi.mock()` factory execution
+- Use `vi.hoisted()` for mock function references that must be created before vi.mock() factory execution
 - Use targeted `spy.mockRestore()` instead of `vi.restoreAllMocks()` when restoring individual spies
