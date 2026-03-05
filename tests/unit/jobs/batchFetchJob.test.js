@@ -120,7 +120,8 @@ describe('handleBatchFetch() — batch rating fetch job', () => {
     expect(validateRatingsWithIdentity).toHaveBeenCalledWith(
       MOCK_WINE,
       MOCK_SEARCH_RESULT.ratings,
-      expect.any(Object)
+      expect.any(Object),
+      expect.objectContaining({ searchContext: expect.any(String) })
     );
   });
 

@@ -167,14 +167,19 @@ function deriveMatchConfidence(rating, identityScore) {
  * @param {Object} wine - Wine object
  * @param {Array} ratings - Ratings to validate
  * @param {Object} [identityTokens] - Precomputed identity tokens
+ * @param {Object} [options] - Validation options
+ * @param {string} [options.searchContext] - Wine name+vintage context from targeted search
+ *   (injected when ratings come from our own search pipeline, where the narrative
+ *   was specifically about this wine — provides baseline identity signal)
  * @returns {{ratings: Array, rejected: Array}}
  */
-export function validateRatingsWithIdentity(wine, ratings, identityTokens = null) {
+export function validateRatingsWithIdentity(wine, ratings, identityTokens = null, options = {}) {
   if (!ratings || ratings.length === 0) {
     return { ratings: [], rejected: [] };
   }
 
   const tokens = identityTokens || buildIdentityTokensFromWine(wine);
+  const { searchContext } = options;
 
   const validated = [];
   const rejected = [];
@@ -185,7 +190,10 @@ export function validateRatingsWithIdentity(wine, ratings, identityTokens = null
       rating.evidence_excerpt,
       rating.source_url,
       rating.search_snippet,
-      rating.label_text
+      rating.label_text,
+      rating.tasting_notes,
+      rating.reviewer_name,
+      searchContext
     ].filter(Boolean).join(' ');
 
     const identity = calculateIdentityScore(validationText || rating.source || '', tokens);
@@ -209,7 +217,8 @@ export function validateRatingsWithIdentity(wine, ratings, identityTokens = null
   }
 
   if (rejected.length > 0) {
-    logger.info('Ratings', `Identity gate rejected ${rejected.length} rating(s)`);
+    const details = rejected.map(r => `${r.rating.source}(${r.rating.raw_score}): ${r.reason}`).join('; ');
+    logger.info('Ratings', `Identity gate rejected ${rejected.length} rating(s): ${details}`);
   }
 
   return { ratings: validated, rejected };

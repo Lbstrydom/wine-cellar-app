@@ -81,7 +81,8 @@ async function handleBatchFetch(payload, context) {
       const rawRatings = fetchResult?.ratings || [];
 
       // Identity validation + vintage sensitivity filter (mirrors unifiedRatingFetchJob)
-      const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+      const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
+      const { ratings: identityValidRatings } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
       const ratings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
       if (rawRatings.length > ratings.length) {

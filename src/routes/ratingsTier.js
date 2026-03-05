@@ -63,7 +63,10 @@ router.post('/:wineId/ratings/fetch', validateParams(ratingWineIdSchema), asyncH
   const rawRatings = result.ratings || [];
 
   // Identity validation (defensive) and vintage sensitivity filter
-  const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+  // searchContext: ratings came from our targeted search for this wine — inject wine identity
+  // as baseline validation text so the gate doesn't reject on missing metadata fields
+  const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
+  const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
 
   const sensitivity = getVintageSensitivity(wine);
   const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);

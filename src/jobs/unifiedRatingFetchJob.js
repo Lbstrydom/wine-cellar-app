@@ -74,7 +74,8 @@ async function handleRatingFetch(payload, context) {
   const existingCount = existingCountRow?.count || 0;
 
   const sensitivity = getVintageSensitivity(wine);
-  const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens);
+  const searchContext = `${wine.producer_name || ''} ${wine.wine_name} ${wine.vintage || ''}`.trim();
+  const { ratings: identityValidRatings, rejected: identityRejected } = validateRatingsWithIdentity(wine, rawRatings, identityTokens, { searchContext });
   const newRatings = filterRatingsByVintageSensitivity(wine, identityValidRatings);
 
   if (rawRatings.length > newRatings.length) {

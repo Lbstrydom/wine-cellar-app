@@ -39,11 +39,13 @@ Use the SOURCE REFERENCE section to resolve source URLs for ratings.
 Each citation number [1], [2], etc. maps to a real URL listed there.
 
 Output ONLY valid JSON (no markdown fences, no commentary):
-{"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}
+{"ratings":[{"source":"...","source_lens":"competition|critics|community","score_type":"points|stars|medal","raw_score":"...","raw_score_numeric":null,"reviewer_name":"...","tasting_notes":"...","vintage_match":"exact|inferred|non_vintage","confidence":"high|medium|low","source_url":"...","competition_year":null,"rating_count":null,"matched_wine_label":"...","evidence_excerpt":"..."}],"tasting_notes":{"nose":[],"palate":[],"structure":{"body":"","tannins":"","acidity":""},"finish":""},"drinking_window":{"drink_from":null,"drink_by":null,"peak":null,"recommendation":""},"food_pairings":[],"style_summary":"","grape_varieties":[],"producer_info":{"name":"","region":"","country":"","description":""},"awards":[{"competition":"","year":null,"award":"","category":""}]}
 
 Rules:
 - raw_score_numeric: number or null (e.g. "94/100" -> 94)
 - source_url: resolve from the SOURCE REFERENCE section, or null
+- matched_wine_label: the exact wine name as it appears in the source (e.g. "Backsberg Patriarch 2022")
+- evidence_excerpt: a short quote (1-2 sentences) from the source mentioning the score
 - Empty array [] for missing list data, null for missing scalar data
 - No markdown code fences around the JSON`;
 
