@@ -22,6 +22,8 @@ import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { discussZoneClassification } from '../services/zone/zoneChat.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots } from './cellar.js';
+import { getStorageAreasByType, getCellarRowCount } from '../services/cellar/cellarLayout.js';
+import { getRowCapacity } from '../services/cellar/slotUtils.js';
 
 const router = express.Router();
 
@@ -205,6 +207,51 @@ router.post('/zone-chat', asyncHandler(async (req, res) => {
     success: true,
     ...result
   });
+}));
+
+/**
+ * GET /api/cellar/layout
+ * Returns dynamic storage area layout for this cellar.
+ * Used by frontend components to replace hardcoded row/slot constants.
+ */
+router.get('/layout', asyncHandler(async (req, res) => {
+  const [areasByType, totalCellarRows] = await Promise.all([
+    getStorageAreasByType(req.cellarId),
+    getCellarRowCount(req.cellarId)
+  ]);
+
+  const storageAreas = [];
+  let totalCellarSlots = 0;
+  let totalFridgeSlots = 0;
+
+  for (const [storageType, areas] of Object.entries(areasByType)) {
+    for (const area of areas) {
+      const rows = area.rows.map(r => ({
+        rowNum: r.row_num,
+        colCount: r.col_count,
+        label: r.label || null
+      }));
+      storageAreas.push({
+        id: area.id,
+        name: area.name,
+        storageType,
+        rows
+      });
+      const slotCount = rows.reduce((sum, r) => sum + r.colCount, 0);
+      if (storageType === 'cellar') totalCellarSlots += slotCount;
+      if (storageType === 'wine_fridge') totalFridgeSlots += slotCount;
+    }
+  }
+
+  // Legacy fallback: compute totals from row count when no storage_area_rows exist
+  if (totalCellarSlots === 0 && totalCellarRows > 0) {
+    for (let r = 1; r <= totalCellarRows; r++) {
+      totalCellarSlots += getRowCapacity(`R${r}`, []);
+    }
+  }
+  if (totalFridgeSlots === 0) totalFridgeSlots = 9;
+
+  res.json({ storageAreas, totalCellarSlots, totalFridgeSlots });
 }));
 
 export default router;

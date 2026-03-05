@@ -7,6 +7,7 @@
  */
 
 import db from '../../db/index.js';
+import { getCellarRowCount } from '../cellar/cellarLayout.js';
 
 /** @typedef {'whites-top'|'reds-top'} ColourOrder */
 /** @typedef {'left'|'right'} FillDirection */
@@ -90,8 +91,15 @@ export function computeDynamicRowSplit(whiteCount, redCount, totalRows = TOTAL_R
  * @param {number} whiteRowCount - Number of rows for whites (0 = all rows to reds)
  * @returns {{whiteRows: number[], redRows: number[]}}
  */
-export function getColourRowRanges(colourOrder, whiteRowCount) {
-  const total = TOTAL_ROWS;
+/**
+ * Build row number arrays from a colour order and white row count.
+ * @param {ColourOrder} colourOrder
+ * @param {number} whiteRowCount - Number of rows for whites (0 = all rows to reds)
+ * @param {number} [totalRows] - Total rows in cellar (defaults to TOTAL_ROWS)
+ * @returns {{whiteRows: number[], redRows: number[]}}
+ */
+export function getColourRowRanges(colourOrder, whiteRowCount, totalRows = TOTAL_ROWS) {
+  const total = totalRows;
   // Default split if whiteRowCount not provided (backward compat)
   const wrc = typeof whiteRowCount === 'number' ? whiteRowCount : Math.round(total * 0.37);
 
@@ -146,9 +154,12 @@ export async function countColourFamilies(cellarId) {
  * @returns {Promise<{whiteRows: number[], redRows: number[], whiteRowCount: number, redRowCount: number, whiteCount: number, redCount: number}>}
  */
 export async function getDynamicColourRowRanges(cellarId, colourOrder = 'whites-top') {
-  const counts = await countColourFamilies(cellarId);
-  const split = computeDynamicRowSplit(counts.whiteCount, counts.redCount);
-  const ranges = getColourRowRanges(colourOrder, split.whiteRowCount);
+  const [counts, totalRows] = await Promise.all([
+    countColourFamilies(cellarId),
+    getCellarRowCount(cellarId)
+  ]);
+  const split = computeDynamicRowSplit(counts.whiteCount, counts.redCount, totalRows);
+  const ranges = getColourRowRanges(colourOrder, split.whiteRowCount, totalRows);
   return {
     ...ranges,
     ...split,

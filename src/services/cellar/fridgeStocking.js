@@ -5,6 +5,7 @@
  */
 
 import { FRIDGE_PAR_LEVELS, FRIDGE_CAPACITY } from '../../config/fridgeParLevels.js';
+import { getStorageAreasByType } from './cellarLayout.js';
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
@@ -479,13 +480,21 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId, options 
   const reduceNowIds = await getReduceNowWineIds(cellarId);
 
   // Build the complete set of fridge slot codes dynamically.
-  // Occupied slots come from fridgeWines; empty slots from the pre-queried list
-  // (or fall back to the legacy hardcoded list for backward compatibility).
+  // Occupied slots come from fridgeWines; empty slots from the pre-queried list,
+  // or discovered from storage_area_rows, or legacy F1-F9 fallback.
   const occupiedSlotCodes = fridgeWines.map(w => w.slot_id || w.location_code).filter(Boolean);
-  const emptySlotCodes = emptyFridgeSlots
-    ?? ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'].filter(
-      s => !new Set(occupiedSlotCodes).has(s)
-    );
+  let resolvedEmptySlots = emptyFridgeSlots;
+  if (!resolvedEmptySlots) {
+    const areasByType = cellarId ? await getStorageAreasByType(cellarId) : {};
+    const fridgeAreas = areasByType.wine_fridge || [];
+    const fridgeSlotCount = fridgeAreas.reduce((sum, area) => {
+      return sum + area.rows.reduce((s, r) => s + (r.col_count || 0), 0);
+    }, 0) || 9; // legacy fallback
+    const occupiedSet = new Set(occupiedSlotCodes);
+    resolvedEmptySlots = Array.from({ length: fridgeSlotCount }, (_, i) => `F${i + 1}`)
+      .filter(s => !occupiedSet.has(s));
+  }
+  const emptySlotCodes = resolvedEmptySlots;
   const allSlots = [...new Set([...occupiedSlotCodes, ...emptySlotCodes])].sort(
     (a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10)
   );

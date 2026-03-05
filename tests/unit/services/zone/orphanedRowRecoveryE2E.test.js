@@ -46,6 +46,11 @@ vi.mock('../../../../src/services/cellar/slotUtils.js', () => ({
 
 // Zone allocations: R1 is intentionally MISSING (orphaned from a previous reconfig)
 // Return fresh arrays each call — Phase 0 mutates actualAssignedRows in-place
+vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
+  getStorageAreaRows: vi.fn().mockResolvedValue([]),
+  getCellarRowCount: vi.fn().mockResolvedValue(19)
+}));
+
 vi.mock('../../../../src/services/cellar/cellarAllocation.js', () => ({
   getAllZoneAllocations: vi.fn().mockImplementation(async () => [
     { zone_id: 'sauvignon_blanc', assigned_rows: ['R2', 'R3'] },

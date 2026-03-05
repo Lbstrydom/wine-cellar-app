@@ -262,10 +262,8 @@ async function moveAlternativeCandidate(category, altIndex) {
     return;
   }
 
-  // Find an empty fridge slot
-  const fridgeSlots = ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'];
-  const occupiedSlots = new Set(currentAnalysis.fridgeStatus.wines?.map(w => w.slot) || []);
-  const targetSlot = fridgeSlots.find(s => !occupiedSlots.has(s));
+  // Find an empty fridge slot — uses dynamic allSlots from analysis report
+  const targetSlot = findEmptyFridgeSlot(currentAnalysis.fridgeStatus);
 
   if (!targetSlot) {
     showToast('No empty fridge slots available');

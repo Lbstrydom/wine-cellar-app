@@ -13,16 +13,34 @@ import { invalidateAnalysisCache } from '../services/shared/cacheService.js';
 import { invalidateBuyingGuideCache } from '../services/recipe/buyingGuide.js';
 import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTracker.js';
 import { findAdjacentToSameWine } from '../services/cellar/cellarPlacement.js';
+import { getStorageAreaRows, getCellarRowCount, getStorageAreasByType } from '../services/cellar/cellarLayout.js';
+import { getRowCapacity } from '../services/cellar/slotUtils.js';
 
 const router = Router();
 
-// Grid layout constants
-const GRID_CONSTANTS = {
-  FRIDGE_MAX_SLOT: 9,
-  CELLAR_MAX_ROW: 19,
-  CELLAR_ROW1_COLS: 7,
-  CELLAR_OTHER_COLS: 9
-};
+/**
+ * Build dynamic grid limits from cellar layout (replaces hardcoded GRID_CONSTANTS).
+ * Falls back to legacy defaults when storage_area_rows data is absent.
+ * @param {string} cellarId
+ * @returns {Promise<{cellarMaxRow: number, getColCount: Function, fridgeMaxSlot: number, storageAreaRows: Array}>}
+ */
+async function getGridLimits(cellarId) {
+  const [storageAreaRows, totalCellarRows, areasByType] = await Promise.all([
+    getStorageAreaRows(cellarId),
+    getCellarRowCount(cellarId),
+    getStorageAreasByType(cellarId)
+  ]);
+  const fridgeAreas = areasByType.wine_fridge || [];
+  const fridgeMaxSlot = fridgeAreas.reduce((sum, area) => {
+    return sum + area.rows.reduce((s, r) => s + (r.col_count || 0), 0);
+  }, 0) || 9; // legacy fallback
+  return {
+    cellarMaxRow: totalCellarRows,
+    getColCount: (rowId) => getRowCapacity(rowId, storageAreaRows),
+    fridgeMaxSlot,
+    storageAreaRows
+  };
+}
 
 // Input validation schema
 const addBottlesSchema = z.object({
@@ -39,13 +57,13 @@ const addBottlesSchema = z.object({
  * @param {string} startLocation - Start location code (R#C#)
  * @returns {string[]} Row IDs to search for adjacency
  */
-function getZoneRowsForLocation(startLocation) {
+function getZoneRowsForLocation(startLocation, cellarMaxRow) {
   const match = startLocation.match(/R(\d+)C(\d+)/);
   if (!match) return [];
   const startRow = parseInt(match[1]);
   // Search a band of rows around the start location (±3 rows)
   const rows = [];
-  for (let r = Math.max(1, startRow - 3); r <= Math.min(GRID_CONSTANTS.CELLAR_MAX_ROW, startRow + 3); r++) {
+  for (let r = Math.max(1, startRow - 3); r <= Math.min(cellarMaxRow, startRow + 3); r++) {
     rows.push(`R${r}`);
   }
   return rows;
@@ -69,6 +87,9 @@ router.post('/add', asyncHandler(async (req, res) => {
 
   const { wine_id, start_location, quantity } = parseResult.data;
 
+  // Fetch dynamic grid limits (async factory — replaces GRID_CONSTANTS)
+  const gridLimits = await getGridLimits(req.cellarId);
+
   // Verify wine exists and belongs to this cellar
   const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
   if (!wine) {
@@ -83,7 +104,7 @@ router.post('/add', asyncHandler(async (req, res) => {
     const startNum = parseInt(start_location.substring(1));
     for (let i = 0; i < quantity; i++) {
       const slotNum = startNum + i;
-      if (slotNum > GRID_CONSTANTS.FRIDGE_MAX_SLOT) break;
+      if (slotNum > gridLimits.fridgeMaxSlot) break;
       consecutiveSlots.push(`F${slotNum}`);
     }
   } else {
@@ -96,11 +117,11 @@ router.post('/add', asyncHandler(async (req, res) => {
     let col = parseInt(match[2]);
 
     for (let i = 0; i < quantity; i++) {
-      const maxCol = row === 1 ? GRID_CONSTANTS.CELLAR_ROW1_COLS : GRID_CONSTANTS.CELLAR_OTHER_COLS;
+      const maxCol = gridLimits.getColCount(`R${row}`);
       if (col > maxCol) {
         row++;
         col = 1;
-        if (row > GRID_CONSTANTS.CELLAR_MAX_ROW) break;
+        if (row > gridLimits.cellarMaxRow) break;
       }
       consecutiveSlots.push(`R${row}C${col}`);
       col++;
@@ -131,7 +152,7 @@ router.post('/add', asyncHandler(async (req, res) => {
 
     if (sameWineSlots.length > 0) {
       // Try adjacency-aware placement
-      const zoneRows = getZoneRowsForLocation(start_location);
+      const zoneRows = getZoneRowsForLocation(start_location, gridLimits.cellarMaxRow);
 
       // Guard: out-of-range start_location (e.g. R999C1) returns empty zoneRows.
       // An empty zoneRows would produce IN () — invalid SQL → 500 error.
@@ -140,7 +161,7 @@ router.post('/add', asyncHandler(async (req, res) => {
         // Build occupied set for all rows in the zone band
         const allRowSlots = [];
         for (const row of zoneRows) {
-          const maxCol = row === 'R1' ? GRID_CONSTANTS.CELLAR_ROW1_COLS : GRID_CONSTANTS.CELLAR_OTHER_COLS;
+          const maxCol = gridLimits.getColCount(row);
           for (let c = 1; c <= maxCol; c++) allRowSlots.push(`${row}C${c}`);
         }
 

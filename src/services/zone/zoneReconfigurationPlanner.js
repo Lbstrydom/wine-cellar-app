@@ -12,6 +12,8 @@ import { extractText } from '../ai/claudeResponseUtils.js';
 import { getAllZoneAllocations } from '../cellar/cellarAllocation.js';
 import { getEffectiveZoneColour } from '../cellar/cellarMetrics.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges } from '../shared/cellarLayoutSettings.js';
+import { getStorageAreaRows, getCellarRowCount } from '../cellar/cellarLayout.js';
+import { getRowCapacity } from '../cellar/slotUtils.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
 import {
@@ -27,9 +29,8 @@ import { solveRowAllocation } from './rowAllocationSolver.js';
 /** LLM refinement timeout — must leave budget for analysis + response within route's 90s limit */
 const LLM_REFINEMENT_TIMEOUT_MS = 45_000;
 
-// Physical cellar constraints
-const TOTAL_CELLAR_ROWS = 19;
-const SLOTS_PER_ROW = 9; // Most rows have 9 slots (row 1 has 7)
+/** Legacy fallback row count for cellars without storage_area_rows data */
+const LEGACY_ROW_COUNT = 19;
 
 function clampStabilityBias(value) {
   if (value === 'low' || value === 'moderate' || value === 'high') return value;
@@ -96,7 +97,7 @@ function buildZoneUtilization(report) {
     const entry = utilization[zoneId];
     entry.bottleCount += za.currentCount ?? za.bottleCount ?? 0;
     entry.rowCount += 1;
-    entry.capacity += za.capacity ?? SLOTS_PER_ROW;
+    entry.capacity += za.capacity ?? 9; // legacy fallback: most rows have 9 slots
     entry.isOverflowing = entry.isOverflowing || (za.isOverflowing || false);
     entry.misplacedCount += za.misplaced?.length ?? 0;
     entry.correctCount += za.correctlyPlaced?.length ?? 0;
@@ -330,15 +331,21 @@ async function refinePlanWithLLM(ctx) {
     neverMerge, stability, includeRetirements,
     totalBottles, misplacedBottles, misplacementPct,
     report, zoneRowMap,
-    colourOrder = 'whites-top'
+    colourOrder = 'whites-top',
+    totalCellarRows: ctxTotalRows = LEGACY_ROW_COUNT,
+    storageAreaRows: ctxStorageAreaRows = []
   } = ctx;
+
+  const row1Slots = getRowCapacity('R1', ctxStorageAreaRows);
+  const totalCapacity = ctxStorageAreaRows.length > 0
+    ? ctxStorageAreaRows.reduce((sum, r) => sum + r.col_count, 0)
+    : (ctxTotalRows - 1) * 9 + row1Slots;
 
   const statePayload = {
     physicalConstraints: {
-      totalRows: TOTAL_CELLAR_ROWS,
-      slotsPerRow: SLOTS_PER_ROW,
-      row1Slots: 7,
-      totalCapacity: (TOTAL_CELLAR_ROWS - 1) * SLOTS_PER_ROW + 7  // R1 has 7, rest have 9
+      totalRows: ctxTotalRows,
+      row1Slots,
+      totalCapacity
     },
     currentState: { totalBottles, misplaced: misplacedBottles, misplacementPct },
     zones: zonesWithAllocations,
@@ -376,7 +383,7 @@ async function refinePlanWithLLM(ctx) {
   };
 
   const system = `You are a sommelier REVIEWING and REFINING an algorithmically generated cellar reconfiguration plan.
-The cellar has exactly ${TOTAL_CELLAR_ROWS} rows. You CANNOT add new rows.
+The cellar has exactly ${ctxTotalRows} rows. You CANNOT add new rows.
 
 A solver has already produced a draft plan. Your job is to:
 1. ACCEPT good actions as-is
@@ -407,7 +414,7 @@ Check colourAdjacencyIssues in the state data — if any violations remain unadd
 You may accept all draft actions, modify some, add new ones, or remove counterproductive ones.`
     : '\n\nNo draft plan available — generate a plan from scratch.';
 
-  const user = `Review and refine the reconfiguration plan within the ${TOTAL_CELLAR_ROWS}-row limit.
+  const user = `Review and refine the reconfiguration plan within the ${ctxTotalRows}-row limit.
 
 STATE JSON:
 ${JSON.stringify(statePayload, null, 2)}
@@ -619,7 +626,7 @@ export function buildMutatedZoneRowMap(initialMap, actions) {
 function heuristicGapFill(
   existingActions, capacityIssues, underutilizedZones,
   mergeCandidates, neverMerge, zonesWithAllocations, stability,
-  liveZoneRowMap  // Post-pipeline zone row map (avoids stale pre-solver state)
+  { liveZoneRowMap, totalRows = LEGACY_ROW_COUNT }
 ) {
   // Check which overflow zones were already addressed
   const addressedZones = new Set(
@@ -963,7 +970,11 @@ export async function generateReconfigurationPlan(report, options = {}) {
   } = options;
 
   const stability = clampStabilityBias(stabilityBias);
-  const neverMerge = await getNeverMergeZones(cellarId);
+  const [neverMerge, storageAreaRows, totalCellarRows] = await Promise.all([
+    getNeverMergeZones(cellarId),
+    getStorageAreaRows(cellarId),
+    getCellarRowCount(cellarId)
+  ]);
 
   const capacityIssues = summarizeCapacityIssues(report);
   const totalBottles = report?.summary?.totalBottles ?? 0;
@@ -1007,7 +1018,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
     for (const r of rows) assignedRows.add(r);
   }
   const orphanedRows = [];
-  for (let i = 1; i <= TOTAL_CELLAR_ROWS; i++) {
+  for (let i = 1; i <= totalCellarRows; i++) {
     if (!assignedRows.has(`R${i}`)) orphanedRows.push(`R${i}`);
   }
 
@@ -1048,7 +1059,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
         if (zoneRows.length > 0) {
           const zoneRowNums = zoneRows.map(r => parseInt(r.replace('R', ''), 10));
           const minDist = Math.min(...zoneRowNums.map(n => Math.abs(n - orphanNum)));
-          score += (TOTAL_CELLAR_ROWS - minDist) * 5;
+          score += (totalCellarRows - minDist) * 5;
         }
 
         if (score > bestScore) {
@@ -1107,7 +1118,8 @@ export async function generateReconfigurationPlan(report, options = {}) {
       stabilityBias: stability,
       scatteredWines: report.scatteredWines || [],
       colourAdjacencyIssues: report.colourAdjacencyIssues || [],
-      colourOrder: layoutSettings.colourOrder
+      colourOrder: layoutSettings.colourOrder,
+      totalRows: totalCellarRows
     });
     const solverMs = Date.now() - solverStart;
     const colourFixCount = solverResult.actions.filter(a => a.priority === 1 && a.reasonCode?.startsWith('fix_colour')).length;
@@ -1146,7 +1158,9 @@ export async function generateReconfigurationPlan(report, options = {}) {
         misplacementPct,
         report,
         zoneRowMap,
-        colourOrder: layoutSettings.colourOrder
+        colourOrder: layoutSettings.colourOrder,
+        totalCellarRows,
+        storageAreaRows
       });
       llmActions = llmResult.actions;
       llmReasoning = llmResult.reasoning;
@@ -1188,7 +1202,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const patchedActions = heuristicGapFill(
     baseActions, capacityIssues, underutilizedZones,
     mergeCandidates, neverMerge, zonesWithAllocations, stability,
-    mutatedZoneRowMap
+    { liveZoneRowMap: mutatedZoneRowMap, totalRows: totalCellarRows }
   );
 
   const planResult = {
@@ -1204,10 +1218,11 @@ export async function generateReconfigurationPlan(report, options = {}) {
   const reviewContext = {
     zones: zonesWithAllocations,
     physicalConstraints: {
-      totalRows: TOTAL_CELLAR_ROWS,
-      slotsPerRow: SLOTS_PER_ROW,
-      row1Slots: 7,
-      totalCapacity: (TOTAL_CELLAR_ROWS - 1) * SLOTS_PER_ROW + 7
+      totalRows: totalCellarRows,
+      row1Slots: getRowCapacity('R1', storageAreaRows),
+      totalCapacity: storageAreaRows.length > 0
+        ? storageAreaRows.reduce((sum, r) => sum + r.col_count, 0)
+        : (totalCellarRows - 1) * 9 + getRowCapacity('R1', storageAreaRows)
     },
     currentState: {
       totalBottles,

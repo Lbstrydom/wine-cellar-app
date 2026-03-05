@@ -67,12 +67,13 @@ function isInValidOverflow(physicalRow, canonicalZoneId, zoneMap, wine) {
 
 /**
  * Get slot capacity for a given row ID.
- * Delegates to the shared getRowCapacity utility (legacy 7/9 fallback).
+ * Delegates to the shared getRowCapacity utility (legacy 7/9 fallback when storageAreaRows is empty).
  * @param {string} rowId - e.g. 'R1', 'R8'
+ * @param {Array} [storageAreaRows=[]] - Dynamic row definitions from cellarLayout.js
  * @returns {number}
  */
-function rowCapacity(rowId) {
-  return getRowCapacity(rowId, []);
+function rowCapacity(rowId, storageAreaRows = []) {
+  return getRowCapacity(rowId, storageAreaRows);
 }
 
 /**
@@ -94,9 +95,10 @@ function rowSort(a, b) {
  *   zone_id, colour, grapes, country, region, style.
  * @param {Object} zoneMap - Active zone map from getActiveZoneMap().
  *   Keys are row IDs (e.g. 'R3'), values have { zoneId, displayName, ... }.
+ * @param {Array} [storageAreaRows=[]] - Dynamic row definitions from cellarLayout.js
  * @returns {{ groups: Array, consolidationOpportunities: Array, totalBottles: number, totalGroups: number }}
  */
-export function scanBottles(wines, zoneMap) {
+export function scanBottles(wines, zoneMap, storageAreaRows = []) {
   // ── 1. Filter to cellar-only wines (exclude fridge) ──────────
   const cellarWines = wines.filter(w => {
     const slot = w.slot_id || w.location_code;
@@ -173,7 +175,7 @@ export function scanBottles(wines, zoneMap) {
 
     // Deficit: compare bottle count against actual allocated capacity (R1=7, rest=9)
     const allocatedCapacity = [...allocatedRowSet].reduce(
-      (sum, rowId) => sum + rowCapacity(rowId), 0
+      (sum, rowId) => sum + rowCapacity(rowId, storageAreaRows), 0
     );
     const overflow = bottleCount - allocatedCapacity;
     const rowDeficit = overflow > 0
@@ -288,16 +290,17 @@ function wineColourFamily(wine) {
  * @param {Map<string, Object>} slotToWine - Slot ID → wine object mapping.
  * @param {Object} zoneMap - Active zone map from getActiveZoneMap().
  *   Keys are row IDs (e.g. 'R3'), values have { zoneId, displayName, ... }.
+ * @param {Array} [storageAreaRows=[]] - Dynamic row definitions from cellarLayout.js
  * @returns {Array<Object>} Violations sorted by severity (critical first) then score delta descending.
  */
-export function rowCleanlinessSweep(slotToWine, zoneMap) {
+export function rowCleanlinessSweep(slotToWine, zoneMap, storageAreaRows = []) {
   const violations = [];
 
   for (const [rowId, rowZoneInfo] of Object.entries(zoneMap)) {
     const rowZone = getZoneById(rowZoneInfo.zoneId);
     const rowZoneColour = zoneColourFamily(rowZone);
     const rowNum = parseInt(rowId.slice(1), 10);
-    const maxCol = rowCapacity(rowId);
+    const maxCol = rowCapacity(rowId, storageAreaRows);
 
     for (let col = 1; col <= maxCol; col++) {
       const slotId = `R${rowNum}C${col}`;

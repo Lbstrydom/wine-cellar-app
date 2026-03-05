@@ -22,6 +22,7 @@ import { getZoneById } from '../../config/cellarZones.js';
 import { getEffectiveZoneColour } from '../cellar/cellarMetrics.js';
 import { getRowCapacity } from '../cellar/slotUtils.js';
 
+/** Default total cellar rows (legacy fallback for cellars without storage_area_rows data). */
 const TOTAL_ROWS = 19;
 const SLOTS_PER_ROW = 9;
 
@@ -84,7 +85,8 @@ export function solveRowAllocation(params) {
     stabilityBias = 'moderate',
     scatteredWines = [],
     colourAdjacencyIssues: _colourAdjacencyIssues = [],
-    colourOrder = 'whites-top'
+    colourOrder = 'whites-top',
+    totalRows = TOTAL_ROWS
   } = params;
 
   // ───────────────────────────────────────────
@@ -98,7 +100,7 @@ export function solveRowAllocation(params) {
   // ───────────────────────────────────────────
   // Phase 2: Fix colour boundary violations
   // ───────────────────────────────────────────
-  const colourFixActions = fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder);
+  const colourFixActions = fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder, totalRows);
   if (colourFixActions.length > 0) {
     actions.push(...colourFixActions);
     const topLabel = colourOrder === 'reds-top' ? 'red' : 'white/rosé/sparkling';
@@ -113,7 +115,7 @@ export function solveRowAllocation(params) {
   // Phase 3: Resolve capacity deficits (greedy best-first)
   // ───────────────────────────────────────────
   const capacityActions = resolveCapacityDeficits(
-    zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias
+    zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias, totalRows
   );
   if (capacityActions.length > 0) {
     actions.push(...capacityActions);
@@ -128,7 +130,7 @@ export function solveRowAllocation(params) {
   // Phase 3b: Reclaim surplus rows (right-sizing)
   // ───────────────────────────────────────────
   const surplusActions = reclaimSurplusRows(
-    zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias
+    zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias, totalRows
   );
   if (surplusActions.length > 0) {
     actions.push(...surplusActions);
@@ -157,7 +159,7 @@ export function solveRowAllocation(params) {
   // Phase 5: Scattered wine consolidation
   // ───────────────────────────────────────────
   const scatterActions = consolidateScatteredWines(
-    zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias
+    zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias, totalRows
   );
   if (scatterActions.length > 0) {
     actions.push(...scatterActions);
@@ -187,7 +189,7 @@ export function solveRowAllocation(params) {
   // ───────────────────────────────────────────
   // Build reasoning narrative
   // ───────────────────────────────────────────
-  const reasoning = buildReasoning(finalActions, reasoningParts, utilization, zones, stabilityBias);
+  const reasoning = buildReasoning(finalActions, reasoningParts, utilization, zones, stabilityBias, totalRows);
 
   return { actions: finalActions, reasoning };
 }
@@ -298,7 +300,7 @@ function rowNum(rowId) {
  * @param {string} [colourOrder='whites-top'] - 'whites-top' or 'reds-top'
  * @returns {Array} Actions to fix colour violations
  */
-function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder = 'whites-top') {
+function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder = 'whites-top', totalRows = TOTAL_ROWS) {
   const actions = [];
   const whitesOnTop = colourOrder !== 'reds-top';
 
@@ -321,7 +323,7 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
   const rowsTooHigh = [];
   const rowsTooLow = [];
 
-  for (let r = 1; r <= TOTAL_ROWS; r++) {
+  for (let r = 1; r <= totalRows; r++) {
     const rId = `R${r}`;
     const zoneId = rowToZone.get(rId);
     if (!zoneId) continue;
@@ -329,15 +331,15 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
     if (colour === 'any') continue;
 
     if (whitesOnTop) {
-      // whites-top: white zones should be in rows 1..boundary, red in boundary+1..19
+      // whites-top: white zones should be in rows 1..boundary, red in boundary+1..totalRows
       if (colour === 'white' && r > boundary) {
         rowsTooHigh.push({ rowId: rId, rowNumber: r, zoneId });
       } else if (colour === 'red' && r <= boundary) {
         rowsTooLow.push({ rowId: rId, rowNumber: r, zoneId });
       }
     } else {
-      // reds-top: red zones should be in rows 1..redBoundary, white in redBoundary+1..19
-      const redBoundary = TOTAL_ROWS - boundary;
+      // reds-top: red zones should be in rows 1..redBoundary, white in redBoundary+1..totalRows
+      const redBoundary = totalRows - boundary;
       if (colour === 'red' && r > redBoundary) {
         rowsTooHigh.push({ rowId: rId, rowNumber: r, zoneId });
       } else if (colour === 'white' && r <= redBoundary) {
@@ -386,7 +388,7 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
   // sits exactly at the boundary (row N) next to a red zone row (row N+1).
   // Both are technically in their "correct" region, but the adjacency is
   // still a color violation. Scan for these and propose swaps.
-  const localFixActions = fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge);
+  const localFixActions = fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge, totalRows);
   actions.push(...localFixActions);
 
   return actions;
@@ -405,7 +407,7 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
  * @param {Set} neverMerge - Zones that can't be changed
  * @returns {Array} Swap actions to fix adjacency violations
  */
-function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
+function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge, totalRows = TOTAL_ROWS) {
   const actions = [];
 
   // Rebuild row→zone map from current state (after bulk swaps above)
@@ -416,7 +418,7 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
 
   // Build ordered color sequence for all assigned rows
   const rowColors = [];
-  for (let r = 1; r <= TOTAL_ROWS; r++) {
+  for (let r = 1; r <= totalRows; r++) {
     const rId = `R${r}`;
     const zoneId = rowToZone.get(rId);
     if (!zoneId) continue;
@@ -446,7 +448,7 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
     // In whites-top mode: the "expected" color for lower row numbers is white,
     // for higher row numbers is red. The row whose color doesn't match its
     // position expectation is the outlier.
-    const outlier = identifyOutlier(upper, lower, rowColors, i, whitesOnTop);
+    const outlier = identifyOutlier(upper, lower, rowColors, i, whitesOnTop, totalRows);
     const neighbor = outlier === upper ? lower : upper;
 
     // Find a swap partner: a row of the neighbor's color (same as the region
@@ -541,7 +543,7 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge) {
  * @param {boolean} whitesOnTop
  * @returns {Object} The outlier row
  */
-function identifyOutlier(upper, lower, rowColors, idx, whitesOnTop) {
+function identifyOutlier(upper, lower, rowColors, idx, whitesOnTop, totalRows = TOTAL_ROWS) {
   // Check surrounding context: what color are the neighbors outside this pair?
   const prevColour = idx > 0 ? rowColors[idx - 1].colour : null;
   const nextColour = idx + 2 < rowColors.length ? rowColors[idx + 2].colour : null;
@@ -556,7 +558,7 @@ function identifyOutlier(upper, lower, rowColors, idx, whitesOnTop) {
   }
 
   // Fall back to positional heuristic: which row's color doesn't match its region?
-  const mid = Math.ceil(TOTAL_ROWS / 2);
+  const mid = Math.ceil(totalRows / 2);
   if (whitesOnTop) {
     // White should be in lower row numbers. If a white row has a high number,
     // or a red row has a low number, that's the outlier.
@@ -627,7 +629,7 @@ function updateZoneRowMap(zoneRowMap, fromZone, rowId, toZone) {
  * @param {string} stabilityBias
  * @returns {Array} reallocate_row actions
  */
-function resolveCapacityDeficits(zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias) {
+function resolveCapacityDeficits(zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias, totalRows = TOTAL_ROWS) {
   const actions = [];
   const donated = new Set(); // Track rows already donated this round
 
@@ -804,7 +806,7 @@ function scoreDonorCandidates(
  * @param {string} stabilityBias - 'low'|'moderate'|'high'
  * @returns {Array} reallocate_row actions
  */
-function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias) {
+function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, stabilityBias, totalRows = TOTAL_ROWS) {
   const actions = [];
 
   // Determine max reclaims based on stability bias
@@ -880,9 +882,9 @@ function reclaimSurplusRows(zoneRowMap, demand, utilization, zones, neverMerge, 
         const deficitRows = (zoneRowMap.get(deficit.zoneId) || []).map(r => rowNum(r));
         const minDist = deficitRows.length > 0
           ? Math.min(...deficitRows.map(n => Math.abs(n - freedRowNum)))
-          : TOTAL_ROWS; // No existing rows — lowest priority
+          : totalRows; // No existing rows — lowest priority
         // Lower distance is better; invert for scoring
-        const score = TOTAL_ROWS - minDist;
+        const score = totalRows - minDist;
         if (score > bestScore) {
           bestScore = score;
           bestDeficitIdx = d;
@@ -1009,7 +1011,7 @@ function findMergeActions(zoneRowMap, demand, utilization, mergeCandidates, neve
  * @param {string} stabilityBias - 'low'|'moderate'|'high'
  * @returns {Array} Actions
  */
-function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias) {
+function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge, stabilityBias, totalRows = TOTAL_ROWS) {
   if (stabilityBias === 'high') return [];
 
   // Count in actions (each swap = 2 actions): moderate allows 2 swap pairs, low allows 4
@@ -1069,7 +1071,7 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
         // toward the outlier. If outlier < anchor, target = anchorMin - 1.
         // If outlier > anchor, target = anchorMax + 1.
         const targetRowNum = outlierRowNum < anchorMin ? anchorMin - 1 : anchorMax + 1;
-        if (targetRowNum < 1 || targetRowNum > TOTAL_ROWS) continue;
+        if (targetRowNum < 1 || targetRowNum > totalRows) continue;
 
         const targetRowId = `R${targetRowNum}`;
         const targetOwner = rowToZone.get(targetRowId);
@@ -1342,7 +1344,7 @@ function prioritizeAndLimit(actions, maxActions) {
  * @param {string} stabilityBias
  * @returns {string}
  */
-function buildReasoning(actions, reasoningParts, utilization, zones, stabilityBias) {
+function buildReasoning(actions, reasoningParts, utilization, zones, stabilityBias, totalRows = TOTAL_ROWS) {
   if (actions.length === 0) {
     return 'No reconfiguration actions needed — the cellar layout is well-balanced within current constraints.';
   }
@@ -1361,7 +1363,7 @@ function buildReasoning(actions, reasoningParts, utilization, zones, stabilityBi
   } else if (merges > 0) {
     openingSentence += ` (${merges} zone merge(s))`;
   }
-  openingSentence += ` within the ${TOTAL_ROWS}-row physical limit.`;
+  openingSentence += ` within the ${totalRows}-row physical limit.`;
   parts.push(openingSentence);
 
   // Phase summaries

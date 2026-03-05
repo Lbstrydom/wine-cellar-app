@@ -10,13 +10,8 @@ import { getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 import { findBestZone } from '../cellar/cellarPlacement.js';
 import { MIN_BOTTLES_FOR_ROW } from './rowAllocationSolver.js';
-
-// Cellar physical layout: 19 rows, row 1 has 7 slots, others have 9
-const CELLAR_LAYOUT = {
-  totalRows: 19,
-  getRowCapacity: (rowNum) => rowNum === 1 ? 7 : 9,
-  getTotalCapacity: () => 7 + (18 * 9) // 169 slots
-};
+import { getStorageAreaRows, getCellarRowCount } from '../cellar/cellarLayout.js';
+import { getRowCapacity } from '../cellar/slotUtils.js';
 
 /**
  * Parse assigned_rows from TEXT JSON or JSONB-decoded array.
@@ -98,8 +93,12 @@ function classifyWine(wine) {
  * @returns {Promise<Object>} Proposed layout with zone assignments
  */
 export async function proposeZoneLayout(cellarId) {
-  const bottlesByZone = await getBottlesByZone(cellarId);
-  const layoutSettings = await getCellarLayoutSettings(cellarId);
+  const [bottlesByZone, layoutSettings, storageAreaRows, totalCellarRows] = await Promise.all([
+    getBottlesByZone(cellarId),
+    getCellarLayoutSettings(cellarId),
+    getStorageAreaRows(cellarId),
+    getCellarRowCount(cellarId)
+  ]);
   const isRedsTop = layoutSettings.colourOrder === 'reds-top';
 
   // Zone groups by colour family — derived from zone definitions, not hardcoded.
@@ -158,8 +157,8 @@ export async function proposeZoneLayout(cellarId) {
     const assignedRows = [];
     let totalCapacity = 0;
 
-    while (slotsNeeded > 0 && currentRow <= CELLAR_LAYOUT.totalRows) {
-      const capacity = CELLAR_LAYOUT.getRowCapacity(currentRow);
+    while (slotsNeeded > 0 && currentRow <= totalCellarRows) {
+      const capacity = getRowCapacity(`R${currentRow}`, storageAreaRows);
       assignedRows.push(`R${currentRow}`);
       totalCapacity += capacity;
       slotsNeeded -= capacity;
@@ -188,8 +187,8 @@ export async function proposeZoneLayout(cellarId) {
     totalRows: currentRow - 1,
     proposals,
     underThresholdZones,
-    unassignedRows: currentRow <= 19 ?
-      Array.from({length: 19 - currentRow + 1}, (_, i) => `R${currentRow + i}`) : []
+    unassignedRows: currentRow <= totalCellarRows ?
+      Array.from({length: totalCellarRows - currentRow + 1}, (_, i) => `R${currentRow + i}`) : []
   };
 }
 

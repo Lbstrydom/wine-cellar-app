@@ -104,10 +104,10 @@ export async function analyseCellar(wines) {
   }
 
   // Bottles-first scan: classify every wine and cross-reference against zone rows
-  report.bottleScan = scanBottles(wines, zoneMap);
+  report.bottleScan = scanBottles(wines, zoneMap, storageAreaRows);
 
   // Row cleanliness sweep: grade every misplacement by severity
-  report.cleanlinessViolations = rowCleanlinessSweep(slotToWine, zoneMap);
+  report.cleanlinessViolations = rowCleanlinessSweep(slotToWine, zoneMap, storageAreaRows);
 
   // Generate zone narratives
   report.zoneNarratives = generateZoneNarratives(zoneWineMap);

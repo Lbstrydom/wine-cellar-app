@@ -14,6 +14,11 @@ vi.mock('../../../../src/db/index.js', () => ({
 // cellarLayoutSettings, proposeZoneLayout's internal getCellarLayoutSettings call
 // would get the wrong mock. By mocking it here with sensible defaults, we ensure
 // consistent behaviour regardless of test ordering.
+vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
+  getStorageAreaRows: vi.fn().mockResolvedValue([]),
+  getCellarRowCount: vi.fn().mockResolvedValue(19)
+}));
+
 vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', async () => {
   const actual = await vi.importActual('../../../../src/services/shared/cellarLayoutSettings.js');
   return {
