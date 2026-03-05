@@ -6,7 +6,8 @@
 
 import db from '../../db/index.js';
 import { CELLAR_ZONES, getZoneById } from '../../config/cellarZones.js';
-import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings, TOTAL_ROWS } from '../shared/cellarLayoutSettings.js';
+import { isWhiteFamily, getDynamicColourRowRanges, getCellarLayoutSettings } from '../shared/cellarLayoutSettings.js';
+import { getCellarRowCount } from './cellarLayout.js';
 import { invalidateAnalysisCache } from '../shared/cacheService.js';
 import logger from '../../utils/logger.js';
 
@@ -281,8 +282,9 @@ export async function getActiveZoneMap(cellarId) {
   // Self-healing: detect orphaned rows and assign to the best colour-compatible zone.
   // This repairs state left by the old updateZoneWineCount DELETE behaviour.
   if (allocations.length > 0) {
+    const totalRows = await getCellarRowCount(cellarId);
     const orphanedRows = [];
-    for (let i = 1; i <= TOTAL_ROWS; i++) {
+    for (let i = 1; i <= totalRows; i++) {
       if (!assignedRowIds.has(`R${i}`)) orphanedRows.push(`R${i}`);
     }
 
@@ -319,11 +321,14 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
     layoutSettings = { colourOrder: 'whites-top' };
   }
 
-  const dynamicRanges = await getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder);
+  const [dynamicRanges, totalRows] = await Promise.all([
+    getDynamicColourRowRanges(cellarId, layoutSettings.colourOrder),
+    getCellarRowCount(cellarId)
+  ]);
   const whiteRowSet = new Set((dynamicRanges?.whiteRows || []).map(Number));
   const redRowNums = (dynamicRanges?.redRows || []).map(Number);
   const lastWhiteRow = whiteRowSet.size > 0 ? Math.max(...whiteRowSet) : 0;
-  const lastRedRow = redRowNums.length > 0 ? Math.max(...redRowNums) : TOTAL_ROWS;
+  const lastRedRow = redRowNums.length > 0 ? Math.max(...redRowNums) : totalRows;
 
   for (const orphan of orphanedRows) {
     const orphanNum = parseInt(orphan.replace('R', ''), 10);
@@ -353,7 +358,7 @@ async function repairOrphanedRows(cellarId, orphanedRows, allocations) {
       if (rows.length > 0) {
         const rowNums = rows.map(r => parseInt(r.replace('R', ''), 10));
         const minDist = Math.min(...rowNums.map(n => Math.abs(n - orphanNum)));
-        score += (TOTAL_ROWS - minDist) * 5;
+        score += (totalRows - minDist) * 5;
       }
 
       // Buffer zone positioning: buffer zones should be at the last row

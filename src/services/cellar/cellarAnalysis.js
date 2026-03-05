@@ -10,7 +10,7 @@ import { getZoneById } from '../../config/cellarZones.js';
 import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
 import { findBestZone, inferColour } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
-import { getStorageAreaRows } from './cellarLayout.js';
+import { getStorageAreaRows, getStorageAreasByType } from './cellarLayout.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import {
@@ -26,7 +26,8 @@ import {
   getCurrentZoneAllocation,
   generateCompactionMoves,
   generateSameWineGroupingMoves,
-  generateCrossRowGroupingMoves
+  generateCrossRowGroupingMoves,
+  planStorageAreaGrouping
 } from './cellarSuggestions.js';
 import { scanBottles, rowCleanlinessSweep } from './bottleScanner.js';
 import { auditMoveSuggestions } from './moveAuditor.js';
@@ -76,7 +77,9 @@ export async function analyseCellar(wines) {
   };
 
   const zoneMap = await getActiveZoneMap(cellarId);
-  const storageAreaRows = cellarId ? await getStorageAreaRows(cellarId) : [];
+  const [storageAreaRows, areasByType] = cellarId
+    ? await Promise.all([getStorageAreaRows(cellarId), getStorageAreasByType(cellarId)])
+    : [[], {}];
   const slotToWine = new Map();
 
   // Build slot -> wine mapping
@@ -200,6 +203,23 @@ export async function analyseCellar(wines) {
   report.groupingMoves = groupingMoves;
   report.groupingSteps = sameRowGroupingMoves._rowSteps || [];
   report.summary.groupingMoveCount = groupingMoves.length;
+
+  // Per-area grouping (Phase 3.1): when multiple cellar storage areas exist,
+  // produce independent grouping plans per area with labelled section headers.
+  const cellarAreas = areasByType.cellar || [];
+  if (cellarAreas.length > 1) {
+    const groupingByArea = {};
+    for (const area of cellarAreas) {
+      if (!area.rows || area.rows.length === 0) continue;
+      const areaResult = planStorageAreaGrouping(slotToWine, zoneMap, area.rows, area);
+      if (areaResult.moveCount > 0) {
+        groupingByArea[area.id] = areaResult;
+      }
+    }
+    if (Object.keys(groupingByArea).length > 0) {
+      report.groupingByArea = groupingByArea;
+    }
+  }
 
   // Dynamic row allocation based on current inventory
   let dynamicRanges;

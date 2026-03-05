@@ -267,7 +267,7 @@ function parseJsonObject(text) {
  * @param {Map} zoneRowMap - Zone ID → assigned rows
  * @returns {boolean} True if the action would create a color violation
  */
-function wouldCreateColorViolation(action, zoneRowMap) {
+function wouldCreateColorViolation(action, zoneRowMap, totalRows = LEGACY_ROW_COUNT) {
   if (action.type !== 'reallocate_row') return false;
 
   const toZone = getZoneById(action.toZoneId);
@@ -292,7 +292,7 @@ function wouldCreateColorViolation(action, zoneRowMap) {
 
   // Check adjacent rows
   for (const adjacentRowNum of [rowNum - 1, rowNum + 1]) {
-    if (adjacentRowNum < 1 || adjacentRowNum > 19) continue;
+    if (adjacentRowNum < 1 || adjacentRowNum > totalRows) continue;
     const adjacentRowId = `R${adjacentRowNum}`;
     const adjacentZoneId = rowToZone.get(adjacentRowId);
     if (!adjacentZoneId || adjacentZoneId === action.toZoneId) continue;
@@ -455,7 +455,7 @@ Stability bias: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMer
   const plan = validatePlanShape(json);
 
   // Validate/filter LLM actions the same way as before
-  plan.actions = filterLLMActions(plan.actions, zoneRowMap, neverMerge);
+  plan.actions = filterLLMActions(plan.actions, zoneRowMap, neverMerge, ctxTotalRows);
 
   return { actions: plan.actions, reasoning: plan.reasoning };
 }
@@ -467,7 +467,7 @@ Stability bias: "${stability}". neverMerge: ${JSON.stringify(Array.from(neverMer
  * @param {Set} neverMerge
  * @returns {Array} Validated actions
  */
-function filterLLMActions(actions, zoneRowMap, neverMerge) {
+function filterLLMActions(actions, zoneRowMap, neverMerge, totalRows = LEGACY_ROW_COUNT) {
   const originalCount = actions.length;
   const filtered = actions.filter(a => {
     if (a.type === 'reallocate_row') {
@@ -483,7 +483,7 @@ function filterLLMActions(actions, zoneRowMap, neverMerge) {
         logger.warn('Reconfig', `Filtering invalid reallocate_row: row ${rowId} is not in ${a.fromZoneId}'s actualAssignedRows ${JSON.stringify(fromRows)}`);
         return false;
       }
-      if (wouldCreateColorViolation(a, zoneRowMap)) {
+      if (wouldCreateColorViolation(a, zoneRowMap, totalRows)) {
         logger.warn('Reconfig', `Filtering reallocate_row: ${rowId} from ${a.fromZoneId} to ${a.toZoneId} — colour adjacency violation`);
         return false;  // REJECT, not just warn
       }
@@ -742,7 +742,7 @@ function heuristicGapFill(
   // local swaps with adjacent zones if colour-compatible.
   // Contiguity swaps are exempt from the action cap — they are low-cost
   // (priority 4, 0 bottlesAffected) and essential for layout quality.
-  const postRepairActions = repairContiguityGaps(combined, liveZoneRowMap, maxActions);
+  const postRepairActions = repairContiguityGaps(combined, liveZoneRowMap, maxActions, totalRows);
 
   // Split: capped non-repair actions + uncapped repair actions
   const coreActions = postRepairActions.filter(a => !a.reason?.includes('[contiguity repair]'));
@@ -773,7 +773,7 @@ function heuristicGapFill(
  * @param {number} maxActions - Budget cap
  * @returns {Array} Actions with contiguity repair swaps appended
  */
-export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
+export function repairContiguityGaps(actions, zoneRowMap, maxActions, totalRows = LEGACY_ROW_COUNT) {
   if (!zoneRowMap || zoneRowMap.size === 0) return actions;
 
   // Replay actions onto a mutable copy of the zone row map
@@ -830,7 +830,7 @@ export function repairContiguityGaps(actions, zoneRowMap, maxActions) {
         if (seen.has(candKey)) continue;
         seen.add(candKey);
 
-        if (targetRow < 1 || targetRow > 19) continue;
+        if (targetRow < 1 || targetRow > totalRows) continue;
         if (outlierRow === targetRow) continue;
         if (repairedRows.has(outlierRow) || repairedRows.has(targetRow)) continue;
 
@@ -1248,7 +1248,7 @@ export async function generateReconfigurationPlan(report, options = {}) {
         const preRevalidateCount = finalPlan.actions.length;
         // Build post-patch zone row map for accurate colour violation detection
         const postPatchRowMap = buildMutatedZoneRowMap(zoneRowMap, finalPlan.actions);
-        finalPlan.actions = filterLLMActions(finalPlan.actions, postPatchRowMap, neverMerge);
+        finalPlan.actions = filterLLMActions(finalPlan.actions, postPatchRowMap, neverMerge, totalCellarRows);
         if (finalPlan.actions.length < preRevalidateCount) {
           logger.warn('Reconfig', `Post-patch revalidation filtered ${preRevalidateCount - finalPlan.actions.length} invalid action(s) introduced by reviewer`);
         }

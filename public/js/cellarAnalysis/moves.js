@@ -1392,15 +1392,41 @@ function removeCrossRowItem(btn, listEl, container) {
  * Render grouping steps as numbered atomic step cards with local progress tracking.
  * Falls back to renderGroupingMoves when no structured step data is available.
  *
+ * When groupingByArea is provided (multiple storage areas), renders a labelled
+ * section header per area before its step cards.
+ *
  * @param {Array} groupingSteps - [{rowId, steps: [{stepNumber, stepType, moves}], cost}]
  * @param {Array} groupingMoves - Flat move list (used for cross-row moves + fallback)
+ * @param {Object} [groupingByArea] - Per-area plans: { [areaId]: { areaName, steps, groupingMoves } }
  */
-export function renderGroupingSteps(groupingSteps, groupingMoves) {
+export function renderGroupingSteps(groupingSteps, groupingMoves, groupingByArea) {
   const container = document.getElementById('analysis-grouping');
   const listEl = document.getElementById('grouping-list');
   if (!container || !listEl) return;
 
   _groupingStepsDone.clear();
+
+  // Multi-area mode: render each area's steps under a labelled header
+  const areaEntries = groupingByArea ? Object.values(groupingByArea) : [];
+  if (areaEntries.length > 0) {
+    container.style.display = 'block';
+    let html = '';
+    for (const area of areaEntries) {
+      if (!area.steps || area.steps.length === 0) continue;
+      const totalAreaSteps = area.steps.reduce((s, r) => s + r.steps.length, 0);
+      html += `<div class="grouping-area-section" data-area-id="${escapeHtml(area.areaId)}">`;
+      html += `<div class="grouping-area-header">${escapeHtml(area.areaName)}</div>`;
+      html += buildGroupingStepsHtml(area.steps, totalAreaSteps);
+      html += '</div>';
+    }
+    listEl.innerHTML = html;
+    for (const area of areaEntries) {
+      if (!area.steps || area.steps.length === 0) continue;
+      const totalAreaSteps = area.steps.reduce((s, r) => s + r.steps.length, 0);
+      wireStepButtons(area.steps, listEl, totalAreaSteps);
+    }
+    return;
+  }
 
   const hasSteps = Array.isArray(groupingSteps) && groupingSteps.length > 0;
   const crossRowMoves = (groupingMoves || []).filter(m => {
@@ -1426,4 +1452,76 @@ export function renderGroupingSteps(groupingSteps, groupingMoves) {
 
   if (hasSteps) wireStepButtons(groupingSteps, listEl, totalSteps);
   if (crossRowMoves.length > 0) wireCrossRowButtons(crossRowMoves, listEl, container);
+}
+
+/**
+ * Render cross-area move suggestions (cellar↔fridge).
+ * Each suggestion gets a Move and Ignore button; Move executes immediately via the
+ * standard executeCellarMoves flow, Ignore removes the card.
+ *
+ * @param {Array} suggestions - [{type, direction, wineId, wineName, vintage, from, reason}]
+ */
+export function renderCrossAreaSuggestions(suggestions) {
+  const container = document.getElementById('analysis-cross-area');
+  const listEl = document.getElementById('cross-area-list');
+  if (!container || !listEl) return;
+
+  if (!Array.isArray(suggestions) || suggestions.length === 0) {
+    container.style.display = 'none';
+    listEl.innerHTML = '';
+    return;
+  }
+
+  container.style.display = 'block';
+
+  listEl.innerHTML = suggestions.map((s, i) => {
+    const dirLabel = s.direction === 'cellar_to_fridge' ? '→ Fridge' : '→ Cellar';
+    const vintage = s.vintage ? ` ${s.vintage}` : '';
+    return `
+      <div class="move-item cross-area-item" data-cross-area-index="${i}">
+        <div class="move-details">
+          <div class="move-wine-name">${escapeHtml(s.wineName || 'Unknown')}${escapeHtml(vintage)}</div>
+          <div class="move-path">
+            <span class="from">${escapeHtml(s.from || '—')}</span>
+            <span class="arrow">${escapeHtml(dirLabel)}</span>
+          </div>
+          <div class="move-reason">${escapeHtml(s.reason || '')}</div>
+        </div>
+        <div class="move-actions">
+          <button class="btn btn-primary btn-small cross-area-move-btn" data-index="${i}">Move</button>
+          <button class="btn btn-secondary btn-small cross-area-ignore-btn" data-index="${i}">Ignore</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.cross-area-move-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const s = suggestions[Number.parseInt(btn.dataset.index, 10)];
+      if (!s || !s.from) return;
+      btn.disabled = true;
+      btn.textContent = 'Working...';
+      try {
+        // For cellar→fridge the API needs a target slot; use null to let the server pick.
+        // For fridge→cellar the server similarly finds the best row.
+        await executeCellarMoves([{ wineId: s.wineId, from: s.from, to: null }]);
+        showToast(`Moved ${s.wineName}`);
+        btn.closest('.cross-area-item')?.remove();
+        if (!listEl.querySelector('.cross-area-item')) container.style.display = 'none';
+        await refreshLayout();
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+        btn.disabled = false;
+        btn.textContent = 'Move';
+      }
+    });
+  });
+
+  listEl.querySelectorAll('.cross-area-ignore-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      btn.closest('.cross-area-item')?.remove();
+      if (!listEl.querySelector('.cross-area-item')) container.style.display = 'none';
+    });
+  });
 }

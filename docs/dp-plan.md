@@ -14,7 +14,7 @@
 | **B** | Analysis Infrastructure | 1.5 – 1.6 | ✅ DONE | 2 / 2 |
 | **C** | Grouping UI | 1.7 | ✅ DONE | 1 / 1 |
 | **D** | Full Hardcoding Removal | 2.1 – 2.3 | ✅ DONE | 3 / 3 |
-| **E** | Multi-Storage-Area Grouping | 3.1 – 3.2 | NOT STARTED | 0 / 2 |
+| **E** | Multi-Storage-Area Grouping | 3.1 – 3.2 | ✅ DONE | 2 / 2 |
 | **F** | Zone Auto-Discovery | 4.1 – 4.4 | NOT STARTED | 0 / 4 |
 
 ### Detailed Phase Tracker
@@ -31,8 +31,8 @@
 | **2.1** | Backend: zone planner & solver | ✅ DONE | — | cellarLayoutSettings, rowAllocationSolver (totalRows param), zoneReconfigurationPlanner (getCellarRowCount/getStorageAreaRows), zoneLayoutProposal (getStorageAreaRows/getCellarRowCount/getRowCapacity) |
 | **2.2** | Backend: bottles route & fridge | ✅ DONE | — | bottles.js: getGridLimits() async factory; bottleScanner: storageAreaRows param in scanBottles/rowCleanlinessSweep; fridgeStocking: dynamic fridge slot count via getStorageAreasByType |
 | **2.3** | Frontend: grid + fridge + layout API | ✅ DONE | — | GET /api/cellar/layout added to cellarZoneLayout.js; fridge.js line 266 uses findEmptyFridgeSlot(); grid.js already dynamic |
-| **3.1** | Storage-area-scoped grouping | NOT STARTED | — | Depends on 2.3. ⚠️ Reviewer flag: add candidate count limiter for extreme cases (W>5 multi-bottle wines, maxCol>20) to cap backtracking in `findAssignment` |
-| **3.2** | Cross-storage-area suggestions | NOT STARTED | — | Depends on 3.1 |
+| **3.1** | Storage-area-scoped grouping | ✅ DONE | — | `planStorageAreaGrouping` in cellarSuggestions.js; `groupingByArea` in analysis report; per-area section headers in moves.js; candidate count limiter in cellarGrouping.js `findAssignment` |
+| **3.2** | Cross-storage-area suggestions | ✅ DONE | — | `generateCrossAreaSuggestions` in fridgeStocking.js; `crossAreaSuggestions` in report (route layer); `#analysis-cross-area` section + `renderCrossAreaSuggestions` in frontend |
 | **4.1** | Zone proposal engine | NOT STARTED | — | Depends on 2.3 |
 | **4.2** | Zone proposal API & UI | NOT STARTED | — | Depends on 4.1 |
 | **4.3** | Per-cellar zone configuration | NOT STARTED | — | Depends on 4.2 |

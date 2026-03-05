@@ -167,15 +167,16 @@ export function calculateParLevelGaps(fridgeWines) {
 /**
  * Get fridge status summary.
  * @param {Array} fridgeWines - Current fridge contents
+ * @param {number} [fridgeCapacity] - Dynamic fridge capacity (falls back to FRIDGE_CAPACITY config)
  * @returns {Object} Fridge status
  */
-export function getFridgeStatus(fridgeWines) {
+export function getFridgeStatus(fridgeWines, fridgeCapacity = FRIDGE_CAPACITY) {
   const currentMix = categorizeFridgeWines(fridgeWines);
   const gaps = calculateParLevelGaps(fridgeWines);
-  const emptySlots = FRIDGE_CAPACITY - fridgeWines.length;
+  const emptySlots = fridgeCapacity - fridgeWines.length;
 
   return {
-    capacity: FRIDGE_CAPACITY,
+    capacity: fridgeCapacity,
     occupied: fridgeWines.length,
     emptySlots,
     currentMix,
@@ -476,25 +477,27 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId, options 
   const { fridgeType = 'wine_fridge', emptyFridgeSlots } = options;
   const isHouseholdFridge = fridgeType === 'kitchen_fridge';
 
-  const status = getFridgeStatus(fridgeWines);
-  const reduceNowIds = await getReduceNowWineIds(cellarId);
-
-  // Build the complete set of fridge slot codes dynamically.
+  // Build the complete set of fridge slot codes and compute dynamic capacity.
   // Occupied slots come from fridgeWines; empty slots from the pre-queried list,
   // or discovered from storage_area_rows, or legacy F1-F9 fallback.
   const occupiedSlotCodes = fridgeWines.map(w => w.slot_id || w.location_code).filter(Boolean);
   let resolvedEmptySlots = emptyFridgeSlots;
+  let dynamicFridgeCapacity = FRIDGE_CAPACITY;
   if (!resolvedEmptySlots) {
     const areasByType = cellarId ? await getStorageAreasByType(cellarId) : {};
     const fridgeAreas = areasByType.wine_fridge || [];
     const fridgeSlotCount = fridgeAreas.reduce((sum, area) => {
       return sum + area.rows.reduce((s, r) => s + (r.col_count || 0), 0);
-    }, 0) || 9; // legacy fallback
+    }, 0) || FRIDGE_CAPACITY; // legacy fallback
+    dynamicFridgeCapacity = fridgeSlotCount;
     const occupiedSet = new Set(occupiedSlotCodes);
     resolvedEmptySlots = Array.from({ length: fridgeSlotCount }, (_, i) => `F${i + 1}`)
       .filter(s => !occupiedSet.has(s));
   }
   const emptySlotCodes = resolvedEmptySlots;
+
+  const status = getFridgeStatus(fridgeWines, dynamicFridgeCapacity);
+  const reduceNowIds = await getReduceNowWineIds(cellarId);
   const allSlots = [...new Set([...occupiedSlotCodes, ...emptySlotCodes])].sort(
     (a, b) => Number.parseInt(a.slice(1), 10) - Number.parseInt(b.slice(1), 10)
   );
@@ -609,6 +612,78 @@ export async function analyseFridge(fridgeWines, cellarWines, cellarId, options 
       drinkByYear: getEffectiveDrinkByYear(w)
     }))
   };
+}
+
+/**
+ * Generate cross-storage-area move suggestions.
+ *
+ * Two signal types:
+ *   (a) Cellar wines within or past their drinking window → suggest chilling in fridge
+ *   (b) Fridge has par-level gaps AND long-term wines occupying slots → suggest returning
+ *       those long-term wines to cellar to free space for higher-priority bottles
+ *
+ * @param {Array} wines - All wines (cellar + fridge)
+ * @param {Object} fridgeStatus - Result of getFridgeStatus()
+ * @returns {Array<Object>} Cross-area suggestions, sorted by priority
+ */
+export function generateCrossAreaSuggestions(wines, fridgeStatus) {
+  const suggestions = [];
+  const currentYear = new Date().getFullYear();
+
+  // (a) Cellar wines at or past their drinking window → move to fridge
+  const cellarWines = wines.filter(w => {
+    const slot = w.slot_id || w.location_code;
+    return slot && slot.startsWith('R');
+  });
+
+  for (const wine of cellarWines) {
+    const drinkByYear = getEffectiveDrinkByYear(wine);
+    if (!drinkByYear) continue;
+    const yearsLeft = drinkByYear - currentYear;
+    // Only suggest if within window (0 years) or already past it (negative), up to 2 years past
+    if (yearsLeft > 0 || yearsLeft < -2) continue;
+    // Only if fridge has capacity
+    if (fridgeStatus.emptySlots <= 0) continue;
+    const reason = yearsLeft <= 0
+      ? `Past optimal window — chill before serving`
+      : `Approaching drinking window — move to fridge`;
+    suggestions.push({
+      type: 'cross_area',
+      direction: 'cellar_to_fridge',
+      wineId: wine.id,
+      wineName: wine.wine_name,
+      vintage: wine.vintage,
+      from: wine.slot_id || wine.location_code,
+      reason,
+      priority: 4
+    });
+  }
+
+  // (b) Fridge has par-level gaps AND long-term wines taking up space
+  if (fridgeStatus.hasGaps && fridgeStatus.emptySlots <= 0) {
+    const fridgeWines = wines.filter(w => {
+      const slot = w.slot_id || w.location_code;
+      return slot && slot.startsWith('F');
+    });
+    for (const wine of fridgeWines) {
+      const drinkByYear = getEffectiveDrinkByYear(wine);
+      if (!drinkByYear) continue;
+      const yearsLeft = drinkByYear - currentYear;
+      if (yearsLeft <= 3) continue; // Only move truly long-term wines back
+      suggestions.push({
+        type: 'cross_area',
+        direction: 'fridge_to_cellar',
+        wineId: wine.id,
+        wineName: wine.wine_name,
+        vintage: wine.vintage,
+        from: wine.slot_id || wine.location_code,
+        reason: `${yearsLeft} years until drinking window — return to cellar to free fridge space`,
+        priority: 5
+      });
+    }
+  }
+
+  return suggestions.sort((a, b) => a.priority - b.priority);
 }
 
 /**

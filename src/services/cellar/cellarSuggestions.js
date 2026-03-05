@@ -9,6 +9,7 @@ import { findAvailableSlot } from './cellarPlacement.js';
 import { getActiveZoneMap, getAllocatedRowMap } from './cellarAllocation.js';
 import { detectRowGaps, parseSlot } from './cellarMetrics.js';
 import { getRowCapacity } from './slotUtils.js';
+import { getCellarRowCount } from './cellarLayout.js';
 import { planRowGrouping } from './cellarGrouping.js';
 
 // ───────────────────────────────────────────────────────────
@@ -64,7 +65,7 @@ export async function getAvailableCellarRows(cellarId) {
   const allRows = await getAllocatedRowMap(cellarId);
   const used = new Set(Object.keys(allRows));
   const available = [];
-  for (let rowNum = 1; rowNum <= 19; rowNum++) {
+  for (let rowNum = 1; rowNum <= await getCellarRowCount(cellarId); rowNum++) {
     const rowId = `R${rowNum}`;
     if (!used.has(rowId)) available.push(rowId);
   }
@@ -884,4 +885,38 @@ export function generateCrossRowGroupingMoves(slotToWine, zoneMap, sameRowMoves 
   }
 
   return moves;
+}
+
+/**
+ * Plan grouping moves scoped to a single storage area.
+ * Filters slotToWine to rows belonging to this area, then runs the
+ * full same-row + cross-row grouping pipeline.
+ *
+ * @param {Map} slotToWine - Full slotId→wine map
+ * @param {Object} zoneMap - Row→zone map from getActiveZoneMap()
+ * @param {Array<{row_num: number, col_count: number}>} areaRows - Row definitions for this area
+ * @param {{ id: string, name: string }} area - Storage area metadata
+ * @returns {{ areaId: string, areaName: string, steps: Array, groupingMoves: Array, moveCount: number }}
+ */
+export function planStorageAreaGrouping(slotToWine, zoneMap, areaRows, area) {
+  const areaRowNums = new Set(areaRows.map(r => r.row_num));
+  const filteredSlotToWine = new Map();
+  for (const [slotId, wine] of slotToWine) {
+    const parsed = parseSlot(slotId);
+    if (parsed && parsed.row > 0 && areaRowNums.has(parsed.row)) {
+      filteredSlotToWine.set(slotId, wine);
+    }
+  }
+
+  const sameRowMoves = generateSameWineGroupingMoves(filteredSlotToWine, zoneMap, areaRows);
+  const crossRowMoves = generateCrossRowGroupingMoves(filteredSlotToWine, zoneMap, sameRowMoves, areaRows);
+  const groupingMoves = [...sameRowMoves, ...crossRowMoves];
+
+  return {
+    areaId: area.id,
+    areaName: area.name,
+    steps: sameRowMoves._rowSteps || [],
+    groupingMoves,
+    moveCount: groupingMoves.length
+  };
 }

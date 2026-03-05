@@ -6,7 +6,7 @@
 import express from 'express';
 import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../services/cellar/cellarAnalysis.js';
 import { getCellarOrganisationAdvice } from '../services/cellar/cellarAI.js';
-import { analyseFridge, suggestFridgeOrganization } from '../services/cellar/fridgeStocking.js';
+import { analyseFridge, suggestFridgeOrganization, generateCrossAreaSuggestions } from '../services/cellar/fridgeStocking.js';
 import {
   getCachedAnalysis,
   cacheAnalysis,
@@ -54,6 +54,12 @@ export async function runAnalysis(wines, cellarId) {
     return slot && slot.startsWith('R');
   });
   report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, cellarId);
+
+  // Phase 3.2: cross-area suggestions (cellar↔fridge based on drinking windows)
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, report.fridgeStatus);
+  if (crossAreaSuggestions.length > 0) {
+    report.crossAreaSuggestions = crossAreaSuggestions;
+  }
 
   return report;
 }

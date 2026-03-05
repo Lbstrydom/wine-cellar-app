@@ -35,7 +35,8 @@ vi.mock('../../../../src/services/cellar/moveAuditor.js', () => ({
 }));
 
 vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
-  getStorageAreaRows: vi.fn().mockResolvedValue([])
+  getStorageAreaRows: vi.fn().mockResolvedValue([]),
+  getStorageAreasByType: vi.fn().mockResolvedValue({})
 }));
 
 vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({

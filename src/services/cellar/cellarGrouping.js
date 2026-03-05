@@ -153,6 +153,9 @@ export function planRowGrouping(board, maxCol) {
       candidates.push({ start, cost });
     }
     candidates.sort((a, b) => a.cost - b.cost);
+    // Cap candidates for extreme cellars (W>5 multi-bottle wines AND maxCol>20)
+    // to prevent exponential backtracking. Keep only the 5 cheapest positions.
+    if (multiWines.length > 5 && maxCol > 20) candidates.length = Math.min(candidates.length, 5);
 
     let bestResult = null;
 

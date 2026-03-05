@@ -27,6 +27,12 @@ vi.mock('../../../../src/services/shared/cellarLayoutSettings.js', () => ({
   })
 }));
 
+vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
+  getCellarRowCount: vi.fn().mockResolvedValue(19),
+  getStorageAreaRows: vi.fn().mockResolvedValue([]),
+  getStorageAreasByType: vi.fn().mockResolvedValue([])
+}));
+
 vi.mock('../../../../src/services/shared/cacheService.js', () => ({
   invalidateAnalysisCache: vi.fn().mockResolvedValue(undefined)
 }));

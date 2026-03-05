@@ -24,7 +24,8 @@ import { getRowCapacity } from '../cellar/slotUtils.js';
 
 /** Default total cellar rows (legacy fallback for cellars without storage_area_rows data). */
 const TOTAL_ROWS = 19;
-const SLOTS_PER_ROW = 9;
+/** Default slots per row — used only as a demand-estimation fallback for zones with zero assigned rows. */
+const DEFAULT_SLOTS_PER_ROW = 9;
 
 /**
  * Get the slot capacity for a given row number.
@@ -244,7 +245,7 @@ function computeDemand(zones, utilization, idealBottleCounts = null) {
       // Sum actual capacity of currently-assigned rows to estimate rows needed
       const avgCapacity = zoneRows.length > 0
         ? sumRowCapacity(zoneRows) / zoneRows.length
-        : SLOTS_PER_ROW;
+        : DEFAULT_SLOTS_PER_ROW;
       required = Math.ceil(bottles / avgCapacity);
     }
     demand.set(zone.id, required);
@@ -364,7 +365,7 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
       rowNumber: highRow.rowNumber,
       reason: `Fix colour boundary: move row ${highRow.rowNumber} (${highRow.zoneId}) ` +
         `to lower region, swap with row ${lowRow.rowNumber}`,
-      bottlesAffected: SLOTS_PER_ROW
+      bottlesAffected: rowCapacity(highRow.rowId)
     });
     actions.push({
       type: 'reallocate_row',
@@ -375,7 +376,7 @@ function fixColourBoundaryViolations(zoneRowMap, zones, neverMerge, colourOrder 
       rowNumber: lowRow.rowNumber,
       reason: `Fix colour boundary: move row ${lowRow.rowNumber} (${lowRow.zoneId}) ` +
         `to higher region, swap with row ${highRow.rowNumber}`,
-      bottlesAffected: SLOTS_PER_ROW
+      bottlesAffected: rowCapacity(lowRow.rowId)
     });
 
     // Update mutable state
@@ -498,7 +499,7 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge, totalR
         rowNumber: outlier.rowNumber,
         reason: `Fix colour adjacency: move R${outlier.rowNumber} (${outlier.zoneId}, ${outlier.colour}) ` +
           `away from R${neighbor.rowNumber} (${neighbor.colour}), swap with R${bestSwapPartner.rowNumber}`,
-        bottlesAffected: SLOTS_PER_ROW
+        bottlesAffected: rowCapacity(outlier.rowId)
       });
       actions.push({
         type: 'reallocate_row',
@@ -509,7 +510,7 @@ function fixLocalAdjacencyViolations(zoneRowMap, whitesOnTop, neverMerge, totalR
         rowNumber: bestSwapPartner.rowNumber,
         reason: `Fix colour adjacency: move R${bestSwapPartner.rowNumber} ` +
           `(${bestSwapPartner.zoneId}, ${bestSwapPartner.colour}) to R${outlier.rowNumber} position`,
-        bottlesAffected: SLOTS_PER_ROW
+        bottlesAffected: rowCapacity(bestSwapPartner.rowId)
       });
       updateZoneRowMap(zoneRowMap, outlier.zoneId, outlier.rowId, bestSwapPartner.zoneId);
       updateZoneRowMap(zoneRowMap, bestSwapPartner.zoneId, bestSwapPartner.rowId, outlier.zoneId);
@@ -1099,7 +1100,7 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
           reason: `Consolidate ${getZoneDisplayName(zoneId, zones)}: ` +
             `swap outlier R${outlierRowNum} with adjacent R${targetRowNum} ` +
             `(${getZoneDisplayName(targetOwner, zones)}) to create contiguous block`,
-          bottlesAffected: SLOTS_PER_ROW
+          bottlesAffected: rowCapacity(outlierRowNum)
         });
         actions.push({
           type: 'reallocate_row',
@@ -1109,7 +1110,7 @@ function consolidateScatteredWines(zoneRowMap, scatteredWines, zones, neverMerge
           rowNumber: targetRowNum,
           reason: `Consolidate ${getZoneDisplayName(zoneId, zones)}: ` +
             `receive R${targetRowNum} from ${getZoneDisplayName(targetOwner, zones)} in swap`,
-          bottlesAffected: SLOTS_PER_ROW
+          bottlesAffected: rowCapacity(targetRowNum)
         });
 
         // Update mutable state
