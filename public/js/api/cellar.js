@@ -394,3 +394,69 @@ export async function validateMoves(moves) {
   });
   return handleResponse(res, 'Move validation failed');
 }
+
+// ── Zone Metadata & Management ────────────────────────────
+
+/**
+ * Get all zones with merged code config and database metadata.
+ * @returns {Promise<Object>} { success, zones }
+ */
+export async function getZonesWithIntent() {
+  const res = await fetch(`${API_BASE}/api/cellar/zones-with-intent`);
+  return handleResponse(res, 'Failed to fetch zones with intent');
+}
+
+/**
+ * Get zones with AI suggestions that haven't been confirmed.
+ * @returns {Promise<Object>} { success, zones }
+ */
+export async function getZonesNeedingReview() {
+  const res = await fetch(`${API_BASE}/api/cellar/zones-needing-review`);
+  return handleResponse(res, 'Failed to fetch zones needing review');
+}
+
+/**
+ * Get all zone metadata.
+ * @returns {Promise<Object>} { success, metadata }
+ */
+export async function getAllZoneMetadata() {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-metadata`);
+  return handleResponse(res, 'Failed to fetch zone metadata');
+}
+
+/**
+ * Update zone metadata (user edit).
+ * @param {string} zoneId - Zone ID
+ * @param {Object} updates - Fields to update
+ * @returns {Promise<Object>} { success, metadata }
+ */
+export async function updateZoneMetadata(zoneId, updates) {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-metadata/${encodeURIComponent(zoneId)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates)
+  });
+  return handleResponse(res, 'Failed to update zone metadata');
+}
+
+/**
+ * Confirm zone metadata (mark as user-reviewed).
+ * @param {string} zoneId - Zone ID
+ * @returns {Promise<Object>} { success, metadata }
+ */
+export async function confirmZoneMetadata(zoneId) {
+  const res = await fetch(`${API_BASE}/api/cellar/zone-metadata/${encodeURIComponent(zoneId)}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  return handleResponse(res, 'Failed to confirm zone metadata');
+}
+
+/**
+ * Get dynamic storage area layout for the cellar.
+ * @returns {Promise<Object>} { storageAreas, totalCellarSlots, totalFridgeSlots }
+ */
+export async function getCellarLayout() {
+  const res = await fetch(`${API_BASE}/api/cellar/layout`);
+  return handleResponse(res, 'Failed to fetch cellar layout');
+}

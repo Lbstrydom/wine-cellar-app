@@ -34,6 +34,7 @@ import { handleConfirmLayout, cancelZoneSetup } from './cellarAnalysis/zones.js'
 import { toggleZoneChat, sendZoneChatMessage } from './cellarAnalysis/zoneChat.js';
 import { switchWorkspace, getActiveWorkspace, isAnalysisLoaded } from './cellarAnalysis/state.js';
 import { initVisibilityRefresh } from './cellarAnalysis/freshness.js';
+import { initZoneManagement, loadZoneManagement } from './cellarAnalysis/zoneManagement.js';
 
 /**
  * Initialize cellar analysis UI handlers.
@@ -90,6 +91,9 @@ export function initCellarAnalysis() {
     });
   }
 
+  // Zone management panel
+  initZoneManagement();
+
   // Workspace toggle tabs
   const workspaceToggle = document.getElementById('analysis-workspace-toggle');
   if (workspaceToggle) {
@@ -97,6 +101,9 @@ export function initCellarAnalysis() {
       const tab = e.target.closest('.workspace-tab');
       if (tab && tab.dataset.workspace) {
         switchWorkspace(tab.dataset.workspace);
+        if (tab.dataset.workspace === 'zone-mgmt') {
+          loadZoneManagement();
+        }
       }
     });
   }
@@ -105,6 +112,7 @@ export function initCellarAnalysis() {
   const persisted = getActiveWorkspace();
   if (persisted !== 'zones') {
     switchWorkspace(persisted);
+    if (persisted === 'zone-mgmt') loadZoneManagement();
   }
 
   // Auto-refresh analysis when tab regains focus with stale data

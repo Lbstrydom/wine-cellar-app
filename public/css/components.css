@@ -13838,3 +13838,199 @@ select.inline-edit-select {
   border-color: rgba(124, 106, 247, 0.35);
   background: rgba(124, 106, 247, 0.08);
 }
+
+/* ── Zone Management Panel ───────────────────────────────────────────────── */
+
+.zone-mgmt-section {
+  margin-top: 0.5rem;
+}
+
+.zone-mgmt-header h3 {
+  margin: 0 0 0.25rem;
+}
+
+.zone-mgmt-review-banner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 0.8rem;
+  margin-bottom: 0.75rem;
+  background: rgba(255, 193, 7, 0.1);
+  border: 1px solid rgba(255, 193, 7, 0.3);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  color: var(--text);
+}
+
+.zone-mgmt-review-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: rgba(255, 193, 7, 0.25);
+  color: #b8860b;
+  font-weight: 700;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+
+.zone-mgmt-loading {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding: 1rem 0;
+}
+
+.zone-mgmt-error,
+.zone-mgmt-empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+.zone-mgmt-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0.75rem;
+}
+
+.zone-mgmt-card {
+  padding: 0.75rem;
+  background: var(--bg-slot);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent);
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.zone-mgmt-card.needs-review {
+  border-left-color: #e6a817;
+}
+
+.zone-mgmt-card.editing {
+  border-left-color: var(--accent);
+  cursor: default;
+}
+
+.zone-mgmt-card-header {
+  margin-bottom: 0.4rem;
+}
+
+.zone-mgmt-card-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.zone-mgmt-card-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.zone-mgmt-badge-review {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: rgba(255, 193, 7, 0.2);
+  color: #b8860b;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.zone-mgmt-badge-family {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  background: rgba(var(--accent-rgb, 124, 106, 247), 0.12);
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.zone-mgmt-card-meta {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: 0.15rem;
+}
+
+.zone-mgmt-confirmed-label {
+  font-style: italic;
+}
+
+.zone-mgmt-card-purpose {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-bottom: 0.4rem;
+}
+
+.zone-mgmt-card-details {
+  display: none;
+}
+
+.zone-mgmt-card.expanded .zone-mgmt-card-details,
+.zone-mgmt-card.editing .zone-mgmt-card-details {
+  display: block;
+}
+
+.zone-mgmt-detail {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.zone-mgmt-detail strong {
+  color: var(--text);
+}
+
+.zone-mgmt-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+/* Edit form */
+.zone-mgmt-edit-form {
+  margin-top: 0.5rem;
+}
+
+.zone-mgmt-field {
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.zone-mgmt-field span {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 0.15rem;
+  font-weight: 500;
+}
+
+.zone-mgmt-field input {
+  width: 100%;
+  padding: 0.4rem 0.5rem;
+  font-size: 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.zone-mgmt-field input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.zone-mgmt-form-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}

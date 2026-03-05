@@ -217,6 +217,7 @@
       <button class="workspace-tab active" data-workspace="zones" id="workspace-tab-zones">Cellar Review</button>
       <button class="workspace-tab" data-workspace="placement" id="workspace-tab-placement">Cellar Placement</button>
       <button class="workspace-tab" data-workspace="fridge" id="workspace-tab-fridge">Fridge</button>
+      <button class="workspace-tab" data-workspace="zone-mgmt" id="workspace-tab-zone-mgmt">Zone Config</button>
     </div>
 
     <!-- Workspace A: Cellar Review -->
@@ -358,6 +359,19 @@
         <h3>Fridge Status</h3>
         <p class="section-desc">Fridge capacity and wine rotation suggestions.</p>
         <div class="fridge-status-content" id="fridge-status-content"></div>
+      </div>
+    </div>
+
+    <!-- Workspace D: Zone Config -->
+    <div class="workspace-panel" id="workspace-zone-mgmt" data-workspace="zone-mgmt" style="display: none;">
+      <div class="zone-mgmt-section">
+        <div class="zone-mgmt-header">
+          <h3>Zone Configuration</h3>
+          <p class="section-desc">Review and edit zone intent, serving advice, and pairing hints. Zones with unconfirmed AI suggestions are highlighted.</p>
+        </div>
+        <div class="zone-mgmt-review-banner" id="zone-mgmt-review-banner" style="display: none;"></div>
+        <div class="zone-mgmt-loading" id="zone-mgmt-loading" style="display: none;">Loading zones...</div>
+        <div class="zone-mgmt-grid" id="zone-mgmt-grid"></div>
       </div>
     </div>
 

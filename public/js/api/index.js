@@ -134,7 +134,13 @@ export {
   backfillGrapes,
   searchGrapes,
   getProposedBottleLayout,
-  validateMoves
+  validateMoves,
+  getZonesWithIntent,
+  getZonesNeedingReview,
+  getAllZoneMetadata,
+  updateZoneMetadata,
+  confirmZoneMetadata,
+  getCellarLayout
 } from './cellar.js';
 
 // Awards database

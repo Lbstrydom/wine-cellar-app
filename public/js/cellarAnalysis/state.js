@@ -6,14 +6,14 @@
 /**
  * Module state for cellar analysis.
  */
-/** @type {'zones'|'placement'|'fridge'} */
+/** @type {'zones'|'placement'|'fridge'|'zone-mgmt'} */
 const DEFAULT_WORKSPACE = 'zones';
-const VALID_WORKSPACES = ['zones', 'placement', 'fridge'];
+const VALID_WORKSPACES = ['zones', 'placement', 'fridge', 'zone-mgmt'];
 const WORKSPACE_STORAGE_KEY = 'cellar-analysis-workspace';
 
 /**
  * Load persisted workspace from localStorage, falling back to default.
- * @returns {'zones'|'placement'|'fridge'}
+ * @returns {'zones'|'placement'|'fridge'|'zone-mgmt'}
  */
 function loadPersistedWorkspace() {
   try {
@@ -142,7 +142,7 @@ export function setZoneChatContext(context) {
 
 /**
  * Get active workspace tab.
- * @returns {'zones'|'placement'|'fridge'}
+ * @returns {'zones'|'placement'|'fridge'|'zone-mgmt'}
  */
 export function getActiveWorkspace() {
   return analysisState.activeWorkspace;
@@ -150,7 +150,7 @@ export function getActiveWorkspace() {
 
 /**
  * Set active workspace tab (state only, no DOM update).
- * @param {'zones'|'placement'|'fridge'} workspace
+ * @param {'zones'|'placement'|'fridge'|'zone-mgmt'} workspace
  */
 export function setActiveWorkspace(workspace) {
   analysisState.activeWorkspace = workspace;
@@ -160,7 +160,7 @@ export function setActiveWorkspace(workspace) {
  * Switch the active workspace: updates state, tab highlights, and panel visibility.
  * Shared helper so both cellarAnalysis.js (user click) and analysis.js (auto-switch)
  * use the same logic without circular imports.
- * @param {'zones'|'placement'|'fridge'} workspace
+ * @param {'zones'|'placement'|'fridge'|'zone-mgmt'} workspace
  */
 export function switchWorkspace(workspace) {
   analysisState.activeWorkspace = workspace;
@@ -186,7 +186,7 @@ export function switchWorkspace(workspace) {
 /**
  * Show a notification badge on a workspace tab to signal new content.
  * Does nothing if the user is already viewing that workspace.
- * @param {'zones'|'placement'|'fridge'} workspace - Tab to badge
+ * @param {'zones'|'placement'|'fridge'|'zone-mgmt'} workspace - Tab to badge
  */
 export function notifyWorkspaceTab(workspace) {
   if (analysisState.activeWorkspace === workspace) return;
