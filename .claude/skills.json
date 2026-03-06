@@ -3,7 +3,8 @@
   "skills": [
     "plan-backend",
     "plan-frontend",
-    "audit",
+    "audit-plan",
+    "audit-code",
     "ship"
   ]
 }

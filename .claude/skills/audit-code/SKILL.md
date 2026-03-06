@@ -1,22 +1,26 @@
 ---
-name: audit
+name: audit-code
 description: |
-  Audit the implementation of a plan against its specification and engineering principles.
-  Use when the user wants to verify that code written for a plan meets all requirements,
-  follows principles, and is properly wired. Requires a plan file path as argument.
-  Triggers on: "audit the plan", "check the implementation", "verify the plan",
-  "review against the plan", "audit docs/plans/".
-  Usage: /audit docs/plans/my-feature.md
+  Audit the implementation of code against a plan. Checks that what was built matches
+  what was planned, follows all engineering principles, and is properly wired end-to-end.
+  Use AFTER implementation to verify the code, not to check plan quality (use /audit-plan for that).
+  Requires a plan file path as argument.
+  Triggers on: "audit the code", "check the implementation", "verify the implementation",
+  "review the code against the plan", "audit-code docs/plans/".
+  Usage: /audit-code docs/plans/my-feature.md
   The plan file must exist in the repository and should have been created by /plan-backend
   or /plan-frontend (or manually in the same format).
   disable-model-invocation: true
 ---
 
-# Plan Implementation Auditor
+# Code Implementation Auditor
 
-You are auditing the implementation of a plan. Your job is to systematically verify that
+You are auditing IMPLEMENTED CODE against a plan. Your job is to systematically verify that
 what was built matches what was planned, follows all engineering principles, and is properly
 wired end-to-end.
+
+This is a post-implementation audit. If no code has been written yet, direct the user to
+`/audit-plan` instead to review the plan quality before implementation.
 
 **Input**: `$ARGUMENTS` — path to a plan document (e.g., `docs/plans/my-feature.md`)
 
@@ -227,7 +231,7 @@ For each flow, verify:
 ### Report Structure
 
 ```markdown
-# Audit Report: <Plan Name>
+# Code Audit Report: <Plan Name>
 - **Plan**: <path to plan file>
 - **Date**: <today>
 - **Auditor**: Claude
@@ -285,10 +289,10 @@ Prioritised list of actions, ordered by severity then effort:
 
 ### Report Destination
 
-Save the audit report to: `docs/plans/<plan-name>-audit.md`
+Save the audit report to: `docs/plans/<plan-name>-code-audit.md`
 
 For example, if the plan is `docs/plans/wine-recommendation-engine.md`,
-save the audit to `docs/plans/wine-recommendation-engine-audit.md`.
+save the audit to `docs/plans/wine-recommendation-engine-code-audit.md`.
 
 ---
 
