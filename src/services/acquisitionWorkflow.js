@@ -8,7 +8,9 @@ import { parseWineFromImage, parseWineFromText, saveExtractedWindows } from './a
 import { saveFoodPairings } from './shared/foodPairingsService.js';
 import { unifiedWineSearch, isUnifiedWineSearchAvailable } from './search/claudeWineSearch.js';
 import { findBestZone, findAvailableSlot } from './cellar/cellarPlacement.js';
-import { categoriseWine, getFridgeStatus } from './cellar/fridgeStocking.js';
+import { categoriseWine } from './cellar/fridgeStocking.js';
+import { CATEGORY_REGISTRY, CATEGORY_DISPLAY_NAMES } from '../config/fridgeCategories.js';
+import { getFridgeStorageType } from '../routes/cellar.js';
 import db from '../db/index.js';
 import logger from '../utils/logger.js';
 import { checkWineConsistency } from './shared/consistencyChecker.js';
@@ -209,26 +211,27 @@ export async function suggestPlacement(wine, cellarId) {
     }
   }
 
-  // Check fridge eligibility
+  // Check fridge eligibility using category registry suitability
   const fridgeCategory = categoriseWine(wine);
   let fridgeEligible = false;
   let fridgeReason = null;
 
   if (fridgeCategory) {
-    // Get current fridge contents
-    const fridgeWines = await db.prepare(`
-      SELECT w.*, s.location_code as slot_id
-      FROM wines w
-      JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
-      WHERE w.cellar_id = ? AND s.location_code LIKE 'F%'
-    `).all(cellarId, cellarId);
-
-    const fridgeStatus = getFridgeStatus(fridgeWines);
-    const gaps = fridgeStatus.parLevelGaps;
-
-    if (gaps[fridgeCategory] && gaps[fridgeCategory].need > 0 && fridgeStatus.emptySlots > 0) {
-      fridgeEligible = true;
-      fridgeReason = `Fills ${fridgeCategory} gap (need ${gaps[fridgeCategory].need} more)`;
+    const catConfig = CATEGORY_REGISTRY[fridgeCategory];
+    if (catConfig) {
+      const fridgeType = await getFridgeStorageType(cellarId);
+      if (catConfig.suitableFor.includes(fridgeType)) {
+        // Check if fridge has any empty slots
+        const emptyRow = await db.prepare(`
+          SELECT 1 FROM slots
+          WHERE cellar_id = ? AND wine_id IS NULL AND location_code ~ '^F[0-9]+$'
+          LIMIT 1
+        `).get(cellarId);
+        if (emptyRow) {
+          fridgeEligible = true;
+          fridgeReason = `${CATEGORY_DISPLAY_NAMES[fridgeCategory]} category suits your ${fridgeType === 'kitchen_fridge' ? 'kitchen fridge' : 'wine fridge'}`;
+        }
+      }
     }
   }
 

@@ -5,7 +5,7 @@
 
 import db from '../../db/index.js';
 import { stringAgg } from '../../db/helpers.js';
-import { analyseFridge } from './fridgeStocking.js';
+import { categorizeFridgeWines } from './fridgeStocking.js';
 
 /**
  * Get comprehensive cellar health report.
@@ -67,8 +67,7 @@ export async function getCellarHealth(cellarId) {
 
   // 5. Fridge Gaps
   const fridgeWines = wines.filter(w => w.in_fridge);
-  const cellarWines = wines.filter(w => !w.in_fridge);
-  report.metrics.fridgeGaps = calculateFridgeGaps(fridgeWines, cellarWines);
+  report.metrics.fridgeGaps = calculateFridgeGaps(fridgeWines);
 
   // Generate alerts from metrics
   report.alerts = generateAlerts(report.metrics);
@@ -343,22 +342,23 @@ function calculateEventReadiness(wines) {
 }
 
 /**
- * Calculate fridge gaps metric.
+ * Calculate lightweight fridge gaps metric.
+ * Uses synchronous category mix — full gap analysis is handled by the analysis route.
  * @param {Array} fridgeWines - Wines in fridge
- * @param {Array} cellarWines - Wines in cellar
  * @returns {Object} Fridge gap assessment
  */
-function calculateFridgeGaps(fridgeWines, cellarWines) {
-  const fridgeAnalysis = analyseFridge(fridgeWines, cellarWines);
+function calculateFridgeGaps(fridgeWines) {
+  const currentMix = categorizeFridgeWines(fridgeWines);
+  const occupied = fridgeWines.length;
 
   return {
-    hasGaps: fridgeAnalysis.hasGaps,
-    gaps: fridgeAnalysis.parLevelGaps,
-    candidates: fridgeAnalysis.candidates.slice(0, 5),
-    currentMix: fridgeAnalysis.currentMix,
-    occupied: fridgeAnalysis.occupied,
-    capacity: fridgeAnalysis.capacity,
-    gapScore: fridgeAnalysis.hasGaps ? 50 : 100
+    hasGaps: occupied === 0,
+    gaps: {},
+    candidates: [],
+    currentMix,
+    occupied,
+    capacity: null,
+    gapScore: occupied > 0 ? 100 : 50
   };
 }
 

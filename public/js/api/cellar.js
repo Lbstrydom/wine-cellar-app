@@ -262,8 +262,11 @@ export async function assignWineToZone(wineId, zoneId) {
  * Get suggested moves to organize fridge by category.
  * @returns {Promise<Object>}
  */
-export async function getFridgeOrganization() {
-  const res = await fetch(`${API_BASE}/api/cellar/fridge-organize`);
+export async function getFridgeOrganization(areaId) {
+  const url = areaId
+    ? `${API_BASE}/api/cellar/fridge-organize?areaId=${encodeURIComponent(areaId)}`
+    : `${API_BASE}/api/cellar/fridge-organize`;
+  const res = await fetch(url);
   return handleResponse(res, 'Failed to get fridge organization');
 }
 

@@ -6,8 +6,9 @@
 
 export const CELLAR_ZONES = {
   fridge: {
-    slots: ['F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9'],
-    capacity: 9,
+    // Slots and capacity are no longer hardcoded here — they are populated
+    // dynamically from storage_areas / storage_area_rows in the DB.
+    // See GET /api/cellar/zones which queries getFridgeAreas() for live data.
     purpose: 'drink_soon',
     description: 'Chilled wines ready to drink within 1-2 weeks'
   },

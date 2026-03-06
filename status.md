@@ -1,4 +1,50 @@
 # Wine Cellar App - Status Report
+
+## 2026-03-06 — Dynamic Fridge Stocking Refactor (Multi-Area Architecture)
+
+### Changes
+- **New `src/config/fridgeCategories.js`**: Data-driven category registry replacing static `fridgeParLevels.js`. Defines 7 named categories (sparkling, crispWhite, aromaticWhite, textureWhite, rose, chillableRed, dessertFortified) + flex, with `suitableFor` storage type filtering, `matchRules`, priority order, and display names.
+- **New `src/services/cellar/fridgeAllocator.js`**: Multi-area par-level allocation engine. `computeParLevels()` distributes slots proportionally to live inventory (not hardcoded counts). `countInventoryByCategory()`, `getEligibleCategories()`, `getWinesByArea()`, `getAvailableCandidates()`, `sortFridgeAreasByPriority()`, `detectFridgeTransfers()`.
+- **Deleted `src/config/fridgeParLevels.js`**: Fully superseded by `fridgeCategories.js` + dynamic allocator.
+- **Updated `src/services/cellar/fridgeStocking.js`**: Switched from static `FRIDGE_PAR_LEVELS` to `CATEGORY_REGISTRY`. `categoriseWine()` now delegates keyword lists to registry. Added `categorizeFridgeWines()` export for lightweight health checks.
+- **Updated `src/routes/cellar.js`**: Added `getFridgeAreas()` (multi-area query with capacity). Extended `getEmptyFridgeSlots()` with optional `storageAreaId` param. Added `storage_area_id` to `getAllWinesWithSlots()` query. Replaced `getFridgeStorageType` export with `getFridgeAreas`.
+- **Updated `src/routes/cellarAnalysis.js`**: New `buildFridgeAnalysis()` orchestrator — iterates all fridge areas in priority order, reserves candidate slots between areas, accumulates `priorAllocations` for global stock cap, appends cross-area transfer suggestions.
+- **Updated `public/js/cellarAnalysis/fridge.js`**: New `renderFridgeAreas()` multi-area entry point. Per-area sections with headers, temperature context, kitchen fridge notes. `getAreaById()` lookup by stable areaId. Legacy `renderFridgeStatus()` preserved for backward compat.
+- **Updated `src/services/cellar/cellarHealth.js`**: `calculateFridgeGaps()` now uses lightweight `categorizeFridgeWines()` — removed dependency on async `analyseFridge()`.
+- **Updated `src/services/acquisitionWorkflow.js`**: Fridge eligibility now uses `CATEGORY_REGISTRY.suitableFor` instead of old `getFridgeStatus()`.
+- **Updated `public/js/api/cellar.js`**: New API call surface for multi-area responses.
+- **Updated `public/js/cellarAnalysis/analysis.js`**: Calls `renderFridgeAreas()` when `fridgeAnalysis` array is present.
+- **Updated `public/css/components.css`** and **`public/js/grid.js`**: Fridge area UI styling and grid integration.
+- **Archived `docs/dp-plan.md`** → `docs/archive/dp-plan.md`.
+- **New plan files**: `docs/plans/dynamic-fridge-stocking.md`, `docs/plans/dynamic-fridge-stocking-frontend.md`, `docs/plans/multi-storage-area-architecture.md`, and audit plans.
+- **New tests**: `fridgeAllocator.test.js`, `fridgeAllocator.crossArea.test.js`, `fridgeCategories.test.js`. Updated `fridgeStocking.test.js`.
+
+### Files Affected
+- `src/config/fridgeCategories.js` — NEW: category registry (replaces fridgeParLevels.js)
+- `src/services/cellar/fridgeAllocator.js` — NEW: multi-area dynamic par-level allocator
+- `src/config/fridgeParLevels.js` — DELETED
+- `src/services/cellar/fridgeStocking.js` — uses category registry, exports categorizeFridgeWines
+- `src/routes/cellar.js` — getFridgeAreas(), area-scoped getEmptyFridgeSlots(), storage_area_id in wine query
+- `src/routes/cellarAnalysis.js` — buildFridgeAnalysis() multi-area orchestrator
+- `public/js/cellarAnalysis/fridge.js` — renderFridgeAreas() multi-area UI
+- `src/services/cellar/cellarHealth.js` — lighter fridge gaps, no async dependency
+- `src/services/acquisitionWorkflow.js` — category registry suitability check
+
+### Decisions Made
+- **Dynamic par-levels**: Slot counts are computed proportionally from live inventory (not static numbers). A 48-slot wine fridge and a 6-slot kitchen fridge both get correct allocations.
+- **`suitableFor` per category**: Reds and oaked whites excluded from kitchen_fridge categories — eliminates wasted "ask for 1 chillable red then filter it" anti-pattern.
+- **Slot-level reservations**: Cross-area candidate deduplication uses `fromSlot` location codes so the same bottle isn't targeted by two fridge areas.
+- **`priorAllocations` global stock cap**: Each area's `computeParLevels()` subtracts what prior areas already claimed, preventing total allocations exceeding available stock.
+- **`detectFridgeTransfers()`**: Identifies wines in a lower-priority area that belong in a higher-priority area (e.g., wine in kitchen fridge that should be in wine fridge).
+- **cellarHealth decoupled**: `getCellarHealth()` no longer calls async `analyseFridge()` — uses lightweight sync `categorizeFridgeWines()` for the health report's fridge gap metric.
+
+### Next Steps
+- Wire up `fridgeTransfers` UI in `fridge.js` (cross-area transfer card)
+- Run full test suite against PostgreSQL before deploy
+- Consider adding `storage_area_id` index if query performance degrades at scale
+
+---
+
 ## 5 March 2026 (updated)
 
 ---

@@ -24,6 +24,7 @@ const router = express.Router();
 
 /**
  * Get all wines with their slot assignments and drinking windows.
+ * Includes storage_area_id for multi-fridge area identification.
  * @param {string} cellarId - Cellar ID to filter by
  * @returns {Promise<Array>} Wines with location data and drink_by_year
  */
@@ -47,6 +48,7 @@ export async function getAllWinesWithSlots(cellarId) {
       w.drink_until,
       w.bottle_count,
       s.location_code as slot_id,
+      s.storage_area_id,
       dw.drink_by_year,
       dw.drink_from_year,
       dw.peak_year
@@ -58,11 +60,23 @@ export async function getAllWinesWithSlots(cellarId) {
 }
 
 /**
- * Get all empty fridge slots (F-prefixed, unoccupied) for a cellar.
+ * Get empty fridge slots for a cellar, optionally scoped to a specific storage area.
  * @param {string} cellarId - Cellar ID to filter by
+ * @param {number|string|null} [storageAreaId] - If provided, only slots in this area
  * @returns {Promise<string[]>} Sorted array of empty fridge slot codes
  */
-export async function getEmptyFridgeSlots(cellarId) {
+export async function getEmptyFridgeSlots(cellarId, storageAreaId = null) {
+  if (storageAreaId != null) {
+    const rows = await db.prepare(`
+      SELECT location_code FROM slots
+      WHERE cellar_id = $1
+        AND storage_area_id = $2
+        AND wine_id IS NULL
+      ORDER BY location_code
+    `).all(cellarId, storageAreaId);
+    return rows.map(r => r.location_code);
+  }
+  // Legacy fallback: all unoccupied F-prefixed slots across the cellar
   const rows = await db.prepare(`
     SELECT location_code FROM slots
     WHERE cellar_id = $1
@@ -74,8 +88,32 @@ export async function getEmptyFridgeSlots(cellarId) {
 }
 
 /**
- * Get the storage_type of the cellar's fridge area (wine_fridge or kitchen_fridge).
+ * Get all fridge storage areas for a cellar with their capacity.
+ * Returns each area with id, name, storage_type, and slot capacity.
+ * @param {string} cellarId - Cellar ID to filter by
+ * @returns {Promise<Array>} Fridge area objects
+ */
+export async function getFridgeAreas(cellarId) {
+  const areas = await db.prepare(`
+    SELECT
+      sa.id,
+      sa.name,
+      sa.storage_type,
+      COALESCE(SUM(sar.col_count), 0) as capacity
+    FROM storage_areas sa
+    LEFT JOIN storage_area_rows sar ON sar.storage_area_id = sa.id
+    WHERE sa.cellar_id = $1
+      AND sa.storage_type IN ('wine_fridge', 'kitchen_fridge')
+    GROUP BY sa.id, sa.name, sa.storage_type
+    ORDER BY sa.id
+  `).all(cellarId);
+  return areas;
+}
+
+/**
+ * Get the storage_type of the cellar's first fridge area.
  * Returns 'wine_fridge' if no fridge area is configured.
+ * Kept for backward compatibility with acquisitionWorkflow.
  * @param {string} cellarId - Cellar ID to filter by
  * @returns {Promise<string>}
  */
@@ -159,11 +197,19 @@ async function reclassifyWineZoneIfNeeded(wine, zoneMatch, cellarId) {
 
 /**
  * GET /api/cellar/zones
- * Get all zone definitions.
+ * Get all zone definitions and fridge area info (populated dynamically).
  */
-router.get('/zones', (_req, res) => {
+router.get('/zones', asyncHandler(async (req, res) => {
+  const fridgeAreas = await getFridgeAreas(req.cellarId);
+  const totalCapacity = fridgeAreas.reduce((sum, a) => sum + Number(a.capacity), 0);
+
   res.json({
-    fridge: CELLAR_ZONES.fridge,
+    fridge: {
+      areas: fridgeAreas,
+      capacity: totalCapacity,
+      purpose: CELLAR_ZONES.fridge.purpose,
+      description: CELLAR_ZONES.fridge.description
+    },
     zones: CELLAR_ZONES.zones.map(z => ({
       id: z.id,
       displayName: z.displayName,
@@ -174,7 +220,7 @@ router.get('/zones', (_req, res) => {
       preferredRowRange: z.preferredRowRange || []
     }))
   });
-});
+}));
 
 /**
  * GET /api/cellar/zone-map

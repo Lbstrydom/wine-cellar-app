@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Read(//c/GIT/wine-cellar-app/**)",
-      "Bash(node -e \":*)"
+      "Bash(node -e \":*)",
+      "WebSearch",
+      "Read(//c/Users/User/.claude/projects/c--GIT-wine-cellar-app/fb50cfeb-63da-483c-862c-3605fea6d1f5/subagents/**)"
     ]
   }
 }

@@ -32,12 +32,13 @@ src/
 │   └── stats.js           # /api/stats endpoint
 ├── config/
 │   ├── aiModels.js        # AI model registry, task→model mapping, thinking config
+│   ├── fridgeCategories.js # Fridge category registry (suitability, match rules, display names)
 │   ├── styleIds.js        # Centralized style bucket IDs & labels (11 styles)
 │   └── wineRegions.js     # Country→region mapping (50+ countries, 500+ regions)
 ├── services/
 │   ├── ai/                # Claude/OpenAI integration
 │   ├── awards/            # Wine award extraction & matching (awardMatcher, awardStringUtils)
-│   ├── cellar/            # Cellar analysis, placement, suggestions
+│   ├── cellar/            # Cellar analysis, placement, suggestions (incl. fridgeAllocator.js for multi-area planning)
 │   ├── pairing/           # Food pairing engine & restaurant pairing
 │   ├── ratings/           # Rating extraction & normalization
 │   ├── recipe/            # Buying guide, shopping cart, style inference

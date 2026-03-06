@@ -20,7 +20,8 @@ function makeWine({
   grapes = '',
   style = '',
   winemaking = '',
-  vintage = 2022
+  vintage = 2022,
+  storage_area_id = null
 }) {
   return {
     id,
@@ -31,9 +32,26 @@ function makeWine({
     style,
     winemaking,
     slot_id: slot,
-    location_code: slot
+    location_code: slot,
+    storage_area_id
   };
 }
+
+/**
+ * Static par levels matching old FRIDGE_PAR_LEVELS for stable test assertions.
+ * These are passed directly to analyseFridge to decouple tests from
+ * the dynamic computeParLevels algorithm.
+ */
+const TEST_PAR_LEVELS = {
+  sparkling:       { min: 1, max: 1, priority: 1, description: 'Sparkling', signals: [], preferredZones: [] },
+  crispWhite:      { min: 2, max: 2, priority: 2, description: 'Crisp White', signals: [], preferredZones: [] },
+  aromaticWhite:   { min: 1, max: 1, priority: 3, description: 'Aromatic White', signals: [], preferredZones: [] },
+  textureWhite:    { min: 1, max: 1, priority: 4, description: 'Oaked White', signals: [], preferredZones: [] },
+  rose:            { min: 1, max: 1, priority: 5, description: 'Rosé', signals: [], preferredZones: [] },
+  chillableRed:    { min: 1, max: 1, priority: 6, description: 'Light Red', signals: [], preferredZones: [] },
+  dessertFortified:{ min: 0, max: 0, priority: 7, description: 'Dessert & Fortified', signals: [], preferredZones: [] },
+  flex:            { min: 1, max: 1, priority: 99, description: 'Other', optional: true }
+};
 
 function buildBaselineFridgeMissingTextureWhite() {
   return [
@@ -55,17 +73,18 @@ describe('analyseFridge gap vs flex prioritization', () => {
   });
 
   it('does not suggest flex candidates when a required gap has no matching wines', async () => {
-    const fridgeWines = buildBaselineFridgeMissingTextureWhite();
-    const cellarWines = [
-      makeWine({
-        id: 101,
-        name: 'De Grendel Koetshuis Sauvignon Blanc',
-        slot: 'R4C4',
-        grapes: 'sauvignon blanc'
-      })
+    const areaWines = buildBaselineFridgeMissingTextureWhite();
+    // Only a crisp white candidate — cannot fill the textureWhite gap
+    const candidateWines = [
+      makeWine({ id: 101, name: 'De Grendel Koetshuis Sauvignon Blanc', slot: 'R4C4', grapes: 'sauvignon blanc' })
     ];
+    // 9-slot fridge with 6 occupied → 3 empty
+    const emptyFridgeSlots = ['F7', 'F8', 'F9'];
 
-    const analysis = await analyseFridge(fridgeWines, cellarWines, 'cellar-1');
+    const analysis = await analyseFridge(areaWines, candidateWines, TEST_PAR_LEVELS, 'cellar-1', {
+      emptyFridgeSlots,
+      fridgeType: 'wine_fridge'
+    });
 
     expect(analysis.unfilledGaps.textureWhite).toBeDefined();
     expect(analysis.candidates).toHaveLength(0);
@@ -73,27 +92,21 @@ describe('analyseFridge gap vs flex prioritization', () => {
   });
 
   it('uses a category-fitting non-reduce-now wine before unrelated drink-soon wines', async () => {
-    const fridgeWines = buildBaselineFridgeMissingTextureWhite();
-    const cellarWines = [
-      makeWine({
-        id: 201,
-        name: 'Estate Chardonnay',
-        slot: 'R8C1',
-        grapes: 'chardonnay'
-      }),
-      makeWine({
-        id: 202,
-        name: 'Urgent Sauvignon Blanc',
-        slot: 'R4C4',
-        grapes: 'sauvignon blanc'
-      })
+    const areaWines = buildBaselineFridgeMissingTextureWhite();
+    const candidateWines = [
+      makeWine({ id: 201, name: 'Estate Chardonnay', slot: 'R8C1', grapes: 'chardonnay' }),
+      makeWine({ id: 202, name: 'Urgent Sauvignon Blanc', slot: 'R4C4', grapes: 'sauvignon blanc' })
     ];
+    const emptyFridgeSlots = ['F7', 'F8', 'F9'];
 
     db.prepare.mockReturnValueOnce({
       all: vi.fn().mockResolvedValue([{ wine_id: 202 }])
     });
 
-    const analysis = await analyseFridge(fridgeWines, cellarWines, 'cellar-1');
+    const analysis = await analyseFridge(areaWines, candidateWines, TEST_PAR_LEVELS, 'cellar-1', {
+      emptyFridgeSlots,
+      fridgeType: 'wine_fridge'
+    });
 
     expect(analysis.candidates.length).toBeGreaterThan(0);
     expect(analysis.candidates[0].wineId).toBe(201);
@@ -102,36 +115,29 @@ describe('analyseFridge gap vs flex prioritization', () => {
   });
 
   it('treats partially-filled required categories as unfilled and blocks flex suggestions', async () => {
-    const fridgeWines = [
+    const areaWines = [
       makeWine({ id: 11, name: 'Cava Brut', slot: 'F1', colour: 'sparkling' }),
       makeWine({ id: 12, name: 'Riesling Kabinett', slot: 'F2', grapes: 'riesling' }),
       makeWine({ id: 13, name: 'Buttery Chardonnay', slot: 'F3', grapes: 'chardonnay' }),
       makeWine({ id: 14, name: 'Dry Rose', slot: 'F4', colour: 'rose' }),
       makeWine({ id: 15, name: 'Pinot Noir', slot: 'F5', colour: 'red', grapes: 'pinot noir' })
     ];
-
-    // Crisp White has min=2; only one suitable cellar wine exists.
-    const cellarWines = [
-      makeWine({
-        id: 301,
-        name: 'Single Crisp Candidate',
-        slot: 'R2C1',
-        grapes: 'sauvignon blanc'
-      }),
-      makeWine({
-        id: 302,
-        name: 'Urgent Flex Decoy',
-        slot: 'R2C2',
-        colour: 'red',
-        grapes: 'syrah'
-      })
+    // Crisp White has min=2; only one suitable cellar wine exists
+    const candidateWines = [
+      makeWine({ id: 301, name: 'Single Crisp Candidate', slot: 'R2C1', grapes: 'sauvignon blanc' }),
+      makeWine({ id: 302, name: 'Urgent Flex Decoy', slot: 'R2C2', colour: 'red', grapes: 'syrah' })
     ];
+    // 9-slot fridge with 5 occupied → 4 empty
+    const emptyFridgeSlots = ['F6', 'F7', 'F8', 'F9'];
 
     db.prepare.mockReturnValueOnce({
       all: vi.fn().mockResolvedValue([{ wine_id: 302 }])
     });
 
-    const analysis = await analyseFridge(fridgeWines, cellarWines, 'cellar-1');
+    const analysis = await analyseFridge(areaWines, candidateWines, TEST_PAR_LEVELS, 'cellar-1', {
+      emptyFridgeSlots,
+      fridgeType: 'wine_fridge'
+    });
 
     expect(analysis.unfilledGaps.crispWhite).toBeDefined();
     expect(analysis.unfilledGaps.crispWhite.remaining).toBe(1);
@@ -139,6 +145,86 @@ describe('analyseFridge gap vs flex prioritization', () => {
     expect(analysis.candidates[0].wineId).toBe(301);
     expect(analysis.candidates[0].category).toBe('crispWhite');
     expect(analysis.candidates.every(c => !c.isFlex)).toBe(true);
+  });
+});
+
+describe('categoriseWine dessertFortified matching', () => {
+  it('identifies dessert colour as dessertFortified', () => {
+    const wine = makeWine({ id: 20, name: 'Klein Constantia Vin de Constance', slot: 'C1', colour: 'dessert' });
+    expect(categoriseWine(wine)).toBe('dessertFortified');
+  });
+
+  it('identifies fortified colour as dessertFortified', () => {
+    const wine = makeWine({ id: 21, name: "Graham's Late Bottled Vintage", slot: 'C2', colour: 'fortified' });
+    expect(categoriseWine(wine)).toBe('dessertFortified');
+  });
+
+  it('identifies "port" keyword in name as dessertFortified', () => {
+    const wine = makeWine({ id: 22, name: 'Boplaas Cape Tawny Port', slot: 'C3', colour: 'red' });
+    expect(categoriseWine(wine)).toBe('dessertFortified');
+  });
+
+  it('identifies "sauternes" keyword as dessertFortified', () => {
+    const wine = makeWine({ id: 23, name: 'Château d\'Yquem Sauternes', slot: 'C4', colour: 'white' });
+    expect(categoriseWine(wine)).toBe('dessertFortified');
+  });
+
+  it('does NOT classify a dry red with "reserve" as dessertFortified', () => {
+    const wine = makeWine({ id: 24, name: 'Kanonkop Paul Sauer Reserve', slot: 'C5', colour: 'red' });
+    expect(categoriseWine(wine)).not.toBe('dessertFortified');
+  });
+});
+
+describe('analyseFridge — kitchen_fridge behaviour', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.prepare.mockReturnValue({
+      all: vi.fn().mockResolvedValue([])
+    });
+  });
+
+  it('does not suggest chillableRed candidates for a kitchen_fridge', async () => {
+    const areaWines = [
+      makeWine({ id: 1, name: 'Cava Brut', slot: 'K1', colour: 'sparkling' })
+    ];
+    const candidateWines = [
+      makeWine({ id: 101, name: 'Pinot Noir', slot: 'R5C1', colour: 'red', grapes: 'pinot noir' })
+    ];
+    const emptyFridgeSlots = ['K2', 'K3'];
+
+    // Kitchen fridge par-levels: no chillableRed or textureWhite
+    const kitchenParLevels = {
+      sparkling:     { min: 1, max: 1, priority: 1, description: 'Sparkling', signals: [], preferredZones: [] },
+      crispWhite:    { min: 1, max: 1, priority: 2, description: 'Crisp White', signals: [], preferredZones: [] },
+      aromaticWhite: { min: 1, max: 1, priority: 3, description: 'Aromatic White', signals: [], preferredZones: [] },
+      rose:          { min: 1, max: 1, priority: 5, description: 'Rosé', signals: [], preferredZones: [] },
+      flex:          { min: 1, max: 1, priority: 99, description: 'Other', optional: true }
+    };
+
+    const analysis = await analyseFridge(areaWines, candidateWines, kitchenParLevels, 'cellar-1', {
+      emptyFridgeSlots,
+      fridgeType: 'kitchen_fridge'
+    });
+
+    const hasPinotCandidate = analysis.candidates.some(c => c.wineId === 101);
+    expect(hasPinotCandidate).toBe(false);
+  });
+
+  it('kitchen_fridge analysis includes fridgeType in result', async () => {
+    const areaWines = [];
+    const candidateWines = [];
+    const emptyFridgeSlots = ['K1'];
+    const kitchenParLevels = {
+      sparkling: { min: 1, max: 1, priority: 1, description: 'Sparkling', signals: [], preferredZones: [] },
+      flex:      { min: 0, max: 0, priority: 99, description: 'Other', optional: true }
+    };
+
+    const analysis = await analyseFridge(areaWines, candidateWines, kitchenParLevels, 'cellar-1', {
+      emptyFridgeSlots,
+      fridgeType: 'kitchen_fridge'
+    });
+
+    expect(analysis.fridgeType).toBe('kitchen_fridge');
   });
 });
 
@@ -193,4 +279,3 @@ describe('categoriseWine sparkling keyword matching', () => {
     expect(categoriseWine(wine)).toBe('sparkling');
   });
 });
-

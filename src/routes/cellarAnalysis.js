@@ -8,6 +8,14 @@ import { analyseCellar, shouldTriggerAIReview, getFridgeCandidates } from '../se
 import { getCellarOrganisationAdvice } from '../services/cellar/cellarAI.js';
 import { analyseFridge, suggestFridgeOrganization, generateCrossAreaSuggestions } from '../services/cellar/fridgeStocking.js';
 import {
+  countInventoryByCategory,
+  computeParLevels,
+  getWinesByArea,
+  getAvailableCandidates,
+  sortFridgeAreasByPriority,
+  detectFridgeTransfers
+} from '../services/cellar/fridgeAllocator.js';
+import {
   getCachedAnalysis,
   cacheAnalysis,
   invalidateAnalysisCache,
@@ -15,7 +23,7 @@ import {
 } from '../services/shared/cacheService.js';
 import { proposeZoneLayout, getSavedZoneLayout } from '../services/zone/zoneLayoutProposal.js';
 import { asyncHandler } from '../utils/errorResponse.js';
-import { getAllWinesWithSlots, getEmptyFridgeSlots, getFridgeStorageType } from './cellar.js';
+import { getAllWinesWithSlots, getEmptyFridgeSlots, getFridgeAreas } from './cellar.js';
 
 const router = express.Router();
 
@@ -33,8 +41,72 @@ function serializeAnalysisForUI(report) {
 }
 
 /**
+ * Run multi-area fridge analysis for all configured fridge areas.
+ * Implements sequential planning with slot-level reservations and global stock caps.
+ *
+ * @param {Array} wines - All wines with slot and storage_area_id data
+ * @param {string} cellarId - Cellar ID for tenant isolation
+ * @returns {Promise<Object>} { fridgeAnalysis, fridgeStatus, fridgeTransfers? }
+ */
+async function buildFridgeAnalysis(wines, cellarId) {
+  const allFridgeAreas = await getFridgeAreas(cellarId);
+
+  if (allFridgeAreas.length === 0) {
+    return { fridgeAnalysis: [], fridgeStatus: null };
+  }
+
+  const allFridgeAreaIds = new Set(allFridgeAreas.map(a => a.id));
+  const reservedSlotIds = new Set(); // slot location_codes reserved by prior area's candidates
+  const priorAllocations = {}; // { cat: totalSlotsAlreadyTargeted } for global stock cap
+  const fridgeAnalysis = [];
+
+  const totalInventoryCounts = countInventoryByCategory(wines);
+
+  for (const area of sortFridgeAreasByPriority(allFridgeAreas)) {
+    const parLevels = computeParLevels(
+      totalInventoryCounts,
+      area.storage_type,
+      Number(area.capacity),
+      priorAllocations
+    );
+    const areaWines = getWinesByArea(wines, area.id);
+    const candidateWines = getAvailableCandidates(wines, allFridgeAreaIds, reservedSlotIds);
+    const emptyFridgeSlots = await getEmptyFridgeSlots(cellarId, area.id);
+
+    const result = await analyseFridge(areaWines, candidateWines, parLevels, cellarId, {
+      fridgeType: area.storage_type,
+      emptyFridgeSlots,
+      areaId: area.id,
+      areaName: area.name
+    });
+
+    // Reserve the source slots of selected candidates so other fridge areas
+    // don't target the same bottles (slot-level, not wine-level)
+    for (const candidate of result.candidates) {
+      if (candidate.fromSlot) reservedSlotIds.add(candidate.fromSlot);
+    }
+
+    // Accumulate prior allocations for global stock cap in subsequent areas
+    for (const [cat, level] of Object.entries(parLevels)) {
+      if (cat !== 'flex' && level.min > 0) {
+        priorAllocations[cat] = (priorAllocations[cat] ?? 0) + level.min;
+      }
+    }
+
+    fridgeAnalysis.push(result);
+  }
+
+  const fridgeTransfers = detectFridgeTransfers(fridgeAnalysis, allFridgeAreas);
+  return {
+    fridgeAnalysis,
+    fridgeStatus: fridgeAnalysis[0] ?? null, // backward-compat alias (first area)
+    ...(fridgeTransfers.length > 0 && { fridgeTransfers })
+  };
+}
+
+/**
  * Run analysis and generate report (shared logic).
- * @param {Array} wines - Wine data
+ * @param {Array} wines - Wine data (must include storage_area_id from getAllWinesWithSlots)
  * @param {string} [cellarId] - Cellar ID for tenant isolation
  * @returns {Promise<Object>} Analysis report
  */
@@ -44,19 +116,14 @@ export async function runAnalysis(wines, cellarId) {
   // Add fridge candidates (legacy)
   report.fridgeCandidates = getFridgeCandidates(wines);
 
-  // Add fridge status with par-levels
-  const fridgeWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('F');
-  });
-  const cellarWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('R');
-  });
-  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, cellarId);
+  // Multi-area fridge analysis
+  const { fridgeAnalysis, fridgeStatus, fridgeTransfers } = await buildFridgeAnalysis(wines, cellarId);
+  report.fridgeAnalysis = fridgeAnalysis;
+  report.fridgeStatus = fridgeStatus;
+  if (fridgeTransfers) report.fridgeTransfers = fridgeTransfers;
 
-  // Phase 3.2: cross-area suggestions (cellar↔fridge based on drinking windows)
-  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, report.fridgeStatus);
+  // Cross-area suggestions (cellar↔fridge based on drinking windows)
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus);
   if (crossAreaSuggestions.length > 0) {
     report.crossAreaSuggestions = crossAreaSuggestions;
   }
@@ -125,33 +192,21 @@ router.get('/analyse', asyncHandler(async (req, res) => {
     }
   }
 
-  // No valid cache, run analysis
+  // No valid cache — run analysis
   const wines = await getAllWinesWithSlots(req.cellarId);
   const report = await analyseCellar(wines, { allowFallback, cellarId: req.cellarId });
 
   // Add fridge candidates (legacy)
   report.fridgeCandidates = getFridgeCandidates(wines);
 
-  // Add fridge status with par-levels
-  const fridgeWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('F');
-  });
-  const cellarWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('R');
-  });
-  const [fridgeType, emptyFridgeSlots] = await Promise.all([
-    getFridgeStorageType(req.cellarId),
-    getEmptyFridgeSlots(req.cellarId)
-  ]);
-  report.fridgeStatus = await analyseFridge(fridgeWines, cellarWines, req.cellarId, {
-    fridgeType,
-    emptyFridgeSlots
-  });
+  // Multi-area fridge analysis
+  const { fridgeAnalysis, fridgeStatus, fridgeTransfers } = await buildFridgeAnalysis(wines, req.cellarId);
+  report.fridgeAnalysis = fridgeAnalysis;
+  report.fridgeStatus = fridgeStatus;
+  if (fridgeTransfers) report.fridgeTransfers = fridgeTransfers;
 
-  // Phase 3.2: cross-area suggestions (cellar↔fridge based on drinking windows)
-  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, report.fridgeStatus);
+  // Cross-area suggestions (cellar↔fridge based on drinking windows)
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus);
   if (crossAreaSuggestions.length > 0) {
     report.crossAreaSuggestions = crossAreaSuggestions;
   }
@@ -200,21 +255,13 @@ router.delete('/analyse/cache', asyncHandler(async (req, res) => {
  */
 router.get('/fridge-status', asyncHandler(async (req, res) => {
   const wines = await getAllWinesWithSlots(req.cellarId);
-
-  const fridgeWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('F');
-  });
-  const cellarWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('R');
-  });
-
-  const status = await analyseFridge(fridgeWines, cellarWines, req.cellarId);
+  const { fridgeAnalysis, fridgeStatus, fridgeTransfers } = await buildFridgeAnalysis(wines, req.cellarId);
 
   res.json({
     success: true,
-    ...status
+    ...(fridgeStatus || {}),
+    fridgeAnalysis,
+    ...(fridgeTransfers && { fridgeTransfers })
   });
 }));
 
@@ -224,11 +271,23 @@ router.get('/fridge-status', asyncHandler(async (req, res) => {
  */
 router.get('/fridge-organize', asyncHandler(async (req, res) => {
   const wines = await getAllWinesWithSlots(req.cellarId);
+  const fridgeAreas = await getFridgeAreas(req.cellarId);
 
-  const fridgeWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('F');
-  });
+  // If areaId is provided, scope to that specific fridge area only.
+  // Otherwise fall back to all fridge areas (backward compat / single-fridge).
+  const { areaId } = req.query;
+  let scopedAreas = fridgeAreas;
+  if (areaId) {
+    scopedAreas = fridgeAreas.filter(a => String(a.id) === String(areaId));
+    if (scopedAreas.length === 0) {
+      return res.status(404).json({ error: 'Fridge area not found' });
+    }
+  }
+  const fridgeAreaIds = new Set(scopedAreas.map(a => a.id));
+
+  const fridgeWines = wines.filter(w =>
+    w.storage_area_id != null && fridgeAreaIds.has(w.storage_area_id)
+  );
 
   if (fridgeWines.length < 2) {
     return res.json({

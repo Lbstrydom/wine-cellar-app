@@ -7,7 +7,7 @@ import { analyseCellar } from '../api.js';
 import { setCurrentAnalysis, setAnalysisLoaded, getCurrentAnalysis, switchWorkspace } from './state.js';
 import { renderMoves, renderCompactionMoves, renderGroupingSteps, renderRowAllocationInfo, renderCrossAreaSuggestions } from './moves.js';
 import { openZoneProposalModal } from './zoneProposal.js';
-import { renderFridgeStatus } from './fridge.js';
+import { renderFridgeStatus, renderFridgeAreas, renderNoFridgeState } from './fridge.js';
 import { renderZoneNarratives } from './zones.js';
 import { renderZoneCapacityAlert } from './zoneCapacityAlert.js';
 import { renderZoneReconfigurationBanner } from './zoneReconfigurationBanner.js';
@@ -275,7 +275,19 @@ function renderAnalysis(analysis, onRenderAnalysis) {
 
   renderGrapeHealthBanner(analysis, { onRenderAnalysis });
 
-  renderFridgeStatus(analysis.fridgeStatus);
+  // Four-way branch — every state has an explicit render path
+  if (analysis.fridgeAnalysis?.length > 0) {
+    renderFridgeAreas(analysis.fridgeAnalysis, analysis.fridgeTransfers);
+  } else if (analysis.fridgeAnalysis !== undefined) {
+    // Backend returned fridgeAnalysis but it's empty → no fridge configured
+    renderNoFridgeState(document.getElementById('fridge-status-content'));
+  } else if (analysis.fridgeStatus) {
+    // Backward compat: legacy single-fridge response (no fridgeAnalysis field)
+    renderFridgeStatus(analysis.fridgeStatus);
+  } else {
+    // Backend returned neither fridgeAnalysis nor fridgeStatus → no fridge
+    renderNoFridgeState(document.getElementById('fridge-status-content'));
+  }
   renderZoneNarratives(analysis.zoneNarratives);
   // Suppress capacity/colour alerts right after reconfiguration — the zone layout
   // just changed and bottles haven't moved yet. Showing "zone full" or "colour

@@ -48,21 +48,41 @@ export function renderFridge() {
 
   grid.innerHTML = '';
 
-  // Get fridge rows from layout (handles both formats)
-  const fridgeRows = getFridgeRows(state.layout);
-  if (!fridgeRows) return;
+  // New format: render each fridge area separately with labeled separators
+  if (isAreasLayout(state.layout)) {
+    const fridgeAreas = state.layout.areas.filter(a =>
+      a.storage_type === 'wine_fridge' || a.storage_type === 'kitchen_fridge'
+    );
+    if (fridgeAreas.length === 0) return;
 
-  fridgeRows.forEach((row) => {
-    const rowEl = document.createElement('div');
-    rowEl.className = 'fridge-row';
+    fridgeAreas.forEach((area, idx) => {
+      // Add separator label between areas (and before each area when multiple exist)
+      if (fridgeAreas.length > 1) {
+        const sep = document.createElement('div');
+        sep.className = 'fridge-area-separator';
+        sep.textContent = area.name || (area.storage_type === 'kitchen_fridge' ? 'Kitchen Fridge' : 'Wine Fridge');
+        grid.appendChild(sep);
+      }
 
-    const slots = row.slots || [];
-    slots.forEach(slot => {
-      rowEl.appendChild(createSlotElement(slot));
+      (area.rows || []).forEach(row => {
+        const rowEl = document.createElement('div');
+        rowEl.className = 'fridge-row';
+        (row.slots || []).forEach(slot => rowEl.appendChild(createSlotElement(slot)));
+        grid.appendChild(rowEl);
+      });
     });
+  } else {
+    // Legacy format
+    const fridgeRows = state.layout.fridge?.rows;
+    if (!fridgeRows) return;
 
-    grid.appendChild(rowEl);
-  });
+    fridgeRows.forEach(row => {
+      const rowEl = document.createElement('div');
+      rowEl.className = 'fridge-row';
+      (row.slots || []).forEach(slot => rowEl.appendChild(createSlotElement(slot)));
+      grid.appendChild(rowEl);
+    });
+  }
 
   setupInteractions();
   if (typeof window.__moveGuideAnnotate === 'function') {
@@ -78,12 +98,13 @@ export function renderFridge() {
 function getFridgeRows(layout) {
   if (!layout) return null;
 
-  // New format: find wine_fridge area
+  // New format: find all fridge-type areas and concatenate their rows
   if (isAreasLayout(layout)) {
-    const fridgeArea = layout.areas.find(a =>
-      a.storage_type === 'wine_fridge' || a.name === 'Wine Fridge'
+    const fridgeAreas = layout.areas.filter(a =>
+      a.storage_type === 'wine_fridge' || a.storage_type === 'kitchen_fridge'
     );
-    return fridgeArea?.rows || null;
+    if (fridgeAreas.length === 0) return null;
+    return fridgeAreas.flatMap(a => a.rows || []);
   }
 
   // Legacy format

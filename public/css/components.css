@@ -2411,6 +2411,140 @@
   color: var(--text);
 }
 
+/* Grid separator label between fridge areas in #fridge-grid */
+.fridge-area-separator {
+  width: 100%;
+  padding: 4px 8px;
+  margin: 8px 0 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-top: 1px solid var(--border-color);
+}
+
+.fridge-area-separator:first-child {
+  margin-top: 0;
+  border-top: none;
+}
+
+/* Multi-area fridge layout */
+.fridge-area {
+  margin-bottom: 1.5rem;
+  padding: 1rem;
+  border-radius: 8px;
+}
+
+.fridge-areas--multi .fridge-area {
+  border: 1px solid var(--border-color);
+  background: var(--bg-card, transparent);
+}
+
+.fridge-area-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.fridge-area-name {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fridge-type-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--fridge-bg, var(--bg-subtle));
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.fridge-type-badge--wine {
+  background: var(--wine-red-subtle, #f3e5e0);
+}
+
+.fridge-type-badge--kitchen {
+  background: var(--cool-blue-subtle, #e0ecf3);
+}
+
+.fridge-temp-context {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.fridge-info-note {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  margin-top: 0.75rem;
+}
+
+/* Cross-area transfer suggestions */
+.fridge-transfers {
+  margin: 1rem 0;
+  padding: 1rem;
+  border-radius: 8px;
+  background: var(--bg-subtle);
+  border-left: 3px solid var(--color-warning, #e6a817);
+}
+
+.fridge-transfers h5 {
+  margin: 0 0 0.25rem 0;
+  font-size: 0.9rem;
+}
+
+.fridge-transfers-desc {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0 0 0.75rem 0;
+}
+
+.fridge-transfer-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.fridge-transfer-card:last-child {
+  border-bottom: none;
+}
+
+.fridge-transfer-info {
+  flex: 1;
+}
+
+.fridge-transfer-route {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin: 0.15rem 0;
+}
+
+.fridge-transfer-arrow {
+  color: var(--text-muted);
+  margin: 0 0.4rem;
+}
+
+/* Empty state for no-fridge users */
+.fridge-empty-state {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--text-muted);
+}
+
+.fridge-empty-state p {
+  margin: 0.5rem 0;
+}
+
 .fridge-status-header {
   display: flex;
   align-items: center;
@@ -2440,7 +2574,7 @@
 
 .fridge-mix-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
   gap: 0.5rem;
   margin-bottom: 1rem;
 }
