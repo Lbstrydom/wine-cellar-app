@@ -5,31 +5,36 @@
  * @module tastingService
  */
 
-import { getTastingNotes, getServingTemperature, getBestDrinkingWindow, reportTastingNotes } from './api.js';
+import { reportTastingNotes } from './api.js';
 import { escapeHtml } from './utils.js';
 
 /**
  * Render the Tasting & Service card for a wine.
+ * Accepts pre-fetched tasting service data to avoid redundant API calls.
  * @param {Object} wine - Wine object with id, colour, style, etc.
  * @param {HTMLElement} container - Container element to render into
+ * @param {Object} [prefetched] - Pre-fetched tasting service data from ratings endpoint
+ * @param {Object|null} [prefetched.notes] - Structured tasting notes
+ * @param {Object|null} [prefetched.serving_temp] - Serving temperature data
+ * @param {Object|null} [prefetched.drinking_window] - Drinking window data
  */
-export async function renderTastingServiceCard(wine, container) {
+export function renderTastingServiceCard(wine, container, prefetched) {
   if (!container) return;
-  
-  container.innerHTML = '<div class="tasting-service-loading">Loading...</div>';
-  
+
+  if (!prefetched) {
+    // Show loading skeleton until data arrives
+    container.innerHTML = '<div class="tasting-service-loading">Loading...</div>';
+    return;
+  }
+
   try {
-    // Fetch tasting notes, serving temp, and drinking window in parallel
-    const [tastingNotes, servingTemp, drinkingWindow] = await Promise.all([
-      fetchTastingNotes(wine.id || wine.wine_id),
-      fetchServingTemperature(wine.id || wine.wine_id),
-      fetchDrinkingWindow(wine.id || wine.wine_id)
-    ]);
-    
-    const html = buildTastingServiceCard(wine, tastingNotes, servingTemp, drinkingWindow);
+    const html = buildTastingServiceCard(
+      wine,
+      prefetched.notes || null,
+      prefetched.serving_temp || null,
+      prefetched.drinking_window || null
+    );
     container.innerHTML = html;
-    
-    // Attach event listeners
     attachCardEventListeners(container, wine);
   } catch (error) {
     console.error('[TastingService] Error rendering card:', error);
@@ -38,50 +43,6 @@ export async function renderTastingServiceCard(wine, container) {
         <p>Could not load tasting information</p>
       </div>
     `;
-  }
-}
-
-/**
- * Fetch structured tasting notes for a wine.
- * @param {number} wineId - Wine ID
- * @returns {Promise<Object|null>} Tasting notes or null
- */
-async function fetchTastingNotes(wineId) {
-  try {
-    const data = await getTastingNotes(wineId, true);
-    return data.notes || data;
-  } catch (error) {
-    console.warn('[TastingService] Could not fetch tasting notes:', error);
-    return null;
-  }
-}
-
-/**
- * Fetch serving temperature for a wine.
- * @param {number} wineId - Wine ID
- * @returns {Promise<Object|null>} Temperature data or null
- */
-async function fetchServingTemperature(wineId) {
-  try {
-    const data = await getServingTemperature(wineId);
-    return data.recommendation || data.temperature;
-  } catch (error) {
-    console.warn('[TastingService] Could not fetch serving temp:', error);
-    return null;
-  }
-}
-
-/**
- * Fetch drinking window for a wine.
- * @param {number} wineId - Wine ID
- * @returns {Promise<Object|null>} Drinking window or null
- */
-async function fetchDrinkingWindow(wineId) {
-  try {
-    return await getBestDrinkingWindow(wineId);
-  } catch (error) {
-    console.warn('[TastingService] Could not fetch drinking window:', error);
-    return null;
   }
 }
 
@@ -189,19 +150,6 @@ export function buildTastingNotesSection(notes) {
           ${lengthText}${finishItems.length > 0 ? ' • ' + finishItems.map(toDisplayFormat).join(', ') : ''}
         </p>
       </div>
-    `);
-  }
-  
-  // Show more toggle (if there's more content)
-  const hasMore = (notes.nose?.all_descriptors?.length > 6) ||
-                  (notes.palate?.all_descriptors?.length > 6) ||
-                  (notes.finish?.descriptors?.length > 3);
-  
-  if (hasMore) {
-    parts.push(`
-      <button class="show-more-toggle" data-expanded="false">
-        Show more ▼
-      </button>
     `);
   }
   
@@ -412,9 +360,7 @@ function buildServingTempCard(temp) {
  * @param {Object} wine - Wine object
  * @returns {string} HTML string
  */
-function buildDrinkingWindowCard(window, wine) {
-  const wineId = wine?.id || wine?.wine_id || '';
-  
+function buildDrinkingWindowCard(window, _wine) {
   if (!window || (!window.drink_from_year && !window.drink_by_year)) {
     return `
       <div class="info-card drinking-window-card">
@@ -424,7 +370,6 @@ function buildDrinkingWindowCard(window, wine) {
         </div>
         <div class="info-card-body">
           <p class="no-data">No window data</p>
-          <button class="edit-window-btn" data-wine-id="${wineId}" title="Set window">✎</button>
         </div>
       </div>
     `;
@@ -460,7 +405,6 @@ function buildDrinkingWindowCard(window, wine) {
         ${peakYear ? `<div class="window-peak">peak ${peakYear}</div>` : ''}
         ${urgencyBadge}
         <div class="window-source">via ${escapeHtml(source)}</div>
-        <button class="edit-window-btn" data-wine-id="${wineId}" title="Edit window">✎</button>
       </div>
     </div>
   `;
@@ -566,17 +510,6 @@ function celsiusToFahrenheit(celsius) {
  * @param {Object} wine - Wine object
  */
 function attachCardEventListeners(container, wine) {
-  // Show more toggle
-  const showMoreBtn = container.querySelector('.show-more-toggle');
-  if (showMoreBtn) {
-    showMoreBtn.addEventListener('click', () => {
-      const expanded = showMoreBtn.dataset.expanded === 'true';
-      showMoreBtn.dataset.expanded = !expanded;
-      showMoreBtn.textContent = expanded ? 'Show more ▼' : 'Show less ▲';
-      // TODO: Implement expansion logic
-    });
-  }
-  
   // Sources toggle
   const sourcesBtn = container.querySelector('.sources-toggle');
   const sourcesDrawer = container.querySelector('.sources-drawer');
@@ -599,16 +532,6 @@ function attachCardEventListeners(container, wine) {
     });
   }
   
-  // Edit window button
-  const editWindowBtn = container.querySelector('.edit-window-btn');
-  if (editWindowBtn) {
-    editWindowBtn.addEventListener('click', () => {
-      const wineId = wine?.id || wine?.wine_id;
-      if (wineId) {
-        showEditWindowModal(wineId);
-      }
-    });
-  }
 }
 
 /**
@@ -639,22 +562,7 @@ function showReportModal(wineId) {
     });
 }
 
-/**
- * Show edit drinking window modal.
- * @param {number} wineId - Wine ID
- */
-function showEditWindowModal(_wineId) {
-  // Trigger existing drinking window edit modal if available
-  const manualEntry = document.getElementById('manual-window-entry');
-  if (manualEntry) {
-    manualEntry.scrollIntoView({ behavior: 'smooth' });
-  }
-}
-
 // Export for use in modals.js
 export default {
-  renderTastingServiceCard,
-  fetchTastingNotes,
-  fetchServingTemperature,
-  fetchDrinkingWindow
+  renderTastingServiceCard
 };

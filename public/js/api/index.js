@@ -48,9 +48,6 @@ export {
   createWine,
   checkWineDuplicate,
   updateWine,
-  getWineExternalIds,
-  confirmWineExternalId,
-  setWineVivinoUrl,
   parseWineText,
   parseWineImage,
   addBottles,
@@ -62,8 +59,6 @@ export {
   openBottle,
   sealBottle,
   getOpenBottles,
-  getServingTemperature,
-  getTastingNotes,
   reportTastingNotes,
   getSearchMetrics
 } from './wines.js';
@@ -82,10 +77,6 @@ export {
   addManualRating,
   deleteRating,
 
-  getDrinkingWindows,
-  saveDrinkingWindow,
-  deleteDrinkingWindow,
-  getBestDrinkingWindow,
   getUrgentWines
 } from './ratings.js';
 

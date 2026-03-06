@@ -12,6 +12,8 @@ import jobQueue from '../services/shared/jobQueue.js';
 import { getCacheStats, purgeExpiredCache } from '../services/shared/cacheService.js';
 import logger from '../utils/logger.js';
 import { getWineAwards } from '../services/awards/index.js';
+import { getWineTastingNotes } from '../services/tastingNotesV2.js';
+import { findServingTemperature } from '../services/wine/servingTemperature.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateQuery, validateParams } from '../middleware/validate.js';
 import {
@@ -69,6 +71,13 @@ router.get('/:wineId/ratings', validateParams(ratingWineIdSchema), validateQuery
   // Calculate aggregates — include local awards so they contribute to competition_index
   const aggregates = calculateWineRatings(ratings, wine, preference, localAwards);
 
+  // Fetch tasting card data in parallel (avoids 3 separate API calls from frontend)
+  const [tastingNotes, servingTemp, drinkingWindow] = await Promise.all([
+    getWineTastingNotes(parseInt(wineId, 10)).catch(() => null),
+    findServingTemperature(wine).catch(() => null),
+    db.prepare('SELECT * FROM drinking_windows WHERE wine_id = $1 ORDER BY CASE source WHEN \'manual\' THEN 0 ELSE 1 END, created_at DESC LIMIT 1').get(wineId).catch(() => null)
+  ]);
+
   // Safely parse JSONB fields (PostgreSQL returns objects; SQLite compat may return strings)
   const parseJsonb = (field) => {
     if (!field) return null;
@@ -96,7 +105,23 @@ router.get('/:wineId/ratings', validateParams(ratingWineIdSchema), validateQuery
       award: a.award,
       category: a.category,
       credibility: a.credibility || 0.85
-    }))
+    })),
+    tasting_service: {
+      notes: tastingNotes || null,
+      serving_temp: servingTemp ? {
+        temp_min_celsius: servingTemp.temp_min_celsius,
+        temp_max_celsius: servingTemp.temp_max_celsius,
+        temp_min_fahrenheit: servingTemp.temp_min_fahrenheit,
+        temp_max_fahrenheit: servingTemp.temp_max_fahrenheit,
+        match_type: servingTemp.match_type || servingTemp.wine_type
+      } : null,
+      drinking_window: drinkingWindow ? {
+        drink_from_year: drinkingWindow.drink_from_year,
+        drink_by_year: drinkingWindow.drink_by_year,
+        peak_year: drinkingWindow.peak_year,
+        source: drinkingWindow.source
+      } : null
+    }
   });
 }));
 

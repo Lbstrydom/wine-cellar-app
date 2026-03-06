@@ -9,7 +9,17 @@ The Wine Cellar App is a production-ready Progressive Web App for wine collectio
 
 **Current State**: Production PWA deployed on Railway with custom domain (https://cellar.creathyst.com), PostgreSQL database on Supabase, auto-deploy from GitHub.
 
-**Recent Enhancements** ✨ **NEW - 5 Mar 2026**:
+**Recent Enhancements** ✨ **NEW - 6 Mar 2026**:
+- **Modal Performance & Dead Code Cleanup — COMPLETE** ✅:
+  - **Eliminated modal triple-fetch**: Wine detail modal no longer makes 3 separate API calls for tasting notes, serving temp, and drinking window. All data now piggybacks on the ratings endpoint response via `tasting_service` object.
+  - **Claude meta-commentary stripping**: Added `stripMetaCommentary()` to `claudeWineSearch.js` — filters 9 regex patterns of Claude process narration ("I now have...", "Let me compile...") from narratives before DB persistence.
+  - **Removed legacy HTML**: Deleted 3 dead sections from `index.html` — `modal-tasting-notes-field`, `legacy-serving-temp-field`, `drinking-window-section` (manual form).
+  - **Removed dead functions**: 5 from `modals.js` (`loadDrinkingWindows`, `getWindowStatus`, `handleSaveManualWindow`, `handleDeleteWindow`, `_loadServingTemperature`), 2 from `servingTemperature.js`, `showEditWindowModal` from `tastingService.js`, entire `countryInference.js` file.
+  - **Removed unused API functions**: `getServingTemperature`, `getTastingNotes`, `getBestDrinkingWindow` from frontend API modules + `getWineExternalIds`, `confirmWineExternalId`, `setWineVivinoUrl`, `getDrinkingWindows`, `saveDrinkingWindow`, `deleteDrinkingWindow`.
+  - **Net reduction**: ~650 lines removed across 12 files.
+  - **13 new tests** for `stripMetaCommentary()` covering all patterns + edge cases.
+
+**Previous Enhancements** — 5 Mar 2026:
 - **Claude Code Custom Skills — COMPLETE** ✅:
   - Added 4 custom skills to `.claude/skills/`: `audit` (plan verification), `plan-backend` (backend architecture planning), `plan-frontend` (frontend UX planning), `ship` (docs sync → commit → push workflow).
   - Updated `.claude/settings.json` with Bash permission for `node -e` commands.

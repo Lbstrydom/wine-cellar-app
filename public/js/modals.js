@@ -3,8 +3,8 @@
  * @module modals
  */
 
-import { drinkBottle, getWineRatings, getPersonalRating, updatePersonalRating, getDrinkingWindows, saveDrinkingWindow, deleteDrinkingWindow, getServingTemperature, openBottle, sealBottle } from './api.js';
-import { showToast, escapeHtml } from './utils.js';
+import { drinkBottle, getWineRatings, getPersonalRating, updatePersonalRating, openBottle, sealBottle } from './api.js';
+import { showToast } from './utils.js';
 import { refreshData } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
@@ -67,31 +67,23 @@ export async function showWineModal(slot) {
     reduceField.style.display = 'none';
   }
 
-  // Render consolidated Tasting & Service card
+  // Build wine object for tasting card
+  const wineData = slot.wine_id ? {
+    id: slot.wine_id,
+    wine_id: slot.wine_id,
+    wine_name: slot.wine_name,
+    style: slot.style,
+    colour: slot.colour,
+    vintage: slot.vintage
+  } : null;
+
+  // Show loading skeleton in tasting card (data comes from ratings response)
   const tastingServiceContainer = document.getElementById('tasting-service-container');
-  if (tastingServiceContainer && slot.wine_id) {
-    // Build wine object with all data the card needs
-    const wineData = {
-      id: slot.wine_id,
-      wine_id: slot.wine_id,
-      wine_name: slot.wine_name,
-      style: slot.style,
-      colour: slot.colour,
-      vintage: slot.vintage
-    };
+  if (tastingServiceContainer && wineData) {
     renderTastingServiceCard(wineData, tastingServiceContainer);
   }
 
-  // Legacy tasting notes fallback (hidden by default, shown if new card fails)
-  const tastingNotesField = document.getElementById('modal-tasting-notes-field');
-  if (slot.tasting_notes && !tastingServiceContainer) {
-    tastingNotesField.style.display = 'block';
-    document.getElementById('modal-tasting-notes').textContent = slot.tasting_notes;
-  } else {
-    tastingNotesField.style.display = 'none';
-  }
-
-  // Load and display ratings (and prose narrative)
+  // Load and display ratings, tasting card, and prose narrative from single API call
   const ratingsContainer = document.getElementById('modal-ratings-container');
   if (ratingsContainer && slot.wine_id) {
     // Reset profile section while loading
@@ -103,10 +95,13 @@ export async function showWineModal(slot) {
     ratingsContainer.innerHTML = '<div class="ratings-loading"><div class="skeleton skeleton-text" style="width:80%"></div><div class="skeleton skeleton-text" style="width:60%"></div><div class="skeleton skeleton-text" style="width:70%"></div></div>';
     try {
       const ratingsData = await getWineRatings(slot.wine_id);
-      const profileContainer = document.getElementById('wine-profile-container');
-      renderWineProfile(profileContainer, ratingsData.narrative);
+      renderWineProfile(document.getElementById('wine-profile-container'), ratingsData.narrative);
       ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
       initRatingsPanel(slot.wine_id);
+      // Render tasting card with pre-fetched data (no extra API calls)
+      if (tastingServiceContainer && wineData && ratingsData.tasting_service) {
+        renderTastingServiceCard(wineData, tastingServiceContainer, ratingsData.tasting_service);
+      }
     } catch (_err) {
       ratingsContainer.innerHTML = `
         <div class="ratings-error">
@@ -122,6 +117,9 @@ export async function showWineModal(slot) {
           renderWineProfile(document.getElementById('wine-profile-container'), ratingsData.narrative);
           ratingsContainer.innerHTML = `<div class="ratings-panel-container">${renderRatingsPanel(ratingsData)}</div>`;
           initRatingsPanel(slot.wine_id);
+          if (tastingServiceContainer && wineData && ratingsData.tasting_service) {
+            renderTastingServiceCard(wineData, tastingServiceContainer, ratingsData.tasting_service);
+          }
         } catch (retryErr) {
           ratingsContainer.innerHTML = `
             <div class="ratings-error">
@@ -343,175 +341,6 @@ async function handleToggleOpenBottle() {
 }
 
 /**
- * Load drinking windows for a wine.
- * @param {number} wineId - Wine ID
- */
-async function loadDrinkingWindows(wineId) {
-  if (!wineId) return;
-
-  const container = document.getElementById('drinking-window-display');
-  if (!container) return;
-
-  try {
-    const windows = await getDrinkingWindows(wineId);
-
-    if (windows.length === 0) {
-      container.innerHTML = '<p class="no-data">No drinking window data. Fetch ratings or enter manually.</p>';
-      return;
-    }
-
-    const currentYear = new Date().getFullYear();
-
-    const html = windows.map(w => {
-      const status = getWindowStatus(w, currentYear);
-      return `
-        <div class="window-entry ${status.statusClass}">
-          <span class="window-range">
-            ${w.drink_from_year || '?'} – ${w.drink_by_year || '?'}
-            ${w.peak_year ? `(peak ${w.peak_year})` : ''}
-          </span>
-          <span class="window-source">via ${escapeHtml(w.source)}</span>
-          <span class="window-status">${escapeHtml(status.text)}</span>
-          ${w.source === 'manual' ? `<button class="window-delete-btn" data-source="manual" title="Remove">×</button>` : ''}
-        </div>
-      `;
-    }).join('');
-
-    container.innerHTML = html;
-
-    // Add delete event listeners
-    container.querySelectorAll('.window-delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => handleDeleteWindow(wineId, btn.dataset.source));
-    });
-
-  } catch (_err) {
-    container.innerHTML = '<p class="no-data">Could not load drinking window data</p>';
-  }
-}
-
-/**
- * Get window status text and class based on current year.
- * @param {Object} window - Drinking window object
- * @param {number} currentYear - Current year
- * @returns {{statusClass: string, text: string}}
- */
-function getWindowStatus(window, currentYear) {
-  const { drink_from_year, drink_by_year, peak_year } = window;
-
-  if (drink_by_year && drink_by_year < currentYear) {
-    return { statusClass: 'status-critical', text: 'Past window' };
-  }
-  if (drink_by_year && drink_by_year === currentYear) {
-    return { statusClass: 'status-urgent', text: 'Final year' };
-  }
-  if (drink_by_year && drink_by_year <= currentYear + 1) {
-    return { statusClass: 'status-soon', text: `${drink_by_year - currentYear} year left` };
-  }
-  if (peak_year && peak_year === currentYear) {
-    return { statusClass: 'status-peak', text: 'At peak' };
-  }
-  if (drink_from_year && drink_from_year > currentYear) {
-    return { statusClass: 'status-hold', text: `Hold until ${drink_from_year}` };
-  }
-  if (drink_by_year) {
-    return { statusClass: 'status-ok', text: `${drink_by_year - currentYear} years left` };
-  }
-  return { statusClass: 'status-unknown', text: 'Open window' };
-}
-
-/**
- * Handle saving manual drinking window.
- */
-async function handleSaveManualWindow() {
-  if (!currentSlot?.wine_id) return;
-
-  const drinkFrom = document.getElementById('manual-drink-from').value;
-  const drinkBy = document.getElementById('manual-drink-by').value;
-
-  if (!drinkFrom && !drinkBy) {
-    showToast('Enter at least one year');
-    return;
-  }
-
-  try {
-    await saveDrinkingWindow(currentSlot.wine_id, {
-      source: 'manual',
-      drink_from_year: drinkFrom ? parseInt(drinkFrom, 10) : null,
-      drink_by_year: drinkBy ? parseInt(drinkBy, 10) : null,
-      confidence: 'high'
-    });
-
-    showToast('Drinking window saved');
-
-    // Clear inputs
-    document.getElementById('manual-drink-from').value = '';
-    document.getElementById('manual-drink-by').value = '';
-
-    // Reload windows
-    await loadDrinkingWindows(currentSlot.wine_id);
-  } catch (_err) {
-    showToast('Error saving drinking window');
-  }
-}
-
-/**
- * Handle deleting a drinking window.
- * @param {number} wineId - Wine ID
- * @param {string} source - Source to delete
- */
-async function handleDeleteWindow(wineId, source) {
-  try {
-    await deleteDrinkingWindow(wineId, source);
-    showToast('Window removed');
-    await loadDrinkingWindows(wineId);
-  } catch (_err) {
-    showToast('Error removing window');
-  }
-}
-
-/**
- * Load and display serving temperature recommendation.
- * @param {number} wineId - Wine ID
- */
-async function _loadServingTemperature(wineId) {
-  if (!wineId) return;
-
-  const container = document.getElementById('serving-temp-display');
-  if (!container) return;
-
-  try {
-    const data = await getServingTemperature(wineId);
-
-    if (!data.recommendation) {
-      container.innerHTML = '<span class="no-data">No temperature data</span>';
-      container.closest('.modal-field')?.classList.remove('has-temp');
-      return;
-    }
-
-    const rec = data.recommendation;
-    const confidence = rec.confidence || 0;
-    const confidenceClass = confidence >= 0.6 ? 'high' : confidence >= 0.3 ? 'medium' : 'low';
-
-    container.innerHTML = `
-      <div class="serving-temp-info">
-        <span class="temp-range">${escapeHtml(rec.temp_celsius)}°C</span>
-        <span class="temp-fahrenheit">(${escapeHtml(rec.temp_fahrenheit)}°F)</span>
-        ${rec.wine_type ? `<span class="temp-wine-type">${escapeHtml(rec.wine_type)}</span>` : ''}
-      </div>
-      ${rec.notes ? `<p class="temp-notes">${escapeHtml(rec.notes)}</p>` : ''}
-      <div class="temp-confidence ${confidenceClass}" title="Match confidence: ${Math.round(confidence * 100)}%">
-        ${confidence >= 0.6 ? 'Good match' : confidence >= 0.3 ? 'Approximate' : 'General'}
-      </div>
-    `;
-    container.closest('.modal-field')?.classList.add('has-temp');
-
-  } catch (_err) {
-    container.innerHTML = '<span class="no-data">Could not load temperature</span>';
-    container.closest('.modal-field')?.classList.remove('has-temp');
-  }
-}
-
-/**
  * Initialise modal event listeners.
  */
 export function initModals() {
@@ -521,7 +350,6 @@ export function initModals() {
   document.getElementById('btn-edit-wine')?.addEventListener('click', handleEditWine);
   document.getElementById('btn-open-bottle')?.addEventListener('click', handleToggleOpenBottle);
   document.getElementById('save-personal-rating')?.addEventListener('click', savePersonalRating);
-  document.getElementById('save-manual-window')?.addEventListener('click', handleSaveManualWindow);
   document.getElementById('modal-overlay').addEventListener('click', (e) => {
     if (e.target.id === 'modal-overlay') closeWineModal();
   });

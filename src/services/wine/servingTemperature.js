@@ -6,18 +6,6 @@
 
 import db from '../../db/index.js';
 
-/**
- * Get all serving temperature entries for a category.
- * @param {string} category - Wine category (sparkling, white, red, rose, orange, dessert, fortified)
- * @returns {Promise<Array>} Temperature entries
- */
-export async function getTemperaturesByCategory(category) {
-  return await db.prepare(`
-    SELECT * FROM wine_serving_temperatures
-    WHERE category = ?
-    ORDER BY wine_type
-  `).all(category);
-}
 
 /**
  * Find serving temperature for a wine based on its attributes.
@@ -294,41 +282,3 @@ export function formatTemperature(temp, unit = 'celsius') {
   return `${temp.temp_min_celsius}-${temp.temp_max_celsius}°C`;
 }
 
-/**
- * Get serving advice based on current temperature.
- * @param {Object} temp - Temperature recommendation
- * @param {number} currentTemp - Current wine temperature in Celsius
- * @returns {Object} Advice with action and time estimate
- */
-export function getServingAdvice(temp, currentTemp) {
-  if (!temp || currentTemp === null || currentTemp === undefined) {
-    return null;
-  }
-
-  const targetTemp = (temp.temp_min_celsius + temp.temp_max_celsius) / 2;
-  const diff = currentTemp - targetTemp;
-
-  if (Math.abs(diff) <= 1) {
-    return {
-      action: 'ready',
-      message: 'Wine is at ideal serving temperature'
-    };
-  }
-
-  if (diff > 0) {
-    // Wine is too warm, needs chilling
-    const minutes = Math.round(diff * 5); // ~5 min per degree in fridge
-    return {
-      action: 'chill',
-      message: `Wine is too warm. Chill for approximately ${minutes} minutes in fridge.`,
-      iceBucketMinutes: Math.round(diff * 2.5) // Faster in ice bucket
-    };
-  } else {
-    // Wine is too cold, needs warming
-    const minutes = Math.round(Math.abs(diff) * 3); // ~3 min per degree at room temp
-    return {
-      action: 'warm',
-      message: `Wine is too cold. Let it warm at room temperature for approximately ${minutes} minutes.`
-    };
-  }
-}

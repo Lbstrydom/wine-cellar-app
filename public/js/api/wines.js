@@ -89,46 +89,6 @@ export async function updateWine(id, wineData) {
 }
 
 /**
- * Get external IDs for a wine.
- * @param {number} id - Wine ID
- * @returns {Promise<Object>}
- */
-export async function getWineExternalIds(id) {
-  const res = await fetch(`${API_BASE}/api/wines/${id}/external-ids`);
-  return handleResponse(res, 'Failed to fetch external IDs');
-}
-
-/**
- * Confirm an external ID candidate.
- * @param {number} id - Wine ID
- * @param {Object} payload - Confirmation payload
- * @returns {Promise<Object>}
- */
-export async function confirmWineExternalId(id, payload) {
-  const res = await fetch(`${API_BASE}/api/wines/${id}/confirm-external-id`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  });
-  return handleResponse(res, 'Failed to confirm external ID');
-}
-
-/**
- * Set Vivino URL for a wine.
- * @param {number} id - Wine ID
- * @param {string} vivinoUrl - Vivino URL
- * @returns {Promise<Object>}
- */
-export async function setWineVivinoUrl(id, vivinoUrl) {
-  const res = await fetch(`${API_BASE}/api/wines/${id}/set-vivino-url`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vivino_url: vivinoUrl })
-  });
-  return handleResponse(res, 'Failed to set Vivino URL');
-}
-
-/**
  * Parse wine details from text using Claude.
  * @param {string} text - Raw text to parse
  * @returns {Promise<{wines: Array, confidence: string, parse_notes: string}>}
@@ -277,29 +237,6 @@ export async function sealBottle(location) {
 export async function getOpenBottles() {
   const res = await fetch(`${API_BASE}/api/slots/open`);
   return handleResponse(res, 'Failed to fetch open bottles');
-}
-
-/**
- * Get serving temperature recommendation for a wine.
- * @param {number} wineId - Wine ID
- * @param {string} [unit='celsius'] - Temperature unit ('celsius' or 'fahrenheit')
- * @returns {Promise<Object>} Temperature recommendation
- */
-export async function getServingTemperature(wineId, unit = 'celsius') {
-  const res = await fetch(`${API_BASE}/api/wines/${wineId}/serving-temperature?unit=${unit}`);
-  return handleResponse(res, 'Failed to fetch serving temperature');
-}
-
-/**
- * Get structured tasting notes for a wine.
- * @param {number} wineId - Wine ID
- * @param {boolean} [includeSources=false] - Include source attribution
- * @returns {Promise<Object>}
- */
-export async function getTastingNotes(wineId, includeSources = false) {
-  const query = includeSources ? '?include_sources=true' : '';
-  const res = await fetch(`${API_BASE}/api/wines/${wineId}/tasting-notes${query}`);
-  return handleResponse(res, 'Failed to fetch tasting notes');
 }
 
 /**

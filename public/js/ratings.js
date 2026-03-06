@@ -479,9 +479,9 @@ async function handleFetchRatings(wineId, useAsync = true) {
       await loadFoodPairings(pairingsContainer, wineId);
     }
 
-    // 3. Refresh tasting service card with newly-extracted structured notes
+    // 3. Refresh tasting service card with data from ratings response
     const tastingServiceContainer = document.getElementById('tasting-service-container');
-    if (tastingServiceContainer && wineData) {
+    if (tastingServiceContainer && wineData && ratingsData.tasting_service) {
       renderTastingServiceCard({
         id: wineData.id,
         wine_id: wineData.id,
@@ -489,23 +489,10 @@ async function handleFetchRatings(wineId, useAsync = true) {
         style: wineData.style,
         colour: wineData.colour,
         vintage: wineData.vintage
-      }, tastingServiceContainer);
+      }, tastingServiceContainer, ratingsData.tasting_service);
     }
 
-    // 4. Update legacy tasting notes fallback in the modal DOM
-    const tastingNotesField = document.getElementById('modal-tasting-notes-field');
-    const tastingNotesText = document.getElementById('modal-tasting-notes');
-
-    if (tastingNotesField && tastingNotesText) {
-      if (wineData?.tasting_notes) {
-        tastingNotesField.style.display = 'block';
-        tastingNotesText.textContent = wineData.tasting_notes;
-      } else {
-        tastingNotesField.style.display = 'none';
-      }
-    }
-
-    // 5. Update local slot state for consistency (if modal has currentSlot reference)
+    // 4. Update local slot state for consistency (if modal has currentSlot reference)
     if (window.currentSlot) {
       window.currentSlot.tasting_notes = wineData?.tasting_notes || null;
     }

@@ -74,7 +74,8 @@ import {
   isUnifiedWineSearchAvailable,
   extractNarrative,
   extractSourceUrls,
-  extractCitations
+  extractCitations,
+  stripMetaCommentary
 } from '../../../../src/services/search/claudeWineSearch.js';
 import { getModelForTask } from '../../../../src/config/aiModels.js';
 import logger from '../../../../src/utils/logger.js';
@@ -895,6 +896,83 @@ describe('extractNarrative() — SERT preamble filtering', () => {
     ];
 
     expect(extractNarrative(content)).toBe('');
+  });
+
+  it('strips meta-commentary from narrative text', () => {
+    const content = [
+      { type: 'web_search_tool_result', content: [] },
+      { type: 'text', text: 'I now have a very comprehensive picture. The official results confirm the wine won a Gold Medal.\nLet me compile the full profile.\n\n# Douglas Green Chardonnay 2024\nA well-rounded dry white.' }
+    ];
+    const narrative = extractNarrative(content);
+    expect(narrative).not.toContain('I now have');
+    expect(narrative).not.toContain('Let me compile');
+    expect(narrative).toContain('Douglas Green Chardonnay 2024');
+    expect(narrative).toContain('A well-rounded dry white.');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// stripMetaCommentary
+// ---------------------------------------------------------------------------
+
+describe('stripMetaCommentary()', () => {
+  it('returns empty string for falsy input', () => {
+    expect(stripMetaCommentary('')).toBe('');
+    expect(stripMetaCommentary(null)).toBe('');
+    expect(stripMetaCommentary(undefined)).toBe('');
+  });
+
+  it('strips "I now have" meta lines', () => {
+    const text = 'I now have a comprehensive picture.\n\n# Wine Profile\nGreat wine.';
+    expect(stripMetaCommentary(text)).toBe('# Wine Profile\nGreat wine.');
+  });
+
+  it('strips "Let me compile/summarize" meta lines', () => {
+    expect(stripMetaCommentary('Let me compile the full profile.\nActual content.')).toBe('Actual content.');
+    expect(stripMetaCommentary('Let me now summarize the findings.\nData here.')).toBe('Data here.');
+  });
+
+  it('strips "Here is the complete" meta lines', () => {
+    expect(stripMetaCommentary("Here's the complete wine profile:\n\nGood wine.")).toBe('Good wine.');
+    expect(stripMetaCommentary("Here is the comprehensive profile.\nDetails.")).toBe('Details.');
+  });
+
+  it('strips "Now let me" and "Now that I have" meta lines', () => {
+    expect(stripMetaCommentary("Now let me present the findings.\nContent.")).toBe('Content.');
+    expect(stripMetaCommentary("Now that I have all the data.\nContent.")).toBe('Content.');
+  });
+
+  it('strips "Based on my research" meta lines', () => {
+    expect(stripMetaCommentary("Based on my research, let me present the profile.\nContent.")).toBe('Content.');
+  });
+
+  it('strips "After searching/researching" meta lines', () => {
+    expect(stripMetaCommentary("After searching multiple sources.\nContent.")).toBe('Content.');
+    expect(stripMetaCommentary("After researching extensively.\nContent.")).toBe('Content.');
+  });
+
+  it('strips "Having searched/researched" meta lines', () => {
+    expect(stripMetaCommentary("Having researched the wine thoroughly.\nContent.")).toBe('Content.');
+  });
+
+  it('strips "I will now compile" meta lines', () => {
+    expect(stripMetaCommentary("I'll now compile everything.\nContent.")).toBe('Content.');
+    expect(stripMetaCommentary("I will summarize the findings.\nContent.")).toBe('Content.');
+  });
+
+  it('preserves all non-meta content', () => {
+    const text = '# Producer Background\nDGB is a leading producer.\n\n## Tasting Notes\nBright gold colour.';
+    expect(stripMetaCommentary(text)).toBe(text);
+  });
+
+  it('preserves lines that start with similar words but are actual content', () => {
+    const text = 'I have tasted this wine and it is excellent.\nAfterwards, the finish is long.';
+    expect(stripMetaCommentary(text)).toBe(text);
+  });
+
+  it('collapses excessive blank lines after stripping', () => {
+    const text = 'I now have a comprehensive picture.\n\n\n\n# Wine Profile\nContent.';
+    expect(stripMetaCommentary(text)).toBe('# Wine Profile\nContent.');
   });
 });
 

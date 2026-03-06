@@ -226,7 +226,40 @@ export function extractNarrative(content) {
     .map(b => b.text || '')
     .filter(t => t.trim().length > 0);
 
-  return textBlocks.join('\n\n');
+  return stripMetaCommentary(textBlocks.join('\n\n'));
+}
+
+/**
+ * Strip Claude's meta-commentary from narrative text.
+ * Removes lines like "I now have a comprehensive picture", "Let me compile",
+ * "Here is the complete profile", etc. that are process narration, not wine content.
+ * @param {string} text - Raw narrative
+ * @returns {string} Cleaned narrative
+ */
+export function stripMetaCommentary(text) {
+  if (!text) return '';
+
+  // Patterns that match Claude's process narration (case-insensitive, line-level)
+  const META_PATTERNS = [
+    /^I now have\b/i,
+    /^I have (now |a )?(comprehensive|complete|thorough|detailed|very comprehensive|all the)\b/i,
+    /^Let me (now )?(compile|summarize|summarise|present|put together|create|build|assemble)\b/i,
+    /^Here(?:'s| is) (the |my )?(complete|comprehensive|full|detailed|final)\b/i,
+    /^Now (let me|I('ll| will)|that I have)\b/i,
+    /^Based on my research,? (let me|I('ll| will))\b/i,
+    /^I('ll| will) (now )?(compile|summarize|summarise|present|put together)\b/i,
+    /^After (searching|researching|reviewing|gathering)\b/i,
+    /^Having (searched|researched|reviewed|gathered)\b/i
+  ];
+
+  const lines = text.split('\n');
+  const filtered = lines.filter(line => {
+    const trimmed = line.trim();
+    if (!trimmed) return true; // keep blank lines
+    return !META_PATTERNS.some(p => p.test(trimmed));
+  });
+
+  return filtered.join('\n').replace(/^\n+/, '').replaceAll(/\n{3,}/g, '\n\n');
 }
 
 /**
