@@ -1,0 +1,9 @@
+{
+  "source": "Lbstrydom/claude-skills",
+  "skills": [
+    "plan-backend",
+    "plan-frontend",
+    "audit",
+    "ship"
+  ]
+}
