@@ -24,7 +24,7 @@
     "ext:dev": "echo 'Load extension/ as unpacked in chrome://extensions (enable Developer Mode first)'",
     "lint": "eslint src/ public/js/",
     "lint:fix": "eslint src/ public/js/ --fix",
-    "skills:pull": "bash /c/GIT/claude-skills/sync.sh"
+    "skills:pull": "bash \"C:/GIT/claude-skills/sync.sh\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.74.0",
