@@ -4,8 +4,8 @@
  */
 
 import { executeCellarMoves, getFridgeOrganization } from '../api.js';
-import { showToast, escapeHtml } from '../utils.js';
-import { refreshLayout } from '../app.js';
+import { showToast, escapeHtml, getAreaIdForLocation, formatSlotLabel } from '../utils.js';
+import { refreshLayout, state } from '../app.js';
 import { getCurrentAnalysis } from './state.js';
 import { loadAnalysis } from './analysis.js';
 
@@ -506,9 +506,11 @@ async function moveFridgeCandidate(index, areaId) {
     await executeCellarMoves([{
       wineId: candidate.wineId,
       from: candidate.fromSlot,
-      to: targetSlot
+      to: targetSlot,
+      from_storage_area_id: candidate.storageAreaId || null,
+      to_storage_area_id: areaData.areaId || null
     }]);
-    showToast(`Moved ${candidate.wineName} to ${targetSlot}`);
+    showToast(`Moved ${candidate.wineName} to ${formatSlotLabel(targetSlot, areaData.areaId || null, state.layout?.areas)}`);
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
@@ -545,9 +547,11 @@ async function moveAlternativeCandidate(category, altIndex, areaId) {
     await executeCellarMoves([{
       wineId: alt.wineId,
       from: alt.fromSlot,
-      to: targetSlot
+      to: targetSlot,
+      from_storage_area_id: alt.storageAreaId || null,
+      to_storage_area_id: areaData.areaId || null
     }]);
-    showToast(`Moved ${alt.wineName} to ${targetSlot}`);
+    showToast(`Moved ${alt.wineName} to ${formatSlotLabel(targetSlot, areaData.areaId || null, state.layout?.areas)}`);
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
@@ -570,11 +574,23 @@ async function swapFridgeCandidate(candidateIndex, areaId) {
 
   try {
     await executeCellarMoves([
-      { wineId: swapOut.wineId, from: swapOut.slot, to: candidate.fromSlot },
-      { wineId: candidate.wineId, from: candidate.fromSlot, to: swapOut.slot }
+      {
+        wineId: swapOut.wineId,
+        from: swapOut.slot,
+        to: candidate.fromSlot,
+        from_storage_area_id: areaData.areaId || null,
+        to_storage_area_id: candidate.storageAreaId || null
+      },
+      {
+        wineId: candidate.wineId,
+        from: candidate.fromSlot,
+        to: swapOut.slot,
+        from_storage_area_id: candidate.storageAreaId || null,
+        to_storage_area_id: areaData.areaId || null
+      }
     ]);
     const swapOutName = swapOut.wineName || swapOut.name;
-    showToast(`Swapped: ${candidate.wineName} \u2192 ${swapOut.slot}, ${swapOutName} \u2192 ${candidate.fromSlot}`);
+    showToast(`Swapped: ${candidate.wineName} \u2192 ${formatSlotLabel(swapOut.slot, areaData.areaId || null, state.layout?.areas)}, ${swapOutName} \u2192 ${formatSlotLabel(candidate.fromSlot, candidate.storageAreaId || null, state.layout?.areas)}`);
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
@@ -613,9 +629,11 @@ async function executeTransfer(transferIndex) {
     await executeCellarMoves([{
       wineId: transfer.wineId,
       from: transfer.fromSlot,
-      to: targetSlot
+      to: targetSlot,
+      from_storage_area_id: transfer.fromAreaId || null,
+      to_storage_area_id: transfer.toAreaId || null
     }]);
-    showToast(`Transferred ${transfer.wineName} to ${transfer.toAreaName || 'target fridge'}`);
+    showToast(`Transferred ${transfer.wineName} to ${formatSlotLabel(targetSlot, transfer.toAreaId, state.layout?.areas)}`);
     await loadAnalysis();
     refreshLayout();
   } catch (err) {
@@ -752,9 +770,11 @@ async function executeFridgeOrganizeMove(index, panel) {
     await executeCellarMoves([{
       wineId: move.wineId,
       from: move.from,
-      to: move.to
+      to: move.to,
+      from_storage_area_id: getAreaIdForLocation(state.layout, move.from),
+      to_storage_area_id: getAreaIdForLocation(state.layout, move.to),
     }]);
-    showToast(`Moved ${move.wineName} to ${move.to}`);
+    showToast(`Moved ${move.wineName} to ${formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas)}`);
 
     moves.splice(index, 1);
     panel.dataset.moves = JSON.stringify(moves);
@@ -783,7 +803,9 @@ async function executeAllFridgeOrganizeMoves(panel) {
     const movesToExecute = moves.map(m => ({
       wineId: m.wineId,
       from: m.from,
-      to: m.to
+      to: m.to,
+      from_storage_area_id: getAreaIdForLocation(state.layout, m.from),
+      to_storage_area_id: getAreaIdForLocation(state.layout, m.to),
     }));
 
     const result = await executeCellarMoves(movesToExecute);

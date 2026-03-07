@@ -5,8 +5,8 @@
  */
 
 import { moveBottle, directSwapBottles } from './api.js';
-import { showToast, showConfirmDialog } from './utils.js';
-import { refreshData } from './app.js';
+import { showToast, showConfirmDialog, getAreaName, formatSlotLabel } from './utils.js';
+import { refreshData, state } from './app.js';
 import { addTrackedListener, cleanupNamespace } from './eventManager.js';
 
 const NAMESPACE = 'dragdrop';
@@ -126,10 +126,14 @@ function handleDragStart(e) {
   e.dataTransfer.effectAllowed = 'move';
   e.dataTransfer.setData('text/plain', this.dataset.location);
 
-  // Highlight valid drop targets (both empty and occupied slots)
+  // Highlight valid drop targets; cross-area targets get an extra visual marker
+  const fromAreaId = this.dataset.storageAreaId || null;
   document.querySelectorAll('.slot').forEach(slot => {
-    if (slot !== this) {
-      slot.classList.add('drag-target');
+    if (slot === this) return;
+    slot.classList.add('drag-target');
+    const targetAreaId = slot.dataset.storageAreaId || null;
+    if (fromAreaId && targetAreaId && targetAreaId !== fromAreaId) {
+      slot.classList.add('cross-area-target');
     }
   });
 
@@ -150,7 +154,7 @@ function handleDragEnd() {
 
   // Remove drag indicators
   document.querySelectorAll('.slot').forEach(slot => {
-    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+    slot.classList.remove('drag-target', 'cross-area-target', 'drag-over', 'drag-over-swap');
   });
 }
 
@@ -204,19 +208,37 @@ async function handleDrop(e) {
 
   const fromLocation = draggedSlot.dataset.location;
   const toLocation = this.dataset.location;
+  const fromAreaId = draggedSlot.dataset.storageAreaId || null;
+  const toAreaId = this.dataset.storageAreaId || null;
   const isEmpty = this.classList.contains('empty');
   const targetElement = this;
 
   // Clear drag indicators
   document.querySelectorAll('.slot').forEach(slot => {
-    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+    slot.classList.remove('drag-target', 'cross-area-target', 'drag-over', 'drag-over-swap');
   });
 
+  const areas = state.layout?.areas;
+  const isCrossArea = fromAreaId && toAreaId && fromAreaId !== toAreaId;
+
   if (isEmpty) {
-    // Simple move to empty slot
+    if (isCrossArea) {
+      // Cross-area move — show confirmation first
+      const fromName = getAreaName(fromAreaId, areas);
+      const toName = getAreaName(toAreaId, areas);
+      const wineName = draggedSlot.querySelector('.wine-name')?.textContent ||
+        draggedSlot.dataset.wineName || 'this wine';
+      const confirmed = await showConfirmDialog({
+        title: 'Move to Different Area?',
+        message: `Move "${wineName}" from ${fromName || fromLocation} to ${toName || toLocation}?`,
+        confirmText: 'Move',
+        cancelText: 'Cancel'
+      });
+      if (!confirmed) return;
+    }
     try {
-      await moveBottle(fromLocation, toLocation);
-      showToast(`Moved to ${toLocation}`);
+      await moveBottle(fromLocation, toLocation, fromAreaId, toAreaId);
+      showToast('Moved to ' + formatSlotLabel(toLocation, toAreaId, areas));
       await refreshData();
     } catch (err) {
       showToast('Error: ' + err.message);
@@ -228,7 +250,7 @@ async function handleDrop(e) {
     const targetWineName = targetElement.querySelector('.wine-name')?.textContent ||
       targetElement.dataset.wineName || 'Wine B';
 
-    showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName);
+    showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName, fromAreaId, toAreaId);
   }
 }
 
@@ -238,20 +260,29 @@ async function handleDrop(e) {
  * @param {string} toLocation - Target slot location
  * @param {string} sourceWineName - Name of wine being dragged
  * @param {string} targetWineName - Name of wine in target slot
+ * @param {string|null} fromAreaId - Storage area ID for source slot
+ * @param {string|null} toAreaId - Storage area ID for target slot
  */
-async function showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName) {
+async function showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName, fromAreaId = null, toAreaId = null) {
+  const areas = state.layout?.areas;
+  const isCrossArea = fromAreaId && toAreaId && fromAreaId !== toAreaId;
+  const fromLabel = formatSlotLabel(fromLocation, fromAreaId, areas);
+  const toLabel = formatSlotLabel(toLocation, toAreaId, areas);
   const result = await showConfirmDialog({
-    title: 'Swap Wines?',
+    title: isCrossArea ? 'Swap Wines Across Areas?' : 'Swap Wines?',
     message: `Swap positions of these wines?\n\n` +
-      `"${sourceWineName}" (${fromLocation})\n↔\n"${targetWineName}" (${toLocation})`,
+      `"${sourceWineName}" (${fromLabel})\n↔\n"${targetWineName}" (${toLabel})`,
     confirmText: 'Swap',
     cancelText: 'Cancel'
   });
 
   if (result) {
     try {
-      await directSwapBottles(fromLocation, toLocation);
-      showToast(`Swapped: ${sourceWineName} (${fromLocation}) ↔ ${targetWineName} (${toLocation})`);
+      await directSwapBottles(fromLocation, toLocation, fromAreaId, toAreaId);
+      const areas = state.layout?.areas;
+      const fromLabel = formatSlotLabel(fromLocation, fromAreaId, areas);
+      const toLabel = formatSlotLabel(toLocation, toAreaId, areas);
+      showToast(`Swapped: ${sourceWineName} (${fromLabel}) ↔ ${targetWineName} (${toLabel})`);
       await refreshData();
     } catch (err) {
       showToast('Error: ' + err.message);
@@ -301,6 +332,7 @@ function initiateTouchDrag(slot, x, y) {
   touchDragState = {
     active: true,
     sourceSlot: slot.dataset.location,
+    sourceAreaId: slot.dataset.storageAreaId || null,
     sourceElement: slot,
     ghostElement: null,
     startX: x,
@@ -315,10 +347,15 @@ function initiateTouchDrag(slot, x, y) {
   // Create ghost element for visual feedback
   createTouchGhost(slot, x, y);
 
-  // Highlight valid drop targets
+  // Highlight valid drop targets; cross-area targets get an extra visual marker
+  const sourceAreaId = slot.dataset.storageAreaId || null;
   document.querySelectorAll('.slot').forEach(s => {
     if (s !== slot) {
       s.classList.add('drag-target');
+      const targetAreaId = s.dataset.storageAreaId || null;
+      if (sourceAreaId && targetAreaId && targetAreaId !== sourceAreaId) {
+        s.classList.add('cross-area-target');
+      }
     }
   });
 }
@@ -458,49 +495,70 @@ function handleTouchMove(e) {
 }
 
 /**
+ * Confirm a cross-area move with the user.
+ * @param {HTMLElement|null} sourceElement - Dragged slot element
+ * @param {string} fromLocation - Source location code
+ * @param {string} toLocation - Target location code
+ * @param {string} fromAreaId - Source area ID
+ * @param {string} toAreaId - Target area ID
+ * @param {Array} areas - Layout areas array
+ * @returns {Promise<boolean>} True if user confirmed
+ */
+async function confirmCrossAreaMove(sourceElement, fromLocation, toLocation, fromAreaId, toAreaId, areas) {
+  const fromName = getAreaName(fromAreaId, areas);
+  const toName = getAreaName(toAreaId, areas);
+  const wineName = sourceElement?.querySelector('.wine-name')?.textContent ||
+    sourceElement?.dataset?.wineName || 'this wine';
+  return showConfirmDialog({
+    title: 'Move to Different Area?',
+    message: `Move "${wineName}" from ${fromName || fromLocation} to ${toName || toLocation}?`,
+    confirmText: 'Move',
+    cancelText: 'Cancel'
+  });
+}
+
+/**
  * Handle touch end - complete the drag or cancel long-press.
  * @param {TouchEvent} e
  */
 async function handleTouchEnd(_e) {
-  // Cancel any pending long-press
   cancelLongPress();
-
-  // If drag wasn't active, nothing to do
   if (!touchDragState.active) return;
 
   const targetSlot = touchDragState.currentTarget;
   const fromLocation = touchDragState.sourceSlot;
+  const fromAreaId = touchDragState.sourceAreaId || null;
   const sourceElement = touchDragState.sourceElement;
 
-  // Stop auto-scrolling
   stopAutoScroll();
-
-  // Clean up visual elements
   cleanupTouchDrag();
 
-  // If we have a valid target, perform the move/swap
-  if (targetSlot && fromLocation) {
-    const toLocation = targetSlot.dataset.location;
-    const isEmpty = targetSlot.classList.contains('empty');
+  if (!targetSlot || !fromLocation) return;
 
-    if (isEmpty) {
-      // Simple move to empty slot
-      try {
-        await moveBottle(fromLocation, toLocation);
-        showToast(`Moved to ${toLocation}`);
-        await refreshData();
-      } catch (err) {
-        showToast('Error: ' + err.message);
-      }
-    } else {
-      // Target is occupied - show swap confirmation dialog
-      const sourceWineName = sourceElement?.querySelector('.wine-name')?.textContent ||
-        sourceElement?.dataset?.wineName || 'Wine A';
-      const targetWineName = targetSlot.querySelector('.wine-name')?.textContent ||
-        targetSlot.dataset.wineName || 'Wine B';
+  const toLocation = targetSlot.dataset.location;
+  const toAreaId = targetSlot.dataset.storageAreaId || null;
+  const areas = state.layout?.areas;
+  const isEmpty = targetSlot.classList.contains('empty');
 
-      showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName);
+  if (isEmpty) {
+    const isCrossArea = fromAreaId && toAreaId && fromAreaId !== toAreaId;
+    if (isCrossArea) {
+      const confirmed = await confirmCrossAreaMove(sourceElement, fromLocation, toLocation, fromAreaId, toAreaId, areas);
+      if (!confirmed) return;
     }
+    try {
+      await moveBottle(fromLocation, toLocation, fromAreaId, toAreaId);
+      showToast('Moved to ' + formatSlotLabel(toLocation, toAreaId, areas));
+      await refreshData();
+    } catch (err) {
+      showToast('Error: ' + err.message);
+    }
+  } else {
+    const sourceWineName = sourceElement?.querySelector('.wine-name')?.textContent ||
+      sourceElement?.dataset?.wineName || 'Wine A';
+    const targetWineName = targetSlot.querySelector('.wine-name')?.textContent ||
+      targetSlot.dataset.wineName || 'Wine B';
+    showSwapConfirmDialog(fromLocation, toLocation, sourceWineName, targetWineName, fromAreaId, toAreaId);
   }
 }
 
@@ -532,13 +590,14 @@ function cleanupTouchDrag() {
 
   // Clear all drag targets
   document.querySelectorAll('.slot').forEach(slot => {
-    slot.classList.remove('drag-target', 'drag-over', 'drag-over-swap');
+    slot.classList.remove('drag-target', 'cross-area-target', 'drag-over', 'drag-over-swap');
   });
 
   // Reset state
   touchDragState = {
     active: false,
     sourceSlot: null,
+    sourceAreaId: null,
     sourceElement: null,
     ghostElement: null,
     startX: 0,

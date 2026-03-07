@@ -4,8 +4,8 @@
  */
 
 import { drinkBottle, getWineRatings, getPersonalRating, updatePersonalRating, openBottle, sealBottle } from './api.js';
-import { showToast } from './utils.js';
-import { refreshData } from './app.js';
+import { showToast, formatSlotLabel } from './utils.js';
+import { refreshData, state } from './app.js';
 import { renderRatingsPanel, initRatingsPanel } from './ratings.js';
 import { showSlotPickerModal, showEditBottleModal } from './bottles.js';
 import { renderTastingServiceCard } from './tastingService.js';
@@ -51,7 +51,8 @@ export async function showWineModal(slot) {
   document.getElementById('modal-wine-name').textContent = slot.wine_name;
   document.getElementById('modal-wine-style').textContent =
     `${slot.style} • ${slot.vintage || 'NV'} • ${slot.colour}`;
-  document.getElementById('modal-location').textContent = slot.location_code;
+  document.getElementById('modal-location').textContent =
+    formatSlotLabel(slot.location_code, slot.storage_area_id, state.layout?.areas);
   document.getElementById('modal-rating').textContent = slot.rating ? `${slot.rating}/5` : '-';
   document.getElementById('modal-price').textContent = slot.price ? `${slot.price.toFixed(2)}` : '-';
 
@@ -278,11 +279,13 @@ export async function handleDrinkBottle() {
   const location = currentSlot.location_code;
   // Capture wine data before closeWineModal() nulls currentSlot
   const wineName = currentSlot.wine_name || 'Wine';
+  const storageAreaId = currentSlot.storage_area_id || null;
 
   try {
-    const data = await drinkBottle(location);
+    const data = await drinkBottle(location, { storage_area_id: storageAreaId });
     closeWineModal();
-    showToast(`Enjoyed ${wineName}! ${data.remaining_bottles} bottles remaining`);
+    const drinkLabel = formatSlotLabel(location, storageAreaId, state.layout?.areas);
+    showToast(`Enjoyed ${wineName} from ${drinkLabel}! ${data.remaining_bottles} bottles remaining`);
     // Subtle hint — not a blocking modal
     showToast('You can rate this wine later — we\'ll remind you next time', 5000);
     if (data.compaction_suggestions?.length > 0) {
@@ -322,16 +325,18 @@ async function handleToggleOpenBottle() {
 
   const location = currentSlot.location_code;
   const isCurrentlyOpen = currentSlot.is_open;
+  const storageAreaId = currentSlot.storage_area_id || null;
 
   try {
+    const toggleLabel = formatSlotLabel(location, storageAreaId, state.layout?.areas);
     if (isCurrentlyOpen) {
-      await sealBottle(location);
+      await sealBottle(location, storageAreaId);
       currentSlot.is_open = false;
-      showToast('Bottle marked as sealed');
+      showToast(`Bottle at ${toggleLabel} marked as sealed`);
     } else {
-      await openBottle(location);
+      await openBottle(location, storageAreaId);
       currentSlot.is_open = true;
-      showToast('Bottle marked as open');
+      showToast(`Bottle at ${toggleLabel} marked as open`);
     }
     updateOpenBottleButton(currentSlot.is_open);
     await refreshData();

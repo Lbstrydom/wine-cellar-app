@@ -1,5 +1,38 @@
 # Wine Cellar App - Status Report
 
+## 2026-03-07 — Phase 3 Frontend Audit Fixes + Row Rebase Plan
+
+### Changes
+- **Audit triage of `phase3-frontend-cross-area-ux.md`**: Evaluated 5 audit findings (2 High, 3 Medium). All Medium gaps fixed inline; both High gaps deferred to a new plan (architectural changes required).
+- **`dragdrop.js` — touch cross-area highlight**: `initiateTouchDrag` now adds `cross-area-target` class to cross-area slots (parity with mouse drag path). Touch drag state now stores `sourceAreaId`.
+- **`dragdrop.js` — swap dialog labels**: `showSwapConfirmDialog` now uses `formatSlotLabel` for location codes in the body and shows "Swap Wines Across Areas?" as the title for cross-area swaps. Dialog receives `fromAreaId`/`toAreaId`.
+- **`modals.js` — drink/open/seal toasts**: `handleDrinkBottle` now shows `"Enjoyed X from [Area] R5C3!"`. `handleToggleOpenBottle` shows `"Bottle at [Area] R5C3 marked as sealed/open"`. Both import `formatSlotLabel` and `state`.
+- **`fridge.js` — transfer toast**: `executeTransfer` now shows `formatSlotLabel(targetSlot, toAreaId, areas)` instead of the area name alone.
+- **Challenged plan**: The plan called for a separate pre-swap cross-area confirmation dialog. Rejected as redundant — the swap dialog itself already gates the action. Fixed instead by making it cross-area-aware.
+- **New plan**: `docs/plans/phase3-wizard-edit-mode-and-row-rebase.md` covering:
+  - Fix A: `rebaseRows()` helper to remap locally-numbered rows (1..N) to original global row range when updating existing areas (prevents row-overlap guard failures after template apply or row deletion).
+  - Fix B: Add "Remove Area" / "Add Area" controls to wizard Step 2 edit mode; fix `handleStorageAreasSave` early-exit when `areas.length === 0`.
+- **Plan doc updated**: `phase3-frontend-cross-area-ux.md` status changed from "Complete" to "Partially Complete"; §9 Audit Addendum added with gap triage table and open question answers.
+
+### Files Affected
+- `public/js/dragdrop.js` — touch cross-area highlight; swap dialog area-aware labels + cross-area title
+- `public/js/modals.js` — slot labels in drink/open/seal toasts; `formatSlotLabel` + `state` imports
+- `public/js/cellarAnalysis/fridge.js` — transfer toast uses `formatSlotLabel`; `state` import added
+- `docs/plans/phase3-frontend-cross-area-ux.md` — status + §9 Audit Addendum
+- `docs/plans/phase3-wizard-edit-mode-and-row-rebase.md` — NEW: plan for row rebase + wizard edit mode
+
+### Decisions Made
+- Cross-area swap confirmation: embedded in the swap dialog (title + area-aware labels) rather than a separate pre-dialog step. Avoids redundant UX click.
+- Row rebase strategy: rebase on save (not live in editor). Builder keeps local 1..N UX; `rebaseRows()` maps to global range at persist time. If user adds rows beyond the original count, they are appended after the area's `maxOriginal` row.
+- High gaps deferred: Both row rebase and wizard edit/delete mode require structural changes (new helpers, API signature changes, UI restructure). Captured in the new plan rather than rushed inline.
+
+### Next Steps
+- Implement `docs/plans/phase3-wizard-edit-mode-and-row-rebase.md` (Fix A + Fix B)
+- Write `rebaseRows()` unit tests in `storageBuilder.test.js`
+- Update `storageAreasSettings.test.js` to reflect current single-POST save model (not two-step)
+
+---
+
 ## 2026-03-06 — Dynamic Fridge Stocking Refactor (Multi-Area Architecture)
 
 ### Changes
