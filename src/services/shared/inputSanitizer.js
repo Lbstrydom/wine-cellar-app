@@ -36,7 +36,7 @@ const INJECTION_PATTERNS = {
  */
 const MAX_LENGTHS = {
   wineName: 200,
-  dishDescription: 500,
+  dishDescription: 2000,
   chatMessage: 2000,
   tastingNote: 3000,
   menuText: 5000,
@@ -146,7 +146,7 @@ export function sanitizeDishDescription(dish) {
   return sanitize(dish, {
     maxLength: MAX_LENGTHS.dishDescription,
     allowMarkdown: false,
-    preserveNewlines: false
+    preserveNewlines: true
   });
 }
 

@@ -15,12 +15,14 @@ import logger from '../../utils/logger.js';
 /**
  * Get sommelier wine recommendation for a dish.
  * @param {Database} db - Database connection
- * @param {string} dish - Dish description
+ * @param {string} dish - Dish description (optional when imageOpts provided)
  * @param {string} source - 'all' or 'reduce_now'
  * @param {string} colour - 'any', 'red', 'white', or 'rose'
+ * @param {string} cellarId - Cellar ID for data scoping
+ * @param {{base64: string, mediaType: string}|null} [imageOpts] - Optional attached image
  * @returns {Promise<Object>} Sommelier recommendations
  */
-export async function getSommelierRecommendation(db, dish, source, colour, cellarId) {
+export async function getSommelierRecommendation(db, dish, source, colour, cellarId, imageOpts = null) {
   if (!anthropic) {
     throw new Error('Claude API key not configured');
   }
@@ -39,8 +41,9 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
       LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE 1=1
+      WHERE w.cellar_id = ?
     `;
+    params.push(cellarId);
     if (colour !== 'any') {
       wineQuery += ` AND w.colour = ?`;
       params.push(colour);
@@ -54,8 +57,9 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
         ${stringAgg('s.location_code', ',', true)} as locations
       FROM wines w
       LEFT JOIN slots s ON s.wine_id = w.id
-      WHERE 1=1
+      WHERE w.cellar_id = ?
     `;
+    params.push(cellarId);
     if (colour !== 'any') {
       wineQuery += ` AND w.colour = ?`;
       params.push(colour);
@@ -81,13 +85,14 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
       FROM reduce_now rn
       JOIN wines w ON w.id = rn.wine_id
       JOIN slots s ON s.wine_id = w.id
-      ${colour !== 'any' ? 'WHERE w.colour = ?' : ''}
+      WHERE w.cellar_id = ?
+      ${colour !== 'any' ? 'AND w.colour = ?' : ''}
       GROUP BY w.id, w.wine_name, w.vintage, rn.reduce_reason
       ORDER BY MIN(rn.priority)
     `;
     const priorityWines = colour !== 'any'
-      ? await db.prepare(priorityQuery).all(colour)
-      : await db.prepare(priorityQuery).all();
+      ? await db.prepare(priorityQuery).all(cellarId, colour)
+      : await db.prepare(priorityQuery).all(cellarId);
 
     if (priorityWines.length > 0) {
       prioritySection = `\nPRIORITY WINES (these should be drunk soon - prefer if suitable):\n` +
@@ -107,8 +112,11 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
     'sparkling': 'Sparkling wines only'
   }[colour] || 'No colour preference - suggest what works best';
 
+  // Build effective dish description (fallback for image-only sessions)
+  const effectiveDish = dish && dish.trim() ? dish.trim() : '[Image attached — see vision analysis above]';
+
   // Sanitize inputs
-  const sanitizedDish = sanitizeDishDescription(dish);
+  const sanitizedDish = sanitizeDishDescription(effectiveDish);
   const sanitizedWines = sanitizeWineList(wines);
 
   // Fetch past pairing feedback to personalise recommendations
@@ -128,19 +136,38 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
     logger.warn('Sommelier', `Failed to fetch pairing history: ${err.message}`);
   }
 
-  const { systemPrompt, userPrompt: baseUserPrompt } = buildSommelierPrompts(sanitizedDish, sourceDesc, colourDesc, sanitizedWines, prioritySection);
+  const imageOnly = imageOpts && (!dish || !dish.trim());
+  const { systemPrompt, userPrompt: baseUserPrompt } = buildSommelierPrompts(sanitizedDish, sourceDesc, colourDesc, sanitizedWines, prioritySection, imageOnly);
   const userPrompt = baseUserPrompt + historyBlock;
 
   // Get model for task (allows environment override)
   const modelId = getModelForTask('sommelier');
   const maxTokens = Math.min(getMaxTokens(modelId), 1500);
 
+  // Build user message content — include image block when provided
+  let userContent;
+  if (imageOpts) {
+    userContent = [
+      {
+        type: 'image',
+        source: {
+          type: 'base64',
+          media_type: imageOpts.mediaType,
+          data: imageOpts.base64
+        }
+      },
+      { type: 'text', text: userPrompt }
+    ];
+  } else {
+    userContent = userPrompt;
+  }
+
   // Call Claude API with system prompt for security
   const message = await anthropic.messages.create({
     model: modelId,
     max_tokens: maxTokens,
     system: systemPrompt,
-    messages: [{ role: 'user', content: userPrompt }]
+    messages: [{ role: 'user', content: userContent }]
   });
 
   // Parse and validate response
@@ -169,6 +196,10 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
     parsed.recommendations = enrichRecommendations(parsed.recommendations, wines);
   }
 
+  // Derive effective dish for session persistence: prefer AI's analysis for image-only sessions
+  // (effectiveDish above was the prompt placeholder; sessionDish is what gets stored)
+  const sessionDish = (dish && dish.trim()) ? dish.trim() : (parsed.dish_analysis || 'Dish from photo');
+
   // Include context for follow-up chat (avoid circular reference)
   const initialResponseCopy = {
     dish_analysis: parsed.dish_analysis,
@@ -189,7 +220,7 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
   };
 
   parsed._chatContext = {
-    dish,
+    dish: sessionDish,
     source,
     colour,
     wines,
@@ -201,7 +232,7 @@ export async function getSommelierRecommendation(db, dish, source, colour, cella
   const { createPairingSession } = await import('./pairingSession.js');
   const sessionId = await createPairingSession({
     cellarId,
-    dish,
+    dish: sessionDish,
     source,
     colour,
     foodSignals: parsed.signals || [],
@@ -454,10 +485,11 @@ ${winesList}`;
  * @param {string} colourDesc - Colour preference description
  * @param {Object[]} wines - Sanitized wine list
  * @param {string} prioritySection - Priority wines section text
+ * @param {boolean} [imageOnly] - True when no text was provided — image-only session
  * @returns {{systemPrompt: string, userPrompt: string}}
  * @private
  */
-function buildSommelierPrompts(dish, sourceDesc, colourDesc, wines, prioritySection) {
+function buildSommelierPrompts(dish, sourceDesc, colourDesc, wines, prioritySection, imageOnly = false) {
   // Format wines with IDs for reliable matching
   const winesList = wines.map(w =>
     `[ID:${w.id}] ${w.wine_name} ${w.vintage || 'NV'} (${w.style}, ${w.colour}) - ${w.bottle_count} bottle(s) at ${w.locations}${w.priority ? ' \u2605PRIORITY' : ''}`
@@ -515,7 +547,11 @@ Respond with valid JSON only, no other text. Use this exact schema:
   "no_match_reason": "null or explanation if fewer than 3 suitable wines"
 }`;
 
-  const userPrompt = `DISH: ${dish}
+  const dishLine = imageOnly
+    ? 'The user has attached a photo of their dish. Analyze the image to identify the dish and its key flavour components, then recommend wines from the list below.'
+    : `DISH: ${dish}`;
+
+  const userPrompt = `${dishLine}
 
 CONSTRAINTS:
 - Wine source: ${sourceDesc}

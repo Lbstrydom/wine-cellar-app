@@ -687,9 +687,14 @@ header .search-trigger {
     padding: 1rem;
   }
 
-  .natural-pairing input[type="text"] {
+  .natural-pairing input[type="text"],
+  .natural-pairing textarea {
     font-size: 1rem;
     padding: 0.9rem 1rem;
+  }
+
+  .sommelier-attachment-bar {
+    gap: 0.4rem;
   }
 
   .signal-grid {

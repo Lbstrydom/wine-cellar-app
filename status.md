@@ -1,5 +1,62 @@
 # Wine Cellar App - Status Report
 
+## 2026-03-07 — Sommelier Image Attachment + Recipe Import (post-audit fixes)
+
+### Changes
+- **Audit round 1** (from `/audit-code docs/plans/sommelier-image-and-recipe-input.md`):
+  - **H1 — `getRecipe()` envelope unwrapping**: All 3 call sites (`selectRecipe`, `handleImportRecipeUrl` in `sommelier.js`, Pair button in `recipeLibrary.js`) now destructure `const { data: recipe } = await getRecipe(id)` instead of reading envelope fields directly
+  - **M1 — Image-only prompt instruction**: `buildSommelierPrompts` accepts `imageOnly` 6th param; substitutes full `DISH:` line with "Analyze the image..." instruction
+  - **M2 — Image not cleared after submit**: `clearAttachedImage()` called after `renderSommelierResponse(data)` on success
+  - **M3 — Recipe modal focus trap/return**: `closeRecipeModal()` restores focus to opener button; `keydown` handler traps Tab/Shift+Tab within modal, Escape closes
+  - **M4 — Missing test files**: Created `tests/unit/api/pairing.test.js` (3 tests for `askSommelier`) and `tests/unit/routes/recipes.test.js` (2 tests for `POST /import/url`)
+  - **M5 — `deleted_at IS NULL` missing**: Added to URL import recipe lookup in `src/routes/recipes.js`
+  - **L1 — `accept="*/*"`**: Changed to `accept="image/*"` on `#sommelier-file-input`
+  - **L2 — Recipe picker limit 10**: Changed to `limit: 20`
+  - **L3 — Redundant type check**: Removed duplicate `!file.type.startsWith('image/')` from `initSommelier` change handler
+- **Audit round 2** (GPT-5.4 review of round 1 output):
+  - **H1 — Placeholder dish in session**: `sessionDish` now computed post-API as `dish || parsed.dish_analysis || 'Dish from photo'`; used in `createPairingSession` and `_chatContext.dish` instead of pre-API `[Image attached...]` placeholder
+  - **H2 — Consumption history dish missing**: `linkConsumption` in `pairingSession.js` now runs `UPDATE consumption_log SET pairing_dish = COALESCE(..., ps.dish_description) FROM pairing_sessions` before updating the session
+  - **M1 — Missing `.max(5_000_000)` on image schema field**: Added to `naturalPairingSchema` in `src/schemas/pairing.js`
+  - **Test fix**: Sommelier test for image-only now asserts `dish: 'Test analysis'` (AI response), not `stringContaining('Image attached')`
+- **Audit round 3** (GPT-5.4 second pass):
+  - **M1 — URL-import null recipe_id fallback**: When `recipe_id` is null, `handleImportRecipeUrl` now populates textarea with `result.recipe_name`, hides URL row, and shows contextual toast instead of early-returning with no input
+  - **M2 — chatId returned without chat context**: Route now only generates and returns `chatId` when `_chatContext` exists; returns `chatId: null` on no-match path (mirrors hybrid route)
+  - **L1 — Recipe picker `category` field**: Changed `recipe.category` → `recipe.categories`; handles JSONB array by taking first element
+
+### Files Modified
+- `src/services/pairing/sommelier.js` — cellar scoping on all queries, `imageOpts` param, vision content block, `imageOnly` prompt path, `sessionDish` post-API computation
+- `src/services/pairing/pairingSession.js` — `linkConsumption` copies `dish_description` to `consumption_log.pairing_dish`
+- `src/schemas/pairing.js` — `naturalPairingSchema` extended: `dish` optional, `image`/`mediaType` fields, either-or refinement, `.max(5_000_000)` on image
+- `src/routes/pairing.js` — `imageOpts` passthrough, `stampChatContext`/`validateChatOwnership`, `chatId` only generated when context exists, hybrid route ownership stamping
+- `src/routes/recipes.js` — `POST /import/url` returns `recipe_id`, `deleted_at IS NULL` on lookup
+- `src/services/shared/inputSanitizer.js` — `MAX_LENGTHS.dishDescription` increased 500 → 2000
+- `public/js/sommelier.js` — full implementation: image attach/preview/paste, recipe picker modal, URL import, `clearAttachedImage` on submit, focus trap, recipe_id fallback, `categories` field fix
+- `public/js/recipes/recipeLibrary.js` — Pair button fetches full recipe and populates ingredients via `getRecipe()`
+- `public/js/api/pairing.js` — `askSommelier` accepts `image` param, conditionally includes `image`/`mediaType`
+- `public/index.html` — textarea, attachment bar, Browse/Photo/Recipe/URL buttons, `accept="image/*"`
+- `public/css/components.css`, `layout.css`, `accessibility.css` — attachment styles, responsive rules
+- `public/sw.js` — cache version bump, new assets registered
+
+### Files Created
+- `docs/plans/sommelier-image-and-recipe-input.md` — full feature plan
+- `docs/plans/sommelier-image-and-recipe-input-code-audit.md` — audit report (3 rounds)
+- `tests/unit/api/pairing.test.js` — 3 tests for `askSommelier` image field handling
+- `tests/unit/routes/recipes.test.js` — 2 tests for `POST /import/url` `recipe_id` return
+- `tests/unit/schemas/naturalPairingSchema.test.js` — 10 tests
+- `tests/unit/routes/pairingChatOwnership.test.js` — 5 tests
+- `tests/unit/services/pairing/sommelier.test.js` — 8 tests
+- `tests/unit/services/shared/inputSanitizer.test.js` — 7 tests
+
+### Decisions Made
+- `sessionDish` pattern: the `effectiveDish` placeholder is used only for the prompt; a separate `sessionDish` derived post-API ensures `pairing_sessions.dish_description` holds meaningful text
+- `chatId: null` on no-match: mirrors existing hybrid route convention rather than always generating an unusable ID
+- `recipe.categories[0]` for picker display: JSONB array, first element is sufficient for the compact picker row meta
+
+### Next Steps
+- None outstanding — all 3 rounds of audit findings resolved; 3,566 tests pass
+
+---
+
 ## 2026-03-07 — Phase 3 Wizard Edit Mode + Row Rebase + Bug Fixes
 
 ### Changes

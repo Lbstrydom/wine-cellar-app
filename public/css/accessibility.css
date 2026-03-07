@@ -101,6 +101,8 @@ textarea:focus-visible {
   .form-field textarea,
   #wine-search,
   .natural-pairing input[type="text"],
+  .natural-pairing textarea,
+  .sommelier-url-row input[type="url"],
   .chat-input-container input,
   .zone-chat-input-container input {
     font-size: 16px;

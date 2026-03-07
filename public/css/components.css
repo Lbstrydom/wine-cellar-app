@@ -3990,7 +3990,8 @@
   margin-bottom: 1.5rem;
 }
 
-.natural-pairing input[type="text"] {
+.natural-pairing input[type="text"],
+.natural-pairing textarea {
   width: 100%;
   padding: 0.8rem 1rem;
   background: var(--bg-slot);
@@ -3998,16 +3999,142 @@
   border-radius: 8px;
   color: var(--text);
   font-size: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: 0.75rem;
+  box-sizing: border-box;
 }
 
-.natural-pairing input[type="text"]:focus {
+.natural-pairing textarea {
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+  line-height: 1.5;
+}
+
+.natural-pairing input[type="text"]:focus,
+.natural-pairing textarea:focus {
   outline: none;
   border-color: var(--accent);
 }
 
-.natural-pairing input[type="text"]::placeholder {
+.natural-pairing input[type="text"]::placeholder,
+.natural-pairing textarea::placeholder {
   color: var(--text-muted);
+}
+
+/* Attachment bar */
+.sommelier-attachment-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+/* Image preview */
+.sommelier-image-preview {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.sommelier-image-preview img {
+  max-height: 80px;
+  max-width: 120px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+/* URL import row */
+.sommelier-url-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.sommelier-url-row input[type="url"] {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.sommelier-url-row input[type="url"]:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* Recipe picker modal */
+.sommelier-recipe-search-row {
+  margin-bottom: 0.75rem;
+}
+
+.sommelier-recipe-search-row input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  background: var(--bg-slot);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  box-sizing: border-box;
+}
+
+.sommelier-recipe-search-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sommelier-recipe-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.sommelier-recipe-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sommelier-recipe-item:hover {
+  background: var(--bg-hover, var(--bg-slot));
+}
+
+.sommelier-recipe-name {
+  font-weight: 500;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sommelier-recipe-meta {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.sommelier-recipe-pagination {
+  margin-top: 0.5rem;
+  text-align: center;
 }
 
 .pairing-filters {

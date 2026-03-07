@@ -44,6 +44,32 @@ setInterval(() => {
 }, 5 * 60 * 1000); // Clean every 5 minutes
 
 /**
+ * Stamp user and cellar ownership onto a chat context before storing.
+ * @param {Object} context - Chat context object (mutated in place)
+ * @param {import('express').Request} req - Express request
+ */
+function stampChatContext(context, req) {
+  context.userId = req.user.id;
+  context.cellarId = req.cellarId;
+}
+
+/**
+ * Validate that the requesting user owns this chat context.
+ * Returns false and sends 403 if ownership fails.
+ * @param {Object} context - Chat context
+ * @param {import('express').Request} req - Express request
+ * @param {import('express').Response} res - Express response
+ * @returns {boolean} true if valid, false if rejected
+ */
+function validateChatOwnership(context, req, res) {
+  if (context.userId !== req.user.id || context.cellarId !== req.cellarId) {
+    res.status(403).json({ error: 'Access denied' });
+    return false;
+  }
+  return true;
+}
+
+/**
  * Get pairing rules matrix.
  * @route GET /api/pairing/rules
  */
@@ -69,7 +95,7 @@ router.post('/suggest', validateBody(suggestPairingSchema), asyncHandler(async (
  * @route POST /api/pairing/natural
  */
 router.post('/natural', validateBody(naturalPairingSchema), strictRateLimiter(), asyncHandler(async (req, res) => {
-  const { dish, source, colour } = req.body;
+  const { dish, source, colour, image, mediaType } = req.body;
 
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(503).json({
@@ -77,16 +103,20 @@ router.post('/natural', validateBody(naturalPairingSchema), strictRateLimiter(),
     });
   }
 
-  const result = await getSommelierRecommendation(db, dish, source, colour, req.cellarId);
+  const imageOpts = image ? { base64: image, mediaType } : null;
+  const result = await getSommelierRecommendation(db, dish, source, colour, req.cellarId, imageOpts);
 
   // Store chat context for follow-up conversations
-  const chatId = randomUUID();
+  let chatId = null;
   if (result._chatContext) {
-    chatContexts.set(chatId, {
+    chatId = randomUUID();
+    const ctx = {
       ...result._chatContext,
       chatHistory: [],
       createdAt: Date.now()
-    });
+    };
+    stampChatContext(ctx, req);
+    chatContexts.set(chatId, ctx);
     delete result._chatContext; // Don't send internal context to client
   }
 
@@ -117,6 +147,8 @@ router.post('/chat', validateBody(chatMessageSchema), strictRateLimiter(), async
     });
   }
 
+  if (!validateChatOwnership(context, req, res)) return;
+
   const result = await continueSommelierChat(db, message.trim(), context);
 
   // Update chat history
@@ -133,11 +165,15 @@ router.post('/chat', validateBody(chatMessageSchema), strictRateLimiter(), async
  * Clear chat session.
  * @route DELETE /api/pairing/chat/:chatId
  */
-router.delete('/chat/:chatId', (req, res) => {
+router.delete('/chat/:chatId', asyncHandler(async (req, res) => {
   const { chatId } = req.params;
-  chatContexts.delete(chatId);
+  const context = chatContexts.get(chatId);
+  if (context) {
+    if (!validateChatOwnership(context, req, res)) return;
+    chatContexts.delete(chatId);
+  }
   res.json({ message: 'Chat session cleared' });
-});
+}));
 
 // ============================================================
 // Hybrid Pairing Engine Endpoints (7.8)
@@ -212,7 +248,7 @@ router.post('/hybrid', validateBody(hybridPairingSchema), strictRateLimiter(), a
   // Store chat context for follow-up if AI succeeded
   const chatId = randomUUID();
   if (result.aiSuccess) {
-    chatContexts.set(chatId, {
+    const ctx = {
       dish,
       source,
       colour,
@@ -224,7 +260,9 @@ router.post('/hybrid', validateBody(hybridPairingSchema), strictRateLimiter(), a
       },
       chatHistory: [],
       createdAt: Date.now()
-    });
+    };
+    stampChatContext(ctx, req);
+    chatContexts.set(chatId, ctx);
   }
 
   res.json({

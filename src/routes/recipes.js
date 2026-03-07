@@ -165,10 +165,16 @@ router.post('/import/url', validateBody(urlImportSchema), asyncHandler(async (re
     await invalidateProfile(req.cellarId);
   }
 
+  // Lookup ID so frontend can fetch full recipe details (e.g. ingredients for sommelier)
+  const imported = await db.prepare(
+    `SELECT id FROM recipes WHERE cellar_id = $1 AND source_provider = $2 AND source_recipe_id = $3 AND deleted_at IS NULL`
+  ).get(req.cellarId, recipes[0].source_provider, recipes[0].source_recipe_id);
+
   res.json({
     message: result.added > 0 ? 'Recipe imported' : 'Recipe updated',
     ...result,
-    recipe_name: recipes[0].name
+    recipe_name: recipes[0].name,
+    recipe_id: imported?.id ?? null
   });
 }));
 

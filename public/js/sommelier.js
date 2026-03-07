@@ -4,15 +4,29 @@
  */
 
 import { askSommelier, getPairingSuggestions, sommelierChat, submitPairingFeedback } from './api.js';
+import { listRecipes, getRecipe, importRecipeFromUrl } from './api/recipes.js';
 import { showToast, escapeHtml } from './utils.js';
 import { showWineModalFromList } from './modals.js';
 import { renderRecommendation, displayRecommendations } from './pairing.js';
 import { switchView } from './app.js';
+import { resizeImage } from './bottles/imageParsing.js';
 
 const selectedSignals = new Set();
 
 // Current chat session
 let currentChatId = null;
+
+// Attached image state
+let attachedImage = null; // { base64, mediaType, dataUrl } | null
+
+// Recipe picker state
+const recipePicker = {
+  offset: 0,
+  limit: 20,
+  search: '',
+  hasMore: false,
+  searchTimer: null
+};
 
 /**
  * Convert transport/runtime failures into user-friendly messages.
@@ -35,8 +49,8 @@ export async function handleAskSommelier() {
   const dishInput = document.getElementById('dish-input');
   const dish = dishInput.value.trim();
 
-  if (!dish) {
-    showToast('Please describe a dish');
+  if (!dish && !attachedImage) {
+    showToast('Please describe a dish or attach an image');
     return;
   }
 
@@ -51,11 +65,13 @@ export async function handleAskSommelier() {
   resultsContainer.innerHTML = '<div class="sommelier-response"><p style="color: var(--text-muted);">The sommelier is considering your dish...</p></div>';
 
   try {
-    const data = await askSommelier(dish, source, colour);
+    const imageParam = attachedImage ? { base64: attachedImage.base64, mediaType: attachedImage.mediaType } : null;
+    const data = await askSommelier(dish || null, source, colour, imageParam);
 
     // Store chat session info
     currentChatId = data.chatId;
 
+    clearAttachedImage();
     renderSommelierResponse(data);
   } catch (err) {
     const message = getFriendlyErrorMessage(err, 'Unable to reach the sommelier service. Please try again.');
@@ -419,13 +435,352 @@ export function clearSignals() {
   document.getElementById('pairing-results').innerHTML = '<p style="color: var(--text-muted);">Select dish characteristics above</p>';
 }
 
+// ============================================================
+// Image attachment
+// ============================================================
+
+/**
+ * Handle file selection from gallery/browse input.
+ * @param {File} file - Selected image file
+ */
+async function handleImageFile(file) {
+  if (!file.type.startsWith('image/')) {
+    showToast('Please select an image file (JPEG, PNG, WebP, or GIF)');
+    return;
+  }
+
+  showToast('Processing image...');
+  try {
+    const resized = await resizeImage(file);
+    attachedImage = { base64: resized.base64, mediaType: resized.mediaType, dataUrl: resized.dataUrl };
+    renderImagePreview(resized.dataUrl);
+  } catch (err) {
+    showToast('Failed to process image: ' + err.message);
+  }
+}
+
+/**
+ * Render image preview in the sommelier panel.
+ * @param {string} dataUrl - Preview data URL
+ */
+function renderImagePreview(dataUrl) {
+  const preview = document.getElementById('sommelier-image-preview');
+  const img = document.getElementById('sommelier-preview-img');
+  if (preview && img) {
+    img.src = dataUrl;
+    preview.hidden = false;
+  }
+}
+
+/**
+ * Clear the attached image.
+ */
+function clearAttachedImage() {
+  attachedImage = null;
+  const preview = document.getElementById('sommelier-image-preview');
+  const img = document.getElementById('sommelier-preview-img');
+  const fileInput = document.getElementById('sommelier-file-input');
+  const cameraInput = document.getElementById('sommelier-camera-input');
+  if (preview) preview.hidden = true;
+  if (img) img.src = '';
+  if (fileInput) fileInput.value = '';
+  if (cameraInput) cameraInput.value = '';
+}
+
+// ============================================================
+// Recipe picker
+// ============================================================
+
+/**
+ * Open the recipe picker modal and load initial results.
+ */
+async function openRecipePicker() {
+  recipePicker.offset = 0;
+  recipePicker.search = '';
+  const modal = document.getElementById('sommelier-recipe-modal');
+  const searchInput = document.getElementById('sommelier-recipe-search');
+  if (!modal) return;
+  if (searchInput) searchInput.value = '';
+  modal.style.display = 'flex';
+  searchInput?.focus();
+  await loadRecipePickerPage(true);
+}
+
+/**
+ * Load a page of recipes into the picker.
+ * @param {boolean} replace - If true, replace existing results; false to append
+ */
+async function loadRecipePickerPage(replace = false) {
+  const list = document.getElementById('sommelier-recipe-results');
+  const pagination = document.getElementById('sommelier-recipe-pagination');
+  if (!list) return;
+
+  if (replace) {
+    list.innerHTML = '<li class="text-muted">Loading recipes...</li>';
+  }
+
+  try {
+    const result = await listRecipes({ search: recipePicker.search, limit: recipePicker.limit, offset: recipePicker.offset });
+    const recipes = result.recipes || result.data || [];
+    const total = result.total ?? recipes.length;
+
+    if (replace) list.innerHTML = '';
+
+    if (recipes.length === 0 && replace) {
+      list.innerHTML = '<li class="text-muted">No recipes found.</li>';
+      if (pagination) pagination.hidden = true;
+      return;
+    }
+
+    recipes.forEach(recipe => {
+      const li = document.createElement('li');
+      li.className = 'sommelier-recipe-item';
+      li.dataset.recipeId = recipe.id;
+
+      const nameEl = document.createElement('span');
+      nameEl.className = 'sommelier-recipe-name';
+      nameEl.textContent = recipe.name || recipe.recipe_name || '(unnamed)';
+
+      const metaEl = document.createElement('span');
+      metaEl.className = 'sommelier-recipe-meta';
+      const categoryLabel = Array.isArray(recipe.categories)
+        ? recipe.categories[0]
+        : (recipe.categories || '');
+      metaEl.textContent = [categoryLabel, recipe.source_provider].filter(Boolean).join(' · ');
+
+      li.appendChild(nameEl);
+      if (metaEl.textContent) li.appendChild(metaEl);
+
+      li.addEventListener('click', () => selectRecipe(recipe.id));
+      list.appendChild(li);
+    });
+
+    recipePicker.offset += recipes.length;
+    recipePicker.hasMore = recipePicker.offset < total;
+    if (pagination) pagination.hidden = !recipePicker.hasMore;
+  } catch (err) {
+    list.innerHTML = `<li class="text-muted">Error loading recipes: ${escapeHtml(err.message)}</li>`;
+  }
+}
+
+/**
+ * Build a dish description string from a recipe object.
+ * @param {Object} recipe - Recipe object with name/ingredients
+ * @returns {string} Multi-line description for the dish input
+ */
+function buildRecipeDescription(recipe) {
+  const name = recipe.name || recipe.recipe_name || '';
+  if (!recipe.ingredients || recipe.ingredients.length === 0) return name;
+
+  const ingList = Array.isArray(recipe.ingredients)
+    ? recipe.ingredients.slice(0, 20)
+        .map(i => (typeof i === 'string' ? i : i.name || i.text || ''))
+        .filter(Boolean)
+        .join(', ')
+    : String(recipe.ingredients);
+
+  return ingList ? `${name}\nIngredients: ${ingList}` : name;
+}
+
+/**
+ * Select a recipe from the picker — fetches full details and populates dish input.
+ * @param {number} recipeId - Recipe ID
+ */
+async function selectRecipe(recipeId) {
+  const modal = document.getElementById('sommelier-recipe-modal');
+  if (modal) modal.style.display = 'none';
+
+  try {
+    const { data: recipe } = await getRecipe(recipeId);
+    const dishInput = document.getElementById('dish-input');
+    if (!dishInput) return;
+
+    dishInput.value = buildRecipeDescription(recipe);
+    dishInput.focus();
+    showToast(`Recipe "${recipe?.name || recipe?.recipe_name || 'unknown'}" loaded`);
+  } catch (err) {
+    showToast('Failed to load recipe: ' + err.message);
+  }
+}
+
+/**
+ * Handle recipe search input with debounce.
+ */
+function handleRecipeSearch() {
+  clearTimeout(recipePicker.searchTimer);
+  recipePicker.searchTimer = setTimeout(async () => {
+    const searchInput = document.getElementById('sommelier-recipe-search');
+    recipePicker.search = searchInput?.value.trim() ?? '';
+    recipePicker.offset = 0;
+    await loadRecipePickerPage(true);
+  }, 300);
+}
+
+// ============================================================
+// URL import
+// ============================================================
+
+/**
+ * Toggle URL import row visibility.
+ */
+function toggleUrlRow() {
+  const row = document.getElementById('sommelier-url-row');
+  if (!row) return;
+  const isHidden = row.hidden;
+  row.hidden = !isHidden;
+  if (!row.hidden) {
+    document.getElementById('sommelier-url-input')?.focus();
+  }
+}
+
+/**
+ * Import recipe from URL and populate dish input.
+ */
+async function handleImportRecipeUrl() {
+  const urlInput = document.getElementById('sommelier-url-input');
+  const url = urlInput?.value.trim();
+  if (!url) {
+    showToast('Please enter a URL');
+    return;
+  }
+
+  const importBtn = document.getElementById('sommelier-url-import-btn');
+  if (importBtn) {
+    importBtn.disabled = true;
+    importBtn.textContent = 'Importing...';
+  }
+
+  try {
+    const result = await importRecipeFromUrl(url);
+    const recipeId = result.recipe_id;
+    if (!recipeId) {
+      // Fallback: no ID returned, but use recipe_name if available to populate textarea
+      const dishInput = document.getElementById('dish-input');
+      if (dishInput && result.recipe_name) {
+        dishInput.value = result.recipe_name;
+        dishInput.focus();
+      }
+      const row = document.getElementById('sommelier-url-row');
+      if (row) row.hidden = true;
+      if (urlInput) urlInput.value = '';
+      showToast(result.recipe_name
+        ? `Imported "${result.recipe_name}" (full ingredients not available)`
+        : (result.message || 'Recipe imported but could not load details'));
+      if (importBtn) { importBtn.disabled = false; importBtn.textContent = 'Import'; }
+      return;
+    }
+
+    const { data: recipe } = await getRecipe(recipeId);
+    const dishInput = document.getElementById('dish-input');
+    if (dishInput) {
+      dishInput.value = buildRecipeDescription(recipe);
+      dishInput.focus();
+    }
+
+    const row = document.getElementById('sommelier-url-row');
+    if (row) row.hidden = true;
+    if (urlInput) urlInput.value = '';
+    showToast(`Imported "${recipe?.name || recipe?.recipe_name || 'recipe'}"`);
+  } catch (err) {
+    showToast('Import failed: ' + err.message);
+  } finally {
+    if (importBtn) { importBtn.disabled = false; importBtn.textContent = 'Import'; }
+  }
+}
+
 /**
  * Initialise sommelier event listeners.
  */
 export function initSommelier() {
   document.getElementById('ask-sommelier')?.addEventListener('click', handleAskSommelier);
-  document.getElementById('dish-input')?.addEventListener('keypress', (e) => {
-    if (e.key === 'Enter') handleAskSommelier();
+  document.getElementById('dish-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && e.ctrlKey) handleAskSommelier();
+  });
+
+  // --- Image attachment ---
+  const fileInput = document.getElementById('sommelier-file-input');
+  const cameraInput = document.getElementById('sommelier-camera-input');
+
+  document.getElementById('sommelier-browse-btn')?.addEventListener('click', () => fileInput?.click());
+  document.getElementById('sommelier-camera-btn')?.addEventListener('click', () => cameraInput?.click());
+
+  fileInput?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    fileInput.value = '';
+    if (file) handleImageFile(file);
+  });
+
+  cameraInput?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    cameraInput.value = '';
+    if (file) handleImageFile(file);
+  });
+
+  document.getElementById('sommelier-clear-image-btn')?.addEventListener('click', clearAttachedImage);
+
+  // Paste handler for screenshots
+  document.getElementById('dish-input')?.addEventListener('paste', (e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const item of items) {
+      if (item.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) handleImageFile(file);
+        return;
+      }
+    }
+  });
+
+  // --- Recipe picker ---
+  const recipeOpenerBtn = document.getElementById('sommelier-recipe-btn');
+  recipeOpenerBtn?.addEventListener('click', openRecipePicker);
+
+  function closeRecipeModal() {
+    document.getElementById('sommelier-recipe-modal').style.display = 'none';
+    recipeOpenerBtn?.focus();
+  }
+
+  document.getElementById('sommelier-recipe-modal-close')?.addEventListener('click', closeRecipeModal);
+  document.getElementById('sommelier-recipe-modal')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeRecipeModal();
+  });
+
+  // Focus trap inside recipe modal
+  document.getElementById('sommelier-recipe-modal')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      closeRecipeModal();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const modal = document.getElementById('sommelier-recipe-modal');
+    const focusable = Array.from(modal.querySelectorAll(
+      'button, input, [tabindex]:not([tabindex="-1"])'
+    )).filter(el => !el.disabled);
+    if (focusable.length === 0) return;
+    const first = focusable[0];
+    const last = focusable.at(-1);
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault();
+      last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault();
+      first.focus();
+    }
+  });
+
+  document.getElementById('sommelier-recipe-search')?.addEventListener('input', handleRecipeSearch);
+  document.getElementById('sommelier-recipe-load-more')?.addEventListener('click', () => loadRecipePickerPage(false));
+
+  // --- URL import ---
+  document.getElementById('sommelier-url-btn')?.addEventListener('click', toggleUrlRow);
+  document.getElementById('sommelier-url-cancel-btn')?.addEventListener('click', () => {
+    const row = document.getElementById('sommelier-url-row');
+    if (row) row.hidden = true;
+  });
+  document.getElementById('sommelier-url-import-btn')?.addEventListener('click', handleImportRecipeUrl);
+  document.getElementById('sommelier-url-input')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') handleImportRecipeUrl();
   });
 
   // AI Picks cross-link: navigate to Cellar grid and expand the recommendations panel

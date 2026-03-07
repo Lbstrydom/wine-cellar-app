@@ -464,7 +464,38 @@
       <!-- Sommelier section -->
       <div class="natural-pairing">
       <h2 class="view-title">Ask the Sommelier</h2>
-      <input type="text" id="dish-input" placeholder="Describe your dish... e.g., 'grilled salmon with lemon butter'" />
+      <textarea id="dish-input" rows="3"
+        placeholder="Describe your dish... e.g., 'grilled salmon with lemon butter' (Ctrl+Enter to submit)"
+        aria-label="Dish description" maxlength="2000"></textarea>
+
+      <!-- Attachment bar -->
+      <div class="sommelier-attachment-bar" aria-label="Attach image or recipe">
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-browse-btn">📎 Browse</button>
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-camera-btn">📷 Photo</button>
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-recipe-btn">📖 Recipe</button>
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-url-btn">🔗 URL</button>
+      </div>
+
+      <!-- Image preview (hidden until image attached) -->
+      <div class="sommelier-image-preview" id="sommelier-image-preview" hidden>
+        <img id="sommelier-preview-img" alt="Attached dish">
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-clear-image-btn">Remove</button>
+      </div>
+
+      <!-- URL import input (hidden until URL button clicked) -->
+      <div class="sommelier-url-row" id="sommelier-url-row" hidden>
+        <input type="url" id="sommelier-url-input" placeholder="Paste recipe URL..."
+               aria-label="Recipe URL" maxlength="2048">
+        <button type="button" class="btn btn-small btn-primary" id="sommelier-url-import-btn"
+                aria-label="Import recipe from URL">Import</button>
+        <button type="button" class="btn btn-small btn-secondary" id="sommelier-url-cancel-btn"
+                aria-label="Cancel URL import">Cancel</button>
+      </div>
+
+      <!-- Hidden file inputs (CSP-compliant — no inline handlers) -->
+      <input type="file" id="sommelier-file-input" accept="image/*" hidden>
+      <input type="file" id="sommelier-camera-input" accept="image/*" capture="environment" hidden>
+
       <div class="pairing-filters">
         <div class="filter-group">
           <span class="filter-label">Source:</span>
@@ -1489,6 +1520,30 @@
 
   <!-- Toast container — visual only, screen reader announcements via accessibility.js -->
   <div id="toast-container"></div>
+
+  <!-- Recipe picker modal (sommelier input) -->
+  <div class="modal-overlay" id="sommelier-recipe-modal" style="display:none;"
+       role="dialog" aria-modal="true" aria-labelledby="sommelier-recipe-modal-title">
+    <div class="modal modal-md">
+      <div class="modal-header">
+        <h2 id="sommelier-recipe-modal-title">Choose a Recipe</h2>
+        <button type="button" class="modal-close" id="sommelier-recipe-modal-close"
+                aria-label="Close recipe picker">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="sommelier-recipe-search-row">
+          <input type="search" id="sommelier-recipe-search" placeholder="Search recipes..."
+                 aria-label="Search recipes" maxlength="200">
+        </div>
+        <ul id="sommelier-recipe-results" class="sommelier-recipe-list" aria-live="polite">
+        </ul>
+        </div>
+        <div class="sommelier-recipe-pagination" id="sommelier-recipe-pagination" hidden>
+          <button type="button" class="btn btn-small btn-secondary" id="sommelier-recipe-load-more">Load more</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Scripts -->
   <script src="/vendor/supabase.js"></script>

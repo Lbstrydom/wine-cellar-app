@@ -9,16 +9,23 @@ const fetch = apiFetch;
 
 /**
  * Get sommelier pairing recommendation.
- * @param {string} dish - Dish description
+ * @param {string|null} dish - Dish description (optional when image provided)
  * @param {string} source - 'all' or 'reduce_now'
  * @param {string} colour - 'any', 'red', 'white', 'rose'
+ * @param {{base64: string, mediaType: string}|null} [image] - Optional attached image
  * @returns {Promise<Object>}
  */
-export async function askSommelier(dish, source, colour) {
+export async function askSommelier(dish, source, colour, image = null) {
+  const body = { source, colour };
+  if (dish) body.dish = dish;
+  if (image) {
+    body.image = image.base64;
+    body.mediaType = image.mediaType;
+  }
   const res = await fetch(`${API_BASE}/api/pairing/natural`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ dish, source, colour })
+    body: JSON.stringify(body)
   });
   return handleResponse(res, 'Sommelier request failed');
 }

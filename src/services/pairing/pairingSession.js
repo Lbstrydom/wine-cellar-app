@@ -99,6 +99,15 @@ export async function recordWineChoice(sessionId, wineId, rank, cellarId) {
  * @returns {Promise<void>}
  */
 export async function linkConsumption(sessionId, consumptionLogId, cellarId) {
+  // Copy session dish_description to consumption_log.pairing_dish if not already set,
+  // so consumption history shows the dish even for image-only sessions.
+  await db.prepare(`
+    UPDATE consumption_log cl
+    SET pairing_dish = COALESCE(cl.pairing_dish, ps.dish_description)
+    FROM pairing_sessions ps
+    WHERE cl.id = $1 AND ps.id = $2 AND ps.cellar_id = $3
+  `).run(consumptionLogId, sessionId, cellarId);
+
   await db.prepare(`
     UPDATE pairing_sessions
     SET consumption_log_id = $1,

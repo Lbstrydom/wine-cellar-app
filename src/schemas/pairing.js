@@ -14,14 +14,26 @@ export const suggestPairingSchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5)
 });
 
+/** Supported image media types for Claude Vision. */
+const IMAGE_MEDIA_TYPES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+
 /**
  * POST /natural body.
+ * Either `dish` (non-empty text) or `image` (base64) must be provided.
  */
 export const naturalPairingSchema = z.object({
-  dish: z.string().min(1, 'Please describe a dish').max(500).trim(),
+  dish: z.string().max(2000).trim().optional(),
   source: z.string().max(50).default('all'),
-  colour: z.string().max(20).default('any')
-});
+  colour: z.string().max(20).default('any'),
+  image: z.string().min(1).max(5_000_000).optional(),
+  mediaType: z.enum(IMAGE_MEDIA_TYPES).optional()
+}).refine(
+  (data) => (data.dish && data.dish.length > 0) || (data.image && data.image.length > 0),
+  { message: 'Please describe a dish or attach an image' }
+).refine(
+  (data) => !data.image || (data.mediaType && IMAGE_MEDIA_TYPES.includes(data.mediaType)),
+  { message: 'mediaType is required when image is provided' }
+);
 
 /**
  * POST /chat body.

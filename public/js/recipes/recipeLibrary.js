@@ -3,7 +3,7 @@
  * @module recipes/recipeLibrary
  */
 
-import { listRecipes, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, triggerRecipeSync } from '../api/recipes.js';
+import { listRecipes, getRecipe, getRecipeCategories, deleteRecipe, getRecipeSyncStatus, triggerRecipeSync } from '../api/recipes.js';
 import { getCredentials } from '../api/settings.js';
 import { ensureFreshToken } from '../api/base.js';
 import { showToast, escapeHtml } from '../utils.js';
@@ -182,19 +182,32 @@ async function loadAndRenderRecipes(container, onRecipeClick) {
         });
       });
 
-      // Wire up pairing buttons — switch to Pairing tab and pre-fill dish input
+      // Wire up pairing buttons — switch to Pairing tab and pre-fill dish input with ingredients
       grid.querySelectorAll('.recipe-pairing-btn').forEach(btn => {
-        btn.addEventListener('click', (e) => {
+        btn.addEventListener('click', async (e) => {
           e.stopPropagation();
+          const recipeId = Number.parseInt(btn.dataset.id, 10);
           const name = btn.dataset.name;
           switchView('pairing');
-          setTimeout(() => {
-            const dishInput = document.getElementById('dish-input');
-            if (dishInput) {
-              dishInput.value = name;
-              document.getElementById('ask-sommelier')?.click();
+          await new Promise(resolve => setTimeout(resolve, 100));
+          const dishInput = document.getElementById('dish-input');
+          if (!dishInput) return;
+          try {
+            const { data: recipe } = await getRecipe(recipeId);
+            const parts = [recipe?.name || name];
+            if (recipe?.ingredients && recipe.ingredients.length > 0) {
+              const ingList = Array.isArray(recipe.ingredients)
+                ? recipe.ingredients.slice(0, 20)
+                    .map(i => (typeof i === 'string' ? i : i.name || i.text || ''))
+                    .filter(Boolean).join(', ')
+                : String(recipe.ingredients);
+              if (ingList) parts.push(`Ingredients: ${ingList}`);
             }
-          }, 100);
+            dishInput.value = parts.join('\n');
+          } catch {
+            dishInput.value = name;
+          }
+          document.getElementById('ask-sommelier')?.click();
         });
       });
 
