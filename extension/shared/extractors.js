@@ -273,8 +273,126 @@
     };
   }
 
+  // ── Extractor: Vinatis ─────────────────────────────────────────────────────
+
+  /**
+   * Extract wine from a Vinatis product page.
+   * Product pages have titles like "BANDOL - LES ADRETS ROSE 2024 - MOULIN DE LA ROQUE".
+   */
+  function extractVinatis() {
+    const h1 = document.querySelector('h1[itemprop="name"], h1');
+    if (!h1) return null;
+    const name = h1.textContent.trim();
+    if (!name) return null;
+
+    // Vinatis product names are always wine — entire site is a wine shop
+    const vintage = parseVintage(name) || findVintageFromPageSignals();
+    const priceData = parsePrice(findPriceText());
+
+    // Try to extract producer from breadcrumbs or structured data
+    const producerEl =
+      document.querySelector('[itemprop="brand"] [itemprop="name"]') ||
+      document.querySelector('[itemprop="brand"]') ||
+      document.querySelector('.product-producer, .producer-name');
+    const producer = producerEl?.textContent.trim() || null;
+
+    return {
+      wine_name: name,
+      producer,
+      vintage,
+      ...(priceData || {}),
+      vendor_url: window.location.href,
+      confidence: 'high'
+    };
+  }
+
+  /**
+   * Extract multiple wines from a Vinatis cart or order history page.
+   * Order rows contain wine name lines like "BANDOL - LES ADRETS ROSE 2024 - MOULIN DE LA ROQUE"
+   * with unit price and quantity.
+   * @returns {Array<object>|null}
+   */
+  function extractVinatisMulti() {
+    const wines = [];
+    const hostname = window.location.hostname.replace(/^www\./, '');
+    if (hostname !== 'vinatis.com' && !hostname.endsWith('.vinatis.com')) return null;
+
+    // Order history page: rows with wine name + price + quantity
+    // Cart page: similar structure with line items
+    // Detect by looking for multiple product-like rows
+    const rows = document.querySelectorAll(
+      '.order-detail-content tr, ' +
+      '[class*="order"] [class*="product"], ' +
+      '[class*="cart"] [class*="product"], ' +
+      '[class*="cart"] [class*="item"], ' +
+      '[class*="line-item"], ' +
+      'table tbody tr'
+    );
+
+    for (const row of rows) {
+      const text = row.textContent || '';
+      // Look for rows that contain a price pattern (€) — these are product lines
+      const priceMatch = text.match(/(\d+[.,]\d{2})\s*€/);
+      if (!priceMatch) continue;
+
+      // Extract the wine name — usually the longest text block or first cell
+      const cells = row.querySelectorAll('td, .product-name, [class*="name"], [class*="title"]');
+      let wineName = null;
+      for (const cell of cells) {
+        const cellText = cell.textContent.trim();
+        // Wine names are typically the longest cell and contain wine signals or all-caps
+        if (cellText.length > 10 && (isLikelyWine(cellText, '') || /^[A-Z\s\-'É0-9]+$/.test(cellText))) {
+          wineName = cellText;
+          break;
+        }
+      }
+
+      // Fallback: scan all text nodes for all-caps wine name pattern
+      if (!wineName) {
+        const allCapsMatch = text.match(/([A-ZÉÈÊÀÂÔÙÛÇÎÏœŒ][A-ZÉÈÊÀÂÔÙÛÇÎÏœŒ\s\-'0-9]{8,})/);
+        if (allCapsMatch) {
+          wineName = allCapsMatch[1].trim();
+        }
+      }
+
+      if (!wineName) continue;
+
+      // Parse quantity (e.g., "x6", "x2")
+      const qtyMatch = text.match(/x\s*(\d+)/i);
+      const quantity = qtyMatch ? parseInt(qtyMatch[1], 10) : 1;
+
+      // Parse unit price
+      const unitPriceMatch = text.match(/(\d+[.,]\d{2})\s*€\s*x/i);
+      const totalPriceMatch = text.match(/(\d+[.,]\d{2})\s*€\s*$/m);
+      let unitPrice = null;
+      if (unitPriceMatch) {
+        unitPrice = parseFloat(unitPriceMatch[1].replace(',', '.'));
+      } else if (totalPriceMatch && quantity > 1) {
+        unitPrice = parseFloat(totalPriceMatch[1].replace(',', '.')) / quantity;
+      } else if (priceMatch) {
+        unitPrice = parseFloat(priceMatch[1].replace(',', '.'));
+      }
+
+      const vintage = parseVintage(wineName);
+
+      wines.push({
+        wine_name: wineName,
+        producer: null,
+        vintage,
+        price: unitPrice,
+        currency: 'EUR',
+        quantity,
+        vendor_url: window.location.href,
+        confidence: 'medium'
+      });
+    }
+
+    return wines.length > 0 ? wines : null;
+  }
+
   const DOMAIN_EXTRACTORS = {
     'vivino.com':           extractVivino,
+    'vinatis.com':          extractVinatis,
     'winemag.co.za':        extractGenericProductPage,
     'faithful2nature.co.za': extractGenericProductPage,
     'woolworths.co.za':     extractWoolworthsSA,
@@ -355,12 +473,22 @@
     );
   }
 
+  /**
+   * Extract multiple wines from a cart, order history, or listing page.
+   * Currently supports Vinatis; returns null for unsupported domains.
+   * @returns {Array<object>|null}
+   */
+  function extractMultipleWines() {
+    return extractVinatisMulti() || null;
+  }
+
   // ── Expose ───────────────────────────────────────────────────────────────────
 
   /* global window, module */
 
   const WineExtractors = {
     extractWineFromPage,
+    extractMultipleWines,
     parseVintage,
     parsePrice,
     isLikelyWine

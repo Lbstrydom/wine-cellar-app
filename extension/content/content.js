@@ -86,6 +86,16 @@
       return false;
     }
 
+    if (msg.type === 'EXTRACT_WINES_MULTI') {
+      try {
+        const wines = window.WineExtractors?.extractMultipleWines?.() || null;
+        sendResponse({ wines });
+      } catch (err) {
+        sendResponse({ wines: null, error: err.message });
+      }
+      return false;
+    }
+
     // SYNC_AUTH: popup pulls auth on demand from an open app tab.
     // More reliable than the push approach because MV3 service workers
     // are often terminated before the push message arrives.

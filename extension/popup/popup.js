@@ -1,6 +1,7 @@
 /**
- * @fileoverview Popup controller — manages three view states and orchestrates
+ * @fileoverview Popup controller — manages view states and orchestrates
  * auth check, wine extraction from the active tab, and add-to-plan flow.
+ * Supports both single product pages and multi-wine cart/order pages.
  * @module extension/popup/popup
  */
 
@@ -14,12 +15,16 @@ let currentAuth = null;
 /** @type {object|null} Wine extracted from the active tab's content script */
 let detectedWine = null;
 
+/** @type {Array<object>|null} Multiple wines from cart/order pages */
+let detectedWines = null;
+
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 
 const STATES = {
   loading:         document.getElementById('state-loading'),
   unauthenticated: document.getElementById('state-unauthenticated'),
   product:         document.getElementById('state-product'),
+  cart:            document.getElementById('state-cart'),
   gaps:            document.getElementById('state-gaps')
 };
 
@@ -29,11 +34,8 @@ const STATES = {
  * Extract wine data from the given tab.
  *
  * Phase A — message the already-injected content script (fast path).
- * Phase B — if content script isn't loaded (Chrome "Ask before accessing"
- *           mode or first visit after extension reload), inject extractors.js
- *           programmatically via chrome.scripting.executeScript and run
- *           extraction inline. This bypasses the manifest content_script
- *           injection entirely and always works on http/https pages.
+ * Phase B — if content script isn't loaded, inject extractors.js
+ *           programmatically via chrome.scripting.executeScript.
  *
  * @param {number} tabId
  * @returns {Promise<object|null>}
@@ -48,7 +50,6 @@ async function extractWineFromTab(tabId) {
   }
 
   // Phase B: programmatic injection via scripting API
-  // Only works on http/https (not chrome://, about:, etc.)
   try {
     await chrome.scripting.executeScript({
       target: { tabId },
@@ -62,7 +63,37 @@ async function extractWineFromTab(tabId) {
     });
     return result || null;
   } catch (_) {
-    // Non-http page (internal Chrome page, PDF, etc.) — ignore
+    return null;
+  }
+}
+
+/**
+ * Extract multiple wines from a cart/order page.
+ * Uses the same two-phase approach as single extraction.
+ * @param {number} tabId
+ * @returns {Promise<Array<object>|null>}
+ */
+async function extractMultipleWinesFromTab(tabId) {
+  // Phase A: try the pre-injected content script
+  try {
+    const resp = await chrome.tabs.sendMessage(tabId, { type: 'EXTRACT_WINES_MULTI' });
+    if (resp?.wines?.length) return resp.wines;
+  } catch (_) {}
+
+  // Phase B: programmatic injection
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['shared/extractors.js']
+    });
+    const [{ result }] = await chrome.scripting.executeScript({
+      target: { tabId },
+      func: () => (typeof window.WineExtractors !== 'undefined'
+        ? window.WineExtractors.extractMultipleWines()
+        : null)
+    });
+    return result?.length ? result : null;
+  } catch (_) {
     return null;
   }
 }
@@ -75,12 +106,10 @@ async function init() {
   // 1. Get auth from service worker storage
   let { auth } = await chrome.runtime.sendMessage({ type: 'GET_AUTH' });
 
-  // 2. If nothing stored (MV3 SW was terminated before content script push),
-  //    actively pull auth from any open Wine Cellar app tab.
+  // 2. If nothing stored, actively pull auth from any open Wine Cellar app tab
   if (!auth?.token) {
     auth = await pullAuthFromAppTab();
     if (auth?.token) {
-      // Store it so the next popup open is instant
       await chrome.runtime.sendMessage({ type: 'AUTH_FROM_APP', payload: auth });
     }
   }
@@ -91,17 +120,18 @@ async function init() {
   }
   currentAuth = auth;
 
-  // 2. Extract wine from the active tab — two-phase approach:
-  //    Phase A: message the already-injected content script (instant).
-  //    Phase B: if not loaded yet (e.g. Chrome "Ask before accessing" mode
-  //             blocked auto-injection), inject extractors.js on-demand
-  //             via chrome.scripting.executeScript and run extraction inline.
+  // 3. Extract wine(s) from the active tab
   const tab = await getActiveTab();
   if (tab?.id) {
-    detectedWine = await extractWineFromTab(tab.id);
+    // Try multi-wine extraction first (cart/order pages)
+    detectedWines = await extractMultipleWinesFromTab(tab.id);
+    // If no multi-wine result, try single product extraction
+    if (!detectedWines) {
+      detectedWine = await extractWineFromTab(tab.id);
+    }
   }
 
-  // 3. Fetch gap summary (used in both product + gaps views)
+  // 4. Fetch gap summary
   let gapsData = null;
   try {
     const gapsResp = await getGaps(currentAuth);
@@ -112,10 +142,11 @@ async function init() {
       showState('unauthenticated');
       return;
     }
-    // Non-auth error: continue without gaps (graceful degradation)
   }
 
-  if (detectedWine) {
+  if (detectedWines?.length) {
+    renderCartView(detectedWines);
+  } else if (detectedWine) {
     renderProductView(detectedWine, gapsData);
   } else {
     renderGapsView(gapsData);
@@ -138,20 +169,14 @@ function renderProductView(wine, gapsData) {
   ].filter(Boolean);
   document.getElementById('product-meta').textContent = parts.join(' · ');
 
-  // Prefill confirmation fields (editable by user)
-  const nameInput = document.getElementById('confirm-wine-name');
-  const producerInput = document.getElementById('confirm-producer');
+  document.getElementById('confirm-wine-name').value = wine.wine_name || '';
+  document.getElementById('confirm-producer').value = wine.producer || '';
+  document.getElementById('confirm-vintage').value = wine.vintage != null ? String(wine.vintage) : '';
+  document.getElementById('confirm-region').value = wine.region || '';
+  document.getElementById('confirm-country').value = wine.country || '';
+
   const vintageInput = document.getElementById('confirm-vintage');
-  const regionInput = document.getElementById('confirm-region');
-  const countryInput = document.getElementById('confirm-country');
   const vintageHint = document.getElementById('confirm-vintage-hint');
-
-  nameInput.value = wine.wine_name || '';
-  producerInput.value = wine.producer || '';
-  vintageInput.value = wine.vintage != null ? String(wine.vintage) : '';
-  regionInput.value = wine.region || '';
-  countryInput.value = wine.country || '';
-
   const toggleVintageHint = () => {
     vintageHint.classList.toggle('hidden', !!vintageInput.value.trim());
   };
@@ -166,6 +191,37 @@ function renderProductView(wine, gapsData) {
   showState('product');
 }
 
+/**
+ * Render the cart/order multi-wine import view.
+ * @param {Array<object>} wines
+ */
+function renderCartView(wines) {
+  const totalBottles = wines.reduce((sum, w) => sum + (w.quantity || 1), 0);
+  document.getElementById('cart-summary').innerHTML =
+    `<span class="cart-count">${wines.length} wine${wines.length !== 1 ? 's' : ''}</span>` +
+    `<span class="cart-bottles">${totalBottles} bottle${totalBottles !== 1 ? 's' : ''} total</span>`;
+
+  const listEl = document.getElementById('cart-list');
+  listEl.innerHTML = wines.map((wine, i) => {
+    const qty = wine.quantity || 1;
+    const priceStr = wine.price != null ? formatCurrency(wine.price, wine.currency) : '';
+    const vintageStr = wine.vintage ? ` (${wine.vintage})` : '';
+    return `<div class="cart-item" data-index="${i}">
+      <label class="cart-item-check">
+        <input type="checkbox" checked data-wine-index="${i}" />
+      </label>
+      <div class="cart-item-info">
+        <div class="cart-item-name">${esc(wine.wine_name)}${vintageStr}</div>
+        <div class="cart-item-meta">
+          ${qty > 1 ? `x${qty}` : ''}${priceStr ? ` · ${priceStr}/btl` : ''}
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  showState('cart');
+}
+
 /** @param {object|null} gapsData */
 function renderGapsView(gapsData) {
   const styles = gapsData?.styles || [];
@@ -173,7 +229,6 @@ function renderGapsView(gapsData) {
   const coveredCount = styles.filter(s => s.isCovered).length;
   const total = styles.length;
 
-  // Coverage summary header
   const summaryEl = document.getElementById('coverage-summary');
   if (total > 0) {
     const allGood = gapCount === 0;
@@ -181,13 +236,12 @@ function renderGapsView(gapsData) {
       <div class="coverage-summary-title">Style coverage</div>
       <span class="coverage-fraction">${coveredCount}/${total}</span>
       <span class="${allGood ? 'coverage-all-good' : 'coverage-word'}">
-        ${allGood ? '— all styles covered ✓' : `style${coveredCount !== 1 ? 's' : ''} covered`}
+        ${allGood ? '-- all styles covered' : `style${coveredCount !== 1 ? 's' : ''} covered`}
       </span>`;
   } else {
     summaryEl.innerHTML = `<div class="coverage-summary-title">Style coverage</div>`;
   }
 
-  // Styles list
   const listEl = document.getElementById('styles-list');
   if (styles.length === 0) {
     listEl.innerHTML = `<p class="no-styles-msg">No buying guide targets set.<br>
@@ -200,7 +254,6 @@ function renderGapsView(gapsData) {
 }
 
 /**
- * One row per wine style in the full breakdown.
  * @param {{ label: string, have: number, target: number, deficit: number, isCovered: boolean }} style
  * @returns {string}
  */
@@ -225,7 +278,7 @@ function renderGapMini(gap) {
   </div>`;
 }
 
-// ── Add-to-plan flow ──────────────────────────────────────────────────────────
+// ── Add-to-plan flow (single wine) ──────────────────────────────────────────
 
 async function handleAddToPlan() {
   if (!detectedWine || !currentAuth) return;
@@ -256,7 +309,6 @@ async function handleAddToPlan() {
       }
     }
 
-    // Infer style (best-effort — failure is non-fatal)
     let styleId = null;
     try {
       const styleResp = await inferStyle({
@@ -266,9 +318,7 @@ async function handleAddToPlan() {
         country: confirmedWine.country || undefined
       }, currentAuth);
       styleId = styleResp?.data?.styleId || null;
-    } catch (_) {
-      // Style inference is optional; proceed without it
-    }
+    } catch (_) {}
 
     await addToPlan({
       wine_name: confirmedWine.wine_name,
@@ -282,7 +332,6 @@ async function handleAddToPlan() {
       style_id:  styleId
     }, currentAuth);
 
-    // Notify service worker → shows green badge
     chrome.runtime.sendMessage({ type: 'ITEM_ADDED' }).catch(() => {});
 
     btn.textContent = '✓ Added to Plan';
@@ -294,6 +343,84 @@ async function handleAddToPlan() {
     btn.disabled = false;
     btn.textContent = '+ Add to Plan';
     feedback.textContent = `Error: ${err.message}`;
+    feedback.className = 'feedback feedback-error';
+  }
+}
+
+// ── Add-to-plan flow (batch cart import) ────────────────────────────────────
+
+async function handleImportAll() {
+  if (!detectedWines?.length || !currentAuth) return;
+
+  const btn = document.getElementById('import-all-btn');
+  const feedback = document.getElementById('cart-feedback');
+
+  // Get selected wines from checkboxes
+  const checkboxes = document.querySelectorAll('#cart-list input[type="checkbox"]');
+  const selectedIndices = [];
+  checkboxes.forEach(cb => {
+    if (cb.checked) selectedIndices.push(parseInt(cb.dataset.wineIndex, 10));
+  });
+
+  if (selectedIndices.length === 0) {
+    feedback.textContent = 'No wines selected.';
+    feedback.className = 'feedback feedback-error';
+    return;
+  }
+
+  const selectedWines = selectedIndices.map(i => detectedWines[i]).filter(Boolean);
+
+  btn.disabled = true;
+  btn.textContent = `Importing ${selectedWines.length}…`;
+  feedback.className = 'feedback hidden';
+
+  let added = 0;
+  let failed = 0;
+
+  for (const wine of selectedWines) {
+    try {
+      let styleId = null;
+      try {
+        const styleResp = await inferStyle({
+          wine_name: wine.wine_name,
+          producer: wine.producer || undefined
+        }, currentAuth);
+        styleId = styleResp?.data?.styleId || null;
+      } catch (_) {}
+
+      await addToPlan({
+        wine_name: wine.wine_name,
+        producer:  wine.producer || null,
+        vintage:   wine.vintage || null,
+        price:     wine.price || null,
+        currency:  wine.currency || 'EUR',
+        vendor_url: wine.vendor_url,
+        style_id:  styleId
+      }, currentAuth);
+
+      added++;
+      btn.textContent = `Importing… ${added}/${selectedWines.length}`;
+    } catch (err) {
+      failed++;
+      if (err.message === 'AUTH_EXPIRED') {
+        await chrome.runtime.sendMessage({ type: 'SIGN_OUT' });
+        showState('unauthenticated');
+        return;
+      }
+    }
+  }
+
+  chrome.runtime.sendMessage({ type: 'ITEM_ADDED' }).catch(() => {});
+
+  if (failed === 0) {
+    btn.textContent = `✓ ${added} wine${added !== 1 ? 's' : ''} imported`;
+    btn.classList.add('btn-success');
+    feedback.textContent = `Successfully added ${added} wine${added !== 1 ? 's' : ''} to your buying plan.`;
+    feedback.className = 'feedback feedback-success';
+  } else {
+    btn.disabled = false;
+    btn.textContent = '+ Import All to Plan';
+    feedback.textContent = `Added ${added}, failed ${failed}. Check your connection and try again.`;
     feedback.className = 'feedback feedback-error';
   }
 }
@@ -318,13 +445,7 @@ function getConfirmedWine() {
     vintage = parsed;
   }
 
-  return {
-    wine_name: wineName,
-    producer,
-    vintage,
-    region,
-    country
-  };
+  return { wine_name: wineName, producer, vintage, region, country };
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -367,8 +488,6 @@ function esc(str) {
 
 /**
  * Actively query any open cellar.creathyst.com tab for the Supabase session.
- * Fallback for when the MV3 service worker was terminated before the
- * content script's push message could be stored.
  * @returns {Promise<{token: string, expiresAt: number, userId: string|null}|null>}
  */
 async function pullAuthFromAppTab() {
@@ -378,9 +497,7 @@ async function pullAuthFromAppTab() {
       try {
         const resp = await chrome.tabs.sendMessage(tab.id, { type: 'SYNC_AUTH' });
         if (resp?.token) return resp;
-      } catch (_) {
-        // Tab may not have content script (e.g. opened before extension loaded)
-      }
+      } catch (_) {}
     }
   } catch (_) {}
   return null;
@@ -389,6 +506,7 @@ async function pullAuthFromAppTab() {
 // ── Event wiring ──────────────────────────────────────────────────────────────
 
 document.getElementById('add-to-plan-btn').addEventListener('click', handleAddToPlan);
+document.getElementById('import-all-btn').addEventListener('click', handleImportAll);
 
 document.getElementById('open-app-btn').addEventListener('click', () => {
   chrome.tabs.create({ url: 'https://cellar.creathyst.com' });

@@ -4,7 +4,20 @@
       "Read(//c/GIT/wine-cellar-app/**)",
       "Bash(node -e \":*)",
       "WebSearch",
-      "Read(//c/Users/User/.claude/projects/c--GIT-wine-cellar-app/fb50cfeb-63da-483c-862c-3605fea6d1f5/subagents/**)"
+      "Read(//c/Users/User/.claude/projects/c--GIT-wine-cellar-app/fb50cfeb-63da-483c-862c-3605fea6d1f5/subagents/**)",
+      "Read(//c/Users/User/.claude/projects/c--GIT-wine-cellar-app/2bac50fe-5bf5-46d7-8f5d-a6e1b1a95103/subagents/**)",
+      "Bash(mv docs/plans/area-aware-slot-operations.md docs/archive/)",
+      "Bash(mv docs/plans/area-aware-slot-operations-frontend.md docs/archive/)",
+      "Bash(mv docs/plans/phase3-backend-storage-type-heuristics.md docs/archive/)",
+      "Bash(mv docs/plans/phase3-frontend-cross-area-ux.md docs/archive/)",
+      "Bash(c:/GIT/wine-cellar-app/docs/plans/phase3-wizard-edit-mode-and-row-rebase.md:*)",
+      "Bash(mkdir -p extension/icons extension/popup)",
+      "Bash(cp docs/icons/icon16.png extension/icons/icon16.png)",
+      "Bash(cp docs/icons/icon32.png extension/icons/icon32.png)",
+      "Bash(cp docs/icons/icon128.png extension/icons/icon128.png)",
+      "Bash(cp popup/popup.html extension/popup/popup.html)",
+      "Bash(cp popup/popup.css extension/popup/popup.css)",
+      "Bash(cp popup/popup.js extension/popup/popup.js)"
     ]
   }
 }
