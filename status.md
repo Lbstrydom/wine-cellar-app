@@ -1,5 +1,30 @@
 # Wine Cellar App - Status Report
 
+## 2026-03-07 — Docs Cleanup: Plan Review + Archive
+
+### Changes
+- **Verified implementation completeness** of all 5 referenced plan docs; all shipped as planned.
+- **Created `docs/plans/cleanup-plan.md`**: Consolidated tracker for remaining work — Fix A (row rebase on save for existing areas) + Fix B (wizard edit/delete mode) + 2 test coverage gaps.
+- **Archived 5 completed plans** to `docs/archive/`: `multi-storage-area-architecture.md`, `area-aware-slot-operations.md`, `area-aware-slot-operations-frontend.md`, `phase3-backend-storage-type-heuristics.md`, `phase3-frontend-cross-area-ux.md`.
+- **`docs/plans/` now contains only active plans**: `cleanup-plan.md`, `phase3-wizard-edit-mode-and-row-rebase.md`, `smart-restock-advisor.md`.
+
+### Files Affected
+- `docs/plans/cleanup-plan.md` — NEW: consolidated remaining work tracker
+- `docs/archive/multi-storage-area-architecture.md` — moved from plans/
+- `docs/archive/area-aware-slot-operations.md` — moved from plans/
+- `docs/archive/area-aware-slot-operations-frontend.md` — moved from plans/
+- `docs/archive/phase3-backend-storage-type-heuristics.md` — moved from plans/
+- `docs/archive/phase3-frontend-cross-area-ux.md` — moved from plans/
+
+### Decisions Made
+- `phase3-wizard-edit-mode-and-row-rebase.md` is the canonical active plan; `cleanup-plan.md` acts as its entry point and also captures the 2 test coverage gaps (storageAreasSettings test update + cross-area swap confirmation test).
+
+### Next Steps
+- Implement `docs/plans/phase3-wizard-edit-mode-and-row-rebase.md` (Fix A: rebaseRows + Fix B: wizard edit mode)
+- Address test coverage gaps listed in `docs/plans/cleanup-plan.md`
+
+---
+
 ## 2026-03-07 — Phase 3 Frontend Audit Fixes + Row Rebase Plan
 
 ### Changes
