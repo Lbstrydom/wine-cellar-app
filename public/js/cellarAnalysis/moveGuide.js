@@ -6,8 +6,8 @@
  */
 
 import { executeCellarMoves } from '../api.js';
-import { refreshLayout, switchView } from '../app.js';
-import { showToast, escapeHtml } from '../utils.js';
+import { refreshLayout, switchView, state } from '../app.js';
+import { showToast, escapeHtml, getAreaIdForLocation, formatSlotLabel } from '../utils.js';
 import { addTrackedListener, cleanupNamespace } from '../eventManager.js';
 import { getCurrentAnalysis } from './state.js';
 import { loadAnalysis } from './analysis.js';
@@ -245,13 +245,16 @@ function updatePanel() {
     const move = guideState.moves[guideState.currentIndex];
     const isSwap = guideState.swapPartners.has(guideState.currentIndex);
     const swapBadge = isSwap ? ' <span class="move-guide-swap-badge">SWAP</span>' : '';
+    const areas = state.layout?.areas;
+    const fromLabel = formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), areas);
+    const toLabel = formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), areas);
 
     instructionEl.innerHTML = `
       <div class="move-guide-wine">${escapeHtml(move.wineName)}${swapBadge}</div>
       <div class="move-guide-path">
-        <span class="move-guide-from">${escapeHtml(move.from)}</span>
+        <span class="move-guide-from">${escapeHtml(fromLabel)}</span>
         <span class="move-guide-arrow">${isSwap ? '↔' : '→'}</span>
-        <span class="move-guide-to">${escapeHtml(move.to)}</span>
+        <span class="move-guide-to">${escapeHtml(toLabel)}</span>
       </div>
       ${move.reason ? `<div class="move-guide-reason">${escapeHtml(move.reason)}</div>` : ''}
     `;
@@ -444,6 +447,8 @@ async function executeCurrentMove() {
     wineName: move.wineName,
     from: move.from,
     to: move.to,
+    from_storage_area_id: getAreaIdForLocation(state.layout, move.from),
+    to_storage_area_id: getAreaIdForLocation(state.layout, move.to),
     ...(move.toZoneId ? { zoneId: move.toZoneId, confidence: move.confidence } : {})
   }];
 
@@ -454,6 +459,8 @@ async function executeCurrentMove() {
       wineName: partner.wineName,
       from: partner.from,
       to: partner.to,
+      from_storage_area_id: getAreaIdForLocation(state.layout, partner.from),
+      to_storage_area_id: getAreaIdForLocation(state.layout, partner.to),
       ...(partner.toZoneId ? { zoneId: partner.toZoneId, confidence: partner.confidence } : {})
     });
   }

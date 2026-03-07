@@ -28,9 +28,10 @@ export async function getCellarHealth(cellarId) {
     '       w.drink_from, w.drink_peak, w.drink_until, w.created_at,',
     '       COUNT(s.id) as bottle_count,',
     '       ' + locationAgg + ' as locations,',
-    "       MAX(CASE WHEN s.location_code LIKE 'F%' THEN 1 ELSE 0 END) as in_fridge",
+    "       MAX(CASE WHEN sa_type.storage_type IN ('wine_fridge', 'kitchen_fridge') THEN 1 ELSE 0 END) as in_fridge",
     'FROM wines w',
     'JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?',
+    'LEFT JOIN storage_areas sa_type ON sa_type.id = s.storage_area_id',
     'WHERE w.cellar_id = ?',
     'GROUP BY w.id, w.wine_name, w.vintage, w.style, w.colour, w.country, w.purchase_stars,',
     '         w.vivino_rating, w.price_eur, w.personal_rating, w.tasting_notes,',
@@ -543,9 +544,11 @@ export async function executeFillFridge(maxMoves = 5, cellarId) {
 
   // Find empty fridge slots
   const emptyFridge = await db.prepare(`
-    SELECT location_code FROM slots
-    WHERE cellar_id = ? AND location_code LIKE 'F%' AND wine_id IS NULL
-    ORDER BY location_code
+    SELECT s.location_code FROM slots s
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('wine_fridge', 'kitchen_fridge')
+    WHERE s.cellar_id = ? AND s.wine_id IS NULL
+    ORDER BY sa.display_order, s.row_num, s.col_num
   `).all(cellarId);
 
   const moved = [];

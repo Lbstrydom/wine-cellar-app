@@ -122,13 +122,19 @@ export async function parseWineImage(base64Image, mediaType) {
  * @param {number} wineId - Wine ID
  * @param {string} startLocation - Starting slot
  * @param {number} quantity - Number of bottles
+ * @param {string|null} [storageAreaId] - Storage area ID (optional)
  * @returns {Promise<{message: string, locations: string[]}>}
  */
-export async function addBottles(wineId, startLocation, quantity) {
+export async function addBottles(wineId, startLocation, quantity, storageAreaId = null) {
   const res = await fetch(`${API_BASE}/api/bottles/add`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wine_id: wineId, start_location: startLocation, quantity })
+    body: JSON.stringify({
+      wine_id: wineId,
+      start_location: startLocation,
+      quantity,
+      storage_area_id: storageAreaId
+    })
   });
   return handleResponse(res, 'Failed to add bottles');
 }
@@ -136,11 +142,16 @@ export async function addBottles(wineId, startLocation, quantity) {
 /**
  * Remove bottle from slot (no consumption log).
  * @param {string} location - Slot location
+ * @param {string|null} [storageAreaId] - Storage area ID for area-scoped resolution
  * @returns {Promise<{message: string}>}
  */
-export async function removeBottle(location) {
+export async function removeBottle(location, storageAreaId = null) {
   const res = await fetch(`${API_BASE}/api/slots/${location}/remove`, {
-    method: 'DELETE'
+    method: 'DELETE',
+    ...(storageAreaId ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storage_area_id: storageAreaId })
+    } : {})
   });
   return handleResponse(res, 'Failed to remove bottle');
 }
@@ -149,13 +160,20 @@ export async function removeBottle(location) {
  * Move bottle between slots.
  * @param {string} from - Source location
  * @param {string} to - Target location
+ * @param {string|null} [fromAreaId] - Source storage area ID
+ * @param {string|null} [toAreaId] - Target storage area ID
  * @returns {Promise<Object>}
  */
-export async function moveBottle(from, to) {
+export async function moveBottle(from, to, fromAreaId = null, toAreaId = null) {
   const res = await fetch(`${API_BASE}/api/slots/move`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from_location: from, to_location: to })
+    body: JSON.stringify({
+      from_location: from,
+      to_location: to,
+      from_storage_area_id: fromAreaId,
+      to_storage_area_id: toAreaId
+    })
   });
   return handleResponse(res, 'Move failed');
 }
@@ -165,13 +183,23 @@ export async function moveBottle(from, to) {
  * @param {string} slotA - First slot (bottle being dragged)
  * @param {string} slotB - Second slot (occupied target)
  * @param {string} displacedTo - Where to move the displaced bottle
+ * @param {string|null} [areaA] - Storage area ID for slotA
+ * @param {string|null} [areaB] - Storage area ID for slotB
+ * @param {string|null} [areaDisplaced] - Storage area ID for displacedTo
  * @returns {Promise<Object>}
  */
-export async function swapBottles(slotA, slotB, displacedTo) {
+export async function swapBottles(slotA, slotB, displacedTo, areaA = null, areaB = null, areaDisplaced = null) {
   const res = await fetch(`${API_BASE}/api/slots/swap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slot_a: slotA, slot_b: slotB, displaced_to: displacedTo })
+    body: JSON.stringify({
+      slot_a: slotA,
+      slot_b: slotB,
+      displaced_to: displacedTo,
+      slot_a_storage_area_id: areaA,
+      slot_b_storage_area_id: areaB,
+      displaced_to_storage_area_id: areaDisplaced
+    })
   });
   return handleResponse(res, 'Swap failed');
 }
@@ -180,13 +208,20 @@ export async function swapBottles(slotA, slotB, displacedTo) {
  * Direct swap between two occupied slots.
  * @param {string} slotA - First slot
  * @param {string} slotB - Second slot
+ * @param {string|null} [areaA] - Storage area ID for slotA
+ * @param {string|null} [areaB] - Storage area ID for slotB
  * @returns {Promise<Object>}
  */
-export async function directSwapBottles(slotA, slotB) {
+export async function directSwapBottles(slotA, slotB, areaA = null, areaB = null) {
   const res = await fetch(`${API_BASE}/api/slots/direct-swap`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ slot_a: slotA, slot_b: slotB })
+    body: JSON.stringify({
+      slot_a: slotA,
+      slot_b: slotB,
+      slot_a_storage_area_id: areaA,
+      slot_b_storage_area_id: areaB
+    })
   });
   return handleResponse(res, 'Swap failed');
 }
@@ -194,7 +229,7 @@ export async function directSwapBottles(slotA, slotB) {
 /**
  * Drink bottle from slot.
  * @param {string} location - Slot location
- * @param {Object} details - Consumption details
+ * @param {Object} details - Consumption details (may include storage_area_id)
  * @returns {Promise<Object>}
  */
 export async function drinkBottle(location, details = {}) {
@@ -209,11 +244,16 @@ export async function drinkBottle(location, details = {}) {
 /**
  * Mark bottle as open.
  * @param {string} location - Slot location
+ * @param {string|null} [storageAreaId] - Storage area ID for area-scoped resolution
  * @returns {Promise<Object>}
  */
-export async function openBottle(location) {
+export async function openBottle(location, storageAreaId = null) {
   const res = await fetch(`${API_BASE}/api/slots/${location}/open`, {
-    method: 'PUT'
+    method: 'PUT',
+    ...(storageAreaId ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storage_area_id: storageAreaId })
+    } : {})
   });
   return handleResponse(res, 'Failed to mark bottle as open');
 }
@@ -221,11 +261,16 @@ export async function openBottle(location) {
 /**
  * Mark bottle as sealed (undo open).
  * @param {string} location - Slot location
+ * @param {string|null} [storageAreaId] - Storage area ID for area-scoped resolution
  * @returns {Promise<Object>}
  */
-export async function sealBottle(location) {
+export async function sealBottle(location, storageAreaId = null) {
   const res = await fetch(`${API_BASE}/api/slots/${location}/seal`, {
-    method: 'PUT'
+    method: 'PUT',
+    ...(storageAreaId ? {
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storage_area_id: storageAreaId })
+    } : {})
   });
   return handleResponse(res, 'Failed to seal bottle');
 }

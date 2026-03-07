@@ -374,7 +374,7 @@ export function validatePlan(plan) {
 /**
  * Validate a move plan against current occupancy state.
  * Ensures no bottle collisions, overwrites, or data loss.
- * @param {Array} moves - Array of {wineId, from, to, wineName} objects
+ * @param {Array} moves - Array of {wineId, from, to, wineName, from_storage_area_id?, to_storage_area_id?} objects
  * @param {string} cellarId - Cellar ID for tenant isolation
  * @returns {Promise<Object>} {valid: boolean, errors: Array, summary: Object}
  */
@@ -385,27 +385,41 @@ export async function validateMovePlan(moves, cellarId) {
 
   // Fetch ALL slots for this cellar (occupied state + existence checks in one query)
   const allSlots = await db.prepare(
-    'SELECT location_code, wine_id FROM slots WHERE cellar_id = ?'
+    'SELECT location_code, storage_area_id, wine_id FROM slots WHERE cellar_id = ?'
   ).all(cellarId);
   const occupiedSlots = new Map(
     allSlots.filter(s => s.wine_id != null).map(s => [s.location_code, s.wine_id])
   );
   const existingSlots = new Set(allSlots.map(s => s.location_code));
 
+  // Build area-scoped lookup: Map<"areaId:locationCode", {wine_id}>
+  // Used when moves carry from_storage_area_id / to_storage_area_id
+  const areaSlotMap = new Map(
+    allSlots.map(s => [`${s.storage_area_id}:${s.location_code}`, s.wine_id])
+  );
+
   // ── Rule 0: All source and target slots must exist ─────────
+  // When area IDs are present, use area-scoped lookup for stricter validation
   for (const move of moves) {
-    if (!existingSlots.has(move.from)) {
+    const fromKey = move.from_storage_area_id
+      ? `${move.from_storage_area_id}:${move.from}`
+      : null;
+    const toKey = move.to_storage_area_id
+      ? `${move.to_storage_area_id}:${move.to}`
+      : null;
+
+    if (fromKey ? !areaSlotMap.has(fromKey) : !existingSlots.has(move.from)) {
       errors.push({
         type: 'slot_not_found',
-        message: `Source slot ${move.from} does not exist in cellar`,
+        message: `Source slot ${move.from} does not exist in cellar${move.from_storage_area_id ? ` (area ${move.from_storage_area_id})` : ''}`,
         move,
         slot: move.from
       });
     }
-    if (!existingSlots.has(move.to)) {
+    if (toKey ? !areaSlotMap.has(toKey) : !existingSlots.has(move.to)) {
       errors.push({
         type: 'slot_not_found',
-        message: `Target slot ${move.to} does not exist in cellar`,
+        message: `Target slot ${move.to} does not exist in cellar${move.to_storage_area_id ? ` (area ${move.to_storage_area_id})` : ''}`,
         move,
         slot: move.to
       });
@@ -444,7 +458,10 @@ export async function validateMovePlan(moves, cellarId) {
     targetSlots.add(move.to);
 
     // Rule 3: Target must be empty OR will be vacated by another move in this plan
-    const occupant = occupiedSlots.get(move.to);
+    // Use area-scoped lookup when to_storage_area_id is present
+    const occupant = move.to_storage_area_id
+      ? areaSlotMap.get(`${move.to_storage_area_id}:${move.to}`) ?? undefined
+      : occupiedSlots.get(move.to);
     if (occupant && !vacatedSlots.has(move.to)) {
       // Get wine name for better error message (scoped to cellar)
       const occupantWine = await db.prepare(
@@ -461,7 +478,10 @@ export async function validateMovePlan(moves, cellarId) {
     }
 
     // Rule 4: Source must contain the expected wine
-    const sourceOccupant = occupiedSlots.get(move.from);
+    // Use area-scoped lookup when from_storage_area_id is present
+    const sourceOccupant = move.from_storage_area_id
+      ? areaSlotMap.get(`${move.from_storage_area_id}:${move.from}`) ?? undefined
+      : occupiedSlots.get(move.from);
     if (sourceOccupant !== move.wineId) {
       errors.push({
         type: 'source_mismatch',

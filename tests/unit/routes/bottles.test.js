@@ -297,7 +297,7 @@ describe('POST /bottles/add — adjacency placement (Phase 6.2)', () => {
         return Promise.resolve(null);
       }),
       all: vi.fn((...args) => {
-        if (sql.includes('AND wine_id = $2')) {
+        if (sql.includes('wine_id = $2') && sql.includes('location_code')) {
           // Same wine query: wine_id=5 already has bottles at R3C1
           return Promise.resolve([{ location_code: 'R3C1' }]);
         }
@@ -627,5 +627,126 @@ describe('POST /bottles/add — transactional writes (Phase 6.2)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toContain('integrity');
+  });
+});
+
+// ───────────────────────────────────────────────────────────
+// Phase 1: storage_area_id threading
+// ───────────────────────────────────────────────────────────
+
+describe('POST /bottles/add — storage_area_id threading', () => {
+  let app;
+
+  beforeAll(() => { app = createApp(1); });
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    db.prepare.mockImplementation((sql) => ({
+      get: vi.fn((...args) => {
+        if (sql.includes('SELECT id FROM wines')) return Promise.resolve({ id: 1 });
+        return Promise.resolve(null);
+      }),
+      all: vi.fn(() => {
+        if (sql.includes('SELECT location_code, wine_id FROM slots') && sql.includes('IN (')) {
+          return Promise.resolve([{ location_code: 'F1', wine_id: null }]);
+        }
+        return Promise.resolve([]);
+      }),
+      run: vi.fn(() => Promise.resolve({ changes: 1 }))
+    }));
+
+    mockTransaction.mockImplementation(async (fn) => {
+      let getCalls = 0;
+      const updateSqls = [];
+      const txDb = {
+        prepare: vi.fn((sql) => ({
+          get: vi.fn(() => {
+            getCalls++;
+            return Promise.resolve({ cnt: getCalls === 1 ? '0' : '1' });
+          }),
+          run: vi.fn((...args) => {
+            updateSqls.push({ sql, args });
+            return Promise.resolve({ changes: 1 });
+          })
+        }))
+      };
+      txDb._updateSqls = updateSqls;
+      mockWrapClient.mockReturnValue(txDb);
+      return fn({});
+    });
+  });
+
+  it('accepts storage_area_id in request body without error', async () => {
+    const res = await request(app)
+      .post('/bottles/add')
+      .send({
+        wine_id: 1,
+        start_location: 'F1',
+        quantity: 1,
+        storage_area_id: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890'
+      });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it('accepts null storage_area_id without error', async () => {
+    const res = await request(app)
+      .post('/bottles/add')
+      .send({ wine_id: 1, start_location: 'F1', quantity: 1, storage_area_id: null });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it('accepts missing storage_area_id (backwards compatible)', async () => {
+    const res = await request(app)
+      .post('/bottles/add')
+      .send({ wine_id: 1, start_location: 'F1', quantity: 1 });
+
+    expect(res.status).not.toBe(400);
+  });
+
+  it('rejects non-UUID string for storage_area_id', async () => {
+    const res = await request(app)
+      .post('/bottles/add')
+      .send({ wine_id: 1, start_location: 'F1', quantity: 1, storage_area_id: 'bad-value' });
+
+    expect(res.status).toBe(400);
+  });
+
+  it('uses storage_area_id in UPDATE query when provided', async () => {
+    const areaId = 'a1b2c3d4-e5f6-7890-abcd-ef1234567890';
+    let capturedTxDb = null;
+
+    mockTransaction.mockImplementation(async (fn) => {
+      let getCalls = 0;
+      const runCalls = [];
+      const txDb = {
+        prepare: vi.fn((sql) => ({
+          get: vi.fn(() => {
+            getCalls++;
+            return Promise.resolve({ cnt: getCalls === 1 ? '0' : '1' });
+          }),
+          run: vi.fn((...args) => {
+            runCalls.push({ sql, args });
+            return Promise.resolve({ changes: 1 });
+          })
+        })),
+        _runCalls: runCalls
+      };
+      capturedTxDb = txDb;
+      mockWrapClient.mockReturnValue(txDb);
+      return fn({});
+    });
+
+    await request(app)
+      .post('/bottles/add')
+      .send({ wine_id: 1, start_location: 'F1', quantity: 1, storage_area_id: areaId });
+
+    const sqlsWithAreaId = capturedTxDb._runCalls
+      .filter(c => c.sql.includes('storage_area_id'));
+
+    // When storage_area_id is provided, at least one UPDATE should filter by it
+    expect(sqlsWithAreaId.length).toBeGreaterThan(0);
   });
 });

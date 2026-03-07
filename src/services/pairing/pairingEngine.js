@@ -210,9 +210,8 @@ export function scoreWines(wines, signals, houseStyle = DEFAULT_HOUSE_STYLE) {
       matchReasons.push({ signal: 'reduce_now', level: 'bonus', points: score * 0.5 });
     }
 
-    // Fridge bonus (convenient)
-    const slotId = wine.slot_id || wine.location_code;
-    if (slotId && slotId.startsWith('F')) {
+    // Fridge bonus (convenient) — uses pre-computed in_fridge from SQL
+    if (wine.in_fridge) {
       score *= houseStyle.fridgeBonus;
       matchReasons.push({ signal: 'in_fridge', level: 'bonus', points: score * 0.2 });
     }
@@ -320,6 +319,7 @@ export function generateShortlist(wines, dish, options = {}) {
       style: w.style,
       grapes: w.grapes,
       location: w.locations || w.location_code || w.slot_id,
+      storage_area_id: w.storage_area_id || null,
       bottle_count: w.bottle_count,
       pairingScore: w.pairingScore,
       styleMatch: w.styleMatch,
@@ -443,6 +443,7 @@ OUTPUT FORMAT (JSON only):
       return {
         ...rec,
         location: shortlistWine?.location || 'Unknown',
+        storage_area_id: shortlistWine?.storage_area_id || null,
         bottle_count: shortlistWine?.bottle_count || 0,
         style: shortlistWine?.style || null,
         colour: shortlistWine?.colour || null,
@@ -500,6 +501,7 @@ function generateFallbackExplanations(shortlistResult, topN) {
         is_priority: w.is_priority,
         match_score: Math.round(w.pairingScore),
         location: w.location,
+        storage_area_id: w.storage_area_id || null,
         bottle_count: w.bottle_count,
         style: w.style,
         colour: w.colour,

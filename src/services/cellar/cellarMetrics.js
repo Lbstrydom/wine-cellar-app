@@ -8,6 +8,7 @@ import { getZoneById } from '../../config/cellarZones.js';
 import { findBestZone, inferColour } from './cellarPlacement.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
 import { parseSlot, getRowCapacity } from './slotUtils.js';
+import { isWineInCellar } from '../../config/storageTypes.js';
 
 // Re-export parseSlot so existing consumers (bottleScanner, slots.js, cellarSuggestions) keep working
 export { parseSlot };
@@ -56,14 +57,15 @@ export function calculateFragmentation(rows, wines, storageAreaRows = []) {
  * Detect wines scattered across non-contiguous rows.
  * Identifies bottles of the same wine placed in distant rows that should be consolidated.
  * @param {Array} wines - All wines with slot assignments
+ * @param {Map|null} [areaTypeMap=null] - Map<area_id, storage_type> for type lookups
  * @returns {Array} Scattered wine groups sorted by bottle count (descending)
  */
-export function detectScatteredWines(wines) {
+export function detectScatteredWines(wines, areaTypeMap = null) {
   const wineMap = new Map();
 
   for (const wine of wines) {
+    if (!isWineInCellar(wine, areaTypeMap)) continue;
     const slotId = wine.slot_id || wine.location_code;
-    if (!slotId || !slotId.startsWith('R')) continue;
 
     const parsed = parseSlot(slotId);
     if (!parsed) continue;
@@ -258,13 +260,14 @@ export function detectColourOrderViolations(rowToZoneId, colourOrder, whiteRows,
  * This catches data integrity issues where the same wine record is assigned to
  * multiple slots erroneously.
  * @param {Array} wines - All wines with slot assignments
+ * @param {Map|null} [areaTypeMap=null] - Map<area_id, storage_type> for type lookups
  * @returns {Array} Duplicate placement records
  */
-export function detectDuplicatePlacements(wines) {
+export function detectDuplicatePlacements(wines, areaTypeMap = null) {
   const wineSlotCounts = new Map();
   for (const wine of wines) {
+    if (!isWineInCellar(wine, areaTypeMap)) continue;
     const slotId = wine.slot_id || wine.location_code;
-    if (!slotId || !slotId.startsWith('R')) continue;
     if (!wineSlotCounts.has(wine.id)) {
       wineSlotCounts.set(wine.id, {
         name: wine.wine_name,

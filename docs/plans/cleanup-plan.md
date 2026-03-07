@@ -21,48 +21,70 @@
 
 ## Remaining Work
 
-### 1. Wizard Edit Mode + Row Rebase Safety (High Priority)
+### 1. Wizard Edit Mode + Stable Row Identity (High Priority)
 
 **Plan**: [phase3-wizard-edit-mode-and-row-rebase.md](phase3-wizard-edit-mode-and-row-rebase.md)
 
-Two High-severity gaps found in the Phase 3 post-completion audit:
+Two High-severity gaps found in the Phase 3 post-completion audit, expanded to full layout/slot
+reconciliation after the third GPT-5.4 review (plan v4):
 
-#### Fix A — Row Rebase on Save for Existing Areas
+#### Fix A — Stable Row Identity (Preserve `row_num` Through Editing)
 
-`applyRowOffsets()` skips areas that already have an `id`. When template apply or row deletion
-renumbers rows to 1..N in the builder, `persistArea` sends those 1..N rows to
-`updateStorageAreaLayout`, which can be rejected by the global row-uniqueness constraint
-in multi-area cellars.
+The wizard destroys global `row_num` identity during row deletion (renumbers survivors to 1..N)
+and template apply (overwrites with template's 1..N). Since `row_num` is the physical join key
+between `storage_area_rows` and `slots`, this silently breaks the grid layout.
+
+**Approach**: Preserve original global `row_num` on each row throughout the editing session.
+Never renumber to 1..N. Display labels use array index ("Row 1", "Row 2").
 
 **Implementation needed** (see plan §3.1–3.4):
 
 | File | Change |
 |------|--------|
-| `public/js/storageBuilder.js` | Add `export function rebaseRows(localRows, originalArea)` |
-| `public/js/settings.js` | Update `persistArea` to accept `layoutAreaMap` and call `rebaseRows`; build `layoutAreaMap` from `currentLayout.areas` in `handleStorageAreasSave` |
+| `public/js/storageBuilder.js` | Remove renumbering line from `removeRow()` |
+| `public/js/onboarding.js` | Remove renumbering from delete handler; add last-row guard (hide delete when `rows.length === 1`); remap template rows with `baseRow + i` for existing areas; pass `displayIndex` to `buildRowControl` |
 
 #### Fix B — Add/Remove Area Controls in Wizard Edit Mode
 
 When the wizard re-opens with existing areas, Step 2 has no way to add or remove areas.
-Also, `handleStorageAreasSave` has a premature `areas.length === 0` early-exit that prevents
-the DELETE loop from running when all areas are removed.
 
 **Implementation needed** (see plan §4.1–4.4):
 
 | File | Change |
 |------|--------|
-| `public/js/onboarding.js` | Add "Remove This Area" button (guarded by `window.confirm` for existing areas); add "+ Add Another Area" button at bottom of Step 2; update header text in edit vs setup mode |
-| `public/js/settings.js` | Remove `areas.length === 0` from early-exit guard |
+| `public/js/onboarding.js` | Add "Remove This Area" button (guarded by `window.confirm` for existing areas, `areas.length > 1` guard); add "+ Add Another Area" button; update header text in edit vs setup mode |
+| `public/js/settings.js` | Add 409 error handling + `deletedCount` tracking + accurate toast in DELETE loop; keep wizard open on errors |
+
+#### Fix C — Full Layout/Slot Reconciliation (v4)
+
+The grid renders from **slot records** (`stats.js`, `grid.js`), NOT from `storage_area_rows`.
+Layout changes (POST, PUT /layout, DELETE) updated `storage_area_rows` but never provisioned
+or cleaned up slot records — making new rows/columns invisible and leaving orphaned slots on
+shrink. Additionally, none of the mutation routes used transactions.
+
+**Implementation needed** (see plan §3.5–3.8):
+
+| File | Change |
+|------|--------|
+| `src/services/cellar/slotReconciliation.js` | **NEW**: `syncStorageAreaSlots()` (coordinate diff → insert/delete) + `resequenceFridgeSlots()` (two-pass contiguous F1..Fn) |
+| `src/routes/storageAreas.js` | Wrap POST, PUT /layout, DELETE in `db.transaction()` + `wrapClient()`; call `syncStorageAreaSlots()` + `resequenceFridgeSlots()` within transactions |
+| `src/routes/cellar.js` | Fix `getEmptyFridgeSlots()` sort: both area-scoped (`row_num, col_num`) and cross-cellar fallback (`display_order, row_num, col_num` via JOIN) |
+| `src/services/acquisitionWorkflow.js` | Fix fridge slot lookup sort: `display_order, row_num, col_num` |
+| `src/services/cellar/cellarHealth.js` | Fix `executeFillFridge()` fridge slot sort: `display_order, row_num, col_num` |
+| `src/routes/bottles.js` | Include `kitchen_fridge` in `getGridLimits()` fridge capacity |
 
 #### Unit Tests Needed
 
 | Test | File |
 |------|------|
-| `rebaseRows` — area shrinks (original [20,21,22] → local [1,2] → rebased [20,21]) | `tests/unit/utils/storageBuilder.test.js` |
-| `rebaseRows` — area grows (original [20,21] → local [1,2,3] → rebased [20,21,22]) | `tests/unit/utils/storageBuilder.test.js` |
-| `rebaseRows` — no change | `tests/unit/utils/storageBuilder.test.js` |
-| `rebaseRows` — no original area (returns localRows as-is) | `tests/unit/utils/storageBuilder.test.js` |
-| `rebaseRows` — after template apply | `tests/unit/utils/storageBuilder.test.js` |
+| Row deletion preserves identity (via `setAreas`/`getAreas`) | `tests/unit/utils/storageBuilder.test.js` |
+| Last-row guard prevents zero-row area (UI guard: delete button hidden) | `tests/unit/utils/onboarding.test.js` (or DOM-capable storageBuilder test) |
+| First/last row deletion preserves remaining rows | `tests/unit/utils/storageBuilder.test.js` |
+| `addRow` after gap appends `at(-1) + 1` | `tests/unit/utils/storageBuilder.test.js` |
+| `syncStorageAreaSlots` provisions/cleans slots | `tests/unit/services/cellar/slotReconciliation.test.js` |
+| `resequenceFridgeSlots` contiguous numbering | `tests/unit/services/cellar/slotReconciliation.test.js` |
+| POST/PUT/DELETE route slot reconciliation | `tests/unit/routes/storageAreas.test.js` |
+| Consumer fixes (fridge order, grid limits) | Various test files |
 
 ---
 
@@ -79,9 +101,19 @@ These were identified in the §9 audit addendum of `phase3-frontend-cross-area-u
 
 ## Implementation Order
 
-1. `storageBuilder.js` — add `rebaseRows()` export
-2. `settings.js` — update `persistArea` + fix early-exit guard + build `layoutAreaMap`
-3. `onboarding.js` — add Remove/Add controls to Step 2; update header text
-4. `tests/unit/utils/storageBuilder.test.js` — add `rebaseRows` unit tests
-5. Test coverage gaps above
-6. Manual test: edit + template + delete flow end-to-end (see plan §4 Manual Test Plan)
+### Phase I — Backend Slot Reconciliation (Fix C)
+1. `slotReconciliation.js` — NEW: `syncStorageAreaSlots()` + `resequenceFridgeSlots()`
+2. `storageAreas.js` — wrap POST/PUT/DELETE using `db.transaction()` + `wrapClient()`; call reconciliation helpers
+3. Consumer fixes: `cellar.js` (sort order — both branches), `acquisitionWorkflow.js` (sort order), `cellarHealth.js` (sort order), `bottles.js` (kitchen_fridge)
+4. Unit + route tests for reconciliation and consumer fixes
+
+### Phase II — Frontend Stable Row Identity (Fix A)
+5. `storageBuilder.js` — remove renumbering line from `removeRow()`
+6. `onboarding.js` — remove renumbering + last-row guard + template remap + display labels
+7. `tests/unit/utils/storageBuilder.test.js` — row identity preservation tests
+
+### Phase III — Frontend Add/Remove Areas (Fix B)
+8. `onboarding.js` — add Remove/Add area controls to Step 2; update header
+9. `settings.js` — add 409 error handling + `deletedCount` tracking + accurate toast
+10. Test coverage gaps below
+11. Manual test: edit + template + delete + slot provisioning flow end-to-end

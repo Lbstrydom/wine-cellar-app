@@ -11,11 +11,14 @@ vi.mock('../../../public/js/api.js', () => ({
 }));
 vi.mock('../../../public/js/utils.js', () => ({
   showToast: vi.fn(),
-  escapeHtml: vi.fn(s => s)
+  escapeHtml: vi.fn(s => s),
+  getAreaIdForLocation: vi.fn().mockReturnValue(null),
+  formatSlotLabel: vi.fn((locationCode) => String(locationCode ?? ''))
 }));
 vi.mock('../../../public/js/app.js', () => ({
   refreshLayout: vi.fn().mockResolvedValue(),
-  switchView: vi.fn()
+  switchView: vi.fn(),
+  state: { layout: null }
 }));
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn()
@@ -94,7 +97,7 @@ vi.stubGlobal('requestAnimationFrame', vi.fn(cb => cb()));
 
 import { detectSwapPairs, openMoveGuide, closeMoveGuide, isMoveGuideActive } from '../../../public/js/cellarAnalysis/moveGuide.js';
 import { executeCellarMoves } from '../../../public/js/api.js';
-import { showToast } from '../../../public/js/utils.js';
+import { getAreaIdForLocation, showToast } from '../../../public/js/utils.js';
 import { showValidationErrorModal } from '../../../public/js/cellarAnalysis/moves.js';
 import { addTrackedListener } from '../../../public/js/eventManager.js';
 
@@ -439,5 +442,28 @@ describe('executeCurrentMove validation handling', () => {
 
     expect(showValidationErrorModal).not.toHaveBeenCalled();
     expect(showToast).toHaveBeenCalled();
+  });
+
+  it('threads area IDs into executeCellarMoves payload', async () => {
+    getAreaIdForLocation.mockImplementation((_layout, locationCode) => (
+      locationCode === 'R1C1' ? 'area-main' : 'area-garage'
+    ));
+    executeCellarMoves.mockResolvedValueOnce({ success: true, moved: 1 });
+    const executeCb = await getExecuteCallback();
+
+    await executeCb();
+
+    expect(getAreaIdForLocation).toHaveBeenCalledWith(null, 'R1C1');
+    expect(getAreaIdForLocation).toHaveBeenCalledWith(null, 'R2C1');
+    expect(executeCellarMoves).toHaveBeenCalledWith([
+      expect.objectContaining({
+        wineId: 1,
+        wineName: 'Test Wine',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-main',
+        to_storage_area_id: 'area-garage'
+      })
+    ]);
   });
 });

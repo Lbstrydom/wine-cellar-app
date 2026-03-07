@@ -6,10 +6,12 @@
  */
 
 import { Router } from 'express';
-import db from '../db/index.js';
+import db, { wrapClient } from '../db/index.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { validateBody, validateParams } from '../middleware/validate.js';
 import { createStorageAreaSchema, updateStorageAreaSchema, updateLayoutSchema, fromTemplateSchema, storageAreaIdSchema } from '../schemas/storageArea.js';
+import { syncStorageAreaSlots, resequenceFridgeSlots } from '../services/cellar/slotReconciliation.js';
+import { isFridgeType } from '../config/storageTypes.js';
 
 const router = Router();
 
@@ -30,17 +32,18 @@ router.get('/', asyncHandler(async (req, res) => {
       sa.display_order,
       sa.icon,
       sa.notes,
+      sa.colour_zone,
       sa.created_at,
       sa.updated_at,
       COUNT(s.id) as slot_count,
       COUNT(s.id) FILTER (WHERE s.wine_id IS NOT NULL) as occupied_count
     FROM storage_areas sa
     LEFT JOIN storage_area_rows sar ON sar.storage_area_id = sa.id
-    LEFT JOIN slots s ON s.location_code LIKE (sa.id || '%')
+    LEFT JOIN slots s ON s.storage_area_id = sa.id
       AND s.cellar_id = $1
     WHERE sa.cellar_id = $1
     GROUP BY sa.id, sa.name, sa.storage_type, sa.temp_zone,
-             sa.display_order, sa.icon, sa.notes, sa.created_at, sa.updated_at
+             sa.display_order, sa.icon, sa.notes, sa.colour_zone, sa.created_at, sa.updated_at
     ORDER BY sa.display_order, sa.created_at
   `).all(cellarId);
 
@@ -66,6 +69,7 @@ router.get('/:id', validateParams(storageAreaIdSchema), asyncHandler(async (req,
       sa.display_order,
       sa.icon,
       sa.notes,
+      sa.colour_zone,
       sa.created_at,
       sa.updated_at
     FROM storage_areas sa
@@ -99,7 +103,7 @@ router.get('/:id', validateParams(storageAreaIdSchema), asyncHandler(async (req,
  */
 router.post('/', validateBody(createStorageAreaSchema), asyncHandler(async (req, res) => {
   const { cellarId } = req;
-  const { name, storage_type, temp_zone, rows } = req.body;
+  const { name, storage_type, temp_zone, rows, colour_zone } = req.body;
 
   // Check max 5 areas per cellar
   const areaCount = await db.prepare(`
@@ -124,26 +128,59 @@ router.post('/', validateBody(createStorageAreaSchema), asyncHandler(async (req,
     });
   }
 
+  // Row continuity guard: new rows must not overlap existing rows in this cellar
+  const maxRowResult = await db.prepare(`
+    SELECT COALESCE(MAX(sar.row_num), 0) as max_row
+    FROM storage_area_rows sar
+    JOIN storage_areas sa ON sa.id = sar.storage_area_id
+    WHERE sa.cellar_id = $1
+  `).get(cellarId);
+
+  const currentMax = maxRowResult.max_row;
+  const minNewRow = Math.min(...rows.map(r => r.row_num));
+  if (currentMax > 0 && minNewRow <= currentMax) {
+    return res.status(400).json({
+      error: `Row numbers must be continuous. Next valid start: ${currentMax + 1}`,
+      current_max_row: currentMax
+    });
+  }
+
   // Get max display_order for ordering
   const maxOrder = await db.prepare(`
     SELECT COALESCE(MAX(display_order), -1) as max_order
     FROM storage_areas WHERE cellar_id = $1
   `).get(cellarId);
 
-  // Create storage area
-  const result = await db.prepare(`
-    INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order)
-    VALUES ($1, $2, $3, $4, $5)
-    RETURNING id, name, storage_type, temp_zone, display_order, created_at
-  `).get(cellarId, name, storage_type, temp_zone, maxOrder.max_order + 1);
+  const result = await db.transaction(async (client) => {
+    const txDb = wrapClient(client);
 
-  // Insert rows
-  for (const row of rows) {
-    await db.prepare(`
-      INSERT INTO storage_area_rows (storage_area_id, row_num, col_count)
-      VALUES ($1, $2, $3)
-    `).run(result.id, row.row_num, row.col_count);
-  }
+    // Create storage area
+    const area = await txDb.prepare(`
+      INSERT INTO storage_areas (cellar_id, name, storage_type, temp_zone, display_order, colour_zone)
+      VALUES ($1, $2, $3, $4, $5, $6)
+      RETURNING id, name, storage_type, temp_zone, display_order, colour_zone, created_at
+    `).get(cellarId, name, storage_type, temp_zone, maxOrder.max_order + 1, colour_zone || 'mixed');
+
+    // Insert rows
+    for (const row of rows) {
+      await txDb.prepare(`
+        INSERT INTO storage_area_rows (storage_area_id, row_num, col_count)
+        VALUES ($1, $2, $3)
+      `).run(area.id, row.row_num, row.col_count);
+    }
+
+    // Provision slots for all coordinates in the new layout
+    await syncStorageAreaSlots(txDb, {
+      cellarId, areaId: area.id, storageType: storage_type, rows
+    });
+
+    // Resequence fridge location codes if this is a fridge-type area
+    if (isFridgeType(storage_type)) {
+      await resequenceFridgeSlots(txDb, cellarId);
+    }
+
+    return area;
+  });
 
   res.status(201).json({
     message: `Storage area "${name}" created`,
@@ -162,7 +199,7 @@ router.post('/', validateBody(createStorageAreaSchema), asyncHandler(async (req,
 router.put('/:id', validateParams(storageAreaIdSchema), validateBody(updateStorageAreaSchema), asyncHandler(async (req, res) => {
   const { cellarId } = req;
   const { id } = req.params;
-  const { name, storage_type, temp_zone, icon, notes } = req.body;
+  const { name, storage_type, temp_zone, icon, notes, colour_zone } = req.body;
 
   // Verify area exists and belongs to cellar
   const area = await db.prepare(`
@@ -212,6 +249,10 @@ router.put('/:id', validateParams(storageAreaIdSchema), validateBody(updateStora
     updates.push(`notes = $${paramIndex++}`);
     params.push(notes);
   }
+  if (colour_zone !== undefined) {
+    updates.push(`colour_zone = $${paramIndex++}`);
+    params.push(colour_zone);
+  }
 
   params.push(id);
   params.push(cellarId);
@@ -221,8 +262,8 @@ router.put('/:id', validateParams(storageAreaIdSchema), validateBody(updateStora
     const sql = [
       'UPDATE storage_areas',
       'SET ' + setSql,
-      'WHERE id = $' + (paramIndex + 1) + ' AND cellar_id = $' + (paramIndex + 2),
-      'RETURNING id, name, storage_type, temp_zone, display_order, icon, notes, updated_at'
+      'WHERE id = $' + paramIndex + ' AND cellar_id = $' + (paramIndex + 1),
+      'RETURNING id, name, storage_type, temp_zone, display_order, icon, notes, colour_zone, updated_at'
     ].join('\n');
     const result = await db.prepare(sql).get(...params);
 
@@ -252,6 +293,23 @@ router.put('/:id/layout', validateParams(storageAreaIdSchema), validateBody(upda
 
   if (!area) {
     return res.status(404).json({ error: 'Storage area not found' });
+  }
+
+  // Row-overlap guard: new rows must not collide with rows in OTHER areas
+  const newRowNums = rows.map(r => r.row_num);
+  const otherAreaRows = await db.prepare(`
+    SELECT sar.row_num FROM storage_area_rows sar
+    JOIN storage_areas sa ON sa.id = sar.storage_area_id
+    WHERE sa.cellar_id = $1 AND sar.storage_area_id != $2
+  `).all(cellarId, id);
+
+  const otherRowSet = new Set(otherAreaRows.map(r => r.row_num));
+  const overlapping = newRowNums.filter(rn => otherRowSet.has(rn));
+  if (overlapping.length > 0) {
+    return res.status(400).json({
+      error: `Row numbers overlap with other storage areas: ${overlapping.join(', ')}`,
+      overlapping_rows: overlapping
+    });
   }
 
   // Get current rows
@@ -296,17 +354,34 @@ router.put('/:id/layout', validateParams(storageAreaIdSchema), validateBody(upda
     });
   }
 
-  // Update rows (delete old, insert new)
-  await db.prepare(`
-    DELETE FROM storage_area_rows WHERE storage_area_id = $1
-  `).run(id);
+  await db.transaction(async (client) => {
+    const txDb = wrapClient(client);
 
-  for (const row of rows) {
-    await db.prepare(`
-      INSERT INTO storage_area_rows (storage_area_id, row_num, col_count)
-      VALUES ($1, $2, $3)
-    `).run(id, row.row_num, row.col_count);
-  }
+    // Replace storage_area_rows
+    await txDb.prepare(`
+      DELETE FROM storage_area_rows WHERE storage_area_id = $1
+    `).run(id);
+
+    for (const row of rows) {
+      await txDb.prepare(`
+        INSERT INTO storage_area_rows (storage_area_id, row_num, col_count)
+        VALUES ($1, $2, $3)
+      `).run(id, row.row_num, row.col_count);
+    }
+
+    // Sync slots: provision new coordinates, delete empty orphans, rewrite codes on type change
+    const areaInfo = await txDb.prepare(
+      'SELECT storage_type FROM storage_areas WHERE id = $1'
+    ).get(id);
+    const syncResult = await syncStorageAreaSlots(txDb, {
+      cellarId, areaId: id, storageType: areaInfo.storage_type, rows
+    });
+
+    // Resequence if the area is (or was) a fridge type — covers type-change gaps in the F-sequence
+    if (isFridgeType(areaInfo.storage_type) || syncResult?.needsResequence) {
+      await resequenceFridgeSlots(txDb, cellarId);
+    }
+  });
 
   res.json({
     message: 'Layout updated successfully',
@@ -325,9 +400,9 @@ router.delete('/:id', validateParams(storageAreaIdSchema), asyncHandler(async (r
   const { cellarId } = req;
   const { id } = req.params;
 
-  // Verify area exists
+  // Verify area exists — fetch name and storage_type together
   const area = await db.prepare(`
-    SELECT name FROM storage_areas WHERE id = $1 AND cellar_id = $2
+    SELECT name, storage_type FROM storage_areas WHERE id = $1 AND cellar_id = $2
   `).get(id, cellarId);
 
   if (!area) {
@@ -347,10 +422,18 @@ router.delete('/:id', validateParams(storageAreaIdSchema), asyncHandler(async (r
     });
   }
 
-  // Delete area (cascade will handle rows and empty slots)
-  await db.prepare(`
-    DELETE FROM storage_areas WHERE id = $1 AND cellar_id = $2
-  `).run(id, cellarId);
+  // Delete area (CASCADE handles storage_area_rows and empty slots)
+  await db.transaction(async (client) => {
+    const txDb = wrapClient(client);
+    await txDb.prepare(`
+      DELETE FROM storage_areas WHERE id = $1 AND cellar_id = $2
+    `).run(id, cellarId);
+
+    // Resequence remaining fridge slots if the deleted area was a fridge type
+    if (isFridgeType(area.storage_type)) {
+      await resequenceFridgeSlots(txDb, cellarId);
+    }
+  });
 
   res.json({
     message: `Storage area "${area.name}" deleted`

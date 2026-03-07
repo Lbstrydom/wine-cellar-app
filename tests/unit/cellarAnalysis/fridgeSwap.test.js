@@ -10,10 +10,13 @@ vi.mock('../../../public/js/api.js', () => ({
 }));
 vi.mock('../../../public/js/utils.js', () => ({
   showToast: vi.fn(),
-  escapeHtml: vi.fn(s => s)
+  escapeHtml: vi.fn(s => s),
+  getAreaIdForLocation: vi.fn().mockReturnValue(null),
+  formatSlotLabel: vi.fn((locationCode) => String(locationCode ?? ''))
 }));
 vi.mock('../../../public/js/app.js', () => ({
-  refreshLayout: vi.fn()
+  refreshLayout: vi.fn(),
+  state: { layout: null }
 }));
 vi.mock('../../../public/js/cellarAnalysis/state.js', () => ({
   getCurrentAnalysis: vi.fn()

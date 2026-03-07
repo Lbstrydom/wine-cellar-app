@@ -77,9 +77,10 @@ export async function proposeZones(cellarId, options = {}) {
       s.location_code
     FROM wines w
     LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('cellar', 'rack', 'other')
     WHERE w.cellar_id = ?
       AND s.location_code IS NOT NULL
-      AND s.location_code LIKE 'R%'
   `).all(cellarId, cellarId);
 
   // ── 2. Classify each wine + aggregate per zone ──────────────

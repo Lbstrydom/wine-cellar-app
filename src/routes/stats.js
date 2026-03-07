@@ -78,6 +78,7 @@ router.get('/layout', asyncHandler(async (req, res) => {
         s.col_num,
         s.is_open,
         s.opened_at,
+        s.storage_area_id,
         w.id as wine_id,
         w.style,
         w.colour,
@@ -126,7 +127,8 @@ router.get('/layout', asyncHandler(async (req, res) => {
         reduce_priority: slot.reduce_priority,
         reduce_reason: slot.reduce_reason,
         is_open: slot.is_open,
-        opened_at: slot.opened_at
+        opened_at: slot.opened_at,
+        storage_area_id: slot.storage_area_id
       };
 
       if (slot.zone === 'fridge') {
@@ -242,6 +244,7 @@ router.get('/layout', asyncHandler(async (req, res) => {
     row.slots.push({
       slot_id: s.slot_id,
       location_code: s.location_code,
+      storage_area_id: s.storage_area_id,
       wine_id: s.wine_id,
       wine_name: s.wine_name,
       vintage: s.vintage,

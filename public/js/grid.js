@@ -592,6 +592,17 @@ export function createSlotElement(slot) {
   el.className = 'slot';
   el.dataset.location = slot.location_code;
   el.dataset.slotId = slot.slot_id;
+  if (slot.storage_area_id) {
+    el.dataset.storageAreaId = slot.storage_area_id;
+    // Enrich with area name and type from layout for multi-area label support
+    if (state.layout?.areas) {
+      const area = state.layout.areas.find(a => a.id === slot.storage_area_id);
+      if (area) {
+        el.dataset.storageAreaName = area.name || '';
+        el.dataset.storageType = area.storage_type || '';
+      }
+    }
+  }
 
   if (slot.wine_id) {
     el.classList.add(slot.colour || 'white');

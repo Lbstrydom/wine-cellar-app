@@ -9,6 +9,7 @@
 export const bottleState = {
   mode: 'add', // 'add' or 'edit'
   editingLocation: null,
+  editingStorageAreaId: null,
   editingWineId: null,
   wineStyles: [],
   searchTimeout: null,
@@ -29,6 +30,7 @@ export const bottleState = {
 export function resetBottleState() {
   bottleState.mode = 'add';
   bottleState.editingLocation = null;
+  bottleState.editingStorageAreaId = null;
   bottleState.editingWineId = null;
   bottleState.parsedWines = [];
   bottleState.selectedParsedIndex = 0;

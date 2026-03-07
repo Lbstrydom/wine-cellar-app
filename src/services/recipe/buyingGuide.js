@@ -165,9 +165,12 @@ export async function generateBuyingGuide(cellarId, options = {}) {
  * @returns {Promise<number>} Total slot count
  */
 async function getCellarCapacity(cellarId) {
-  const row = await db.prepare(
-    "SELECT COUNT(*) as count FROM slots WHERE cellar_id = $1 AND location_code LIKE 'R%'"
-  ).get(cellarId);
+  const row = await db.prepare(`
+    SELECT COUNT(*) as count FROM slots s
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('cellar', 'rack', 'other')
+    WHERE s.cellar_id = $1
+  `).get(cellarId);
   return Number(row?.count ?? 0);
 }
 

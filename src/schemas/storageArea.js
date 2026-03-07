@@ -5,15 +5,16 @@
 
 import { z } from 'zod';
 
-const STORAGE_TYPES = ['wine_fridge', 'kitchen_fridge', 'cellar', 'rack', 'other'];
+export const STORAGE_TYPES = ['wine_fridge', 'kitchen_fridge', 'cellar', 'rack', 'other'];
 const TEMP_ZONES = ['cold', 'cool', 'cellar', 'ambient'];
+export const COLOUR_ZONES = ['white', 'red', 'mixed'];
 
 /**
  * Row definition used in storage area layouts.
  */
 const rowSchema = z.object({
   row_num: z.coerce.number().int().min(1).max(100),
-  col_count: z.coerce.number().int().min(1).max(50),
+  col_count: z.coerce.number().int().min(1).max(20),
   label: z.string().max(50).optional()
 });
 
@@ -28,7 +29,8 @@ export const createStorageAreaSchema = z.object({
   temp_zone: z.enum(TEMP_ZONES, {
     errorMap: () => ({ message: `temp_zone must be one of: ${TEMP_ZONES.join(', ')}` })
   }),
-  rows: z.array(rowSchema).min(1, 'At least one row is required').max(100)
+  rows: z.array(rowSchema).min(1, 'At least one row is required').max(100),
+  colour_zone: z.enum(COLOUR_ZONES).default('mixed')
 });
 
 /**
@@ -39,7 +41,8 @@ export const updateStorageAreaSchema = z.object({
   storage_type: z.enum(STORAGE_TYPES).optional(),
   temp_zone: z.enum(TEMP_ZONES).optional(),
   icon: z.string().max(20).nullable().optional(),
-  notes: z.string().max(500).nullable().optional()
+  notes: z.string().max(500).nullable().optional(),
+  colour_zone: z.enum(COLOUR_ZONES).optional()
 }).refine(data => Object.keys(data).length > 0, {
   message: 'At least one field is required'
 });

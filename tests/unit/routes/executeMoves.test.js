@@ -74,6 +74,15 @@ vi.mock('../../../src/routes/cellarAnalysis.js', () => ({
   runAnalysis: vi.fn()
 }));
 
+vi.mock('../../../src/services/cellar/storageAreaResolver.js', () => ({
+  resolveAreaFromSlot: vi.fn().mockResolvedValue('test-area-uuid')
+}));
+
+vi.mock('../../../src/services/zone/reconfigChangeTracker.js', () => ({
+  checkReconfigThreshold: vi.fn().mockResolvedValue({ exceeded: false }),
+  resetBottleChangeCount: vi.fn().mockResolvedValue()
+}));
+
 // ── Imports ─────────────────────────────────────────────────────────
 
 import express from 'express';
@@ -676,7 +685,7 @@ describe('POST /execute-moves', () => {
         q.sql.includes('UPDATE slots SET wine_id = NULL') && q.sql.includes('AND wine_id = $3')
       );
       expect(clearQuery).toBeDefined();
-      expect(clearQuery.params).toEqual([CELLAR_ID, 'R3C5', 10]);
+      expect(clearQuery.params).toEqual([CELLAR_ID, 'R3C5', 10, 'test-area-uuid']);
     });
 
     it('Phase 2 uses AND wine_id IS NULL to prevent overwrite races', async () => {
@@ -705,7 +714,7 @@ describe('POST /execute-moves', () => {
         q.sql.includes('UPDATE slots SET wine_id = $1') && q.sql.includes('AND wine_id IS NULL')
       );
       expect(placeQuery).toBeDefined();
-      expect(placeQuery.params).toEqual([10, CELLAR_ID, 'R7C2']);
+      expect(placeQuery.params).toEqual([10, CELLAR_ID, 'R7C2', 'test-area-uuid']);
     });
   });
 

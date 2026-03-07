@@ -9,19 +9,29 @@ vi.mock('../../../../src/db/index.js', () => ({
   }
 }));
 
+vi.mock('../../../../src/services/cellar/cellarLayout.js', () => ({
+  getCellarRowCount: vi.fn().mockResolvedValue(19),
+  getStorageAreaRows: vi.fn().mockResolvedValue([]),
+  getRowCapacity: vi.fn().mockReturnValue(9)
+}));
+
 import db from '../../../../src/db/index.js';
+import { getCellarRowCount } from '../../../../src/services/cellar/cellarLayout.js';
 
 // In --no-isolate mode, other test files may vi.mock() the entire
 // cellarLayoutSettings module (e.g. layoutProposerIntegration.test.js,
 // cellarAnalysis.test.js), replacing real exports with mocks.
 // Use vi.importActual() to guarantee we test the REAL implementations.
-let getCellarLayoutSettings, getColourRowRanges, isWhiteFamily, computeDynamicRowSplit;
+let getCellarLayoutSettings, getColourRowRanges, isWhiteFamily, computeDynamicRowSplit,
+  getDynamicColourRowRanges, countColourFamilies;
 beforeAll(async () => {
   const actual = await vi.importActual('../../../../src/services/shared/cellarLayoutSettings.js');
   getCellarLayoutSettings = actual.getCellarLayoutSettings;
   getColourRowRanges = actual.getColourRowRanges;
   isWhiteFamily = actual.isWhiteFamily;
   computeDynamicRowSplit = actual.computeDynamicRowSplit;
+  getDynamicColourRowRanges = actual.getDynamicColourRowRanges;
+  countColourFamilies = actual.countColourFamilies;
 });
 
 // ─── isWhiteFamily ────────────────────────────────────────
@@ -220,5 +230,221 @@ describe('getCellarLayoutSettings', () => {
     });
     const result = await getCellarLayoutSettings('cellar-123');
     expect(result).toEqual({ colourOrder: 'whites-top', fillDirection: 'left' });
+  });
+});
+
+// ─── countColourFamilies ──────────────────────────────────
+
+describe('countColourFamilies', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    db.prepare = vi.fn().mockReturnValue({
+      all: vi.fn().mockResolvedValue([]),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    });
+  });
+
+  it('returns zeros when cellarId is null', async () => {
+    const result = await countColourFamilies(null);
+    expect(result).toEqual({ whiteCount: 0, redCount: 0 });
+    expect(db.prepare).not.toHaveBeenCalled();
+  });
+
+  it('counts white-family and red bottles', async () => {
+    db.prepare.mockReturnValue({
+      all: vi.fn().mockResolvedValue([
+        { colour: 'White', cnt: '15' },
+        { colour: 'Red', cnt: '25' },
+        { colour: 'Rosé', cnt: '5' }
+      ])
+    });
+
+    const result = await countColourFamilies('cellar-1');
+    expect(result).toEqual({ whiteCount: 20, redCount: 25 });
+  });
+
+  it('uses cellar-global query when no storageAreaId', async () => {
+    const allFn = vi.fn().mockResolvedValue([]);
+    db.prepare.mockReturnValue({ all: allFn });
+
+    await countColourFamilies('cellar-1');
+
+    const sql = db.prepare.mock.calls[0][0];
+    expect(sql).toContain("storage_type IN ('cellar', 'rack', 'other')");
+    expect(sql).not.toContain('storage_area_id = $2');
+  });
+
+  it('uses area-scoped query when storageAreaId provided', async () => {
+    const allFn = vi.fn().mockResolvedValue([]);
+    db.prepare.mockReturnValue({ all: allFn });
+
+    await countColourFamilies('cellar-1', 'area-uuid');
+
+    const sql = db.prepare.mock.calls[0][0];
+    expect(sql).toContain('storage_area_id');
+    expect(sql).not.toContain("LIKE 'R%'");
+    expect(allFn).toHaveBeenCalledWith('cellar-1', 'area-uuid');
+  });
+});
+
+// ─── getDynamicColourRowRanges ────────────────────────────
+
+describe('getDynamicColourRowRanges', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getCellarRowCount.mockResolvedValue(19);
+  });
+
+  function mockDbSequence(...results) {
+    let callIndex = 0;
+    db.prepare = vi.fn().mockImplementation(() => ({
+      all: vi.fn().mockImplementation((...args) => {
+        const result = results[callIndex] || [];
+        callIndex++;
+        return Promise.resolve(result);
+      }),
+      get: vi.fn().mockResolvedValue(null),
+      run: vi.fn().mockResolvedValue({ changes: 0 })
+    }));
+  }
+
+  it('falls back to legacy single-area when no storage areas exist', async () => {
+    // Call 1: storage areas query → empty
+    // Call 2: countColourFamilies (cellar-global)
+    mockDbSequence(
+      [], // no storage areas
+      [{ colour: 'White', cnt: '10' }, { colour: 'Red', cnt: '30' }] // colour counts
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    expect(result.whiteRows.length + result.redRows.length).toBe(19);
+    expect(result.whiteCount).toBe(10);
+    expect(result.redCount).toBe(30);
+  });
+
+  it('assigns all rows to white for white-designated area', async () => {
+    mockDbSequence(
+      [{ id: 'area-1', colour_zone: 'white', storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }, { row_num: 3 }]) }],
+      // countColourFamilies for area-1
+      [{ colour: 'White', cnt: '12' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    expect(result.whiteRows).toEqual([1, 2, 3]);
+    expect(result.redRows).toEqual([]);
+    expect(result.whiteCount).toBe(12);
+  });
+
+  it('assigns all rows to red for red-designated area', async () => {
+    mockDbSequence(
+      [{ id: 'area-1', colour_zone: 'red', storage_type: 'rack', area_rows: JSON.stringify([{ row_num: 20 }, { row_num: 21 }]) }],
+      // countColourFamilies for area-1
+      [{ colour: 'Red', cnt: '8' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    expect(result.whiteRows).toEqual([]);
+    expect(result.redRows).toEqual([20, 21]);
+    expect(result.redCount).toBe(8);
+  });
+
+  it('computes proportional split for mixed area', async () => {
+    mockDbSequence(
+      // Storage areas query
+      [{ id: 'area-1', colour_zone: 'mixed', storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }, { row_num: 3 }, { row_num: 4 }, { row_num: 5 }]) }],
+      // countColourFamilies for area-1: equal split
+      [{ colour: 'White', cnt: '10' }, { colour: 'Red', cnt: '10' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    // 50/50 on 5 rows → 3 white, 2 red (Math.round(2.5) = 3)
+    expect(result.whiteRows).toEqual([1, 2, 3]);
+    expect(result.redRows).toEqual([4, 5]);
+    expect(result.whiteCount).toBe(10);
+    expect(result.redCount).toBe(10);
+  });
+
+  it('handles multiple areas with different colour zones', async () => {
+    mockDbSequence(
+      // Two areas: main cellar (mixed, rows 1-5) + garage (red, rows 6-8)
+      [
+        { id: 'area-main', colour_zone: 'mixed', storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }, { row_num: 3 }, { row_num: 4 }, { row_num: 5 }]) },
+        { id: 'area-garage', colour_zone: 'red', storage_type: 'rack', area_rows: JSON.stringify([{ row_num: 6 }, { row_num: 7 }, { row_num: 8 }]) }
+      ],
+      // countColourFamilies for area-main: 5 white, 15 red
+      [{ colour: 'White', cnt: '5' }, { colour: 'Red', cnt: '15' }],
+      // countColourFamilies for area-garage: 10 red
+      [{ colour: 'Red', cnt: '10' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    // Main area: 5 rows, 25% white → 2 white rows (min 2), 3 red rows
+    expect(result.whiteRows).toEqual([1, 2]);
+    expect(result.redRows).toEqual(expect.arrayContaining([3, 4, 5, 6, 7, 8]));
+    expect(result.redRows).toHaveLength(6);
+    // Totals include both areas
+    expect(result.whiteCount).toBe(5);
+    expect(result.redCount).toBe(25);
+  });
+
+  it('respects reds-top colour order within mixed areas', async () => {
+    mockDbSequence(
+      [{ id: 'area-1', colour_zone: 'mixed', storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }, { row_num: 3 }, { row_num: 4 }]) }],
+      [{ colour: 'White', cnt: '10' }, { colour: 'Red', cnt: '10' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'reds-top');
+
+    // 50/50 on 4 rows → 2 white, 2 red; reds-top puts reds first
+    expect(result.redRows).toEqual([1, 2]);
+    expect(result.whiteRows).toEqual([3, 4]);
+  });
+
+  it('skips fridge-type storage areas', async () => {
+    mockDbSequence(
+      [
+        { id: 'area-fridge', colour_zone: 'mixed', storage_type: 'wine_fridge', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }]) },
+        { id: 'area-cellar', colour_zone: 'red', storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 3 }, { row_num: 4 }]) }
+      ],
+      // countColourFamilies for area-cellar (fridge is skipped)
+      [{ colour: 'Red', cnt: '6' }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    // Only cellar area (red zone) included; fridge skipped
+    expect(result.whiteRows).toEqual([]);
+    expect(result.redRows).toEqual([3, 4]);
+    expect(result.redCount).toBe(6);
+  });
+
+  it('handles area with no rows gracefully', async () => {
+    mockDbSequence(
+      [{ id: 'area-1', colour_zone: 'white', storage_type: 'cellar', area_rows: null }]
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    expect(result.whiteRows).toEqual([]);
+    expect(result.redRows).toEqual([]);
+  });
+
+  it('defaults colour_zone to mixed when null', async () => {
+    mockDbSequence(
+      [{ id: 'area-1', colour_zone: null, storage_type: 'cellar', area_rows: JSON.stringify([{ row_num: 1 }, { row_num: 2 }]) }],
+      [{ colour: 'Red', cnt: '10' }] // only reds
+    );
+
+    const result = await getDynamicColourRowRanges('cellar-1', 'whites-top');
+
+    // Mixed with only reds → all rows are red
+    expect(result.whiteRows).toEqual([]);
+    expect(result.redRows).toEqual([1, 2]);
   });
 });

@@ -1,5 +1,53 @@
 # Wine Cellar App - Status Report
 
+## 2026-03-07 — Phase 3 Wizard Edit Mode + Row Rebase + Bug Fixes
+
+### Changes
+- **Phase 3 full implementation** of `docs/plans/phase3-wizard-edit-mode-and-row-rebase.md` (all 15 steps):
+  - **Fix A (stable row identity)**: `storageBuilder.js` `removeRow()` no longer renumbers rows after deletion; `onboarding.js` uses `displayIndex` for labels and `baseRow+i` remapping for templates
+  - **Fix B (wizard edit/delete mode)**: Add/Remove area controls in `onboarding.js`; edit-mode header; `settings.js` surfaces 409 per-area toasts and holds wizard open on blocked deletes
+  - **Fix C (slot reconciliation)**: New `src/services/cellar/slotReconciliation.js` — `syncStorageAreaSlots()` + `resequenceFridgeSlots()`; wired into `storageAreas.js` POST/PUT/DELETE inside `db.transaction()` + `wrapClient()`
+  - **Consumer fridge ordering fixes**: `cellar.js` (both branches), `acquisitionWorkflow.js`, `cellarHealth.js` — changed `ORDER BY location_code` → `ORDER BY sa.display_order, s.row_num, s.col_num`
+  - **`bottles.js` getGridLimits()**: Includes `kitchen_fridge` alongside `wine_fridge`
+- **Post-review bug fixes** (3 findings addressed):
+  - **High — stale slot codes on type change**: `syncStorageAreaSlots` now rewrites kept slot `location_code`/`zone` when area `storage_type` changes (fridge↔cellar); returns `{ needsResequence }` so `PUT /:id/layout` can trigger `resequenceFridgeSlots` to fill F-sequence gaps
+  - **High — accumulated save listeners**: Removed unconditional `finally` re-add in `handleStorageAreasSave`; listener now re-registered only in the two stay-open paths (deleteErrors > 0, catch)
+  - **Medium — stale builder state on empty cellar**: `openStorageAreasWizard` now unconditionally calls `setAreas(layout?.areas || [])` before `startOnboarding`
+
+### Files Created
+- `src/services/cellar/slotReconciliation.js` — `syncStorageAreaSlots()`, `resequenceFridgeSlots()`
+- `src/config/storageTypes.js` — `isFridgeType()`, `isCellarType()` predicates
+- `src/services/cellar/storageAreaResolver.js` — area lookup utilities
+- `data/migrations/066_storage_area_colour_zone.sql` — adds `colour_zone` column to `storage_areas`
+- `tests/unit/services/cellar/slotReconciliation.test.js` — full service test coverage
+- `tests/unit/routes/storageAreas.test.js` — route tests incl. slot provisioning and type-change resequencing
+- `tests/unit/utils/storageBuilder.test.js` — stable row identity tests
+- `tests/unit/config/storageTypes.test.js`, `tests/unit/schemas/slot.test.js`, `tests/unit/schemas/storageArea.test.js`, `tests/unit/utils/formatSlotLabel.test.js`, `tests/unit/utils/getAreaIdForLocation.test.js`
+- `tests/unit/routes/cellarReconfiguration.test.js`, `tests/unit/routes/slots.test.js`
+- `tests/unit/cellarAnalysis/moves.test.js`
+- `tests/unit/services/cellar/cellarLayout.test.js`, `tests/unit/services/cellar/storageAreaResolver.test.js`
+
+### Files Modified (key)
+- `public/js/onboarding.js` — stable row identity, edit/add/remove area controls, edit-mode header
+- `public/js/storageBuilder.js` — `removeRow()` no longer renumbers; `addRow()` uses `at(-1)+1`
+- `public/js/settings.js` — 409 error handling, listener lifecycle fix, unconditional `setAreas` on open
+- `src/routes/storageAreas.js` — transactions, slot provisioning, type-change resequencing
+- `src/routes/cellar.js`, `src/services/acquisitionWorkflow.js`, `src/services/cellar/cellarHealth.js` — fridge sort fix
+
+### Decisions Made
+- Transaction pattern: `db.transaction(async (client) => { const txDb = wrapClient(client); })` — pool-backed, never bare `BEGIN/COMMIT`
+- `syncStorageAreaSlots` returns `{ needsResequence }` so callers decide whether to resequence without re-querying storage type
+- Save listener uses `{ once: true }` on every open; re-added only in stay-open paths — no stacking across sessions
+
+### Test Count
+- 3528 unit tests pass (151 test files); up from 3521 before Phase 3
+
+### Next Steps
+- Manual smoke test: open wizard, edit area type fridge→cellar, verify F-codes become R-codes in grid
+- Manual smoke test: add/remove area in wizard, save, verify slot counts in grid match rows×cols
+
+---
+
 ## 2026-03-07 — Docs Cleanup: Plan Review + Archive
 
 ### Changes

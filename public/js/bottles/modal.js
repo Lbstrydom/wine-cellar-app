@@ -4,7 +4,7 @@
  */
 
 import { fetchWine } from '../api.js';
-import { showToast, getAllSlotsFromLayout } from '../utils.js';
+import { showToast, getAllSlotsFromLayout, formatSlotLabel } from '../utils.js';
 import { state } from '../app.js';
 import { bottleState, resetBottleState } from './state.js';
 import { clearUploadedImage } from './imageParsing.js';
@@ -14,11 +14,16 @@ import { loadWineRegions } from '../config/wineRegions.js';
 /**
  * Find slot data from current layout.
  * @param {string} location - Location code
+ * @param {string|null} [storageAreaId] - Optional: narrow search to a specific storage area
  * @returns {Object|null}
  */
-export function findSlotData(location) {
+export function findSlotData(location, storageAreaId = null) {
   if (!state.layout) return null;
   const allSlots = getAllSlotsFromLayout(state.layout);
+  if (storageAreaId) {
+    const match = allSlots.find(s => s.location_code === location && s.storage_area_id === storageAreaId);
+    if (match) return match;
+  }
   return allSlots.find(s => s.location_code === location);
 }
 
@@ -29,10 +34,13 @@ export function findSlotData(location) {
 export function showAddBottleModal(location) {
   bottleState.mode = 'add';
   bottleState.editingLocation = location;
+  bottleState.editingStorageAreaId = findSlotData(location)?.storage_area_id || null;
   bottleState.editingWineId = null;
 
   document.getElementById('bottle-modal-title').textContent = 'Add New Bottle';
-  document.getElementById('bottle-modal-subtitle').textContent = `Adding to slot: ${location}`;
+  const storageAreaId = findSlotData(location)?.storage_area_id || null;
+  document.getElementById('bottle-modal-subtitle').textContent =
+    'Adding to slot: ' + formatSlotLabel(location, storageAreaId, state.layout?.areas);
   document.getElementById('bottle-save-btn').textContent = 'Add Bottle';
   document.getElementById('bottle-delete-btn').style.display = 'none';
   document.getElementById('quantity-section').style.display = 'block';
@@ -77,10 +85,13 @@ export function showAddBottleModal(location) {
 export async function showEditBottleModal(location, wineId) {
   bottleState.mode = 'edit';
   bottleState.editingLocation = location;
+  bottleState.editingStorageAreaId = findSlotData(location)?.storage_area_id || null;
   bottleState.editingWineId = wineId;
 
   document.getElementById('bottle-modal-title').textContent = 'Edit Wine';
-  document.getElementById('bottle-modal-subtitle').textContent = `Location: ${location}`;
+  const editStorageAreaId = findSlotData(location)?.storage_area_id || null;
+  document.getElementById('bottle-modal-subtitle').textContent =
+    'Location: ' + formatSlotLabel(location, editStorageAreaId, state.layout?.areas);
   document.getElementById('bottle-save-btn').textContent = 'Save Changes';
   document.getElementById('bottle-delete-btn').style.display = 'block';
   document.getElementById('quantity-section').style.display = 'none';

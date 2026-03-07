@@ -9,6 +9,7 @@ import { findBestZone, inferColour } from './cellarPlacement.js';
 import { parseSlot, getRowCapacity } from './slotUtils.js';
 import { getZoneById } from '../../config/cellarZones.js';
 import { isWhiteFamily } from '../shared/cellarLayoutSettings.js';
+import { isWineInCellar } from '../../config/storageTypes.js';
 
 /**
  * Check whether a wine's physical row is a valid overflow destination for its
@@ -96,14 +97,12 @@ function rowSort(a, b) {
  * @param {Object} zoneMap - Active zone map from getActiveZoneMap().
  *   Keys are row IDs (e.g. 'R3'), values have { zoneId, displayName, ... }.
  * @param {Array} [storageAreaRows=[]] - Dynamic row definitions from cellarLayout.js
+ * @param {Map|null} [areaTypeMap=null] - Map<area_id, storage_type> for type lookups
  * @returns {{ groups: Array, consolidationOpportunities: Array, totalBottles: number, totalGroups: number }}
  */
-export function scanBottles(wines, zoneMap, storageAreaRows = []) {
+export function scanBottles(wines, zoneMap, storageAreaRows = [], areaTypeMap = null) {
   // ── 1. Filter to cellar-only wines (exclude fridge) ──────────
-  const cellarWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('R');
-  });
+  const cellarWines = wines.filter(w => isWineInCellar(w, areaTypeMap));
 
   // ── 2. Classify every wine via findBestZone ──────────────────
   /** @type {Map<string, { zoneId: string, displayName: string, wines: Array }>} */

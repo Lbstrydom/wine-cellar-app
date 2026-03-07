@@ -18,7 +18,8 @@ import { scanBottles } from './bottleScanner.js';
 import { getActiveZoneMap, allocateRowToZone, getZoneRows } from './cellarAllocation.js';
 import { ZONE_PRIORITY_ORDER, getZoneById } from '../../config/cellarZones.js';
 import { getCellarLayoutSettings, getDynamicColourRowRanges, isWhiteFamily } from '../shared/cellarLayoutSettings.js';
-import { parseSlot, buildSlotId, getRowCapacity, isCellarSlot, sortRowIds } from './slotUtils.js';
+import { parseSlot, buildSlotId, getRowCapacity, sortRowIds } from './slotUtils.js';
+import { isWineInCellar } from '../../config/storageTypes.js';
 
 // ───────────────────────────────────────────────────────────
 // Helpers
@@ -28,13 +29,14 @@ import { parseSlot, buildSlotId, getRowCapacity, isCellarSlot, sortRowIds } from
  * Build a map of currently occupied cellar slots → wine info.
  * Excludes fridge slots.
  * @param {Array<Object>} wines - Wine rows with slot_id/location_code
+ * @param {Map|null} [areaTypeMap=null] - Map<area_id, storage_type> for type lookups
  * @returns {Map<string, {wineId: number, wineName: string, colour: string, zoneId: string}>}
  */
-function buildCurrentLayout(wines) {
+function buildCurrentLayout(wines, areaTypeMap = null) {
   const layout = new Map();
   for (const w of wines) {
+    if (!isWineInCellar(w, areaTypeMap)) continue;
     const slotId = w.slot_id || w.location_code;
-    if (!slotId || !isCellarSlot(slotId)) continue;
     layout.set(slotId, {
       wineId: w.id,
       wineName: w.wine_name,
@@ -222,7 +224,7 @@ export function optimizeForStability(targetLayout, currentLayout, zoneSlotsMap) 
  * @returns {Promise<{targetLayout: Map, currentLayout: Map, stats: Object, issues: Array}>}
  */
 export async function proposeIdealLayout(wines, options = {}) {
-  const { cellarId, storageAreaRows } = options;
+  const { cellarId, storageAreaRows, areaTypeMap = null } = options;
   const issues = [];
 
   // ── 1. Get current zone map and layout settings ────────────
@@ -232,7 +234,7 @@ export async function proposeIdealLayout(wines, options = {}) {
   if (!hasZoneAllocations) {
     return {
       targetLayout: new Map(),
-      currentLayout: buildCurrentLayout(wines),
+      currentLayout: buildCurrentLayout(wines, areaTypeMap),
       stats: { noZones: true, totalBottles: 0, stayInPlace: 0, moves: 0 },
       issues: [{ type: 'no_zones', message: 'No zone allocations configured' }]
     };
@@ -242,8 +244,8 @@ export async function proposeIdealLayout(wines, options = {}) {
   const fillDirection = layoutSettings?.fillDirection || 'left';
 
   // ── 2. Classify wines via bottle scanner ───────────────────
-  const scan = scanBottles(wines, zoneMap);
-  const currentLayout = buildCurrentLayout(wines);
+  const scan = scanBottles(wines, zoneMap, storageAreaRows || [], areaTypeMap);
+  const currentLayout = buildCurrentLayout(wines, areaTypeMap);
 
   // ── 3. Build zone rows (allocated + on-demand) ─────────────
   // Track allocated rows to prevent double-allocation

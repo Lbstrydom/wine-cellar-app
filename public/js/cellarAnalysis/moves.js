@@ -4,8 +4,8 @@
  */
 
 import { executeCellarMoves } from '../api.js';
-import { showToast, escapeHtml } from '../utils.js';
-import { refreshLayout } from '../app.js';
+import { showToast, escapeHtml, getAreaIdForLocation, formatSlotLabel } from '../utils.js';
+import { refreshLayout, state } from '../app.js';
 import { getCurrentAnalysis, getAIMoveJudgments } from './state.js';
 import { openMoveGuide, detectSwapPairs } from './moveGuide.js';
 
@@ -245,12 +245,12 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
             <div class="swap-pair-wines">
               <div class="swap-wine-info">
                 <div class="move-wine-name">${escapeHtml(move.wineName)}${aiBadgeA}</div>
-                <div class="move-slot"><span class="from">${move.from}</span>  →  ${move.toZone}</div>
+                <div class="move-slot"><span class="from">${escapeHtml(formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas))}</span>  →  ${escapeHtml(move.toZone)}</div>
               </div>
               <span class="swap-arrow">↔</span>
               <div class="swap-wine-info">
                 <div class="move-wine-name">${escapeHtml(partner.wineName)}${aiBadgeB}</div>
-                <div class="move-slot"><span class="from">${partner.from}</span>  →  ${partner.toZone}</div>
+                <div class="move-slot"><span class="from">${escapeHtml(formatSlotLabel(partner.from, getAreaIdForLocation(state.layout, partner.from), state.layout?.areas))}</span>  →  ${escapeHtml(partner.toZone)}</div>
               </div>
             </div>
             <div class="move-reason">${escapeHtml(move.reason)}</div>
@@ -280,9 +280,9 @@ export function renderMoves(moves, needsZoneSetup, hasSwaps = false) {
         <div class="move-details">
           <div class="move-wine-name">${escapeHtml(move.wineName)}${aiBadge}</div>
           <div class="move-path">
-            <span class="from">${move.from}</span>
+            <span class="from">${escapeHtml(formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas))}</span>
             <span class="arrow">→</span>
-            <span class="to">${move.to}</span>
+            <span class="to">${escapeHtml(formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas))}</span>
             ${move.toZone && !useZoneGroups ? `<span class="move-zone-label">(${escapeHtml(move.toZone)})</span>` : ''}
           </div>
           <div class="move-reason">${escapeHtml(move.reason)}</div>
@@ -435,6 +435,8 @@ async function executeSwap(index) {
     wineName: m.wineName,
     from: m.from,
     to: m.to,
+    from_storage_area_id: getAreaIdForLocation(state.layout, m.from),
+    to_storage_area_id: getAreaIdForLocation(state.layout, m.to),
     ...(m.toZoneId ? { zoneId: m.toZoneId, confidence: m.confidence } : {})
   }));
 
@@ -480,6 +482,8 @@ async function executeMove(index) {
       wineId: move.wineId,
       from: move.from,
       to: move.to,
+      from_storage_area_id: getAreaIdForLocation(state.layout, move.from),
+      to_storage_area_id: getAreaIdForLocation(state.layout, move.to),
       ...(move.toZoneId ? { zoneId: move.toZoneId, confidence: move.confidence } : {})
     }]);
 
@@ -492,7 +496,7 @@ async function executeMove(index) {
       return;
     }
 
-    showToast(`Moved ${move.wineName} to ${move.to}`);
+    showToast(`Moved ${move.wineName} to ${formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas)}`);
 
     // Remove move from list and refresh
     currentAnalysis.suggestedMoves.splice(index, 1);
@@ -556,6 +560,8 @@ export async function handleExecuteAllMoves() {
       wineName: m.wineName, // Include wine name for validation messages
       from: m.from,
       to: m.to,
+      from_storage_area_id: getAreaIdForLocation(state.layout, m.from),
+      to_storage_area_id: getAreaIdForLocation(state.layout, m.to),
       ...(m.toZoneId ? { zoneId: m.toZoneId, confidence: m.confidence } : {})
     }));
 
@@ -976,9 +982,9 @@ export const renderCompactionMoves = makeDiagnosticRenderer({
       <div class="move-details">
         <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
         <div class="move-path">
-          <span class="from">${move.from}</span>
+          <span class="from">${escapeHtml(formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas))}</span>
           <span class="arrow">→</span>
-          <span class="to">${move.to}</span>
+          <span class="to">${escapeHtml(formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas))}</span>
         </div>
         <div class="move-reason">${escapeHtml(move.reason || 'Fill gap')}</div>
       </div>
@@ -987,8 +993,8 @@ export const renderCompactionMoves = makeDiagnosticRenderer({
         <button class="btn btn-secondary btn-small compaction-dismiss-btn" data-compaction-index="${index}" title="Ignore">Ignore</button>
       </div>
     </div>`,
-  getExecuteMoves: (move) => [{ wineId: move.wineId, from: move.from, to: move.to }],
-  getToastMsg: (move) => `Moved to ${move.to}`,
+  getExecuteMoves: (move) => [{ wineId: move.wineId, from: move.from, to: move.to, from_storage_area_id: getAreaIdForLocation(state.layout, move.from), to_storage_area_id: getAreaIdForLocation(state.layout, move.to) }],
+  getToastMsg: (move) => `Moved to ${formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas)}`,
 });
 
 /**
@@ -1020,9 +1026,9 @@ export const renderGroupingMoves = makeDiagnosticRenderer({
       <div class="move-details">
         <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
         <div class="move-path">
-          <span class="from">${move.from}</span>
+          <span class="from">${escapeHtml(formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas))}</span>
           <span class="arrow">${isSwap ? '↔' : '→'}</span>
-          <span class="to">${move.to}</span>
+          <span class="to">${escapeHtml(formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas))}</span>
         </div>
         <div class="move-reason">${escapeHtml(move.reason || 'Group bottles')}</div>
       </div>
@@ -1037,15 +1043,18 @@ export const renderGroupingMoves = makeDiagnosticRenderer({
     </div>`;
   },
   getExecuteMoves: (move, rawItems) => {
-    const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to }];
+    const movesToExecute = [{ wineId: move.wineId, from: move.from, to: move.to, from_storage_area_id: getAreaIdForLocation(state.layout, move.from), to_storage_area_id: getAreaIdForLocation(state.layout, move.to) }];
     const partner = rawItems.find(
       m => m.isDisplacement && m.from === move.to && m.to === move.from
     );
-    if (partner) movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to });
+    if (partner) movesToExecute.push({ wineId: partner.wineId, from: partner.from, to: partner.to, from_storage_area_id: getAreaIdForLocation(state.layout, partner.from), to_storage_area_id: getAreaIdForLocation(state.layout, partner.to) });
     return movesToExecute;
   },
-  getToastMsg: (move, { swapTargets }) =>
-    swapTargets.has(move.to) ? `Swapped ${move.from} ↔ ${move.to}` : `Moved to ${move.to}`,
+  getToastMsg: (move, { swapTargets }) => {
+    const fromLabel = formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas);
+    const toLabel = formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas);
+    return swapTargets.has(move.to) ? `Swapped ${fromLabel} ↔ ${toLabel}` : `Moved to ${toLabel}`;
+  },
   getButtonLabel: (move, { swapTargets }) => swapTargets.has(move.to) ? 'Swap' : 'Move',
 });
 
@@ -1163,6 +1172,8 @@ async function executeGroupingStep(rowId, step, allGroupingSteps, listEl, totalS
     wineName: m.wineName,
     from: `${rowId}C${m.from}`,
     to: `${rowId}C${m.to}`,
+    from_storage_area_id: getAreaIdForLocation(state.layout, `${rowId}C${m.from}`),
+    to_storage_area_id: getAreaIdForLocation(state.layout, `${rowId}C${m.to}`),
   }));
 
   const result = await executeCellarMoves(movesToExecute);
@@ -1303,9 +1314,9 @@ function buildCrossRowMovesHtml(crossRowMoves, showHeader) {
       <div class="move-details">
         <div class="move-wine-name">${escapeHtml(move.wineName || 'Unknown')}</div>
         <div class="move-path">
-          <span class="from">${move.from}</span>
+          <span class="from">${escapeHtml(formatSlotLabel(move.from, getAreaIdForLocation(state.layout, move.from), state.layout?.areas))}</span>
           <span class="arrow">→</span>
-          <span class="to">${move.to}</span>
+          <span class="to">${escapeHtml(formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas))}</span>
         </div>
         <div class="move-reason">${escapeHtml(move.reason || 'Group bottles')}</div>
       </div>
@@ -1359,8 +1370,8 @@ function wireCrossRowButtons(crossRowMoves, listEl, container) {
       btn.disabled = true;
       btn.textContent = 'Working...';
       try {
-        await executeCellarMoves([{ wineId: move.wineId, from: move.from, to: move.to }]);
-        showToast(`Moved to ${move.to}`);
+        await executeCellarMoves([{ wineId: move.wineId, from: move.from, to: move.to, from_storage_area_id: getAreaIdForLocation(state.layout, move.from), to_storage_area_id: getAreaIdForLocation(state.layout, move.to) }]);
+        showToast(`Moved to ${formatSlotLabel(move.to, getAreaIdForLocation(state.layout, move.to), state.layout?.areas)}`);
         removeCrossRowItem(btn, listEl, container);
         await refreshLayout();
       } catch (err) {

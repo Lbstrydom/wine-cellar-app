@@ -47,9 +47,10 @@ async function getBottlesByZone(cellarId) {
       s.location_code
     FROM wines w
     LEFT JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('cellar', 'rack', 'other')
     WHERE w.cellar_id = ?
       AND s.location_code IS NOT NULL
-      AND s.location_code LIKE 'R%'
   `).all(cellarId, cellarId);
 
   const zoneMap = new Map();
@@ -260,16 +261,19 @@ export async function generateConsolidationMoves(cellarId) {
       s.location_code as current_slot
     FROM wines w
     JOIN slots s ON s.wine_id = w.id AND s.cellar_id = ?
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('cellar', 'rack', 'other')
     WHERE w.cellar_id = ?
-      AND s.location_code LIKE 'R%'
   `).all(cellarId, cellarId);
 
   // Get all empty slots
   const emptySlotsResult = await db.prepare(`
-    SELECT location_code
-    FROM slots
-    WHERE cellar_id = ? AND wine_id IS NULL AND location_code LIKE 'R%'
-    ORDER BY location_code
+    SELECT s.location_code
+    FROM slots s
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('cellar', 'rack', 'other')
+    WHERE s.cellar_id = ? AND s.wine_id IS NULL
+    ORDER BY s.location_code
   `).all(cellarId);
   const emptySlots = emptySlotsResult.map(s => s.location_code);
 

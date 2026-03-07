@@ -11,6 +11,7 @@ import { REORG_THRESHOLDS } from '../../config/cellarThresholds.js';
 import { findBestZone, inferColour } from './cellarPlacement.js';
 import { getActiveZoneMap } from './cellarAllocation.js';
 import { getStorageAreaRows, getStorageAreasByType } from './cellarLayout.js';
+import { buildAreaTypeMap, isWineInCellar } from '../../config/storageTypes.js';
 
 // Sub-modules ───────────────────────────────────────────────
 import {
@@ -80,12 +81,13 @@ export async function analyseCellar(wines) {
   const [storageAreaRows, areasByType] = cellarId
     ? await Promise.all([getStorageAreaRows(cellarId), getStorageAreasByType(cellarId)])
     : [[], {}];
+  const areaTypeMap = buildAreaTypeMap(areasByType);
   const slotToWine = new Map();
 
   // Build slot -> wine mapping
   wines.forEach(w => {
     const slotId = w.slot_id || w.location_code;
-    if (slotId && slotId.startsWith('R')) { // Only cellar slots
+    if (slotId && isWineInCellar(w, areaTypeMap)) {
       slotToWine.set(slotId, w);
     }
   });
@@ -95,19 +97,16 @@ export async function analyseCellar(wines) {
 
   // Check if we have zone allocations
   const hasZoneAllocations = Object.keys(zoneMap).length > 0;
-  const cellarBottleCount = wines.filter(w => {
-    const slotId = w.slot_id || w.location_code;
-    return slotId && slotId.startsWith('R');
-  }).length;
+  const cellarBottleCount = wines.filter(w => isWineInCellar(w, areaTypeMap)).length;
 
   if (!hasZoneAllocations && cellarBottleCount > 0) {
-    buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount);
+    buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount, areaTypeMap);
   } else if (hasZoneAllocations) {
     buildZoneAnalysis(report, zoneMap, slotToWine, zoneWineMap);
   }
 
   // Bottles-first scan: classify every wine and cross-reference against zone rows
-  report.bottleScan = scanBottles(wines, zoneMap, storageAreaRows);
+  report.bottleScan = scanBottles(wines, zoneMap, storageAreaRows, areaTypeMap);
 
   // Row cleanliness sweep: grade every misplacement by severity
   report.cleanlinessViolations = rowCleanlinessSweep(slotToWine, zoneMap, storageAreaRows);
@@ -256,7 +255,7 @@ export async function analyseCellar(wines) {
   }
 
   // Detect scattered wines (same wine in non-contiguous rows)
-  const scatteredWines = detectScatteredWines(wines);
+  const scatteredWines = detectScatteredWines(wines, areaTypeMap);
   report.scatteredWines = scatteredWines;
   report.summary.scatteredWineCount = scatteredWines.length;
 
@@ -310,7 +309,7 @@ export async function analyseCellar(wines) {
   }
 
   // Detect duplicate placements (same wine in more slots than bottle_count)
-  const duplicatePlacements = detectDuplicatePlacements(wines);
+  const duplicatePlacements = detectDuplicatePlacements(wines, areaTypeMap);
   report.duplicatePlacements = duplicatePlacements;
   report.summary.duplicatePlacementCount = duplicatePlacements.length;
 
@@ -350,7 +349,7 @@ export async function analyseCellar(wines) {
   // Null when no zones are configured (signal frontend to show zone wizard).
   if (hasZoneAllocations) {
     try {
-      const proposal = await proposeIdealLayout(wines, { cellarId });
+      const proposal = await proposeIdealLayout(wines, { cellarId, areaTypeMap });
       const sortPlan = computeSortPlan(proposal.currentLayout, proposal.targetLayout);
       report.layoutProposal = {
         currentLayout: Object.fromEntries(proposal.currentLayout),
@@ -370,7 +369,7 @@ export async function analyseCellar(wines) {
   // ── Phase 4.4: Zone health suggestions ───────────────────
   // Surface when buffer zones have accumulated enough high-confidence
   // wines to justify a new dedicated zone, or active zones are too sparse.
-  const zoneHealthSuggestions = generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations);
+  const zoneHealthSuggestions = generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations, areaTypeMap);
   if (zoneHealthSuggestions.length > 0) {
     report.zoneHealthSuggestions = zoneHealthSuggestions;
   }
@@ -390,7 +389,7 @@ export async function analyseCellar(wines) {
  * @param {Map} zoneWineMap - Zone wine map (mutated)
  * @param {number} cellarBottleCount - Bottles in cellar
  */
-function buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount) {
+function buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount, areaTypeMap = null) {
   report.needsZoneSetup = true;
   report.alerts.push({
     type: 'zones_not_configured',
@@ -398,10 +397,7 @@ function buildNoZoneReport(report, wines, zoneWineMap, cellarBottleCount) {
     message: `Cellar zones not configured. Tap "Setup Zones" to have AI propose a zone layout for your ${cellarBottleCount} bottles.`
   });
 
-  const cellarWines = wines.filter(w => {
-    const slotId = w.slot_id || w.location_code;
-    return slotId && slotId.startsWith('R');
-  });
+  const cellarWines = wines.filter(w => isWineInCellar(w, areaTypeMap));
 
   for (const wine of cellarWines) {
     const bestZone = findBestZone(wine);
@@ -657,8 +653,8 @@ function buildMergeZoneSuggestions(cellarWines, zoneMap) {
   return suggestions;
 }
 
-function generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations) {
-  const cellarWines = wines.filter(w => (w.slot_id ?? w.location_code)?.startsWith('R'));
+function generateZoneHealthSuggestions(wines, zoneMap, hasZoneAllocations, areaTypeMap = null) {
+  const cellarWines = wines.filter(w => isWineInCellar(w, areaTypeMap));
   const enableSuggestions = buildEnableZoneSuggestions(collectCandidateCounts(cellarWines, zoneMap));
   const mergeSuggestions = hasZoneAllocations
     ? buildMergeZoneSuggestions(cellarWines, zoneMap)

@@ -296,7 +296,7 @@ async function addBottlesToSlots(wineId, quantity) {
     try {
       const suggestion = await getSuggestedPlacement(wineId);
       if (suggestion.suggestedSlot) {
-        const result = await addBottles(wineId, suggestion.suggestedSlot, quantity);
+        const result = await addBottles(wineId, suggestion.suggestedSlot, quantity, suggestion.storage_area_id || null);
         showToast(`${result.message} (${suggestion.zoneName})`);
       } else {
         showToast('No empty slots in suggested zone. Please select manually.');
@@ -309,7 +309,7 @@ async function addBottlesToSlots(wineId, quantity) {
       return;
     }
   } else {
-    const result = await addBottles(wineId, bottleState.editingLocation, quantity);
+    const result = await addBottles(wineId, bottleState.editingLocation, quantity, bottleState.editingStorageAreaId);
     showToast(result.message);
   }
 }
@@ -379,7 +379,7 @@ async function handleDeleteBottle() {
   }
 
   try {
-    const result = await removeBottle(bottleState.editingLocation);
+    const result = await removeBottle(bottleState.editingLocation, bottleState.editingStorageAreaId);
     showToast(result.message);
     if (result.compaction_suggestions?.length > 0) {
       const count = result.compaction_suggestions.length;

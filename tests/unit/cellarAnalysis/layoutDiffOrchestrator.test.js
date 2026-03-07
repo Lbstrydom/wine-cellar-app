@@ -9,11 +9,13 @@
 vi.mock('../../../public/js/utils.js', () => ({
   showToast: vi.fn(),
   shortenWineName: vi.fn(n => String(n ?? '').slice(0, 15)),
-  escapeHtml: vi.fn(s => String(s ?? ''))
+  escapeHtml: vi.fn(s => String(s ?? '')),
+  getAreaIdForLocation: vi.fn()
 }));
 
 vi.mock('../../../public/js/app.js', () => ({
-  refreshLayout: vi.fn().mockResolvedValue()
+  refreshLayout: vi.fn().mockResolvedValue(),
+  state: { layout: null }
 }));
 
 vi.mock('../../../public/js/api.js', () => ({
@@ -64,21 +66,40 @@ vi.mock('../../../public/js/cellarAnalysis/analysis.js', () => ({
 }));
 
 import { renderLayoutProposalCTA, closeDiffView } from '../../../public/js/cellarAnalysis/layoutDiffOrchestrator.js';
-import { setLayoutFlowState } from '../../../public/js/cellarAnalysis/state.js';
+import {
+  getLayoutProposal,
+  getCurrentLayoutSnapshot,
+  setCurrentLayoutSnapshot,
+  setLayoutFlowState
+} from '../../../public/js/cellarAnalysis/state.js';
 import { disableProposedLayoutEditing } from '../../../public/js/cellarAnalysis/layoutDiffDragDrop.js';
+import {
+  executeCellarMoves,
+  getProposedBottleLayout,
+  validateMoves
+} from '../../../public/js/api.js';
+import { renderApprovalCTA } from '../../../public/js/cellarAnalysis/layoutDiffControls.js';
+import { getAreaIdForLocation } from '../../../public/js/utils.js';
+import { state } from '../../../public/js/app.js';
 
 // ───────────────────────────────────────────────────────────
 // DOM helpers
 // ───────────────────────────────────────────────────────────
 
 function makeEl(overrides = {}) {
+  const listeners = {};
   return {
     innerHTML: '',
     style: { display: '' },
     querySelector: vi.fn(() => null),
     querySelectorAll: vi.fn(() => []),
-    addEventListener: vi.fn(),
+    addEventListener: vi.fn((event, callback) => {
+      listeners[event] = callback;
+    }),
     scrollIntoView: vi.fn(),
+    appendChild: vi.fn(),
+    remove: vi.fn(),
+    _listeners: listeners,
     ...overrides
   };
 }
@@ -297,5 +318,102 @@ describe('closeDiffView', () => {
       closeDiffView();
     }).not.toThrow();
     expect(disableProposedLayoutEditing).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('layout diff apply flow', () => {
+  let elements;
+  let ctaEl;
+  let viewBtn;
+  let applyBtn;
+  let resetBtn;
+  let cancelBtn;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    ctaEl = makeEl();
+    viewBtn = makeEl();
+    ctaEl.querySelector = vi.fn(sel => sel === '.layout-proposal-view-btn' ? viewBtn : null);
+
+    applyBtn = makeEl({ textContent: 'Apply All Moves (1)' });
+    resetBtn = makeEl();
+    cancelBtn = makeEl();
+
+    elements = {
+      'layout-proposal-cta': ctaEl,
+      'layout-diff-container': makeEl(),
+      'layout-diff-toggle': makeEl(),
+      'layout-diff-summary': makeEl(),
+      'layout-diff-grid': makeEl(),
+      'layout-diff-move-list': makeEl(),
+      'layout-diff-actions': makeEl(),
+      'analysis-moves': makeEl(),
+      'analysis-compaction': makeEl(),
+      'analysis-summary': makeEl(),
+      'analysis-alerts': makeEl(),
+      'analysis-zones': makeEl()
+    };
+
+    vi.stubGlobal('document', {
+      getElementById: vi.fn((id) => elements[id] || null),
+      querySelector: vi.fn((selector) => {
+        if (selector === '.diff-apply-all-btn') return applyBtn;
+        if (selector === '.diff-reset-btn') return resetBtn;
+        if (selector === '.diff-cancel-btn') return cancelBtn;
+        return null;
+      }),
+      createElement: vi.fn(() => makeEl())
+    });
+    vi.stubGlobal('confirm', vi.fn(() => true));
+
+    state.layout = { areas: [{ id: 'area-main' }] };
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('enriches sortPlan moves with area IDs before validation and execution', async () => {
+    const proposal = {
+      currentLayout: { R1C1: { wineId: 11 } },
+      targetLayout: { R2C1: { wineId: 11, wineName: 'Nebbiolo', zoneId: 'barolo', confidence: 'high' } },
+      sortPlan: [{ wineId: 11, wineName: 'Nebbiolo', from: 'R1C1', to: 'R2C1', zoneId: 'barolo', confidence: 'high' }],
+      stats: { stayInPlace: 3 }
+    };
+
+    getAreaIdForLocation
+      .mockImplementation((_layout, locationCode) => (locationCode === 'R1C1' ? 'area-main' : 'area-garage'));
+    getProposedBottleLayout.mockResolvedValue({ currentLayout: proposal.currentLayout });
+    validateMoves.mockResolvedValue({ validation: { valid: true } });
+    executeCellarMoves.mockResolvedValue({ success: true, moved: 1 });
+
+    renderLayoutProposalCTA({ layoutProposal: proposal });
+    viewBtn._listeners.click();
+    await Promise.resolve();
+    await Promise.resolve();
+
+    getLayoutProposal.mockReturnValue(proposal);
+    expect(setCurrentLayoutSnapshot).toHaveBeenCalledTimes(1);
+    getCurrentLayoutSnapshot.mockReturnValue(setCurrentLayoutSnapshot.mock.calls[0][0]);
+
+    const [, applyOptions] = renderApprovalCTA.mock.calls[0];
+    await applyOptions.onApplyAll();
+
+    const expectedMoves = [{
+      wineId: 11,
+      wineName: 'Nebbiolo',
+      from: 'R1C1',
+      to: 'R2C1',
+      zoneId: 'barolo',
+      confidence: 'high',
+      from_storage_area_id: 'area-main',
+      to_storage_area_id: 'area-garage'
+    }];
+
+    expect(getAreaIdForLocation).toHaveBeenCalledWith(state.layout, 'R1C1');
+    expect(getAreaIdForLocation).toHaveBeenCalledWith(state.layout, 'R2C1');
+    expect(validateMoves).toHaveBeenCalledWith(expectedMoves);
+    expect(executeCellarMoves).toHaveBeenCalledWith(expectedMoves);
   });
 });

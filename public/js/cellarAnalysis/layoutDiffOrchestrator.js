@@ -7,8 +7,8 @@
  * @module cellarAnalysis/layoutDiffOrchestrator
  */
 
-import { showToast, shortenWineName, escapeHtml } from '../utils.js';
-import { refreshLayout } from '../app.js';
+import { showToast, shortenWineName, escapeHtml, getAreaIdForLocation } from '../utils.js';
+import { refreshLayout, state } from '../app.js';
 import { executeCellarMoves, validateMoves, getProposedBottleLayout, getZoneMap } from '../api.js';
 import {
   getCurrentAnalysis,
@@ -49,6 +49,20 @@ function setDiffFocusMode(enabled) {
 function hashLayout(layout) {
   const entries = Object.entries(layout || {}).sort(([a], [b]) => a.localeCompare(b));
   return entries.map(([k, v]) => `${k}:${v}`).join('|');
+}
+
+/**
+ * Add area IDs to move objects using the live layout snapshot.
+ * Falls back to null when the layout is stale so the backend can resolve safely.
+ * @param {Array} moves
+ * @returns {Array}
+ */
+function enrichMovesWithAreaIds(moves) {
+  return (moves || []).map((move) => ({
+    ...move,
+    from_storage_area_id: move.from_storage_area_id ?? getAreaIdForLocation(state.layout, move.from),
+    to_storage_area_id: move.to_storage_area_id ?? getAreaIdForLocation(state.layout, move.to)
+  }));
 }
 
 /**
@@ -292,6 +306,8 @@ async function handleApplyAll() {
     return;
   }
 
+  const movesToApply = enrichMovesWithAreaIds(proposal.sortPlan);
+
   // Stale detection: compare snapshot with current state
   try {
     const freshData = await getProposedBottleLayout();
@@ -311,7 +327,7 @@ async function handleApplyAll() {
 
   // Validate moves
   try {
-    const validation = await validateMoves(proposal.sortPlan);
+    const validation = await validateMoves(movesToApply);
     if (!validation?.validation?.valid) {
       const errorCount = validation?.validation?.errors?.length || 0;
       showToast(`Validation failed: ${errorCount} issue(s). Re-analysing...`, 'error');
@@ -342,7 +358,7 @@ async function handleApplyAll() {
   if (cancelBtn) cancelBtn.disabled = true;
 
   try {
-    await executeCellarMoves(proposal.sortPlan);
+    await executeCellarMoves(movesToApply);
     showToast(`${moveCount} move${moveCount === 1 ? '' : 's'} applied successfully!`, 'success');
     closeDiffView();
     await refreshLayout();

@@ -17,6 +17,9 @@ import { generateReconfigurationPlan } from '../services/zone/zoneReconfiguratio
 import { detectColourOrderViolations, getEffectiveZoneColour } from '../services/cellar/cellarMetrics.js';
 import { getCurrentZoneAllocation } from '../services/cellar/cellarSuggestions.js';
 import { asyncHandler } from '../utils/errorResponse.js';
+import { resolveAreaFromSlot } from '../services/cellar/storageAreaResolver.js';
+import { getStorageAreasByType } from '../services/cellar/cellarLayout.js';
+import { buildAreaTypeMap } from '../config/storageTypes.js';
 import logger from '../utils/logger.js';
 import { getAllWinesWithSlots } from './cellar.js';
 import { runAnalysis } from './cellarAnalysis.js';
@@ -964,10 +967,18 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     });
   }
 
+  // Resolve storage_area_id for each move (use provided or fall back to slot lookup).
+  // Must be done before the transaction to avoid async calls inside the transaction client.
+  const movesWithAreas = await Promise.all(moves.map(async (move) => ({
+    ...move,
+    from_storage_area_id: move.from_storage_area_id || await resolveAreaFromSlot(req.cellarId, move.from),
+    to_storage_area_id: move.to_storage_area_id || await resolveAreaFromSlot(req.cellarId, move.to)
+  })));
+
   // Execute all moves in a transaction using two-phase approach:
   // Phase 0: SELECT … FOR UPDATE on all touched slots (row-lock + revalidation)
-  // Phase 1: Clear ALL source slots (conditional on expected wine_id)
-  // Phase 2: Set ALL target slots (conditional on wine_id IS NULL)
+  // Phase 1: Clear ALL source slots (conditional on expected wine_id + storage_area_id)
+  // Phase 2: Set ALL target slots (conditional on wine_id IS NULL + storage_area_id)
   // This prevents swaps from overwriting each other (A→B, B→A would
   // lose wine_B if done sequentially as clear-A, set-B, clear-B, set-A).
   const results = [];
@@ -982,32 +993,53 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
       const beforeCount = Number(beforeResult.rows[0].count);
 
       // Collect all unique location codes touched by this batch
-      const allLocations = [...new Set(moves.flatMap(m => [m.from, m.to]))];
+      const allLocations = [...new Set(movesWithAreas.flatMap(m => [m.from, m.to]))];
 
       // Phase 0: Lock and snapshot all touched slots (SELECT … FOR UPDATE)
       const lockResult = await client.query(
-        `SELECT location_code, wine_id FROM slots
+        `SELECT location_code, storage_area_id, wine_id FROM slots
          WHERE cellar_id = $1 AND location_code = ANY($2)
          FOR UPDATE`,
         [req.cellarId, allLocations]
       );
-      const slotSnap = new Map(lockResult.rows.map(r => [r.location_code, r.wine_id]));
+      // Snapshot keyed by (areaId:locationCode) — explicit composite key for
+      // defensive area-aware revalidation (Phase 2 Fix C)
+      const slotSnap = new Map(
+        lockResult.rows.map(r => [`${r.storage_area_id}:${r.location_code}`, r.wine_id])
+      );
+      // Also keep a location-only set for backward-compat existence checks
+      const slotLocations = new Set(lockResult.rows.map(r => r.location_code));
 
       // In-transaction revalidation against locked snapshot
       const revalErrors = [];
-      for (const move of moves) {
-        if (!slotSnap.has(move.from)) {
+      for (const move of movesWithAreas) {
+        const fromKey = `${move.from_storage_area_id}:${move.from}`;
+        const toKey = `${move.to_storage_area_id}:${move.to}`;
+
+        if (!slotSnap.has(fromKey) && !slotLocations.has(move.from)) {
           revalErrors.push({ type: 'slot_missing', slot: move.from, message: `Source slot ${move.from} does not exist` });
-        } else if (slotSnap.get(move.from) !== move.wineId) {
+        } else if (slotSnap.has(fromKey) && slotSnap.get(fromKey) !== move.wineId) {
           revalErrors.push({
             type: 'source_mismatch',
             slot: move.from,
             expected: move.wineId,
-            actual: slotSnap.get(move.from),
-            message: `Source ${move.from} has wine ${slotSnap.get(move.from)}, expected ${move.wineId}`
+            actual: slotSnap.get(fromKey),
+            message: `Source ${move.from} has wine ${slotSnap.get(fromKey)}, expected ${move.wineId}`
           });
+        } else if (!slotSnap.has(fromKey) && slotLocations.has(move.from)) {
+          // Location exists but area doesn't match — find actual wine_id for error
+          const actualRow = lockResult.rows.find(r => r.location_code === move.from);
+          if (actualRow && actualRow.wine_id !== move.wineId) {
+            revalErrors.push({
+              type: 'source_mismatch',
+              slot: move.from,
+              expected: move.wineId,
+              actual: actualRow.wine_id,
+              message: `Source ${move.from} has wine ${actualRow.wine_id}, expected ${move.wineId}`
+            });
+          }
         }
-        if (!slotSnap.has(move.to)) {
+        if (!slotSnap.has(toKey) && !slotLocations.has(move.to)) {
           revalErrors.push({ type: 'slot_missing', slot: move.to, message: `Target slot ${move.to} does not exist` });
         }
       }
@@ -1019,11 +1051,11 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
         throw err;
       }
 
-      // Phase 1: Clear all source slots (conditional: only if wine_id matches expected)
-      for (const move of moves) {
+      // Phase 1: Clear all source slots (conditional: only if wine_id + storage_area_id match)
+      for (const move of movesWithAreas) {
         const clearResult = await client.query(
-          'UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2 AND wine_id = $3',
-          [req.cellarId, move.from, move.wineId]
+          'UPDATE slots SET wine_id = NULL WHERE cellar_id = $1 AND location_code = $2 AND wine_id = $3 AND storage_area_id = $4',
+          [req.cellarId, move.from, move.wineId, move.from_storage_area_id]
         );
         if (clearResult.rowCount === 0) {
           const err = new Error(`Phase 1 failed: source slot ${move.from} did not contain wine ${move.wineId}`);
@@ -1033,11 +1065,11 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
         }
       }
 
-      // Phase 2: Place all wines in target slots (conditional: only if slot is now empty)
-      for (const move of moves) {
+      // Phase 2: Place all wines in target slots (conditional: only if slot is now empty + area matches)
+      for (const move of movesWithAreas) {
         const placeResult = await client.query(
-          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3 AND wine_id IS NULL',
-          [move.wineId, req.cellarId, move.to]
+          'UPDATE slots SET wine_id = $1 WHERE cellar_id = $2 AND location_code = $3 AND wine_id IS NULL AND storage_area_id = $4',
+          [move.wineId, req.cellarId, move.to, move.to_storage_area_id]
         );
         if (placeResult.rowCount === 0) {
           const err = new Error(`Phase 2 failed: target slot ${move.to} is not empty for cellar ${req.cellarId} (wineId=${move.wineId})`);
@@ -1076,7 +1108,7 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
     const pgCode = txErr.code ? ` [PG ${txErr.code}]` : '';
     const detail = txErr.detail ? ` detail=${txErr.detail}` : '';
     const constraint = txErr.constraint ? ` constraint=${txErr.constraint}` : '';
-    logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | stack: ${txErr.stack?.split('\n').slice(0, 3).join(' → ')} | moves: ${JSON.stringify(moves.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
+    logger.error('execute-moves', `Transaction failed${pgCode}: ${txErr.message}${detail}${constraint} | stack: ${txErr.stack?.split('\n').slice(0, 3).join(' → ')} | moves: ${JSON.stringify(movesWithAreas.map(m => ({ wineId: m.wineId, from: m.from, to: m.to })))}`);
 
     // Map known state-conflict errors to 409 Conflict
     const PG_UNIQUE_VIOLATION = '23505';
@@ -1127,7 +1159,9 @@ router.post('/execute-moves', asyncHandler(async (req, res) => {
  */
 router.get('/bottle-layout/propose', asyncHandler(async (req, res) => {
   const wines = await getAllWinesWithSlots(req.cellarId);
-  const proposal = await proposeIdealLayout(wines, { cellarId: req.cellarId });
+  const areasByType = await getStorageAreasByType(req.cellarId);
+  const areaTypeMap = buildAreaTypeMap(areasByType);
+  const proposal = await proposeIdealLayout(wines, { cellarId: req.cellarId, areaTypeMap });
   const sortPlan = computeSortPlan(proposal.currentLayout, proposal.targetLayout);
 
   res.json({

@@ -72,17 +72,18 @@ export async function getEmptyFridgeSlots(cellarId, storageAreaId = null) {
       WHERE cellar_id = $1
         AND storage_area_id = $2
         AND wine_id IS NULL
-      ORDER BY location_code
+      ORDER BY row_num, col_num
     `).all(cellarId, storageAreaId);
     return rows.map(r => r.location_code);
   }
-  // Legacy fallback: all unoccupied F-prefixed slots across the cellar
+  // Cross-cellar fallback: all fridge slots in canonical physical order
   const rows = await db.prepare(`
-    SELECT location_code FROM slots
-    WHERE cellar_id = $1
-      AND wine_id IS NULL
-      AND location_code ~ '^F[0-9]+$'
-    ORDER BY location_code
+    SELECT s.location_code FROM slots s
+    JOIN storage_areas sa ON sa.id = s.storage_area_id
+      AND sa.storage_type IN ('wine_fridge', 'kitchen_fridge')
+    WHERE s.cellar_id = $1
+      AND s.wine_id IS NULL
+    ORDER BY sa.display_order, s.row_num, s.col_num
   `).all(cellarId);
   return rows.map(r => r.location_code);
 }
@@ -267,9 +268,19 @@ router.post('/suggest-placement', asyncHandler(async (req, res) => {
   const zoneMatch = findBestZone(wine);
   const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine, { cellarId: req.cellarId });
 
+  // Look up storage_area_id for the suggested slot
+  let storageAreaId = null;
+  if (availableSlot?.slotId) {
+    const slotRow = await db.prepare(
+      'SELECT storage_area_id FROM slots WHERE cellar_id = $1 AND location_code = $2'
+    ).get(req.cellarId, availableSlot.slotId);
+    storageAreaId = slotRow?.storage_area_id || null;
+  }
+
   res.json({
     success: true,
     suggestedSlot: availableSlot?.slotId || null,
+    storage_area_id: storageAreaId,
     zoneName: zoneMatch.displayName,
     zoneId: zoneMatch.zoneId,
     confidence: zoneMatch.confidence,
@@ -297,6 +308,15 @@ router.get('/suggest-placement/:wineId', asyncHandler(async (req, res) => {
   const zoneMatch = findBestZone(wine);
   const availableSlot = await findAvailableSlot(zoneMatch.zoneId, occupiedSlots, wine, { cellarId: req.cellarId });
 
+  // Look up storage_area_id for the suggested slot
+  let storageAreaId = null;
+  if (availableSlot?.slotId) {
+    const slotRow = await db.prepare(
+      'SELECT storage_area_id FROM slots WHERE cellar_id = $1 AND location_code = $2'
+    ).get(req.cellarId, availableSlot.slotId);
+    storageAreaId = slotRow?.storage_area_id || null;
+  }
+
   res.json({
     success: true,
     wine: {
@@ -305,6 +325,7 @@ router.get('/suggest-placement/:wineId', asyncHandler(async (req, res) => {
       vintage: wine.vintage
     },
     suggestedSlot: availableSlot?.slotId || null,
+    storage_area_id: storageAreaId,
     zoneName: zoneMatch.displayName,
     zoneId: zoneMatch.zoneId,
     confidence: zoneMatch.confidence,

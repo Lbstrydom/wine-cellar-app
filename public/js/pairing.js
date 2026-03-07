@@ -153,7 +153,12 @@ function showDrinkActionPanel(rec, card) {
     try {
       btn.disabled = true;
       btn.textContent = 'Recording...';
-      await drinkBottle(location, { pairing_session_id: currentSessionId });
+      await drinkBottle(location, {
+        pairing_session_id: currentSessionId
+        // storage_area_id omitted: rec.storage_area_id is MIN() aggregated across
+        // all slots and may not match the displayed location for multi-area wines.
+        // The backend resolves the correct area via resolveAreaFromSlot().
+      });
       btn.textContent = 'Consumed ✓';
       btn.classList.add('consumed');
       showToast(`Bottle from ${location} marked as consumed`);

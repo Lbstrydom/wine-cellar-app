@@ -119,20 +119,32 @@ export function getColourRowRanges(colourOrder, whiteRowCount, totalRows = TOTAL
 /**
  * Count white-family vs red bottles in a cellar from the database.
  * @param {string} cellarId
+ * @param {string} [storageAreaId] - Optional: restrict count to a specific storage area
  * @returns {Promise<{whiteCount: number, redCount: number}>}
  */
-export async function countColourFamilies(cellarId) {
+export async function countColourFamilies(cellarId, storageAreaId = null) {
   if (!cellarId) return { whiteCount: 0, redCount: 0 };
 
-  const rows = await db.prepare(`
-    SELECT w.colour, COUNT(s.id) AS cnt
-    FROM slots s
-    JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
-    WHERE s.cellar_id = $1
-      AND s.location_code LIKE 'R%'
-      AND s.wine_id IS NOT NULL
-    GROUP BY w.colour
-  `).all(cellarId);
+  const query = storageAreaId
+    ? `SELECT w.colour, COUNT(s.id) AS cnt
+       FROM slots s
+       JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+       WHERE s.cellar_id = $1
+         AND s.storage_area_id = $2
+         AND s.wine_id IS NOT NULL
+       GROUP BY w.colour`
+    : `SELECT w.colour, COUNT(s.id) AS cnt
+       FROM slots s
+       JOIN wines w ON w.id = s.wine_id AND w.cellar_id = $1
+       JOIN storage_areas sa ON sa.id = s.storage_area_id
+         AND sa.storage_type IN ('cellar', 'rack', 'other')
+       WHERE s.cellar_id = $1
+         AND s.wine_id IS NOT NULL
+       GROUP BY w.colour`;
+
+  const rows = storageAreaId
+    ? await db.prepare(query).all(cellarId, storageAreaId)
+    : await db.prepare(query).all(cellarId);
 
   let whiteCount = 0;
   let redCount = 0;
@@ -149,22 +161,95 @@ export async function countColourFamilies(cellarId) {
 
 /**
  * Get dynamic colour row ranges for a cellar based on current inventory.
+ * Respects each storage area's colour_zone designation:
+ * - 'white' areas: all rows are white rows
+ * - 'red' areas: all rows are red rows
+ * - 'mixed' areas: proportional split within that area's row range
+ * Falls back to single-area legacy behaviour when no storage areas exist.
  * @param {string} cellarId
  * @param {ColourOrder} colourOrder
  * @returns {Promise<{whiteRows: number[], redRows: number[], whiteRowCount: number, redRowCount: number, whiteCount: number, redCount: number}>}
  */
 export async function getDynamicColourRowRanges(cellarId, colourOrder = 'whites-top') {
-  const [counts, totalRows] = await Promise.all([
-    countColourFamilies(cellarId),
-    getCellarRowCount(cellarId)
-  ]);
-  const split = computeDynamicRowSplit(counts.whiteCount, counts.redCount, totalRows);
-  const ranges = getColourRowRanges(colourOrder, split.whiteRowCount, totalRows);
+  // Fetch storage areas with colour_zone and their row ranges
+  const areas = await db.prepare(`
+    SELECT sa.id, sa.colour_zone, sa.storage_type,
+           json_agg(json_build_object('row_num', sar.row_num) ORDER BY sar.row_num)
+             FILTER (WHERE sar.row_num IS NOT NULL) AS area_rows
+    FROM storage_areas sa
+    LEFT JOIN storage_area_rows sar ON sar.storage_area_id = sa.id
+    WHERE sa.cellar_id = $1
+    GROUP BY sa.id, sa.colour_zone, sa.storage_type
+    ORDER BY sa.display_order NULLS LAST, sa.created_at
+  `).all(cellarId);
+
+  // Filter to cellar-type areas (not fridges) — colour zones only apply to cellar/rack storage
+  const cellarAreas = (areas || []).filter(a =>
+    a.storage_type === 'cellar' || a.storage_type === 'rack' || a.storage_type === 'other'
+  );
+
+  // Legacy fallback: no storage areas defined
+  if (cellarAreas.length === 0) {
+    const [counts, totalRows] = await Promise.all([
+      countColourFamilies(cellarId),
+      getCellarRowCount(cellarId)
+    ]);
+    const split = computeDynamicRowSplit(counts.whiteCount, counts.redCount, totalRows);
+    const ranges = getColourRowRanges(colourOrder, split.whiteRowCount, totalRows);
+    return { ...ranges, ...split, whiteCount: counts.whiteCount, redCount: counts.redCount };
+  }
+
+  const whiteRowSet = new Set();
+  const redRowSet = new Set();
+  let totalWhiteCount = 0;
+  let totalRedCount = 0;
+
+  for (const area of cellarAreas) {
+    const areaRows = (typeof area.area_rows === 'string' ? JSON.parse(area.area_rows) : area.area_rows) || [];
+    const rowNums = areaRows.map(r => r.row_num).sort((a, b) => a - b);
+
+    if (rowNums.length === 0) continue;
+
+    const zone = area.colour_zone || 'mixed';
+
+    // Count bottles for every area (needed for accurate totals)
+    const counts = await countColourFamilies(cellarId, area.id);
+    totalWhiteCount += counts.whiteCount;
+    totalRedCount += counts.redCount;
+
+    if (zone === 'white') {
+      for (const rn of rowNums) whiteRowSet.add(rn);
+    } else if (zone === 'red') {
+      for (const rn of rowNums) redRowSet.add(rn);
+    } else {
+      // Mixed: proportional split within this area's rows
+
+      const areaRowCount = rowNums.length;
+      const split = computeDynamicRowSplit(counts.whiteCount, counts.redCount, areaRowCount);
+
+      // Apply colour order within this area's contiguous rows
+      if (colourOrder === 'reds-top') {
+        // Reds at top of this area's range, whites at bottom
+        for (let i = 0; i < areaRowCount - split.whiteRowCount; i++) redRowSet.add(rowNums[i]);
+        for (let i = areaRowCount - split.whiteRowCount; i < areaRowCount; i++) whiteRowSet.add(rowNums[i]);
+      } else {
+        // Whites at top of this area's range, reds at bottom
+        for (let i = 0; i < split.whiteRowCount; i++) whiteRowSet.add(rowNums[i]);
+        for (let i = split.whiteRowCount; i < areaRowCount; i++) redRowSet.add(rowNums[i]);
+      }
+    }
+  }
+
+  const whiteRows = [...whiteRowSet].sort((a, b) => a - b);
+  const redRows = [...redRowSet].sort((a, b) => a - b);
+
   return {
-    ...ranges,
-    ...split,
-    whiteCount: counts.whiteCount,
-    redCount: counts.redCount
+    whiteRows,
+    redRows,
+    whiteRowCount: whiteRows.length,
+    redRowCount: redRows.length,
+    whiteCount: totalWhiteCount,
+    redCount: totalRedCount
   };
 }
 

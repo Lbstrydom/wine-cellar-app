@@ -4,6 +4,8 @@
  * @module services/wine/drinkingStrategy
  */
 
+import { isWineInFridge } from '../../config/storageTypes.js';
+
 // ───────────────────────────────────────────────────────────
 // Drinking window helpers
 // ───────────────────────────────────────────────────────────
@@ -51,13 +53,13 @@ function isYoungStyle(wine) {
  * Get wines that should be moved to fridge (drink soon).
  * @param {Array} wines - All wines
  * @param {number} [currentYear] - Current year (defaults to now)
+ * @param {Map|null} [areaTypeMap=null] - Map<area_id, storage_type> for type lookups
  * @returns {Array} Fridge candidates with reason strings
  */
-export function getFridgeCandidates(wines, currentYear = new Date().getFullYear()) {
+export function getFridgeCandidates(wines, currentYear = new Date().getFullYear(), areaTypeMap = null) {
   return wines.filter(wine => {
     // Skip if already in fridge
-    const slotId = wine.slot_id || wine.location_code;
-    if (slotId && slotId.startsWith('F')) return false;
+    if (isWineInFridge(wine, areaTypeMap)) return false;
 
     // Check drink_by_year (from drinking_windows) or drink_until (from wines)
     const drinkByYear = getEffectiveDrinkByYear(wine);

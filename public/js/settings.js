@@ -24,7 +24,9 @@ import {
   deepMatchAwards,
   fetchLayoutLite,
   createStorageArea,
-  updateStorageAreaLayout
+  updateStorageArea,
+  updateStorageAreaLayout,
+  deleteStorageArea
 } from './api.js';
 import { showToast, escapeHtml } from './utils.js';
 import { startOnboarding } from './onboarding.js';
@@ -61,23 +63,23 @@ async function openStorageAreasWizard() {
     btn.disabled = true;
     btn.textContent = 'Loading...';
 
-    // Load existing layout in lite mode to prefill areas
+    // Load existing layout in lite mode to prefill areas and compute row offset
     const layout = await fetchLayoutLite();
+
+    // Compute highest row_num already in use across all areas
+    const maxExistingRow = (layout?.areas || []).reduce((max, a) =>
+      Math.max(max, ...(a.rows || []).map(r => r.row_num ?? 0)), 0);
 
     // Show wizard container
     wizardContainer.style.display = 'block';
 
-    // Initialize onboarding wizard
-    startOnboarding(wizardContainer);
+    // Always reset builder state before opening the wizard — prevents stale areas from a previous
+    // cellar/session leaking in when the current cellar has no areas yet.
+    const { setAreas } = await import('./storageBuilder.js');
+    setAreas(layout?.areas || []);
 
-    // Prefill areas if they exist
-    if (layout?.areas && layout.areas.length > 0) {
-      // Import existing areas into the builder state
-      // The builder has its own state that we'll populate
-      const { setAreas } = await import('./storageBuilder.js');
-      setAreas(layout.areas);
-      // Note: After setAreas, the wizard will show the appropriate step
-    }
+    // Initialize onboarding wizard (skips Step 1 when areas are pre-loaded)
+    startOnboarding(wizardContainer, maxExistingRow);
 
     // Listen for save event
     wizardContainer.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
@@ -93,9 +95,44 @@ async function openStorageAreasWizard() {
 
 /**
  * Handle storage areas save from onboarding wizard.
- * Persists areas and layout to the backend API.
+ * Detects new vs existing vs deleted areas and persists accordingly.
+ * New areas: single POST with rows (offset applied).
+ * Existing areas: PUT metadata + PUT layout.
+ * Deleted areas: DELETE.
  * @param {CustomEvent} event
  */
+/**
+ * Persist a single area (create or update).
+ * @param {Object} area - Area with offset rows applied
+ * @param {number} displayOrder - 1-based display order
+ * @param {Set} remainingIds - Existing area IDs (mutated: matched ID removed)
+ * @returns {Promise<'created'|'updated'>}
+ */
+async function persistArea(area, displayOrder, remainingIds) {
+  const metadata = {
+    name: area.name,
+    storage_type: area.storage_type,
+    temp_zone: area.temp_zone,
+    colour_zone: area.colour_zone || 'mixed',
+    display_order: displayOrder
+  };
+
+  if (area.id && remainingIds.has(area.id)) {
+    await updateStorageArea(area.id, metadata);
+    if (Array.isArray(area.rows) && area.rows.length > 0) {
+      await updateStorageAreaLayout(area.id, area.rows);
+    }
+    remainingIds.delete(area.id);
+    return 'updated';
+  }
+
+  const result = await createStorageArea({ ...metadata, rows: area.rows });
+  if (!(result.data?.id || result.id)) {
+    throw new Error(`Failed to create area: ${area.name}`);
+  }
+  return 'created';
+}
+
 async function handleStorageAreasSave(event) {
   const wizardContainer = document.getElementById('storage-areas-wizard');
   const btn = document.getElementById('configure-storage-areas-btn');
@@ -111,51 +148,62 @@ async function handleStorageAreasSave(event) {
   btn.textContent = 'Saving...';
 
   try {
-    // Create each area and store its ID
-    const createdAreas = [];
-    for (const area of areas) {
-      const areaData = {
-        name: area.name,
-        storage_type: area.storage_type,
-        temp_zone: area.temp_zone,
-        display_order: createdAreas.length + 1
-      };
-      const result = await createStorageArea(areaData);
-      const areaId = result.data?.id || result.id;
-      if (!areaId) {
-        throw new Error(`Failed to create area: ${area.name}`);
-      }
-      createdAreas.push({ ...area, id: areaId });
+    const currentLayout = await fetchLayoutLite();
+    const existingAreas = currentLayout?.areas || [];
+    const remainingIds = new Set(existingAreas.map(a => a.id));
+    const maxExistingRow = existingAreas.reduce((max, a) =>
+      Math.max(max, ...(a.rows || []).map(r => r.row_num ?? 0)), 0);
+
+    const { applyRowOffsets } = await import('./storageBuilder.js');
+    const adjustedAreas = applyRowOffsets(areas, maxExistingRow);
+
+    const counts = { created: 0, updated: 0 };
+    for (let idx = 0; idx < adjustedAreas.length; idx++) {
+      const outcome = await persistArea(adjustedAreas[idx], idx + 1, remainingIds);
+      counts[outcome]++;
     }
 
-    // Update layout for each area
-    for (const area of createdAreas) {
-      if (Array.isArray(area.rows) && area.rows.length > 0) {
-        await updateStorageAreaLayout(area.id, area.rows);
+    let deletedCount = 0;
+    const deleteErrors = [];
+    for (const deletedId of remainingIds) {
+      try {
+        await deleteStorageArea(deletedId);
+        deletedCount++;
+      } catch (err) {
+        if (err.message?.includes('contains')) {
+          deleteErrors.push(err.message);
+          showToast(`Cannot delete area — ${err.message}`);
+        } else {
+          throw err;
+        }
       }
     }
 
-    // Hide wizard and reset
-    wizardContainer.style.display = 'none';
-    wizardContainer.innerHTML = '';
-
-    // Refresh the cellar grid to show new areas
+    // Only close wizard if all deletes succeeded
+    if (deleteErrors.length === 0) {
+      wizardContainer.style.display = 'none';
+      wizardContainer.innerHTML = '';
+    } else {
+      // Wizard stays open — re-register so the user can retry after resolving blocked deletes
+      wizardContainer.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
+    }
     await refreshLayout();
 
-    showToast(`Storage configuration saved: ${createdAreas.length} areas created`);
+    const parts = [];
+    if (counts.created > 0) parts.push(`${counts.created} created`);
+    if (counts.updated > 0) parts.push(`${counts.updated} updated`);
+    if (deletedCount > 0) parts.push(`${deletedCount} deleted`);
+    if (deleteErrors.length > 0) parts.push(`${deleteErrors.length} delete(s) blocked`);
+    showToast(`Storage configuration saved: ${parts.join(', ') || 'no changes'}`);
 
   } catch (err) {
     showToast('Error saving configuration: ' + err.message);
     console.error('Save error:', err);
+    // Wizard stays open on unexpected error — re-register so the user can retry
+    wizardContainer.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
   } finally {
     btn.disabled = false;
     btn.textContent = 'Configure Storage Areas';
-
-    // Re-attach listener in case user wants to try again
-    const container = document.getElementById('storage-areas-wizard');
-    if (container) {
-      container.addEventListener('onboarding:save', handleStorageAreasSave, { once: true });
-    }
   }
 }
 

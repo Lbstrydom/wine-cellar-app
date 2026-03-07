@@ -157,6 +157,69 @@ export function isAreasLayout(layout) {
 }
 
 /**
+ * Look up storage_area_id for a location code from a layout snapshot.
+ * Returns null if not found — the backend will resolve via resolveAreaFromSlot() fallback.
+ * @param {Object|null} layout - Current layout (pass state.layout from caller)
+ * @param {string} locationCode - e.g., "R5C3", "F2"
+ * @returns {string|null} storage_area_id UUID or null
+ */
+export function getAreaIdForLocation(layout, locationCode) {
+  if (!layout) return null;
+
+  // Dynamic areas path: { areas: [{ id, rows: [{ slots: [{ location_code, storage_area_id }] }] }] }
+  if (layout.areas) {
+    for (const area of layout.areas) {
+      for (const row of area.rows || []) {
+        for (const slot of row.slots || []) {
+          if (slot.location_code === locationCode) return slot.storage_area_id || area.id || null;
+        }
+      }
+    }
+  }
+
+  // Legacy path: { cellar: { rows }, fridge: { rows } }
+  for (const section of ['cellar', 'fridge']) {
+    const rows = layout[section]?.rows || [];
+    for (const row of rows) {
+      for (const slot of row.slots || []) {
+        if (slot.location_code === locationCode) return slot.storage_area_id || null;
+      }
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Look up an area name by its storage_area_id from a layout areas array.
+ * @param {string} areaId - Storage area UUID
+ * @param {Array} [areas] - Array of area objects from layout (state.layout?.areas)
+ * @returns {string} Area name, or empty string if not found
+ */
+export function getAreaName(areaId, areas) {
+  if (!areaId || !Array.isArray(areas)) return '';
+  const area = areas.find(a => a.id === areaId);
+  return area?.name || '';
+}
+
+/**
+ * Format a slot location with optional area prefix for multi-area cellars.
+ * Single-area cellars return the bare location code unchanged.
+ * @param {string} locationCode - e.g. "R5C3", "F2"
+ * @param {string} [areaId] - Storage area UUID
+ * @param {Array} [areas] - Array of area objects from layout (state.layout?.areas)
+ * @returns {string} e.g. "R5C3" or "[Garage] R20C1"
+ */
+export function formatSlotLabel(locationCode, areaId, areas) {
+  if (!locationCode) return locationCode;
+  if (areaId && Array.isArray(areas) && areas.length > 1) {
+    const area = areas.find(a => a.id === areaId);
+    if (area) return '[' + area.name + '] ' + locationCode;
+  }
+  return locationCode;
+}
+
+/**
  * Show a confirmation dialog.
  * @param {Object} options - Dialog options
  * @param {string} options.title - Dialog title

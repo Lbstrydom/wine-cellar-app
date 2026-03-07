@@ -24,6 +24,8 @@ import {
 import { proposeZoneLayout, getSavedZoneLayout } from '../services/zone/zoneLayoutProposal.js';
 import { asyncHandler } from '../utils/errorResponse.js';
 import { getAllWinesWithSlots, getEmptyFridgeSlots, getFridgeAreas } from './cellar.js';
+import { getStorageAreasByType } from '../services/cellar/cellarLayout.js';
+import { buildAreaTypeMap } from '../config/storageTypes.js';
 
 const router = express.Router();
 
@@ -113,8 +115,12 @@ async function buildFridgeAnalysis(wines, cellarId) {
 export async function runAnalysis(wines, cellarId) {
   const report = await analyseCellar(wines, { cellarId });
 
+  // Build area type map for storage-type-aware helpers
+  const areasByType = await getStorageAreasByType(cellarId);
+  const areaTypeMap = buildAreaTypeMap(areasByType);
+
   // Add fridge candidates (legacy)
-  report.fridgeCandidates = getFridgeCandidates(wines);
+  report.fridgeCandidates = getFridgeCandidates(wines, undefined, areaTypeMap);
 
   // Multi-area fridge analysis
   const { fridgeAnalysis, fridgeStatus, fridgeTransfers } = await buildFridgeAnalysis(wines, cellarId);
@@ -123,7 +129,7 @@ export async function runAnalysis(wines, cellarId) {
   if (fridgeTransfers) report.fridgeTransfers = fridgeTransfers;
 
   // Cross-area suggestions (cellar↔fridge based on drinking windows)
-  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus);
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus, areaTypeMap);
   if (crossAreaSuggestions.length > 0) {
     report.crossAreaSuggestions = crossAreaSuggestions;
   }
@@ -196,8 +202,12 @@ router.get('/analyse', asyncHandler(async (req, res) => {
   const wines = await getAllWinesWithSlots(req.cellarId);
   const report = await analyseCellar(wines, { allowFallback, cellarId: req.cellarId });
 
+  // Build area type map for storage-type-aware helpers
+  const areasByType = await getStorageAreasByType(req.cellarId);
+  const areaTypeMap = buildAreaTypeMap(areasByType);
+
   // Add fridge candidates (legacy)
-  report.fridgeCandidates = getFridgeCandidates(wines);
+  report.fridgeCandidates = getFridgeCandidates(wines, undefined, areaTypeMap);
 
   // Multi-area fridge analysis
   const { fridgeAnalysis, fridgeStatus, fridgeTransfers } = await buildFridgeAnalysis(wines, req.cellarId);
@@ -206,7 +216,7 @@ router.get('/analyse', asyncHandler(async (req, res) => {
   if (fridgeTransfers) report.fridgeTransfers = fridgeTransfers;
 
   // Cross-area suggestions (cellar↔fridge based on drinking windows)
-  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus);
+  const crossAreaSuggestions = generateCrossAreaSuggestions(wines, fridgeStatus, areaTypeMap);
   if (crossAreaSuggestions.length > 0) {
     report.crossAreaSuggestions = crossAreaSuggestions;
   }

@@ -231,7 +231,7 @@ export async function analyseCellarAI(forceRefresh = true, options = {}) {
 
 /**
  * Execute wine moves.
- * @param {Array} moves - Array of {wineId, from, to, zoneId}
+ * @param {Array} moves - Array of {wineId, from, to, zoneId, from_storage_area_id?, to_storage_area_id?}
  * @returns {Promise<Object>}
  */
 export async function executeCellarMoves(moves) {
@@ -386,7 +386,7 @@ export async function getProposedBottleLayout() {
 
 /**
  * Preview-validate a set of moves without executing them.
- * @param {Array<{wineId: number, from: string, to: string}>} moves - Move objects
+ * @param {Array<{wineId: number, from: string, to: string, from_storage_area_id?: string|null, to_storage_area_id?: string|null}>} moves - Move objects
  * @returns {Promise<Object>} Validation result with errors and summary
  */
 export async function validateMoves(moves) {

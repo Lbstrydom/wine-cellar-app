@@ -4,6 +4,7 @@
  */
 
 import express from 'express';
+import { isWineInCellar, buildAreaTypeMap } from '../config/storageTypes.js';
 import {
   getZoneMetadata,
   getAllZoneMetadata,
@@ -235,10 +236,9 @@ router.post('/zone-chat', asyncHandler(async (req, res) => {
   // Get current wine data for context
   // Note: getAllWinesWithSlots returns slot_id (from location_code alias)
   const allWines = await getAllWinesWithSlots(req.cellarId);
-  const wines = allWines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot?.startsWith('R');
-  });
+  const areasByType = await getStorageAreasByType(req.cellarId);
+  const areaTypeMap = buildAreaTypeMap(areasByType);
+  const wines = allWines.filter(w => isWineInCellar(w, areaTypeMap));
 
   const result = await discussZoneClassification(message, wines, context);
 

@@ -19,6 +19,11 @@ export const locationCodeSchema = z.string()
   .regex(locationPattern, 'Invalid location format. Use R{row}C{col} for cellar or F{num} for fridge');
 
 /**
+ * Storage area ID schema (optional — callers may omit for transitional fallback).
+ */
+export const storageAreaIdSchema = z.string().uuid().optional().nullable();
+
+/**
  * Location parameter schema.
  */
 export const locationParamSchema = z.object({
@@ -30,7 +35,9 @@ export const locationParamSchema = z.object({
  */
 export const moveBottleSchema = z.object({
   from_location: locationCodeSchema,
-  to_location: locationCodeSchema
+  to_location: locationCodeSchema,
+  from_storage_area_id: storageAreaIdSchema,
+  to_storage_area_id: storageAreaIdSchema
 }).refine(data => data.from_location !== data.to_location, {
   message: 'Source and target locations must be different',
   path: ['to_location']
@@ -42,7 +49,10 @@ export const moveBottleSchema = z.object({
 export const swapBottleSchema = z.object({
   slot_a: locationCodeSchema,
   slot_b: locationCodeSchema,
-  displaced_to: locationCodeSchema
+  displaced_to: locationCodeSchema,
+  slot_a_storage_area_id: storageAreaIdSchema,
+  slot_b_storage_area_id: storageAreaIdSchema,
+  displaced_to_storage_area_id: storageAreaIdSchema
 }).refine(data => {
   const slots = [data.slot_a, data.slot_b, data.displaced_to];
   return new Set(slots).size === slots.length;
@@ -56,7 +66,9 @@ export const swapBottleSchema = z.object({
  */
 export const directSwapSchema = z.object({
   slot_a: locationCodeSchema,
-  slot_b: locationCodeSchema
+  slot_b: locationCodeSchema,
+  slot_a_storage_area_id: storageAreaIdSchema,
+  slot_b_storage_area_id: storageAreaIdSchema
 }).refine(data => data.slot_a !== data.slot_b, {
   message: 'Slots must be different',
   path: ['slot_b']
@@ -69,7 +81,8 @@ export const addToSlotSchema = z.object({
   wine_id: z.union([
     z.number().int().positive(),
     z.string().regex(/^\d+$/).transform(Number)
-  ])
+  ]),
+  storage_area_id: storageAreaIdSchema
 });
 
 /**
@@ -83,5 +96,6 @@ export const drinkBottleSchema = z.object({
     z.null()
   ]).optional().nullable(),
   notes: z.string().max(2000).optional().nullable(),
-  pairing_session_id: z.number().int().positive().optional().nullable()
+  pairing_session_id: z.number().int().positive().optional().nullable(),
+  storage_area_id: storageAreaIdSchema
 });

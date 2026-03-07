@@ -66,6 +66,7 @@ const state = {
 export function setAreas(areas) {
   state.areas = areas.map(a => ({
     ...a,
+    colour_zone: a.colour_zone || 'mixed',
     rows: Array.isArray(a.rows)
       ? a.rows.map((r, idx) => ({ row_num: r.row_num ?? idx + 1, col_count: r.col_count }))
       : []
@@ -77,11 +78,12 @@ export function getAreas() {
 }
 
 // Add a new area with defaults; caller provides name/type/zone
-export function addArea({ name, storage_type, temp_zone }) {
+export function addArea({ name, storage_type, temp_zone, colour_zone = 'mixed' }) {
   const area = {
     name,
     storage_type,
     temp_zone,
+    colour_zone,
     rows: [{ row_num: 1, col_count: 6 }]
   };
   state.areas.push(area);
@@ -110,8 +112,7 @@ function removeRow(areaIndex, rowNum) {
   const idx = area.rows.findIndex(r => r.row_num === rowNum);
   if (idx >= 0) {
     area.rows.splice(idx, 1);
-    // Re-number following rows to keep 1..N
-    area.rows = area.rows.map((r, i) => ({ row_num: i + 1, col_count: r.col_count }));
+    // Preserve original row_nums — gaps (e.g. [5,7] after deleting 6) are intentional
     emitChange();
   }
 }
@@ -138,14 +139,42 @@ function emitChange() {
   for (const cb of onChangeCallbacks) cb(getAreas());
 }
 
+/**
+ * Apply cellar-global row offsets to new areas.
+ * Existing areas (with id) keep their original row numbers.
+ * New areas get rows offset from the current max row number.
+ * @param {Array} areas - Builder state areas
+ * @param {number} maxExistingRow - Current highest row_num in the cellar
+ * @returns {Array} Areas with globally unique row numbers
+ */
+export function applyRowOffsets(areas, maxExistingRow) {
+  let nextRow = maxExistingRow;
+  return areas.map(area => {
+    if (area.id) {
+      // Existing area: keep original row numbers unchanged
+      return area;
+    }
+    // New area: offset rows so they don't overlap existing rows
+    const offset = nextRow;
+    const offsetRows = area.rows.map(r => ({
+      row_num: r.row_num + offset,
+      col_count: r.col_count
+    }));
+    nextRow = offset + area.rows.length;
+    return { ...area, rows: offsetRows };
+  });
+}
+
 // Render helper to preview grids (no CSS assumptions)
 export function renderPreview(container) {
   container.innerHTML = '';
   state.areas.forEach(area => {
     const wrap = document.createElement('div');
     wrap.className = 'storage-area-preview';
+    const colourBadge = area.colour_zone && area.colour_zone !== 'mixed'
+      ? ` — ${area.colour_zone} wines only` : '';
     const title = document.createElement('h3');
-    title.textContent = `${area.name} (${area.storage_type}, ${area.temp_zone})`;
+    title.textContent = `${area.name} (${area.storage_type}, ${area.temp_zone}${colourBadge})`;
     wrap.appendChild(title);
 
     area.rows.forEach(r => {

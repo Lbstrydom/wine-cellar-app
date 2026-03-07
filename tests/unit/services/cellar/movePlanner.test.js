@@ -725,6 +725,244 @@ describe('validateMovePlan', () => {
     });
   });
 
+  describe('Dual area ID fields (Phase 1 threading)', () => {
+    it('accepts moves with from_storage_area_id and to_storage_area_id fields', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-aaa', wine_id: 1 },
+          { location_code: 'R2C1', storage_area_id: 'area-bbb', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-aaa',
+        to_storage_area_id: 'area-bbb'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      // Area ID fields should not affect validation outcome
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('accepts moves with null area IDs without errors', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-1', wine_id: 2 },
+          { location_code: 'R2C1', storage_area_id: 'area-1', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 2,
+        wineName: 'Barolo',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: null,
+        to_storage_area_id: null
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('accepts moves without area ID fields (backwards compatible)', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-1', wine_id: 3 },
+          { location_code: 'R2C1', storage_area_id: 'area-1', wine_id: null }
+        ])
+      });
+
+      const moves = [{ wineId: 3, wineName: 'Brunello', from: 'R1C1', to: 'R2C1' }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('preserves area ID fields in result errors when validation fails', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-src', wine_id: null }, // Source is empty - will fail
+          { location_code: 'R2C1', storage_area_id: 'area-tgt', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 5,
+        wineName: 'Sangiovese',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-src',
+        to_storage_area_id: 'area-tgt'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      // Validation error is about source mismatch, not area IDs
+      const err = result.errors.find(e => e.type === 'source_mismatch');
+      expect(err).toBeDefined();
+    });
+  });
+
+  describe('Phase 2 Fix B: Area-scoped conflict detection', () => {
+    it('rejects source slot when from_storage_area_id does not match any slot', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R2C1', storage_area_id: 'area-main', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-wrong',
+        to_storage_area_id: 'area-main'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      const err = result.errors.find(e => e.type === 'slot_not_found');
+      expect(err).toBeDefined();
+      expect(err.slot).toBe('R1C1');
+      expect(err.message).toContain('area-wrong');
+    });
+
+    it('rejects target slot when to_storage_area_id does not match any slot', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R2C1', storage_area_id: 'area-main', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-main',
+        to_storage_area_id: 'area-wrong'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      const err = result.errors.find(e => e.type === 'slot_not_found');
+      expect(err).toBeDefined();
+      expect(err.slot).toBe('R2C1');
+      expect(err.message).toContain('area-wrong');
+    });
+
+    it('detects source mismatch via area-scoped lookup', async () => {
+      // R1C1 exists in area-main with wine 1, and in area-garage with wine 99
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R1C1', storage_area_id: 'area-garage', wine_id: 99 },
+          { location_code: 'R2C1', storage_area_id: 'area-main', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-garage', // area-garage has wine 99, not 1
+        to_storage_area_id: 'area-main'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(false);
+      const err = result.errors.find(e => e.type === 'source_mismatch');
+      expect(err).toBeDefined();
+      expect(err.actualWineId).toBe(99);
+    });
+
+    it('validates correctly when area IDs match the right slots', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R20C1', storage_area_id: 'area-garage', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R20C1',
+        from_storage_area_id: 'area-main',
+        to_storage_area_id: 'area-garage'
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('falls back to cellar-global lookup when area IDs are absent', async () => {
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R2C1', storage_area_id: 'area-main', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1'
+        // No area IDs — cellar-global fallback
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      expect(result.valid).toBe(true);
+    });
+
+    it('uses area-scoped lookup for target occupancy check (Rule 3)', async () => {
+      // R2C1 is occupied in area-main but empty in area-garage
+      db.prepare.mockReturnValue({
+        all: vi.fn().mockResolvedValue([
+          { location_code: 'R1C1', storage_area_id: 'area-main', wine_id: 1 },
+          { location_code: 'R2C1', storage_area_id: 'area-main', wine_id: 5 },
+          { location_code: 'R2C1', storage_area_id: 'area-garage', wine_id: null }
+        ])
+      });
+
+      const moves = [{
+        wineId: 1,
+        wineName: 'Chianti',
+        from: 'R1C1',
+        to: 'R2C1',
+        from_storage_area_id: 'area-main',
+        to_storage_area_id: 'area-garage' // empty in garage
+      }];
+
+      const result = await validateMovePlan(moves, 'test-cellar-id');
+
+      // Should pass — target is empty in the specified area
+      expect(result.summary.occupiedTargets).toBe(0);
+    });
+  });
+
   describe('Edge cases', () => {
     it('should handle empty move array', async () => {
       const result = await validateMovePlan([], 'test-cellar-id');

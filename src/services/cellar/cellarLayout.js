@@ -20,10 +20,23 @@ import { getRowCapacity } from './slotUtils.js';
  * via getRowCapacity() in slotUtils.js.
  *
  * @param {string} cellarId - Cellar ID for tenant isolation
+ * @param {string} [storageAreaId] - Optional: restrict to a specific storage area
  * @returns {Promise<Array<{row_num: number, col_count: number, label: string|null}>>}
  */
-export async function getStorageAreaRows(cellarId) {
+export async function getStorageAreaRows(cellarId, storageAreaId) {
   if (!cellarId) return [];
+
+  if (storageAreaId) {
+    const rows = await db.prepare(`
+      SELECT sar.row_num, sar.col_count, sar.label
+      FROM storage_area_rows sar
+      JOIN storage_areas sa ON sa.id = sar.storage_area_id
+      WHERE sa.cellar_id = $1
+        AND sar.storage_area_id = $2
+      ORDER BY sar.row_num
+    `).all(cellarId, storageAreaId);
+    return rows || [];
+  }
 
   const rows = await db.prepare(`
     SELECT sar.row_num, sar.col_count, sar.label
@@ -33,6 +46,26 @@ export async function getStorageAreaRows(cellarId) {
       AND sa.storage_type = 'cellar'
     ORDER BY sa.display_order NULLS LAST, sa.created_at, sar.row_num
   `).all(cellarId);
+
+  return rows || [];
+}
+
+/**
+ * Get storage area row definitions for a specific storage area (by area ID).
+ * Convenience wrapper — avoids passing cellarId when area ID is already known.
+ *
+ * @param {string} storageAreaId - Storage area UUID
+ * @returns {Promise<Array<{row_num: number, col_count: number, label: string|null}>>}
+ */
+export async function getStorageAreaRowsForArea(storageAreaId) {
+  if (!storageAreaId) return [];
+
+  const rows = await db.prepare(`
+    SELECT row_num, col_count, label
+    FROM storage_area_rows
+    WHERE storage_area_id = $1
+    ORDER BY row_num
+  `).all(storageAreaId);
 
   return rows || [];
 }

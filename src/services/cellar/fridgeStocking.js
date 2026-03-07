@@ -13,6 +13,7 @@ import {
 import { getEffectiveDrinkByYear } from './cellarAnalysis.js';
 import db from '../../db/index.js';
 import logger from '../../utils/logger.js';
+import { isWineInCellar, isWineInFridge } from '../../config/storageTypes.js';
 import { grapeMatchesText, keywordMatchesText } from '../../utils/wineNormalization.js';
 
 /**
@@ -619,17 +620,14 @@ export async function analyseFridge(areaWines, candidateWines, parLevels, cellar
  * @param {Object} fridgeStatus - Result of getFridgeStatus() for the primary fridge area
  * @returns {Array<Object>} Cross-area suggestions, sorted by priority
  */
-export function generateCrossAreaSuggestions(wines, fridgeStatus) {
+export function generateCrossAreaSuggestions(wines, fridgeStatus, areaTypeMap = null) {
   if (!fridgeStatus) return [];
 
   const suggestions = [];
   const currentYear = new Date().getFullYear();
 
   // (a) Cellar wines at or past their drinking window → move to fridge
-  const cellarWines = wines.filter(w => {
-    const slot = w.slot_id || w.location_code;
-    return slot && slot.startsWith('R');
-  });
+  const cellarWines = wines.filter(w => isWineInCellar(w, areaTypeMap));
 
   for (const wine of cellarWines) {
     const drinkByYear = getEffectiveDrinkByYear(wine);
@@ -654,10 +652,7 @@ export function generateCrossAreaSuggestions(wines, fridgeStatus) {
 
   // (b) Fridge has par-level gaps AND long-term wines taking up space
   if (fridgeStatus.hasGaps && fridgeStatus.emptySlots <= 0) {
-    const fridgeWines = wines.filter(w => {
-      const slot = w.slot_id || w.location_code;
-      return slot && slot.startsWith('F');
-    });
+    const fridgeWines = wines.filter(w => isWineInFridge(w, areaTypeMap));
     for (const wine of fridgeWines) {
       const drinkByYear = getEffectiveDrinkByYear(wine);
       if (!drinkByYear) continue;

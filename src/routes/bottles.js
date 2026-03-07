@@ -15,6 +15,7 @@ import { incrementBottleChangeCount } from '../services/zone/reconfigChangeTrack
 import { findAdjacentToSameWine } from '../services/cellar/cellarPlacement.js';
 import { getStorageAreaRows, getCellarRowCount, getStorageAreasByType } from '../services/cellar/cellarLayout.js';
 import { getRowCapacity } from '../services/cellar/slotUtils.js';
+import { isFridgeType } from '../config/storageTypes.js';
 
 const router = Router();
 
@@ -22,15 +23,19 @@ const router = Router();
  * Build dynamic grid limits from cellar layout (replaces hardcoded GRID_CONSTANTS).
  * Falls back to legacy defaults when storage_area_rows data is absent.
  * @param {string} cellarId
+ * @param {string|null} [storageAreaId] - Optional: restrict row data to a specific area
  * @returns {Promise<{cellarMaxRow: number, getColCount: Function, fridgeMaxSlot: number, storageAreaRows: Array}>}
  */
-async function getGridLimits(cellarId) {
+async function getGridLimits(cellarId, storageAreaId = null) {
   const [storageAreaRows, totalCellarRows, areasByType] = await Promise.all([
-    getStorageAreaRows(cellarId),
+    getStorageAreaRows(cellarId, storageAreaId),
     getCellarRowCount(cellarId),
     getStorageAreasByType(cellarId)
   ]);
-  const fridgeAreas = areasByType.wine_fridge || [];
+  const fridgeAreas = [
+    ...(areasByType.wine_fridge || []),
+    ...(areasByType.kitchen_fridge || [])
+  ];
   const fridgeMaxSlot = fridgeAreas.reduce((sum, area) => {
     return sum + area.rows.reduce((s, r) => s + (r.col_count || 0), 0);
   }, 0) || 9; // legacy fallback
@@ -48,7 +53,8 @@ const addBottlesSchema = z.object({
   start_location: z.string()
     .min(2, 'start_location is required')
     .regex(/^(F\d+|R\d+C\d+)$/, 'Invalid location format (expected F# or R#C#)'),
-  quantity: z.number().int().min(1).max(50).default(1)
+  quantity: z.number().int().min(1).max(50).default(1),
+  storage_area_id: z.string().uuid().optional().nullable()
 });
 
 /**
@@ -85,10 +91,10 @@ router.post('/add', asyncHandler(async (req, res) => {
     });
   }
 
-  const { wine_id, start_location, quantity } = parseResult.data;
+  const { wine_id, start_location, quantity, storage_area_id } = parseResult.data;
 
   // Fetch dynamic grid limits (async factory — replaces GRID_CONSTANTS)
-  const gridLimits = await getGridLimits(req.cellarId);
+  const gridLimits = await getGridLimits(req.cellarId, storage_area_id);
 
   // Verify wine exists and belongs to this cellar
   const wine = await db.prepare('SELECT id FROM wines WHERE cellar_id = $1 AND id = $2').get(req.cellarId, wine_id);
@@ -96,8 +102,14 @@ router.post('/add', asyncHandler(async (req, res) => {
     return res.status(404).json({ error: 'Wine not found' });
   }
 
-  // Parse start location and find consecutive slots (fallback candidates)
-  const isFridge = start_location.startsWith('F');
+  // Determine area type from storage_area_id metadata (falls back to format check)
+  let isFridge = start_location.startsWith('F'); // format fallback
+  if (storage_area_id) {
+    const area = await db.prepare(
+      'SELECT storage_type FROM storage_areas WHERE id = $1 AND cellar_id = $2'
+    ).get(storage_area_id, req.cellarId);
+    if (area) isFridge = isFridgeType(area.storage_type);
+  }
   const consecutiveSlots = [];
 
   if (isFridge) {
@@ -130,9 +142,10 @@ router.post('/add', asyncHandler(async (req, res) => {
 
   // Check which consecutive slots are empty
   const placeholders = consecutiveSlots.map((_, i) => `$${i + 2}`).join(',');
+  const areaFilter = storage_area_id ? ` AND storage_area_id = $${consecutiveSlots.length + 2}` : '';
   const existingSlots = await db.prepare(
-    'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + placeholders + ')'
-  ).all(req.cellarId, ...consecutiveSlots);
+    'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + placeholders + ')' + areaFilter
+  ).all(req.cellarId, ...consecutiveSlots, ...(storage_area_id ? [storage_area_id] : []));
   // Safe: placeholders generated from slots array length, data passed to .all()
 
   const emptyConsecutive = consecutiveSlots.filter(loc => {
@@ -144,11 +157,14 @@ router.post('/add', asyncHandler(async (req, res) => {
   let slotsToFill;
 
   if (!isFridge) {
-    // Query existing same-wine bottle locations in this cellar
-    const sameWineBottles = await db.prepare(
-      'SELECT location_code FROM slots WHERE cellar_id = $1 AND wine_id = $2'
-    ).all(req.cellarId, wine_id);
-    const sameWineSlots = sameWineBottles.map(b => b.location_code).filter(loc => loc.startsWith('R'));
+    // Query existing same-wine bottle locations in cellar-type areas
+    const sameWineBottles = await db.prepare(`
+      SELECT s.location_code FROM slots s
+      JOIN storage_areas sa ON sa.id = s.storage_area_id
+        AND sa.storage_type IN ('cellar', 'rack', 'other')
+      WHERE s.cellar_id = $1 AND s.wine_id = $2
+    `).all(req.cellarId, wine_id);
+    const sameWineSlots = sameWineBottles.map(b => b.location_code);
 
     if (sameWineSlots.length > 0) {
       // Try adjacency-aware placement
@@ -166,9 +182,10 @@ router.post('/add', asyncHandler(async (req, res) => {
         }
 
         const rowPlaceholders = allRowSlots.map((_, i) => `$${i + 2}`).join(',');
+        const rowAreaFilter = storage_area_id ? ` AND storage_area_id = $${allRowSlots.length + 2}` : '';
         const rowOccupancy = await db.prepare(
-          'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + rowPlaceholders + ')'
-        ).all(req.cellarId, ...allRowSlots);
+          'SELECT location_code, wine_id FROM slots WHERE cellar_id = $1 AND location_code IN (' + rowPlaceholders + ')' + rowAreaFilter
+        ).all(req.cellarId, ...allRowSlots, ...(storage_area_id ? [storage_area_id] : []));
 
         const occupiedSet = new Set(
           rowOccupancy.filter(s => s.wine_id).map(s => s.location_code)
@@ -232,9 +249,17 @@ router.post('/add', asyncHandler(async (req, res) => {
       let filledCount = 0;
       for (const loc of slotsToFill) {
         // Atomic guard: AND wine_id IS NULL prevents double-fill from concurrent requests
-        const upd = await txDb.prepare(
-          'UPDATE slots SET wine_id = $1 WHERE location_code = $2 AND cellar_id = $3 AND wine_id IS NULL'
-        ).run(wine_id, loc, req.cellarId);
+        // AND storage_area_id guards area identity when provided (Phase 1 thread-through)
+        let upd;
+        if (storage_area_id) {
+          upd = await txDb.prepare(
+            'UPDATE slots SET wine_id = $1 WHERE location_code = $2 AND cellar_id = $3 AND wine_id IS NULL AND storage_area_id = $4'
+          ).run(wine_id, loc, req.cellarId, storage_area_id);
+        } else {
+          upd = await txDb.prepare(
+            'UPDATE slots SET wine_id = $1 WHERE location_code = $2 AND cellar_id = $3 AND wine_id IS NULL'
+          ).run(wine_id, loc, req.cellarId);
+        }
         if (upd.changes === 0) {
           throw new Error(`Slot ${loc} was filled by a concurrent request`);
         }

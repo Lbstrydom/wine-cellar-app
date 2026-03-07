@@ -424,9 +424,13 @@ export async function saveAcquiredWine(wineData, options = {}) {
 
     // If fridge eligible and user wants fridge, find fridge slot
     if (options.addToFridge && placement.fridge.eligible) {
-      const fridgeSlots = await query.prepare(
-        "SELECT location_code FROM slots WHERE cellar_id = ? AND location_code LIKE 'F%' AND wine_id IS NULL ORDER BY location_code"
-      ).all(cellarId);
+      const fridgeSlots = await query.prepare(`
+        SELECT s.location_code FROM slots s
+        JOIN storage_areas sa ON sa.id = s.storage_area_id
+          AND sa.storage_type IN ('wine_fridge', 'kitchen_fridge')
+        WHERE s.cellar_id = ? AND s.wine_id IS NULL
+        ORDER BY sa.display_order, s.row_num, s.col_num
+      `).all(cellarId);
       if (fridgeSlots.length > 0) {
         targetSlot = fridgeSlots[0].location_code;
       }
@@ -445,9 +449,9 @@ export async function saveAcquiredWine(wineData, options = {}) {
         if (match) {
           const nextCol = parseInt(match[2]) + i;
           slotToUse = `${match[1]}${nextCol}`;
-        } else if (targetSlot.startsWith('F')) {
+        } else if (targetSlot.startsWith('F')) { // format parsing, not type classification
           const fridgeNum = parseInt(targetSlot.slice(1)) + i;
-          slotToUse = `F${fridgeNum}`;
+          slotToUse = `F${fridgeNum}`; // format parsing — builds next consecutive fridge code
         }
       }
 
